@@ -1,0 +1,5174 @@
+{
+  "report_revision": "local-admission-fairness-r1",
+  "tested_code_sha": "d2ee90c3c1d634f7fc9956ae595de858bbcb85ff",
+  "benchmark_code_sha": "d2ee90c3c1d634f7fc9956ae595de858bbcb85ff",
+  "artifact": "/tmp/sub2api-local-admission/root/endurance-E4-local.log",
+  "log_sha256": "a85529a0c3fc5c243a517c83cd532f4012e5f55955c0f3a97c74da9e93fdbbdf",
+  "environment": "local Darwin/arm64 Go; OrbStack Linux/aarch64 daemon; linux/amd64 PostgreSQL18.4 image; not native amd64 nor a production test",
+  "transaction_p95_target_ms": 20,
+  "cases": [
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 430094,
+      "capacity_samples": 12080,
+      "case": "C10_I3",
+      "dispatch_per_second": 9.000648127033033,
+      "dispatches": 5446,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 5446,
+          "mean_ms": 25.414098296180683,
+          "p50_ms": 17.940333,
+          "p95_ms": 45.21975,
+          "max_ms": 1290.585296
+        },
+        "admit.ADMITTED.begin": {
+          "count": 5446,
+          "mean_ms": 1.247458910943812,
+          "p50_ms": 0.206875,
+          "p95_ms": 2.774586,
+          "max_ms": 370.594793
+        },
+        "admit.ADMITTED.call": {
+          "count": 5446,
+          "mean_ms": 46.8420767745134,
+          "p50_ms": 21.144292,
+          "p95_ms": 98.950458,
+          "max_ms": 4066.738792
+        },
+        "admit.ADMITTED.commit": {
+          "count": 5446,
+          "mean_ms": 0.3085870323172971,
+          "p50_ms": 0.226,
+          "p95_ms": 0.538417,
+          "max_ms": 22.44875
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 18.374053387991186,
+          "p50_ms": 14.846541,
+          "p95_ms": 29.333,
+          "max_ms": 304.01475
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 5446,
+          "mean_ms": 24.667317809768637,
+          "p50_ms": 0.016208,
+          "p95_ms": 67.767792,
+          "max_ms": 3936.36175
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 17.725441983106865,
+          "p50_ms": 14.332875,
+          "p95_ms": 28.254,
+          "max_ms": 296.365958
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 1513,
+          "mean_ms": 2.5471174732319892,
+          "p50_ms": 0.538459,
+          "p95_ms": 7.873375,
+          "max_ms": 229.549656
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 5446,
+          "mean_ms": 1.1677494792508265,
+          "p50_ms": 0.895917,
+          "p95_ms": 2.05275,
+          "max_ms": 89.270959
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 5446,
+          "mean_ms": 1.045085123026074,
+          "p50_ms": 0.802584,
+          "p95_ms": 1.964333,
+          "max_ms": 37.3985
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 5446,
+          "mean_ms": 1.0411466105398457,
+          "p50_ms": 0.819708,
+          "p95_ms": 1.813417,
+          "max_ms": 16.914541
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 5446,
+          "mean_ms": 0.634768645611458,
+          "p50_ms": 0.47275,
+          "p95_ms": 1.183833,
+          "max_ms": 23.925542
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 5446,
+          "mean_ms": 1.4615407704737422,
+          "p50_ms": 1.096375,
+          "p95_ms": 2.706667,
+          "max_ms": 38.325457
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 5446,
+          "mean_ms": 0.9000414430774881,
+          "p50_ms": 0.680208,
+          "p95_ms": 1.618541,
+          "max_ms": 36.584708
+        },
+        "admit.ADMITTED.sql.other": {
+          "count": 5427,
+          "mean_ms": 0.606787262391745,
+          "p50_ms": 0.465416,
+          "p95_ms": 1.035042,
+          "max_ms": 25.196042
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 5446,
+          "mean_ms": 0.6412694054351818,
+          "p50_ms": 0.468958,
+          "p95_ms": 1.22225,
+          "max_ms": 59.571542
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 5446,
+          "mean_ms": 1.465636505325009,
+          "p50_ms": 1.139875,
+          "p95_ms": 2.620084,
+          "max_ms": 46.497375
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 5446,
+          "mean_ms": 0.9336112969151671,
+          "p50_ms": 0.698291,
+          "p95_ms": 1.648208,
+          "max_ms": 96.288042
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 5446,
+          "mean_ms": 0.5851201799485861,
+          "p50_ms": 0.427291,
+          "p95_ms": 1.032208,
+          "max_ms": 28.369458
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 5446,
+          "mean_ms": 5.825818880462725,
+          "p50_ms": 4.777583,
+          "p95_ms": 10.129,
+          "max_ms": 98.162666
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 5446,
+          "mean_ms": 2.1118761939037825,
+          "p50_ms": 0.402791,
+          "p95_ms": 4.268126,
+          "max_ms": 536.662755
+        },
+        "admit.ADMITTED.sql.update": {
+          "count": 5427,
+          "mean_ms": 0.7306701144278607,
+          "p50_ms": 0.440542,
+          "p95_ms": 1.6745,
+          "max_ms": 25.392875
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 5446,
+          "mean_ms": 0.6441428160117517,
+          "p50_ms": 0.42825,
+          "p95_ms": 1.358833,
+          "max_ms": 50.382583
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 5446,
+          "mean_ms": 2.2761346390011017,
+          "p50_ms": 0.46625,
+          "p95_ms": 6.609542,
+          "max_ms": 300.091667
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 5446,
+          "mean_ms": 0.8259985769372017,
+          "p50_ms": 0.623417,
+          "p95_ms": 1.494875,
+          "max_ms": 37.288208
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 5446,
+          "mean_ms": 22.1468483068307,
+          "p50_ms": 17.290125,
+          "p95_ms": 37.597084,
+          "max_ms": 526.498
+        },
+        "admit.ERROR.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.REJECTED.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.WAIT.all_transaction_attempts": {
+          "count": 5456,
+          "mean_ms": 27.999600335593843,
+          "p50_ms": 17.907084,
+          "p95_ms": 50.247377,
+          "max_ms": 812.137165
+        },
+        "admit.WAIT.begin": {
+          "count": 5456,
+          "mean_ms": 1.9216737710777125,
+          "p50_ms": 0.243125,
+          "p95_ms": 3.643626,
+          "max_ms": 184.185332
+        },
+        "admit.WAIT.call": {
+          "count": 5456,
+          "mean_ms": 59.858647436766866,
+          "p50_ms": 21.434917,
+          "p95_ms": 143.486125,
+          "max_ms": 3065.089625
+        },
+        "admit.WAIT.commit": {
+          "count": 5456,
+          "mean_ms": 0.33640980223607037,
+          "p50_ms": 0.235792,
+          "p95_ms": 0.66225,
+          "max_ms": 18.249875
+        },
+        "admit.WAIT.lock_held_lower_bound": {
+          "count": 5456,
+          "mean_ms": 17.987521061033725,
+          "p50_ms": 14.20125,
+          "p95_ms": 32.073083,
+          "max_ms": 227.164417
+        },
+        "admit.WAIT.pre_transaction_wait": {
+          "count": 5456,
+          "mean_ms": 37.544627811766865,
+          "p50_ms": 0.013417,
+          "p95_ms": 103.768042,
+          "max_ms": 2928.725375
+        },
+        "admit.WAIT.principal_held_lower_bound": {
+          "count": 5456,
+          "mean_ms": 17.279338358687685,
+          "p50_ms": 13.641791,
+          "p95_ms": 30.607875,
+          "max_ms": 223.969792
+        },
+        "admit.WAIT.rollback": {
+          "count": 1077,
+          "mean_ms": 6.395970493036211,
+          "p50_ms": 0.983833,
+          "p95_ms": 44.645501,
+          "max_ms": 160.671384
+        },
+        "admit.WAIT.sql.authorization": {
+          "count": 5456,
+          "mean_ms": 1.2969643306451613,
+          "p50_ms": 0.986042,
+          "p95_ms": 2.480667,
+          "max_ms": 63.011542
+        },
+        "admit.WAIT.sql.candidate_lock": {
+          "count": 5456,
+          "mean_ms": 1.1482455621334309,
+          "p50_ms": 0.874666,
+          "p95_ms": 2.198375,
+          "max_ms": 44.055292
+        },
+        "admit.WAIT.sql.idempotency": {
+          "count": 5456,
+          "mean_ms": 0.7322560723973607,
+          "p50_ms": 0.499375,
+          "p95_ms": 1.366417,
+          "max_ms": 62.375916
+        },
+        "admit.WAIT.sql.insert": {
+          "count": 5456,
+          "mean_ms": 1.6486502439516129,
+          "p50_ms": 1.217249,
+          "p95_ms": 3.364416,
+          "max_ms": 31.810916
+        },
+        "admit.WAIT.sql.ledger_check": {
+          "count": 5456,
+          "mean_ms": 1.0182791913489737,
+          "p50_ms": 0.760917,
+          "p95_ms": 2.018292,
+          "max_ms": 54.532958
+        },
+        "admit.WAIT.sql.other": {
+          "count": 5326,
+          "mean_ms": 0.6457802226811866,
+          "p50_ms": 0.481792,
+          "p95_ms": 1.205916,
+          "max_ms": 25.588625
+        },
+        "admit.WAIT.sql.principal_lock": {
+          "count": 5456,
+          "mean_ms": 0.7003273258797654,
+          "p50_ms": 0.508708,
+          "p95_ms": 1.3665,
+          "max_ms": 20.795542
+        },
+        "admit.WAIT.sql.quota": {
+          "count": 5456,
+          "mean_ms": 1.6574556257331379,
+          "p50_ms": 1.22025,
+          "p95_ms": 3.282624,
+          "max_ms": 71.266125
+        },
+        "admit.WAIT.sql.ticket_cleanup": {
+          "count": 5456,
+          "mean_ms": 0.6389599070747801,
+          "p50_ms": 0.44925,
+          "p95_ms": 1.133541,
+          "max_ms": 73.571333
+        },
+        "admit.WAIT.sql.ticket_read": {
+          "count": 5456,
+          "mean_ms": 6.272712138013196,
+          "p50_ms": 5.026125,
+          "p95_ms": 11.509376,
+          "max_ms": 114.907042
+        },
+        "admit.WAIT.sql.try_advisory_lock": {
+          "count": 5456,
+          "mean_ms": 3.4377432554985337,
+          "p50_ms": 0.452875,
+          "p95_ms": 6.054292,
+          "max_ms": 385.564412
+        },
+        "admit.WAIT.sql.update": {
+          "count": 5455,
+          "mean_ms": 1.3645890828597618,
+          "p50_ms": 1.184792,
+          "p95_ms": 2.654292,
+          "max_ms": 66.743749
+        },
+        "admit.WAIT.sql.user_ensure": {
+          "count": 5456,
+          "mean_ms": 0.7014891981304985,
+          "p50_ms": 0.473041,
+          "p95_ms": 1.446333,
+          "max_ms": 67.289666
+        },
+        "admit.WAIT.sql.user_lock": {
+          "count": 5456,
+          "mean_ms": 2.6103262325879766,
+          "p50_ms": 0.5575,
+          "p95_ms": 8.501625,
+          "max_ms": 150.297042
+        },
+        "admit.WAIT.sql.wall_clock": {
+          "count": 5456,
+          "mean_ms": 0.34232763434750735,
+          "p50_ms": 0.235125,
+          "p95_ms": 0.638792,
+          "max_ms": 46.925208
+        },
+        "admit.WAIT.transaction": {
+          "count": 5456,
+          "mean_ms": 22.285644142778594,
+          "p50_ms": 17.279458,
+          "p95_ms": 41.797875,
+          "max_ms": 303.341792
+        },
+        "arrival_to_admit": {
+          "count": 5446,
+          "mean_ms": 489.40989944197577,
+          "p50_ms": 412.814333,
+          "p95_ms": 913.722959,
+          "max_ms": 11295.187209
+        },
+        "arrival_to_dispatch": {
+          "count": 5446,
+          "mean_ms": 499.3383534043335,
+          "p50_ms": 422.019708,
+          "p95_ms": 934.814584,
+          "max_ms": 11404.19525
+        },
+        "arrival_to_finish": {
+          "count": 5446,
+          "mean_ms": 1471.4232611972088,
+          "p50_ms": 681.591791,
+          "p95_ms": 5305.340666,
+          "max_ms": 13689.689959
+        },
+        "burst_arrival_jitter": {
+          "count": 117,
+          "mean_ms": 1.006236111111111,
+          "p50_ms": 0.871167,
+          "p95_ms": 1.832833,
+          "max_ms": 3.690167
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 5446,
+          "mean_ms": 9.828115767719428,
+          "p50_ms": 6.248708,
+          "p95_ms": 21.957333,
+          "max_ms": 316.65975
+        },
+        "dispatch.OK.begin": {
+          "count": 5446,
+          "mean_ms": 0.4119810414983474,
+          "p50_ms": 0.233542,
+          "p95_ms": 0.93525,
+          "max_ms": 51.503834
+        },
+        "dispatch.OK.call": {
+          "count": 5446,
+          "mean_ms": 9.903647675174438,
+          "p50_ms": 6.260583,
+          "p95_ms": 22.002917,
+          "max_ms": 316.665959
+        },
+        "dispatch.OK.commit": {
+          "count": 5446,
+          "mean_ms": 0.3481762177745134,
+          "p50_ms": 0.232375,
+          "p95_ms": 0.646917,
+          "max_ms": 57.45875
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 5446,
+          "mean_ms": 0.06755196180683071,
+          "p50_ms": 0.003958,
+          "p95_ms": 0.010584,
+          "max_ms": 53.668042
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 7.052981986962909,
+          "p50_ms": 5.195458,
+          "p95_ms": 13.789708,
+          "max_ms": 208.963916
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 6.031291139551964,
+          "p50_ms": 4.617541,
+          "p95_ms": 11.119709,
+          "max_ms": 125.455667
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 5446,
+          "mean_ms": 2.719953140286449,
+          "p50_ms": 2.131667,
+          "p95_ms": 5.189125,
+          "max_ms": 86.577834
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 5446,
+          "mean_ms": 0.6154552124495042,
+          "p50_ms": 0.441625,
+          "p95_ms": 1.1615,
+          "max_ms": 111.556583
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 5446,
+          "mean_ms": 0.693550913147264,
+          "p50_ms": 0.50975,
+          "p95_ms": 1.368209,
+          "max_ms": 23.727084
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 5446,
+          "mean_ms": 1.0176586355123027,
+          "p50_ms": 0.461333,
+          "p95_ms": 5.137167,
+          "max_ms": 86.417834
+        },
+        "dispatch.OK.sql.update": {
+          "count": 5446,
+          "mean_ms": 1.58630697631289,
+          "p50_ms": 1.145084,
+          "p95_ms": 3.140459,
+          "max_ms": 116.976208
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 5446,
+          "mean_ms": 2.3546288995593097,
+          "p50_ms": 0.565417,
+          "p95_ms": 6.536167,
+          "max_ms": 200.690042
+        },
+        "dispatch.OK.transaction": {
+          "count": 5446,
+          "mean_ms": 9.828115767719428,
+          "p50_ms": 6.248708,
+          "p95_ms": 21.957333,
+          "max_ms": 316.65975
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 5446,
+          "mean_ms": 13.698102804994491,
+          "p50_ms": 7.487292,
+          "p95_ms": 36.627625,
+          "max_ms": 366.538875
+        },
+        "finish.OK.begin": {
+          "count": 5446,
+          "mean_ms": 0.7630930521483658,
+          "p50_ms": 0.315583,
+          "p95_ms": 1.830125,
+          "max_ms": 136.608583
+        },
+        "finish.OK.call": {
+          "count": 5446,
+          "mean_ms": 13.741063721446933,
+          "p50_ms": 7.501583,
+          "p95_ms": 36.658,
+          "max_ms": 366.544958
+        },
+        "finish.OK.commit": {
+          "count": 5446,
+          "mean_ms": 0.35985625835475576,
+          "p50_ms": 0.231542,
+          "p95_ms": 0.71125,
+          "max_ms": 37.844959
+        },
+        "finish.OK.connection_acquire": {
+          "count": 5446,
+          "mean_ms": 0.03152730517811238,
+          "p50_ms": 0.006,
+          "p95_ms": 0.016584,
+          "max_ms": 52.92
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 6.977400802056556,
+          "p50_ms": 4.96025,
+          "p95_ms": 14.930167,
+          "max_ms": 209.297792
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 5446,
+          "mean_ms": 5.755741145427837,
+          "p50_ms": 4.225,
+          "p95_ms": 11.718291,
+          "max_ms": 207.223125
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 5446,
+          "mean_ms": 1.43740138505325,
+          "p50_ms": 1.061334,
+          "p95_ms": 3.066375,
+          "max_ms": 48.906959
+        },
+        "finish.OK.sql.insert": {
+          "count": 5446,
+          "mean_ms": 1.5822226033786264,
+          "p50_ms": 1.1385,
+          "p95_ms": 3.243375,
+          "max_ms": 166.327042
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 5446,
+          "mean_ms": 0.7531728701799486,
+          "p50_ms": 0.498917,
+          "p95_ms": 1.556125,
+          "max_ms": 128.68975
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 5446,
+          "mean_ms": 0.8600944078222548,
+          "p50_ms": 0.585417,
+          "p95_ms": 1.750125,
+          "max_ms": 161.840458
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 5446,
+          "mean_ms": 1.2159088909291222,
+          "p50_ms": 0.550333,
+          "p95_ms": 4.561292,
+          "max_ms": 95.435583
+        },
+        "finish.OK.sql.update": {
+          "count": 5446,
+          "mean_ms": 0.6824346112743298,
+          "p50_ms": 0.476459,
+          "p95_ms": 1.405917,
+          "max_ms": 116.33925
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 5446,
+          "mean_ms": 5.935980309034154,
+          "p50_ms": 0.84425,
+          "p95_ms": 22.175833,
+          "max_ms": 349.8855
+        },
+        "finish.OK.transaction": {
+          "count": 5446,
+          "mean_ms": 13.698102804994491,
+          "p50_ms": 7.487292,
+          "p95_ms": 36.627625,
+          "max_ms": 366.538875
+        },
+        "first_wait_to_admit": {
+          "count": 5416,
+          "mean_ms": 437.3227229176514,
+          "p50_ms": 381.617125,
+          "p95_ms": 759.814542,
+          "max_ms": 8758.153459
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 106,
+          "mean_ms": 11.560021235849057,
+          "p50_ms": 5.462167,
+          "p95_ms": 28.183084,
+          "max_ms": 132.870709
+        },
+        "heartbeat.OK.begin": {
+          "count": 106,
+          "mean_ms": 0.7805511509433962,
+          "p50_ms": 0.354459,
+          "p95_ms": 2.252208,
+          "max_ms": 17.282375
+        },
+        "heartbeat.OK.call": {
+          "count": 106,
+          "mean_ms": 11.899779113207547,
+          "p50_ms": 5.477583,
+          "p95_ms": 36.533209,
+          "max_ms": 132.888792
+        },
+        "heartbeat.OK.commit": {
+          "count": 106,
+          "mean_ms": 0.3055593396226415,
+          "p50_ms": 0.235084,
+          "p95_ms": 0.671709,
+          "max_ms": 2.258083
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 106,
+          "mean_ms": 0.3297424716981132,
+          "p50_ms": 0.006708,
+          "p95_ms": 0.037083,
+          "max_ms": 33.512625
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 106,
+          "mean_ms": 4.0696855283018865,
+          "p50_ms": 2.808667,
+          "p95_ms": 9.339917,
+          "max_ms": 43.720042
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 106,
+          "mean_ms": 2.9513867452830187,
+          "p50_ms": 2.131916,
+          "p95_ms": 4.488125,
+          "max_ms": 28.795
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 106,
+          "mean_ms": 0.7869728490566037,
+          "p50_ms": 0.5115,
+          "p95_ms": 1.251292,
+          "max_ms": 15.57975
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 106,
+          "mean_ms": 0.9193718490566037,
+          "p50_ms": 0.602416,
+          "p95_ms": 1.442083,
+          "max_ms": 12.983916
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 106,
+          "mean_ms": 1.1134445471698113,
+          "p50_ms": 0.592833,
+          "p95_ms": 3.271084,
+          "max_ms": 14.919792
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 106,
+          "mean_ms": 0.9168283018867924,
+          "p50_ms": 0.698875,
+          "p95_ms": 1.514458,
+          "max_ms": 7.488625
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 106,
+          "mean_ms": 6.703507481132076,
+          "p50_ms": 1.397042,
+          "p95_ms": 22.636791,
+          "max_ms": 119.615292
+        },
+        "heartbeat.OK.transaction": {
+          "count": 106,
+          "mean_ms": 11.560021235849057,
+          "p50_ms": 5.462167,
+          "p95_ms": 28.183084,
+          "max_ms": 132.870709
+        },
+        "steady_arrival_jitter": {
+          "count": 5335,
+          "mean_ms": 0.0008276028116213683,
+          "p50_ms": 0.000292,
+          "p95_ms": 0.0005,
+          "max_ms": 1.122292
+        }
+      },
+      "effective_admission_commits_per_second": 9.000648127033033,
+      "elapsed_seconds": 605.067537708,
+      "errors": null,
+      "final_lease_states": {
+        "RELEASED": 5446
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 102.45,
+      "idle_capacity_with_live_offer_sample_seconds": 323.65000000000003,
+      "idle_capacity_with_live_offer_samples": 6473,
+      "mock_utilization": 0.8620311320985345,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 11891,
+        "admit.ADMITTED.commit": 5446,
+        "admit.ADMITTED.rollback": 6445,
+        "admit.ADMITTED.transaction.committed": 5446,
+        "admit.ADMITTED.transaction.rolled_back": 6445,
+        "admit.ADMITTED.try_lock.acquired": 5446,
+        "admit.ADMITTED.try_lock.missed": 6445,
+        "admit.WAIT.begin": 13535,
+        "admit.WAIT.commit": 5456,
+        "admit.WAIT.rollback": 8079,
+        "admit.WAIT.transaction.committed": 5456,
+        "admit.WAIT.transaction.rolled_back": 8079,
+        "admit.WAIT.try_lock.acquired": 5456,
+        "admit.WAIT.try_lock.missed": 8079,
+        "dispatch.OK.begin": 5446,
+        "dispatch.OK.commit": 5446,
+        "dispatch.OK.transaction.committed": 5446,
+        "finish.OK.begin": 5446,
+        "finish.OK.commit": 5446,
+        "finish.OK.transaction.committed": 5446,
+        "heartbeat.OK.begin": 106,
+        "heartbeat.OK.commit": 106,
+        "heartbeat.OK.transaction.committed": 106
+      },
+      "over": 0,
+      "peak_mock": 10,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 131,
+        "sql.authorization/Client/ClientRead": 15,
+        "sql.candidate_lock/CPU/": 117,
+        "sql.candidate_lock/Client/ClientRead": 17,
+        "sql.capacity_batch/CPU/": 153,
+        "sql.capacity_batch/Client/ClientRead": 14,
+        "sql.dispatch_check/CPU/": 189,
+        "sql.dispatch_check/Client/ClientRead": 7,
+        "sql.idempotency/CPU/": 25,
+        "sql.idempotency/Client/ClientRead": 11,
+        "sql.insert/CPU/": 145,
+        "sql.insert/Client/ClientRead": 40,
+        "sql.insert/IO/DataFileExtend": 3,
+        "sql.instance_lock/CPU/": 21,
+        "sql.instance_lock/Client/ClientRead": 9,
+        "sql.lease_lock/CPU/": 44,
+        "sql.lease_lock/Client/ClientRead": 14,
+        "sql.ledger_check/CPU/": 82,
+        "sql.ledger_check/Client/ClientRead": 10,
+        "sql.other/CPU/": 1494,
+        "sql.other/Client/ClientRead": 134,
+        "sql.other/IO/WalInitWrite": 1,
+        "sql.other/IO/WalWrite": 9,
+        "sql.principal_lock/CPU/": 104,
+        "sql.principal_lock/Client/ClientRead": 53,
+        "sql.principal_lock/Lock/transactionid": 115,
+        "sql.quota/CPU/": 193,
+        "sql.quota/Client/ClientRead": 51,
+        "sql.snapshot/CPU/": 37,
+        "sql.snapshot/Client/ClientRead": 4,
+        "sql.ticket_cleanup/CPU/": 24,
+        "sql.ticket_cleanup/Client/ClientRead": 9,
+        "sql.ticket_read/CPU/": 86,
+        "sql.ticket_read/Client/ClientRead": 49,
+        "sql.try_advisory_lock/CPU/": 72,
+        "sql.try_advisory_lock/Client/ClientRead": 59,
+        "sql.update/CPU/": 207,
+        "sql.update/Client/ClientRead": 68,
+        "sql.user_ensure/CPU/": 31,
+        "sql.user_ensure/Client/ClientRead": 12,
+        "sql.user_ensure/Lock/transactionid": 11,
+        "sql.user_lock/CPU/": 130,
+        "sql.user_lock/Client/ClientRead": 35,
+        "sql.user_lock/LWLock/LockManager": 1,
+        "sql.user_lock/Lock/transactionid": 988,
+        "sql.user_lock/Lock/tuple": 140,
+        "sql.wall_clock/CPU/": 10,
+        "sql.wall_clock/Client/ClientRead": 10
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 7,
+          "wait_ms": 167.245582
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 4,
+          "wait_ms": 118.001708
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 5,
+          "wait_ms": 119.874709
+        }
+      ],
+      "queue_control_sql_calls": 94953,
+      "queue_sql_per_dispatch": 39.572163055453544,
+      "requests": 5452,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 132364,
+        "admit.WAIT": 120557,
+        "dispatch.OK": 38122,
+        "finish.OK": 43568,
+        "heartbeat.OK": 530
+      },
+      "successful_admissions_per_advisory_attempt": 0.21419019900888853,
+      "timeout_count": 0,
+      "timeout_rate": 0,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 9.211416426507304,
+        "attempts": 56475,
+        "background_sql_wall_ms": 104007.16227,
+        "commits": 33907,
+        "errors": 0,
+        "rollbacks": 22568,
+        "try_lock_acquired": 24825,
+        "try_lock_attempts": 45471,
+        "try_lock_misses": 20646
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.21419019900888853,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "PASS",
+      "retained_occupancy": 0
+    },
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 59412,
+      "capacity_samples": 8150,
+      "case": "C10_I16",
+      "dispatch_per_second": 0.5038154230811179,
+      "dispatches": 306,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 306,
+          "mean_ms": 1849.6597077810457,
+          "p50_ms": 845.34721,
+          "p95_ms": 7933.616957,
+          "max_ms": 21235.65346
+        },
+        "admit.ADMITTED.begin": {
+          "count": 306,
+          "mean_ms": 272.07102357516345,
+          "p50_ms": 93.695666,
+          "p95_ms": 954.126161,
+          "max_ms": 7300.369255
+        },
+        "admit.ADMITTED.call": {
+          "count": 306,
+          "mean_ms": 9741.987216235295,
+          "p50_ms": 4152.238334,
+          "p95_ms": 39471.045375,
+          "max_ms": 102912.4205
+        },
+        "admit.ADMITTED.commit": {
+          "count": 306,
+          "mean_ms": 14.244671843137255,
+          "p50_ms": 3.734084,
+          "p95_ms": 43.406125,
+          "max_ms": 668.910084
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 306,
+          "mean_ms": 506.09232683006536,
+          "p50_ms": 204.562125,
+          "p95_ms": 1344.105209,
+          "max_ms": 13054.870333
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 306,
+          "mean_ms": 8897.543003013072,
+          "p50_ms": 3542.194958,
+          "p95_ms": 35825.941959,
+          "max_ms": 100521.979292
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 306,
+          "mean_ms": 478.64397302287585,
+          "p50_ms": 190.648125,
+          "p95_ms": 1236.514625,
+          "max_ms": 13002.578291
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 222,
+          "mean_ms": 313.3307698783784,
+          "p50_ms": 142.4235,
+          "p95_ms": 933.271245,
+          "max_ms": 6758.520696
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 306,
+          "mean_ms": 36.28273746732026,
+          "p50_ms": 12.228208,
+          "p95_ms": 90.8305,
+          "max_ms": 2690.407209
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 306,
+          "mean_ms": 33.412776539215685,
+          "p50_ms": 13.03325,
+          "p95_ms": 78.354166,
+          "max_ms": 1810.436375
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 306,
+          "mean_ms": 57.82674782026144,
+          "p50_ms": 12.749625,
+          "p95_ms": 235.341,
+          "max_ms": 2721.503834
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 306,
+          "mean_ms": 13.464300653594771,
+          "p50_ms": 6.852583,
+          "p95_ms": 41.7095,
+          "max_ms": 274.207792
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 306,
+          "mean_ms": 90.42093056535947,
+          "p50_ms": 31.708209,
+          "p95_ms": 268.797668,
+          "max_ms": 2192.256334
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 306,
+          "mean_ms": 31.325818388888887,
+          "p50_ms": 10.592417,
+          "p95_ms": 69.226417,
+          "max_ms": 1202.719833
+        },
+        "admit.ADMITTED.sql.other": {
+          "count": 103,
+          "mean_ms": 10.265921446601942,
+          "p50_ms": 2.550833,
+          "p95_ms": 33.936,
+          "max_ms": 263.11375
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 306,
+          "mean_ms": 26.52390711764706,
+          "p50_ms": 9.108958,
+          "p95_ms": 75.844916,
+          "max_ms": 998.381875
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 306,
+          "mean_ms": 30.44228025163399,
+          "p50_ms": 8.936209,
+          "p95_ms": 67.380417,
+          "max_ms": 2051.334167
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 306,
+          "mean_ms": 24.262276993464052,
+          "p50_ms": 8.53825,
+          "p95_ms": 63.279,
+          "max_ms": 1666.424917
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 306,
+          "mean_ms": 12.028867823529412,
+          "p50_ms": 5.365083,
+          "p95_ms": 43.206625,
+          "max_ms": 304.149417
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 306,
+          "mean_ms": 83.82476830392156,
+          "p50_ms": 20.955792,
+          "p95_ms": 203.22525,
+          "max_ms": 6222.875333
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 306,
+          "mean_ms": 513.5450204509804,
+          "p50_ms": 176.1895,
+          "p95_ms": 1998.405085,
+          "max_ms": 9625.890081
+        },
+        "admit.ADMITTED.sql.update": {
+          "count": 103,
+          "mean_ms": 42.012425970873785,
+          "p50_ms": 2.586208,
+          "p95_ms": 125.199916,
+          "max_ms": 1774.173792
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 306,
+          "mean_ms": 34.88459474509804,
+          "p50_ms": 8.839833,
+          "p95_ms": 95.954208,
+          "max_ms": 2366.120667
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 306,
+          "mean_ms": 276.3034441535948,
+          "p50_ms": 100.943833,
+          "p95_ms": 866.7465,
+          "max_ms": 6683.429875
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 306,
+          "mean_ms": 16.75548693137255,
+          "p50_ms": 7.835959,
+          "p95_ms": 44.432375,
+          "max_ms": 298.769708
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 306,
+          "mean_ms": 836.6772713594771,
+          "p50_ms": 396.544625,
+          "p95_ms": 3098.73325,
+          "max_ms": 15647.303083
+        },
+        "admit.ERROR.call": {
+          "count": 14,
+          "mean_ms": 18941.77618457143,
+          "p50_ms": 8383.839042,
+          "p95_ms": 47816.181458,
+          "max_ms": 81390.047709
+        },
+        "admit.ERROR.connection_acquire_failed": {
+          "count": 14,
+          "mean_ms": 18941.77618457143,
+          "p50_ms": 8383.839042,
+          "p95_ms": 47816.181458,
+          "max_ms": 81390.047709
+        },
+        "admit.REJECTED.all_transaction_attempts": {
+          "count": 125,
+          "mean_ms": 1941.806088688,
+          "p50_ms": 438.099793,
+          "p95_ms": 8017.410126,
+          "max_ms": 16423.326582
+        },
+        "admit.REJECTED.begin": {
+          "count": 125,
+          "mean_ms": 377.26542969599996,
+          "p50_ms": 62.434251,
+          "p95_ms": 1510.387555,
+          "max_ms": 3712.633042
+        },
+        "admit.REJECTED.call": {
+          "count": 125,
+          "mean_ms": 11070.959544360001,
+          "p50_ms": 7557.275458,
+          "p95_ms": 31664.450709,
+          "max_ms": 57744.148833
+        },
+        "admit.REJECTED.lock_held_lower_bound": {
+          "count": 125,
+          "mean_ms": 419.360095976,
+          "p50_ms": 103.975,
+          "p95_ms": 1326.605292,
+          "max_ms": 9185.009375
+        },
+        "admit.REJECTED.pre_transaction_wait": {
+          "count": 125,
+          "mean_ms": 10368.573446016,
+          "p50_ms": 6349.3775,
+          "p95_ms": 31467.954209,
+          "max_ms": 48367.39275
+        },
+        "admit.REJECTED.principal_held_lower_bound": {
+          "count": 125,
+          "mean_ms": 400.93562568,
+          "p50_ms": 94.434125,
+          "p95_ms": 1261.24,
+          "max_ms": 9163.518
+        },
+        "admit.REJECTED.rollback": {
+          "count": 125,
+          "mean_ms": 295.484534864,
+          "p50_ms": 52.353333,
+          "p95_ms": 1093.022333,
+          "max_ms": 7680.004123
+        },
+        "admit.REJECTED.sql.authorization": {
+          "count": 125,
+          "mean_ms": 69.623019336,
+          "p50_ms": 9.835709,
+          "p95_ms": 183.201458,
+          "max_ms": 2186.711292
+        },
+        "admit.REJECTED.sql.candidate_lock": {
+          "count": 125,
+          "mean_ms": 91.16974193600001,
+          "p50_ms": 12.49825,
+          "p95_ms": 198.58025,
+          "max_ms": 5197.006583
+        },
+        "admit.REJECTED.sql.capacity_batch": {
+          "count": 4,
+          "mean_ms": 694.77210425,
+          "p50_ms": 804.1225,
+          "p95_ms": 804.1225,
+          "max_ms": 1927.522334
+        },
+        "admit.REJECTED.sql.idempotency": {
+          "count": 125,
+          "mean_ms": 18.930995976,
+          "p50_ms": 5.755958,
+          "p95_ms": 62.712459,
+          "max_ms": 402.438833
+        },
+        "admit.REJECTED.sql.insert": {
+          "count": 4,
+          "mean_ms": 546.267646,
+          "p50_ms": 74.678958,
+          "p95_ms": 74.678958,
+          "max_ms": 2078.69075
+        },
+        "admit.REJECTED.sql.ledger_check": {
+          "count": 125,
+          "mean_ms": 43.818928064000005,
+          "p50_ms": 8.689291,
+          "p95_ms": 189.348209,
+          "max_ms": 475.059459
+        },
+        "admit.REJECTED.sql.other": {
+          "count": 4,
+          "mean_ms": 18.9643645,
+          "p50_ms": 30.401791,
+          "p95_ms": 30.401791,
+          "max_ms": 41.043917
+        },
+        "admit.REJECTED.sql.principal_lock": {
+          "count": 125,
+          "mean_ms": 17.098278288,
+          "p50_ms": 4.590541,
+          "p95_ms": 76.189834,
+          "max_ms": 163.614709
+        },
+        "admit.REJECTED.sql.quota": {
+          "count": 125,
+          "mean_ms": 23.27214004,
+          "p50_ms": 5.618791,
+          "p95_ms": 106.775583,
+          "max_ms": 234.509042
+        },
+        "admit.REJECTED.sql.snapshot": {
+          "count": 4,
+          "mean_ms": 185.4077085,
+          "p50_ms": 38.941042,
+          "p95_ms": 38.941042,
+          "max_ms": 665.61675
+        },
+        "admit.REJECTED.sql.ticket_cleanup": {
+          "count": 125,
+          "mean_ms": 26.062760752,
+          "p50_ms": 4.614417,
+          "p95_ms": 131.127333,
+          "max_ms": 414.751959
+        },
+        "admit.REJECTED.sql.ticket_read": {
+          "count": 125,
+          "mean_ms": 30.496288616,
+          "p50_ms": 3.974333,
+          "p95_ms": 102.667125,
+          "max_ms": 1280.240208
+        },
+        "admit.REJECTED.sql.try_advisory_lock": {
+          "count": 125,
+          "mean_ms": 604.797985224,
+          "p50_ms": 107.882459,
+          "p95_ms": 2851.770365,
+          "max_ms": 7503.68196
+        },
+        "admit.REJECTED.sql.update": {
+          "count": 4,
+          "mean_ms": 37.6973855,
+          "p50_ms": 4.421792,
+          "p95_ms": 4.421792,
+          "max_ms": 144.674875
+        },
+        "admit.REJECTED.sql.user_ensure": {
+          "count": 125,
+          "mean_ms": 39.186057663999996,
+          "p50_ms": 4.240208,
+          "p95_ms": 107.074625,
+          "max_ms": 1200.714542
+        },
+        "admit.REJECTED.sql.user_lock": {
+          "count": 125,
+          "mean_ms": 209.86237461599998,
+          "p50_ms": 15.620583,
+          "p95_ms": 1068.60375,
+          "max_ms": 2780.276875
+        },
+        "admit.REJECTED.sql.wall_clock": {
+          "count": 125,
+          "mean_ms": 11.416134008,
+          "p50_ms": 1.635042,
+          "p95_ms": 37.276125,
+          "max_ms": 286.680958
+        },
+        "admit.REJECTED.transaction": {
+          "count": 125,
+          "mean_ms": 694.707777648,
+          "p50_ms": 190.858125,
+          "p95_ms": 2514.334667,
+          "max_ms": 9337.86575
+        },
+        "admit.WAIT.all_transaction_attempts": {
+          "count": 318,
+          "mean_ms": 1371.836918562893,
+          "p50_ms": 597.520125,
+          "p95_ms": 5645.909586,
+          "max_ms": 18909.595375
+        },
+        "admit.WAIT.begin": {
+          "count": 318,
+          "mean_ms": 240.9795385188679,
+          "p50_ms": 67.264625,
+          "p95_ms": 995.682334,
+          "max_ms": 5198.808253
+        },
+        "admit.WAIT.call": {
+          "count": 318,
+          "mean_ms": 19387.894425437105,
+          "p50_ms": 8058.682667,
+          "p95_ms": 86945.562416,
+          "max_ms": 112992.471125
+        },
+        "admit.WAIT.commit": {
+          "count": 318,
+          "mean_ms": 7.71475572327044,
+          "p50_ms": 1.884958,
+          "p95_ms": 30.216042,
+          "max_ms": 192.037292
+        },
+        "admit.WAIT.lock_held_lower_bound": {
+          "count": 318,
+          "mean_ms": 460.34316638050313,
+          "p50_ms": 206.874833,
+          "p95_ms": 1714.271959,
+          "max_ms": 8688.276042
+        },
+        "admit.WAIT.pre_transaction_wait": {
+          "count": 318,
+          "mean_ms": 18740.886771767295,
+          "p50_ms": 7389.261708,
+          "p95_ms": 85104.094,
+          "max_ms": 112535.729875
+        },
+        "admit.WAIT.principal_held_lower_bound": {
+          "count": 318,
+          "mean_ms": 436.9098576886792,
+          "p50_ms": 200.491167,
+          "p95_ms": 1447.302458,
+          "max_ms": 8651.570792
+        },
+        "admit.WAIT.rollback": {
+          "count": 228,
+          "mean_ms": 204.76037356578945,
+          "p50_ms": 69.121457,
+          "p95_ms": 872.280747,
+          "max_ms": 6502.089373
+        },
+        "admit.WAIT.sql.authorization": {
+          "count": 318,
+          "mean_ms": 31.602300566037737,
+          "p50_ms": 7.445208,
+          "p95_ms": 101.464583,
+          "max_ms": 1213.443542
+        },
+        "admit.WAIT.sql.candidate_lock": {
+          "count": 318,
+          "mean_ms": 28.23137367610063,
+          "p50_ms": 10.245,
+          "p95_ms": 75.815666,
+          "max_ms": 2475.3755
+        },
+        "admit.WAIT.sql.idempotency": {
+          "count": 318,
+          "mean_ms": 12.463394767295597,
+          "p50_ms": 3.33225,
+          "p95_ms": 47.38825,
+          "max_ms": 322.495792
+        },
+        "admit.WAIT.sql.insert": {
+          "count": 318,
+          "mean_ms": 54.408165996855345,
+          "p50_ms": 22.793666,
+          "p95_ms": 230.024542,
+          "max_ms": 704.932625
+        },
+        "admit.WAIT.sql.ledger_check": {
+          "count": 318,
+          "mean_ms": 28.94704253773585,
+          "p50_ms": 6.414875,
+          "p95_ms": 106.072958,
+          "max_ms": 1249.841291
+        },
+        "admit.WAIT.sql.other": {
+          "count": 287,
+          "mean_ms": 13.652027013937282,
+          "p50_ms": 2.850042,
+          "p95_ms": 45.388167,
+          "max_ms": 432.646833
+        },
+        "admit.WAIT.sql.principal_lock": {
+          "count": 318,
+          "mean_ms": 22.234098418238993,
+          "p50_ms": 4.340917,
+          "p95_ms": 69.017625,
+          "max_ms": 1206.436916
+        },
+        "admit.WAIT.sql.quota": {
+          "count": 318,
+          "mean_ms": 28.16329381446541,
+          "p50_ms": 9.588625,
+          "p95_ms": 77.646084,
+          "max_ms": 1823.792542
+        },
+        "admit.WAIT.sql.ticket_cleanup": {
+          "count": 318,
+          "mean_ms": 16.611078232704404,
+          "p50_ms": 2.461208,
+          "p95_ms": 44.1305,
+          "max_ms": 1483.969375
+        },
+        "admit.WAIT.sql.ticket_read": {
+          "count": 318,
+          "mean_ms": 150.82551514150944,
+          "p50_ms": 58.411665,
+          "p95_ms": 413.556125,
+          "max_ms": 6499.167124
+        },
+        "admit.WAIT.sql.try_advisory_lock": {
+          "count": 318,
+          "mean_ms": 343.68167757861636,
+          "p50_ms": 95.950458,
+          "p95_ms": 1450.151872,
+          "max_ms": 7406.052039
+        },
+        "admit.WAIT.sql.update": {
+          "count": 314,
+          "mean_ms": 44.95832991082803,
+          "p50_ms": 7.850916,
+          "p95_ms": 216.251416,
+          "max_ms": 999.793208
+        },
+        "admit.WAIT.sql.user_ensure": {
+          "count": 318,
+          "mean_ms": 20.383776742138362,
+          "p50_ms": 3.351625,
+          "p95_ms": 74.938,
+          "max_ms": 780.053791
+        },
+        "admit.WAIT.sql.user_lock": {
+          "count": 318,
+          "mean_ms": 143.1651927389937,
+          "p50_ms": 10.011333,
+          "p95_ms": 611.603167,
+          "max_ms": 3162.191083
+        },
+        "admit.WAIT.sql.wall_clock": {
+          "count": 318,
+          "mean_ms": 4.063011959119497,
+          "p50_ms": 1.11675,
+          "p95_ms": 18.082875,
+          "max_ms": 86.90375
+        },
+        "admit.WAIT.transaction": {
+          "count": 318,
+          "mean_ms": 641.6714370691824,
+          "p50_ms": 282.265625,
+          "p95_ms": 2698.479833,
+          "max_ms": 8857.690375
+        },
+        "arrival_to_admit": {
+          "count": 306,
+          "mean_ms": 16442.05320644118,
+          "p50_ms": 8807.835917,
+          "p95_ms": 51291.390042,
+          "max_ms": 112655.170333
+        },
+        "arrival_to_dispatch": {
+          "count": 306,
+          "mean_ms": 17193.949881535947,
+          "p50_ms": 9156.06075,
+          "p95_ms": 53420.732375,
+          "max_ms": 113000.796833
+        },
+        "arrival_to_finish": {
+          "count": 306,
+          "mean_ms": 19017.971142176473,
+          "p50_ms": 10762.342959,
+          "p95_ms": 55960.595667,
+          "max_ms": 122567.493041
+        },
+        "burst_arrival_jitter": {
+          "count": 117,
+          "mean_ms": 73.58818378632479,
+          "p50_ms": 25.662375,
+          "p95_ms": 374.192458,
+          "max_ms": 390.954958
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 306,
+          "mean_ms": 730.7887636176471,
+          "p50_ms": 251.151333,
+          "p95_ms": 3138.404334,
+          "max_ms": 16107.851
+        },
+        "dispatch.OK.begin": {
+          "count": 306,
+          "mean_ms": 42.58426935294118,
+          "p50_ms": 6.737167,
+          "p95_ms": 173.169917,
+          "max_ms": 2521.213958
+        },
+        "dispatch.OK.call": {
+          "count": 306,
+          "mean_ms": 749.8535112843136,
+          "p50_ms": 258.397,
+          "p95_ms": 3246.298083,
+          "max_ms": 16115.648083
+        },
+        "dispatch.OK.commit": {
+          "count": 306,
+          "mean_ms": 10.108001640522875,
+          "p50_ms": 4.347459,
+          "p95_ms": 35.529291,
+          "max_ms": 201.372958
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 306,
+          "mean_ms": 18.602821751633986,
+          "p50_ms": 0.011791,
+          "p95_ms": 6.956792,
+          "max_ms": 1621.887125
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 306,
+          "mean_ms": 258.05823954575163,
+          "p50_ms": 99.517208,
+          "p95_ms": 1120.401833,
+          "max_ms": 4875.033834
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 306,
+          "mean_ms": 233.70775937254902,
+          "p50_ms": 88.019958,
+          "p95_ms": 1061.334167,
+          "max_ms": 4058.064667
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 306,
+          "mean_ms": 130.02919295751633,
+          "p50_ms": 35.029916,
+          "p95_ms": 556.327125,
+          "max_ms": 3416.346875
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 306,
+          "mean_ms": 16.35129835620915,
+          "p50_ms": 6.883709,
+          "p95_ms": 46.962166,
+          "max_ms": 648.479584
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 306,
+          "mean_ms": 26.367188156862746,
+          "p50_ms": 8.213209,
+          "p95_ms": 97.932625,
+          "max_ms": 742.358
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 306,
+          "mean_ms": 24.326043859477124,
+          "p50_ms": 8.003917,
+          "p95_ms": 81.91675,
+          "max_ms": 816.77475
+        },
+        "dispatch.OK.sql.update": {
+          "count": 306,
+          "mean_ms": 46.29482163071896,
+          "p50_ms": 20.953875,
+          "p95_ms": 143.786208,
+          "max_ms": 1467.938584
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 306,
+          "mean_ms": 429.26421965686274,
+          "p50_ms": 118.794125,
+          "p95_ms": 1423.941208,
+          "max_ms": 15395.863167
+        },
+        "dispatch.OK.transaction": {
+          "count": 306,
+          "mean_ms": 730.7887636176471,
+          "p50_ms": 251.151333,
+          "p95_ms": 3138.404334,
+          "max_ms": 16107.851
+        },
+        "finish.ERROR.all_transaction_attempts": {
+          "count": 2,
+          "mean_ms": 7305.577417,
+          "p50_ms": 9552.320334,
+          "p95_ms": 5058.8345,
+          "max_ms": 9552.320334
+        },
+        "finish.ERROR.begin": {
+          "count": 9,
+          "mean_ms": 307.8227962222222,
+          "p50_ms": 72.538458,
+          "p95_ms": 591.258959,
+          "max_ms": 1799.624458
+        },
+        "finish.ERROR.call": {
+          "count": 9,
+          "mean_ms": 6382.411352,
+          "p50_ms": 5733.108666,
+          "p95_ms": 7389.103667,
+          "max_ms": 9615.617084
+        },
+        "finish.ERROR.connection_acquire": {
+          "count": 9,
+          "mean_ms": 204.26288433333335,
+          "p50_ms": 0.018333,
+          "p95_ms": 319.562625,
+          "max_ms": 1518.656
+        },
+        "finish.ERROR.lock_held_lower_bound": {
+          "count": 2,
+          "mean_ms": 1063.1689585,
+          "p50_ms": 2084.945209,
+          "p95_ms": 41.392708,
+          "max_ms": 2084.945209
+        },
+        "finish.ERROR.principal_held_lower_bound": {
+          "count": 1,
+          "mean_ms": 2082.413666,
+          "p50_ms": 2082.413666,
+          "p95_ms": 2082.413666,
+          "max_ms": 2082.413666
+        },
+        "finish.ERROR.rollback": {
+          "count": 2,
+          "mean_ms": 0.0080835,
+          "p50_ms": 0.01225,
+          "p95_ms": 0.003917,
+          "max_ms": 0.01225
+        },
+        "finish.ERROR.sql.capacity_batch": {
+          "count": 2,
+          "mean_ms": 3581.93525,
+          "p50_ms": 5601.189292,
+          "p95_ms": 1562.681208,
+          "max_ms": 5601.189292
+        },
+        "finish.ERROR.sql.instance_lock": {
+          "count": 3,
+          "mean_ms": 284.21588933333334,
+          "p50_ms": 66.292625,
+          "p95_ms": 66.292625,
+          "max_ms": 778.061084
+        },
+        "finish.ERROR.sql.lease_lock": {
+          "count": 2,
+          "mean_ms": 105.8664995,
+          "p50_ms": 195.881583,
+          "p95_ms": 15.851416,
+          "max_ms": 195.881583
+        },
+        "finish.ERROR.sql.principal_lock": {
+          "count": 3,
+          "mean_ms": 282.166847,
+          "p50_ms": 13.052625,
+          "p95_ms": 13.052625,
+          "max_ms": 830.919916
+        },
+        "finish.ERROR.sql.update": {
+          "count": 2,
+          "mean_ms": 133.9031255,
+          "p50_ms": 257.481709,
+          "p95_ms": 10.324542,
+          "max_ms": 257.481709
+        },
+        "finish.ERROR.sql.user_lock": {
+          "count": 9,
+          "mean_ms": 4815.012838111111,
+          "p50_ms": 5660.469375,
+          "p95_ms": 7273.225292,
+          "max_ms": 9430.952209
+        },
+        "finish.ERROR.transaction": {
+          "count": 2,
+          "mean_ms": 7305.577417,
+          "p50_ms": 9552.320334,
+          "p95_ms": 5058.8345,
+          "max_ms": 9552.320334
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 297,
+          "mean_ms": 620.804528925926,
+          "p50_ms": 363.237416,
+          "p95_ms": 2245.528917,
+          "max_ms": 4981.869042
+        },
+        "finish.OK.begin": {
+          "count": 297,
+          "mean_ms": 24.37746229292929,
+          "p50_ms": 6.362667,
+          "p95_ms": 67.908,
+          "max_ms": 1479.539042
+        },
+        "finish.OK.call": {
+          "count": 297,
+          "mean_ms": 631.20790293266,
+          "p50_ms": 365.650042,
+          "p95_ms": 2411.155375,
+          "max_ms": 4982.105875
+        },
+        "finish.OK.commit": {
+          "count": 297,
+          "mean_ms": 8.299110383838384,
+          "p50_ms": 3.961125,
+          "p95_ms": 24.228167,
+          "max_ms": 390.64325
+        },
+        "finish.OK.connection_acquire": {
+          "count": 297,
+          "mean_ms": 10.296499013468013,
+          "p50_ms": 0.008708,
+          "p95_ms": 8.661583,
+          "max_ms": 770.271583
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 297,
+          "mean_ms": 192.69295551851852,
+          "p50_ms": 98.937334,
+          "p95_ms": 697.447584,
+          "max_ms": 2979.758459
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 297,
+          "mean_ms": 165.62211168350169,
+          "p50_ms": 86.860375,
+          "p95_ms": 553.511583,
+          "max_ms": 2971.765708
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 297,
+          "mean_ms": 42.65851767676768,
+          "p50_ms": 16.600833,
+          "p95_ms": 154.857583,
+          "max_ms": 870.038125
+        },
+        "finish.OK.sql.insert": {
+          "count": 297,
+          "mean_ms": 59.141616447811444,
+          "p50_ms": 24.604625,
+          "p95_ms": 195.202334,
+          "max_ms": 2287.103375
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 297,
+          "mean_ms": 15.705409373737375,
+          "p50_ms": 6.862834,
+          "p95_ms": 58.251208,
+          "max_ms": 568.797959
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 297,
+          "mean_ms": 20.880203582491585,
+          "p50_ms": 10.066917,
+          "p95_ms": 50.562084,
+          "max_ms": 1197.511709
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 297,
+          "mean_ms": 26.949461181818183,
+          "p50_ms": 9.342958,
+          "p95_ms": 73.933333,
+          "max_ms": 1328.368125
+        },
+        "finish.OK.sql.update": {
+          "count": 297,
+          "mean_ms": 14.537919164983165,
+          "p50_ms": 7.162458,
+          "p95_ms": 45.566375,
+          "max_ms": 287.850042
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 297,
+          "mean_ms": 403.2846106599327,
+          "p50_ms": 217.577541,
+          "p95_ms": 1588.750917,
+          "max_ms": 3949.254084
+        },
+        "finish.OK.transaction": {
+          "count": 297,
+          "mean_ms": 620.804528925926,
+          "p50_ms": 363.237416,
+          "p95_ms": 2245.528917,
+          "max_ms": 4981.869042
+        },
+        "first_wait_to_admit": {
+          "count": 89,
+          "mean_ms": 8964.754576797752,
+          "p50_ms": 9018.750917,
+          "p95_ms": 13833.500875,
+          "max_ms": 14923.630083
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 6,
+          "mean_ms": 704.6166733333333,
+          "p50_ms": 920.024,
+          "p95_ms": 1347.033875,
+          "max_ms": 1407.30925
+        },
+        "heartbeat.OK.begin": {
+          "count": 6,
+          "mean_ms": 146.53419416666665,
+          "p50_ms": 138.294583,
+          "p95_ms": 331.763958,
+          "max_ms": 352.07475
+        },
+        "heartbeat.OK.call": {
+          "count": 6,
+          "mean_ms": 705.4484725,
+          "p50_ms": 920.071459,
+          "p95_ms": 1347.616542,
+          "max_ms": 1409.042875
+        },
+        "heartbeat.OK.commit": {
+          "count": 6,
+          "mean_ms": 30.857666833333333,
+          "p50_ms": 14.423709,
+          "p95_ms": 15.879667,
+          "max_ms": 131.882
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 6,
+          "mean_ms": 0.4053893333333333,
+          "p50_ms": 0.029792,
+          "p95_ms": 0.079542,
+          "max_ms": 2.269667
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 6,
+          "mean_ms": 252.47670833333333,
+          "p50_ms": 84.380042,
+          "p95_ms": 231.001917,
+          "max_ms": 1061.344083
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 6,
+          "mean_ms": 222.950229,
+          "p50_ms": 55.655792,
+          "p95_ms": 190.44,
+          "max_ms": 978.44625
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 6,
+          "mean_ms": 22.11341666666667,
+          "p50_ms": 17.347916,
+          "p95_ms": 28.281458,
+          "max_ms": 74.32275
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 6,
+          "mean_ms": 18.975764,
+          "p50_ms": 12.003542,
+          "p95_ms": 32.861209,
+          "max_ms": 47.837666
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 6,
+          "mean_ms": 29.50782633333333,
+          "p50_ms": 40.163667,
+          "p95_ms": 40.551416,
+          "max_ms": 82.853041
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 6,
+          "mean_ms": 53.451715,
+          "p50_ms": 39.0275,
+          "p95_ms": 98.355583,
+          "max_ms": 156.276541
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 6,
+          "mean_ms": 304.9911456666667,
+          "p50_ms": 295.882833,
+          "p95_ms": 697.333333,
+          "max_ms": 761.14775
+        },
+        "heartbeat.OK.transaction": {
+          "count": 6,
+          "mean_ms": 704.6166733333333,
+          "p50_ms": 920.024,
+          "p95_ms": 1347.033875,
+          "max_ms": 1407.30925
+        },
+        "steady_arrival_jitter": {
+          "count": 342,
+          "mean_ms": 0.08749730994152047,
+          "p50_ms": 0.000625,
+          "p95_ms": 0.036417,
+          "max_ms": 12.354417
+        }
+      },
+      "effective_admission_commits_per_second": 0.5038154230811179,
+      "elapsed_seconds": 607.365288916,
+      "errors": [
+        "finish: context deadline exceeded",
+        "finish: context deadline exceeded",
+        "finish: pq: canceling statement due to user request",
+        "finish: context deadline exceeded",
+        "finish: pq: canceling statement due to user request",
+        "finish: pq: canceling statement due to user request",
+        "finish: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "finish: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "admit: context deadline exceeded",
+        "finish: pq: canceling statement due to user request",
+        "admit: context deadline exceeded"
+      ],
+      "final_lease_states": {
+        "DISPATCHING": 9,
+        "RELEASED": 297
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 351,
+      "idle_capacity_with_live_offer_sample_seconds": 112.30000000000001,
+      "idle_capacity_with_live_offer_samples": 2246,
+      "mock_utilization": 0.048737885701094094,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 10972,
+        "admit.ADMITTED.commit": 306,
+        "admit.ADMITTED.rollback": 10666,
+        "admit.ADMITTED.transaction.committed": 306,
+        "admit.ADMITTED.transaction.rolled_back": 10666,
+        "admit.ADMITTED.try_lock.acquired": 306,
+        "admit.ADMITTED.try_lock.missed": 10666,
+        "admit.REJECTED.begin": 6062,
+        "admit.REJECTED.rollback": 6062,
+        "admit.REJECTED.transaction.rolled_back": 6062,
+        "admit.REJECTED.try_lock.acquired": 125,
+        "admit.REJECTED.try_lock.missed": 5937,
+        "admit.WAIT.begin": 12001,
+        "admit.WAIT.commit": 318,
+        "admit.WAIT.rollback": 11683,
+        "admit.WAIT.transaction.committed": 318,
+        "admit.WAIT.transaction.rolled_back": 11683,
+        "admit.WAIT.try_lock.acquired": 318,
+        "admit.WAIT.try_lock.missed": 11683,
+        "dispatch.OK.begin": 306,
+        "dispatch.OK.commit": 306,
+        "dispatch.OK.transaction.committed": 306,
+        "finish.ERROR.begin": 9,
+        "finish.ERROR.rollback": 2,
+        "finish.ERROR.transaction.rollback_error": 2,
+        "finish.OK.begin": 297,
+        "finish.OK.commit": 297,
+        "finish.OK.transaction.committed": 297,
+        "heartbeat.OK.begin": 6,
+        "heartbeat.OK.commit": 6,
+        "heartbeat.OK.transaction.committed": 6
+      },
+      "over": 0,
+      "peak_mock": 6,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 294,
+        "sql.authorization/Client/ClientRead": 4,
+        "sql.candidate_lock/CPU/": 233,
+        "sql.candidate_lock/Client/ClientRead": 12,
+        "sql.capacity_batch/CPU/": 418,
+        "sql.capacity_batch/Client/ClientRead": 4,
+        "sql.capacity_batch/IO/DataFileExtend": 2,
+        "sql.capacity_batch/LWLock/BufferContent": 1,
+        "sql.dispatch_check/CPU/": 491,
+        "sql.idempotency/CPU/": 68,
+        "sql.idempotency/Client/ClientRead": 4,
+        "sql.insert/CPU/": 570,
+        "sql.insert/Client/ClientRead": 14,
+        "sql.instance_lock/CPU/": 33,
+        "sql.instance_lock/Client/ClientRead": 3,
+        "sql.lease_lock/CPU/": 115,
+        "sql.lease_lock/Client/ClientRead": 6,
+        "sql.ledger_check/CPU/": 205,
+        "sql.ledger_check/Client/ClientRead": 5,
+        "sql.other/CPU/": 1775,
+        "sql.other/Client/ClientRead": 164,
+        "sql.other/IO/WalWrite": 23,
+        "sql.other/LWLock/BufferContent": 4,
+        "sql.other/LWLock/LockManager": 1,
+        "sql.principal_lock/CPU/": 205,
+        "sql.principal_lock/Client/ClientRead": 9,
+        "sql.principal_lock/Lock/transactionid": 132,
+        "sql.quota/CPU/": 138,
+        "sql.quota/Client/ClientRead": 11,
+        "sql.snapshot/CPU/": 48,
+        "sql.snapshot/Client/ClientRead": 5,
+        "sql.ticket_cleanup/CPU/": 72,
+        "sql.ticket_cleanup/Client/ClientRead": 3,
+        "sql.ticket_cleanup/IO/DataFileExtend": 1,
+        "sql.ticket_read/CPU/": 70,
+        "sql.ticket_read/Client/ClientRead": 10,
+        "sql.try_advisory_lock/CPU/": 290,
+        "sql.try_advisory_lock/Client/ClientRead": 152,
+        "sql.try_advisory_lock/LWLock/LockManager": 28,
+        "sql.update/CPU/": 391,
+        "sql.update/Client/ClientRead": 17,
+        "sql.user_ensure/CPU/": 187,
+        "sql.user_ensure/Client/ClientRead": 2,
+        "sql.user_ensure/LWLock/BufferContent": 8,
+        "sql.user_ensure/Lock/transactionid": 3,
+        "sql.user_lock/CPU/": 717,
+        "sql.user_lock/Client/ClientRead": 9,
+        "sql.user_lock/IO/WalWrite": 1,
+        "sql.user_lock/LWLock/BufferContent": 9,
+        "sql.user_lock/LWLock/LockManager": 2,
+        "sql.user_lock/LWLock/XidGen": 1,
+        "sql.user_lock/Lock/transactionid": 3853,
+        "sql.user_lock/Lock/tuple": 1925,
+        "sql.wall_clock/CPU/": 22,
+        "sql.wall_clock/Client/ClientRead": 3
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 17,
+          "wait_ms": 4867.307209
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 3,
+          "wait_ms": 261.804584
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 7,
+          "wait_ms": 577.913667
+        }
+      ],
+      "queue_control_sql_calls": 12359,
+      "queue_sql_per_dispatch": 99.44117647058823,
+      "requests": 459,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 16936,
+        "admit.ERROR": 0,
+        "admit.REJECTED": 7478,
+        "admit.WAIT": 18070,
+        "dispatch.OK": 2142,
+        "finish.ERROR": 21,
+        "finish.OK": 2376,
+        "heartbeat.OK": 30
+      },
+      "successful_admissions_per_advisory_attempt": 0.010539004649560875,
+      "timeout_count": 125,
+      "timeout_rate": 0.27233115468409586,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 56.415496181956605,
+        "attempts": 34151,
+        "background_sql_wall_ms": 234435.993919,
+        "commits": 2210,
+        "errors": 25,
+        "rollbacks": 31916,
+        "try_lock_acquired": 1674,
+        "try_lock_attempts": 33384,
+        "try_lock_misses": 31710
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.010539004649560875,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "FAIL",
+      "retained_occupancy": 9
+    },
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 690504,
+      "capacity_samples": 12203,
+      "case": "C50_I3",
+      "dispatch_per_second": 20.083912069882018,
+      "dispatches": 12276,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 12276,
+          "mean_ms": 68.91981695731509,
+          "p50_ms": 33.066583,
+          "p95_ms": 254.154377,
+          "max_ms": 2925.918956
+        },
+        "admit.ADMITTED.begin": {
+          "count": 12276,
+          "mean_ms": 8.257985600032583,
+          "p50_ms": 0.359041,
+          "p95_ms": 46.942707,
+          "max_ms": 884.672128
+        },
+        "admit.ADMITTED.call": {
+          "count": 12276,
+          "mean_ms": 1349.781019833089,
+          "p50_ms": 492.544458,
+          "p95_ms": 5236.547833,
+          "max_ms": 12134.3995
+        },
+        "admit.ADMITTED.commit": {
+          "count": 12276,
+          "mean_ms": 0.5291012777777777,
+          "p50_ms": 0.320791,
+          "p95_ms": 1.397959,
+          "max_ms": 94.398083
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 21.406253947784293,
+          "p50_ms": 16.193208,
+          "p95_ms": 47.490583,
+          "max_ms": 828.396708
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 12276,
+          "mean_ms": 1308.1692355473283,
+          "p50_ms": 464.494583,
+          "p95_ms": 5157.586875,
+          "max_ms": 12089.519
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 20.27800236469534,
+          "p50_ms": 15.506417,
+          "p95_ms": 44.760875,
+          "max_ms": 827.022125
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 3265,
+          "mean_ms": 21.998654967840736,
+          "p50_ms": 9.503584,
+          "p95_ms": 84.960672,
+          "max_ms": 414.841582
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 12276,
+          "mean_ms": 2.0169671714727926,
+          "p50_ms": 1.357959,
+          "p95_ms": 4.961375,
+          "max_ms": 545.425083
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 12276,
+          "mean_ms": 1.7401846174649722,
+          "p50_ms": 1.213333,
+          "p95_ms": 4.326375,
+          "max_ms": 185.738792
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 12276,
+          "mean_ms": 1.789857664548713,
+          "p50_ms": 1.220834,
+          "p95_ms": 4.592709,
+          "max_ms": 127.683083
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 12276,
+          "mean_ms": 1.01608382771261,
+          "p50_ms": 0.649292,
+          "p95_ms": 2.630875,
+          "max_ms": 54.779875
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 12276,
+          "mean_ms": 3.2195628845715216,
+          "p50_ms": 2.154958,
+          "p95_ms": 8.81375,
+          "max_ms": 81.758584
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 12276,
+          "mean_ms": 1.5498114500651679,
+          "p50_ms": 1.027459,
+          "p95_ms": 4.220875,
+          "max_ms": 83.590417
+        },
+        "admit.ADMITTED.sql.other": {
+          "count": 3837,
+          "mean_ms": 0.5282783025801407,
+          "p50_ms": 0.472333,
+          "p95_ms": 0.77325,
+          "max_ms": 45.227125
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 12276,
+          "mean_ms": 1.123579083414793,
+          "p50_ms": 0.72475,
+          "p95_ms": 2.9765,
+          "max_ms": 99.19825
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 12276,
+          "mean_ms": 1.3580064147930924,
+          "p50_ms": 1.087083,
+          "p95_ms": 3.059792,
+          "max_ms": 59.616791
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 12276,
+          "mean_ms": 1.4343278198924732,
+          "p50_ms": 1.013,
+          "p95_ms": 3.669583,
+          "max_ms": 52.709875
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 12276,
+          "mean_ms": 0.8409375826001956,
+          "p50_ms": 0.57225,
+          "p95_ms": 2.125,
+          "max_ms": 34.369583
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 12276,
+          "mean_ms": 3.075147702427501,
+          "p50_ms": 1.920167,
+          "p95_ms": 7.065834,
+          "max_ms": 39.020793
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 12276,
+          "mean_ms": 14.506597083740633,
+          "p50_ms": 0.751,
+          "p95_ms": 84.089171,
+          "max_ms": 871.613537
+        },
+        "admit.ADMITTED.sql.update": {
+          "count": 3837,
+          "mean_ms": 0.8660722147511076,
+          "p50_ms": 0.566958,
+          "p95_ms": 1.692417,
+          "max_ms": 8.627667
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 12276,
+          "mean_ms": 1.2083966194200064,
+          "p50_ms": 0.655791,
+          "p95_ms": 3.666209,
+          "max_ms": 151.782875
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 12276,
+          "mean_ms": 17.56761268499511,
+          "p50_ms": 10.972792,
+          "p95_ms": 55.551708,
+          "max_ms": 842.007792
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 12276,
+          "mean_ms": 1.1637478207885303,
+          "p50_ms": 0.7905,
+          "p95_ms": 3.0355,
+          "max_ms": 28.533041
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 12276,
+          "mean_ms": 41.588595283072664,
+          "p50_ms": 28.266334,
+          "p95_ms": 107.422,
+          "max_ms": 1135.359959
+        },
+        "admit.ERROR.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.REJECTED.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.WAIT.all_transaction_attempts": {
+          "count": 3876,
+          "mean_ms": 28.57625627863777,
+          "p50_ms": 20.137042,
+          "p95_ms": 72.970374,
+          "max_ms": 404.89163
+        },
+        "admit.WAIT.begin": {
+          "count": 3876,
+          "mean_ms": 2.5327535201238387,
+          "p50_ms": 0.189792,
+          "p95_ms": 13.620581,
+          "max_ms": 113.419958
+        },
+        "admit.WAIT.call": {
+          "count": 3876,
+          "mean_ms": 1202.0027780198657,
+          "p50_ms": 923.121416,
+          "p95_ms": 3291.414167,
+          "max_ms": 7768.837709
+        },
+        "admit.WAIT.commit": {
+          "count": 3876,
+          "mean_ms": 0.24743027734778122,
+          "p50_ms": 0.224375,
+          "p95_ms": 0.378917,
+          "max_ms": 1.487
+        },
+        "admit.WAIT.lock_held_lower_bound": {
+          "count": 3876,
+          "mean_ms": 14.682597823013415,
+          "p50_ms": 13.492625,
+          "p95_ms": 22.4345,
+          "max_ms": 78.856375
+        },
+        "admit.WAIT.pre_transaction_wait": {
+          "count": 3876,
+          "mean_ms": 1181.7916923142413,
+          "p50_ms": 902.4335,
+          "p95_ms": 3267.752291,
+          "max_ms": 7744.390667
+        },
+        "admit.WAIT.principal_held_lower_bound": {
+          "count": 3876,
+          "mean_ms": 14.148644497162024,
+          "p50_ms": 13.016375,
+          "p95_ms": 21.578125,
+          "max_ms": 77.420833
+        },
+        "admit.WAIT.rollback": {
+          "count": 1090,
+          "mean_ms": 6.71198730733945,
+          "p50_ms": 4.260334,
+          "p95_ms": 19.795458,
+          "max_ms": 112.683669
+        },
+        "admit.WAIT.sql.authorization": {
+          "count": 3876,
+          "mean_ms": 1.0568350753353974,
+          "p50_ms": 0.966709,
+          "p95_ms": 1.587667,
+          "max_ms": 17.951375
+        },
+        "admit.WAIT.sql.candidate_lock": {
+          "count": 3876,
+          "mean_ms": 0.9495387876676987,
+          "p50_ms": 0.854291,
+          "p95_ms": 1.467,
+          "max_ms": 12.172083
+        },
+        "admit.WAIT.sql.idempotency": {
+          "count": 3876,
+          "mean_ms": 0.5307299022187822,
+          "p50_ms": 0.473208,
+          "p95_ms": 0.838958,
+          "max_ms": 7.592792
+        },
+        "admit.WAIT.sql.insert": {
+          "count": 3876,
+          "mean_ms": 1.2935145975232198,
+          "p50_ms": 1.170583,
+          "p95_ms": 2.029458,
+          "max_ms": 13.510084
+        },
+        "admit.WAIT.sql.ledger_check": {
+          "count": 3876,
+          "mean_ms": 0.780431326625387,
+          "p50_ms": 0.701,
+          "p95_ms": 1.23975,
+          "max_ms": 7.434542
+        },
+        "admit.WAIT.sql.other": {
+          "count": 3872,
+          "mean_ms": 0.5166939630681818,
+          "p50_ms": 0.472875,
+          "p95_ms": 0.757917,
+          "max_ms": 9.063917
+        },
+        "admit.WAIT.sql.principal_lock": {
+          "count": 3876,
+          "mean_ms": 0.5316847791537668,
+          "p50_ms": 0.478167,
+          "p95_ms": 0.867875,
+          "max_ms": 5.977459
+        },
+        "admit.WAIT.sql.quota": {
+          "count": 3876,
+          "mean_ms": 1.2806110828173374,
+          "p50_ms": 1.165459,
+          "p95_ms": 1.993208,
+          "max_ms": 14.479542
+        },
+        "admit.WAIT.sql.ticket_cleanup": {
+          "count": 3876,
+          "mean_ms": 0.47974174664602687,
+          "p50_ms": 0.4335,
+          "p95_ms": 0.722583,
+          "max_ms": 6.288541
+        },
+        "admit.WAIT.sql.ticket_read": {
+          "count": 3876,
+          "mean_ms": 5.91448709004128,
+          "p50_ms": 5.465917,
+          "p95_ms": 8.758209,
+          "max_ms": 36.921168
+        },
+        "admit.WAIT.sql.try_advisory_lock": {
+          "count": 3876,
+          "mean_ms": 4.548195476780186,
+          "p50_ms": 0.386083,
+          "p95_ms": 24.596787,
+          "max_ms": 155.059661
+        },
+        "admit.WAIT.sql.update": {
+          "count": 3872,
+          "mean_ms": 0.8067075986570248,
+          "p50_ms": 0.499417,
+          "p95_ms": 1.665542,
+          "max_ms": 13.473333
+        },
+        "admit.WAIT.sql.user_ensure": {
+          "count": 3876,
+          "mean_ms": 0.4994339171826625,
+          "p50_ms": 0.4255,
+          "p95_ms": 0.923916,
+          "max_ms": 11.173542
+        },
+        "admit.WAIT.sql.user_lock": {
+          "count": 3876,
+          "mean_ms": 4.38817503250774,
+          "p50_ms": 3.692334,
+          "p95_ms": 11.771125,
+          "max_ms": 199.357709
+        },
+        "admit.WAIT.sql.wall_clock": {
+          "count": 3876,
+          "mean_ms": 0.2423871818885449,
+          "p50_ms": 0.213667,
+          "p95_ms": 0.377083,
+          "max_ms": 4.359
+        },
+        "admit.WAIT.transaction": {
+          "count": 3876,
+          "mean_ms": 20.20290033978328,
+          "p50_ms": 18.48275,
+          "p95_ms": 33.096375,
+          "max_ms": 249.346209
+        },
+        "arrival_to_admit": {
+          "count": 12276,
+          "mean_ms": 1778.010146923998,
+          "p50_ms": 1259.201791,
+          "p95_ms": 5424.461583,
+          "max_ms": 12134.413458
+        },
+        "arrival_to_dispatch": {
+          "count": 12276,
+          "mean_ms": 1804.274699154855,
+          "p50_ms": 1278.703417,
+          "p95_ms": 5491.592625,
+          "max_ms": 12155.126958
+        },
+        "arrival_to_finish": {
+          "count": 12276,
+          "mean_ms": 2801.3294136611275,
+          "p50_ms": 2141.727375,
+          "p95_ms": 7664.178916,
+          "max_ms": 20582.656834
+        },
+        "burst_arrival_jitter": {
+          "count": 477,
+          "mean_ms": 1.339439035639413,
+          "p50_ms": 0.800791,
+          "p95_ms": 3.038333,
+          "max_ms": 4.413333
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 12276,
+          "mean_ms": 24.929755328771588,
+          "p50_ms": 13.56925,
+          "p95_ms": 83.696459,
+          "max_ms": 1519.04
+        },
+        "dispatch.OK.begin": {
+          "count": 12276,
+          "mean_ms": 0.6808198862007169,
+          "p50_ms": 0.333958,
+          "p95_ms": 2.114833,
+          "max_ms": 60.962708
+        },
+        "dispatch.OK.call": {
+          "count": 12276,
+          "mean_ms": 26.250310498126424,
+          "p50_ms": 13.583083,
+          "p95_ms": 90.421958,
+          "max_ms": 1519.088875
+        },
+        "dispatch.OK.commit": {
+          "count": 12276,
+          "mean_ms": 0.53425251010101,
+          "p50_ms": 0.33075,
+          "p95_ms": 1.457167,
+          "max_ms": 37.085458
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 12276,
+          "mean_ms": 1.3156022492668622,
+          "p50_ms": 0.002,
+          "p95_ms": 2.624333,
+          "max_ms": 705.869166
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 11.215236360948191,
+          "p50_ms": 7.7095,
+          "p95_ms": 28.128083,
+          "max_ms": 474.3195
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 10.034571382127728,
+          "p50_ms": 6.7665,
+          "p95_ms": 25.335834,
+          "max_ms": 459.499416
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 12276,
+          "mean_ms": 5.097602583903552,
+          "p50_ms": 3.331417,
+          "p95_ms": 13.414542,
+          "max_ms": 319.697042
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 12276,
+          "mean_ms": 0.9048023339850114,
+          "p50_ms": 0.588541,
+          "p95_ms": 2.467333,
+          "max_ms": 27.7095
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 12276,
+          "mean_ms": 1.0778896808406648,
+          "p50_ms": 0.676375,
+          "p95_ms": 2.901708,
+          "max_ms": 99.397875
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 12276,
+          "mean_ms": 1.1777697719126752,
+          "p50_ms": 0.672875,
+          "p95_ms": 3.933125,
+          "max_ms": 32.023667
+        },
+        "dispatch.OK.sql.update": {
+          "count": 12276,
+          "mean_ms": 2.387918884490062,
+          "p50_ms": 1.616667,
+          "p95_ms": 6.111333,
+          "max_ms": 85.321083
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 12276,
+          "mean_ms": 13.02912036836103,
+          "p50_ms": 5.077042,
+          "p95_ms": 53.5245,
+          "max_ms": 1054.56025
+        },
+        "dispatch.OK.transaction": {
+          "count": 12276,
+          "mean_ms": 24.929755328771588,
+          "p50_ms": 13.56925,
+          "p95_ms": 83.696459,
+          "max_ms": 1519.04
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 12276,
+          "mean_ms": 36.315900202916254,
+          "p50_ms": 22.143917,
+          "p95_ms": 111.043584,
+          "max_ms": 1273.109875
+        },
+        "finish.OK.begin": {
+          "count": 12276,
+          "mean_ms": 0.848657196643858,
+          "p50_ms": 0.341208,
+          "p95_ms": 2.810375,
+          "max_ms": 123.507
+        },
+        "finish.OK.call": {
+          "count": 12276,
+          "mean_ms": 38.43152290632128,
+          "p50_ms": 22.256084,
+          "p95_ms": 119.347583,
+          "max_ms": 1916.747791
+        },
+        "finish.OK.commit": {
+          "count": 12276,
+          "mean_ms": 0.5340716459758879,
+          "p50_ms": 0.320333,
+          "p95_ms": 1.488,
+          "max_ms": 23.585083
+        },
+        "finish.OK.connection_acquire": {
+          "count": 12276,
+          "mean_ms": 2.109567592293907,
+          "p50_ms": 0.002167,
+          "p95_ms": 3.196125,
+          "max_ms": 951.069042
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 9.720997994460735,
+          "p50_ms": 6.416583,
+          "p95_ms": 25.47725,
+          "max_ms": 281.164416
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 12276,
+          "mean_ms": 8.35813456109482,
+          "p50_ms": 5.42375,
+          "p95_ms": 22.037833,
+          "max_ms": 242.908708
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 12276,
+          "mean_ms": 2.203295538856305,
+          "p50_ms": 1.368292,
+          "p95_ms": 6.154917,
+          "max_ms": 121.117
+        },
+        "finish.OK.sql.insert": {
+          "count": 12276,
+          "mean_ms": 2.2748106204789833,
+          "p50_ms": 1.427751,
+          "p95_ms": 6.334417,
+          "max_ms": 109.864124
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 12276,
+          "mean_ms": 1.1075601169762137,
+          "p50_ms": 0.696917,
+          "p95_ms": 3.211709,
+          "max_ms": 47.574292
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 12276,
+          "mean_ms": 1.2432326081785596,
+          "p50_ms": 0.756791,
+          "p95_ms": 3.520208,
+          "max_ms": 93.962708
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 12276,
+          "mean_ms": 1.3599558040078201,
+          "p50_ms": 0.837167,
+          "p95_ms": 3.969292,
+          "max_ms": 44.971834
+        },
+        "finish.OK.sql.update": {
+          "count": 12276,
+          "mean_ms": 0.9496867768002607,
+          "p50_ms": 0.589166,
+          "p95_ms": 2.601583,
+          "max_ms": 86.821917
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 12276,
+          "mean_ms": 25.73878806427175,
+          "p50_ms": 15.24325,
+          "p95_ms": 83.821959,
+          "max_ms": 1029.1025
+        },
+        "finish.OK.transaction": {
+          "count": 12276,
+          "mean_ms": 36.315900202916254,
+          "p50_ms": 22.143917,
+          "p95_ms": 111.043584,
+          "max_ms": 1273.109875
+        },
+        "first_wait_to_admit": {
+          "count": 3825,
+          "mean_ms": 403.37141868496735,
+          "p50_ms": 315.467,
+          "p95_ms": 971.98575,
+          "max_ms": 4810.6235
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 240,
+          "mean_ms": 36.55523925,
+          "p50_ms": 22.944042,
+          "p95_ms": 113.482083,
+          "max_ms": 203.346959
+        },
+        "heartbeat.OK.begin": {
+          "count": 240,
+          "mean_ms": 1.0955159625,
+          "p50_ms": 0.435208,
+          "p95_ms": 3.5655,
+          "max_ms": 24.634834
+        },
+        "heartbeat.OK.call": {
+          "count": 240,
+          "mean_ms": 38.459039579166664,
+          "p50_ms": 23.108458,
+          "p95_ms": 118.561292,
+          "max_ms": 263.763958
+        },
+        "heartbeat.OK.commit": {
+          "count": 240,
+          "mean_ms": 0.5878897875,
+          "p50_ms": 0.386417,
+          "p95_ms": 1.898208,
+          "max_ms": 5.709209
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 240,
+          "mean_ms": 1.8944036291666666,
+          "p50_ms": 0.002833,
+          "p95_ms": 2.933458,
+          "max_ms": 103.647333
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 240,
+          "mean_ms": 6.818272220833333,
+          "p50_ms": 4.305583,
+          "p95_ms": 16.799875,
+          "max_ms": 84.408708
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 240,
+          "mean_ms": 5.307223470833333,
+          "p50_ms": 3.241209,
+          "p95_ms": 13.669708,
+          "max_ms": 77.866916
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 240,
+          "mean_ms": 1.1947581791666666,
+          "p50_ms": 0.750375,
+          "p95_ms": 2.976459,
+          "max_ms": 15.598167
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 240,
+          "mean_ms": 1.5252106083333334,
+          "p50_ms": 0.891125,
+          "p95_ms": 4.066875,
+          "max_ms": 25.684958
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 240,
+          "mean_ms": 1.5072515708333334,
+          "p50_ms": 0.9525,
+          "p95_ms": 4.168709,
+          "max_ms": 9.959417
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 240,
+          "mean_ms": 1.9801996375,
+          "p50_ms": 1.039875,
+          "p95_ms": 6.528583,
+          "max_ms": 46.987125
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 240,
+          "mean_ms": 28.637947216666664,
+          "p50_ms": 18.637959,
+          "p95_ms": 94.326333,
+          "max_ms": 194.663083
+        },
+        "heartbeat.OK.transaction": {
+          "count": 240,
+          "mean_ms": 36.55523925,
+          "p50_ms": 22.944042,
+          "p95_ms": 113.482083,
+          "max_ms": 203.346959
+        },
+        "steady_arrival_jitter": {
+          "count": 11808,
+          "mean_ms": 0.0006326550643631437,
+          "p50_ms": 0.00025,
+          "p95_ms": 0.001292,
+          "max_ms": 1.332541
+        }
+      },
+      "effective_admission_commits_per_second": 20.083912069882018,
+      "elapsed_seconds": 611.235498208,
+      "errors": null,
+      "final_lease_states": {
+        "RELEASED": 12276
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 599,
+      "idle_capacity_with_live_offer_sample_seconds": 178.70000000000002,
+      "idle_capacity_with_live_offer_samples": 3574,
+      "mock_utilization": 0.38488017916041406,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 136680,
+        "admit.ADMITTED.commit": 12276,
+        "admit.ADMITTED.rollback": 124404,
+        "admit.ADMITTED.transaction.committed": 12276,
+        "admit.ADMITTED.transaction.rolled_back": 124404,
+        "admit.ADMITTED.try_lock.acquired": 12276,
+        "admit.ADMITTED.try_lock.missed": 124404,
+        "admit.WAIT.begin": 36463,
+        "admit.WAIT.commit": 3876,
+        "admit.WAIT.rollback": 32587,
+        "admit.WAIT.transaction.committed": 3876,
+        "admit.WAIT.transaction.rolled_back": 32587,
+        "admit.WAIT.try_lock.acquired": 3876,
+        "admit.WAIT.try_lock.missed": 32587,
+        "dispatch.OK.begin": 12276,
+        "dispatch.OK.commit": 12276,
+        "dispatch.OK.transaction.committed": 12276,
+        "finish.OK.begin": 12276,
+        "finish.OK.commit": 12276,
+        "finish.OK.transaction.committed": 12276,
+        "heartbeat.OK.begin": 240,
+        "heartbeat.OK.commit": 240,
+        "heartbeat.OK.transaction.committed": 240
+      },
+      "over": 0,
+      "peak_mock": 50,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 329,
+        "sql.authorization/Client/ClientRead": 19,
+        "sql.candidate_lock/CPU/": 294,
+        "sql.candidate_lock/Client/ClientRead": 19,
+        "sql.capacity_batch/CPU/": 525,
+        "sql.capacity_batch/Client/ClientRead": 48,
+        "sql.capacity_batch/IO/DataFileExtend": 1,
+        "sql.capacity_batch/LWLock/BufferContent": 1,
+        "sql.dispatch_check/CPU/": 978,
+        "sql.dispatch_check/Client/ClientRead": 26,
+        "sql.idempotency/CPU/": 60,
+        "sql.idempotency/Client/ClientRead": 26,
+        "sql.insert/CPU/": 480,
+        "sql.insert/Client/ClientRead": 102,
+        "sql.insert/IO/DataFileExtend": 2,
+        "sql.instance_lock/CPU/": 92,
+        "sql.instance_lock/Client/ClientRead": 50,
+        "sql.lease_lock/CPU/": 207,
+        "sql.lease_lock/Client/ClientRead": 55,
+        "sql.ledger_check/CPU/": 210,
+        "sql.ledger_check/Client/ClientRead": 26,
+        "sql.other/CPU/": 942,
+        "sql.other/Client/ClientRead": 225,
+        "sql.other/IO/WalWrite": 13,
+        "sql.other/LWLock/WALWrite": 1,
+        "sql.principal_lock/CPU/": 189,
+        "sql.principal_lock/Client/ClientRead": 69,
+        "sql.principal_lock/Lock/transactionid": 52,
+        "sql.quota/CPU/": 171,
+        "sql.quota/Client/ClientRead": 32,
+        "sql.snapshot/CPU/": 153,
+        "sql.snapshot/Client/ClientRead": 27,
+        "sql.ticket_cleanup/CPU/": 44,
+        "sql.ticket_cleanup/Client/ClientRead": 27,
+        "sql.ticket_read/CPU/": 99,
+        "sql.ticket_read/Client/ClientRead": 41,
+        "sql.try_advisory_lock/CPU/": 237,
+        "sql.try_advisory_lock/Client/ClientRead": 245,
+        "sql.update/CPU/": 316,
+        "sql.update/Client/ClientRead": 91,
+        "sql.user_ensure/CPU/": 70,
+        "sql.user_ensure/Client/ClientRead": 25,
+        "sql.user_lock/CPU/": 358,
+        "sql.user_lock/Client/ClientRead": 67,
+        "sql.user_lock/LWLock/BufferContent": 5,
+        "sql.user_lock/LWLock/LockManager": 6,
+        "sql.user_lock/Lock/transactionid": 8334,
+        "sql.user_lock/Lock/tuple": 4931,
+        "sql.wall_clock/CPU/": 30,
+        "sql.wall_clock/Client/ClientRead": 26
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 407,
+          "wait_ms": 10030.103541
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 514,
+          "wait_ms": 14492.660755
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 496,
+          "wait_ms": 16854.025962
+        }
+      ],
+      "queue_control_sql_calls": 19087,
+      "queue_sql_per_dispatch": 10.631394591072011,
+      "requests": 12285,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 374653,
+        "admit.WAIT": 111424,
+        "dispatch.OK": 85932,
+        "finish.OK": 98208,
+        "heartbeat.OK": 1200
+      },
+      "successful_admissions_per_advisory_attempt": 0.07090093159989141,
+      "timeout_count": 0,
+      "timeout_rate": 0,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 8.523913399066,
+        "attempts": 203212,
+        "background_sql_wall_ms": 17189.178995,
+        "commits": 42306,
+        "errors": 0,
+        "rollbacks": 160906,
+        "try_lock_acquired": 18414,
+        "try_lock_attempts": 178411,
+        "try_lock_misses": 159997
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.07090093159989141,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "PASS",
+      "retained_occupancy": 0
+    },
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 866451,
+      "capacity_samples": 12096,
+      "case": "C50_I16",
+      "dispatch_per_second": 20.460191998064943,
+      "dispatches": 12490,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 12490,
+          "mean_ms": 36.554884132105684,
+          "p50_ms": 26.086459,
+          "p95_ms": 87.172409,
+          "max_ms": 901.951907
+        },
+        "admit.ADMITTED.begin": {
+          "count": 12490,
+          "mean_ms": 3.074575353002402,
+          "p50_ms": 0.215125,
+          "p95_ms": 15.379081,
+          "max_ms": 595.014164
+        },
+        "admit.ADMITTED.call": {
+          "count": 12490,
+          "mean_ms": 373.2323040764612,
+          "p50_ms": 251.337458,
+          "p95_ms": 970.438084,
+          "max_ms": 5078.119833
+        },
+        "admit.ADMITTED.commit": {
+          "count": 12490,
+          "mean_ms": 0.32373784699759806,
+          "p50_ms": 0.241166,
+          "p95_ms": 0.55225,
+          "max_ms": 111.041208
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 18.123875182145714,
+          "p50_ms": 16.489209,
+          "p95_ms": 30.807875,
+          "max_ms": 497.363834
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 12490,
+          "mean_ms": 345.9405886922338,
+          "p50_ms": 225.006541,
+          "p95_ms": 939.377,
+          "max_ms": 5051.01475
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 17.432337835468374,
+          "p50_ms": 15.959584,
+          "p95_ms": 30.062,
+          "max_ms": 436.432125
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 3167,
+          "mean_ms": 7.732440650142091,
+          "p50_ms": 4.734585,
+          "p95_ms": 21.908788,
+          "max_ms": 237.654952
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 12490,
+          "mean_ms": 1.1760507640512412,
+          "p50_ms": 0.947875,
+          "p95_ms": 1.963417,
+          "max_ms": 124.021042
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 12490,
+          "mean_ms": 1.2122914422738191,
+          "p50_ms": 0.99075,
+          "p95_ms": 2.040583,
+          "max_ms": 129.535625
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 12490,
+          "mean_ms": 1.0527705089671737,
+          "p50_ms": 0.852083,
+          "p95_ms": 1.847,
+          "max_ms": 103.704459
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 12490,
+          "mean_ms": 0.6314857242594075,
+          "p50_ms": 0.490917,
+          "p95_ms": 1.128792,
+          "max_ms": 106.139
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 12490,
+          "mean_ms": 1.646950989031225,
+          "p50_ms": 1.3265,
+          "p95_ms": 3.192125,
+          "max_ms": 119.4015
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 12490,
+          "mean_ms": 0.928800514011209,
+          "p50_ms": 0.730834,
+          "p95_ms": 1.614041,
+          "max_ms": 129.588333
+        },
+        "admit.ADMITTED.sql.other": {
+          "count": 8512,
+          "mean_ms": 0.6307395587406015,
+          "p50_ms": 0.501542,
+          "p95_ms": 1.050958,
+          "max_ms": 192.836166
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 12490,
+          "mean_ms": 0.6853504720576461,
+          "p50_ms": 0.514666,
+          "p95_ms": 1.17075,
+          "max_ms": 334.095792
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 12490,
+          "mean_ms": 1.2149855953562851,
+          "p50_ms": 1.102,
+          "p95_ms": 2.255792,
+          "max_ms": 106.151791
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 12490,
+          "mean_ms": 0.9225873036829464,
+          "p50_ms": 0.729292,
+          "p95_ms": 1.563125,
+          "max_ms": 144.403542
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 12490,
+          "mean_ms": 0.5581955551641313,
+          "p50_ms": 0.444917,
+          "p95_ms": 0.953791,
+          "max_ms": 44.824958
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 12490,
+          "mean_ms": 5.655697292634107,
+          "p50_ms": 5.805957,
+          "p95_ms": 11.678376,
+          "max_ms": 205.189167
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 12490,
+          "mean_ms": 4.949459944275421,
+          "p50_ms": 0.42225,
+          "p95_ms": 25.398582,
+          "max_ms": 389.954295
+        },
+        "admit.ADMITTED.sql.update": {
+          "count": 8512,
+          "mean_ms": 1.0416699887218044,
+          "p50_ms": 0.901625,
+          "p95_ms": 2.227042,
+          "max_ms": 58.477834
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 12490,
+          "mean_ms": 0.611410773498799,
+          "p50_ms": 0.444541,
+          "p95_ms": 1.204958,
+          "max_ms": 185.928708
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 12490,
+          "mean_ms": 7.730389960848679,
+          "p50_ms": 6.033584,
+          "p95_ms": 18.112833,
+          "max_ms": 696.246958
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 12490,
+          "mean_ms": 0.7890128211369095,
+          "p50_ms": 0.634083,
+          "p95_ms": 1.398416,
+          "max_ms": 43.643957
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 12490,
+          "mean_ms": 27.270431925380304,
+          "p50_ms": 23.671708,
+          "p95_ms": 46.182208,
+          "max_ms": 780.848166
+        },
+        "admit.ERROR.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.REJECTED.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.WAIT.all_transaction_attempts": {
+          "count": 8916,
+          "mean_ms": 38.95313097599821,
+          "p50_ms": 23.480708,
+          "p95_ms": 109.796456,
+          "max_ms": 1161.169705
+        },
+        "admit.WAIT.begin": {
+          "count": 8916,
+          "mean_ms": 4.5205151652086135,
+          "p50_ms": 0.204459,
+          "p95_ms": 22.256542,
+          "max_ms": 612.71721
+        },
+        "admit.WAIT.call": {
+          "count": 8916,
+          "mean_ms": 1413.9262629216016,
+          "p50_ms": 1063.199,
+          "p95_ms": 4098.403125,
+          "max_ms": 11084.812792
+        },
+        "admit.WAIT.commit": {
+          "count": 8916,
+          "mean_ms": 0.35600445603409603,
+          "p50_ms": 0.2375,
+          "p95_ms": 0.542667,
+          "max_ms": 371.275583
+        },
+        "admit.WAIT.lock_held_lower_bound": {
+          "count": 8916,
+          "mean_ms": 18.608539563257064,
+          "p50_ms": 15.8885,
+          "p95_ms": 29.686208,
+          "max_ms": 629.411875
+        },
+        "admit.WAIT.pre_transaction_wait": {
+          "count": 8916,
+          "mean_ms": 1388.9156486381785,
+          "p50_ms": 1040.411666,
+          "p95_ms": 4069.060333,
+          "max_ms": 11041.342125
+        },
+        "admit.WAIT.principal_held_lower_bound": {
+          "count": 8916,
+          "mean_ms": 17.944854199416778,
+          "p50_ms": 15.337792,
+          "p95_ms": 28.643834,
+          "max_ms": 628.635875
+        },
+        "admit.WAIT.rollback": {
+          "count": 2662,
+          "mean_ms": 9.49730478174305,
+          "p50_ms": 5.274873,
+          "p95_ms": 29.443383,
+          "max_ms": 367.292339
+        },
+        "admit.WAIT.sql.authorization": {
+          "count": 8916,
+          "mean_ms": 1.14813850538358,
+          "p50_ms": 0.934584,
+          "p95_ms": 2.089542,
+          "max_ms": 31.010625
+        },
+        "admit.WAIT.sql.candidate_lock": {
+          "count": 8916,
+          "mean_ms": 1.1841371074472857,
+          "p50_ms": 0.978917,
+          "p95_ms": 2.082084,
+          "max_ms": 49.15725
+        },
+        "admit.WAIT.sql.idempotency": {
+          "count": 8916,
+          "mean_ms": 0.6258300298340064,
+          "p50_ms": 0.484125,
+          "p95_ms": 1.1445,
+          "max_ms": 54.421083
+        },
+        "admit.WAIT.sql.insert": {
+          "count": 8916,
+          "mean_ms": 1.5274571615074024,
+          "p50_ms": 1.227875,
+          "p95_ms": 2.740042,
+          "max_ms": 335.886999
+        },
+        "admit.WAIT.sql.ledger_check": {
+          "count": 8916,
+          "mean_ms": 0.968930089165545,
+          "p50_ms": 0.712458,
+          "p95_ms": 1.623666,
+          "max_ms": 494.434875
+        },
+        "admit.WAIT.sql.other": {
+          "count": 8912,
+          "mean_ms": 0.6183164858617594,
+          "p50_ms": 0.502292,
+          "p95_ms": 1.063458,
+          "max_ms": 58.775709
+        },
+        "admit.WAIT.sql.principal_lock": {
+          "count": 8916,
+          "mean_ms": 0.6561533304172275,
+          "p50_ms": 0.496042,
+          "p95_ms": 1.163167,
+          "max_ms": 140.763292
+        },
+        "admit.WAIT.sql.quota": {
+          "count": 8916,
+          "mean_ms": 1.48475443965904,
+          "p50_ms": 1.183542,
+          "p95_ms": 2.577249,
+          "max_ms": 130.463334
+        },
+        "admit.WAIT.sql.ticket_cleanup": {
+          "count": 8916,
+          "mean_ms": 0.5571995149170031,
+          "p50_ms": 0.442125,
+          "p95_ms": 0.970875,
+          "max_ms": 59.011458
+        },
+        "admit.WAIT.sql.ticket_read": {
+          "count": 8916,
+          "mean_ms": 8.043845837371018,
+          "p50_ms": 6.805582,
+          "p95_ms": 13.421833,
+          "max_ms": 540.481751
+        },
+        "admit.WAIT.sql.try_advisory_lock": {
+          "count": 8916,
+          "mean_ms": 7.314771086473755,
+          "p50_ms": 0.408875,
+          "p95_ms": 36.556958,
+          "max_ms": 619.067338
+        },
+        "admit.WAIT.sql.update": {
+          "count": 8912,
+          "mean_ms": 0.9673549318895871,
+          "p50_ms": 0.524583,
+          "p95_ms": 2.118709,
+          "max_ms": 115.290167
+        },
+        "admit.WAIT.sql.user_ensure": {
+          "count": 8916,
+          "mean_ms": 0.6123794995513683,
+          "p50_ms": 0.439667,
+          "p95_ms": 1.209833,
+          "max_ms": 85.321625
+        },
+        "admit.WAIT.sql.user_lock": {
+          "count": 8916,
+          "mean_ms": 4.914466767496635,
+          "p50_ms": 3.575417,
+          "p95_ms": 13.399292,
+          "max_ms": 364.159166
+        },
+        "admit.WAIT.sql.wall_clock": {
+          "count": 8916,
+          "mean_ms": 0.28836231202332885,
+          "p50_ms": 0.225917,
+          "p95_ms": 0.5215,
+          "max_ms": 38.051708
+        },
+        "admit.WAIT.transaction": {
+          "count": 8916,
+          "mean_ms": 24.98470626121579,
+          "p50_ms": 21.2355,
+          "p95_ms": 41.898166,
+          "max_ms": 869.492375
+        },
+        "arrival_to_admit": {
+          "count": 12490,
+          "mean_ms": 1751.7299761432346,
+          "p50_ms": 1432.223167,
+          "p95_ms": 4963.375875,
+          "max_ms": 11547.017291
+        },
+        "arrival_to_dispatch": {
+          "count": 12490,
+          "mean_ms": 1765.1848056357085,
+          "p50_ms": 1442.295334,
+          "p95_ms": 4992.171208,
+          "max_ms": 11559.579833
+        },
+        "arrival_to_finish": {
+          "count": 12490,
+          "mean_ms": 2748.8436057791832,
+          "p50_ms": 2148.330667,
+          "p95_ms": 7352.704416,
+          "max_ms": 21148.682291
+        },
+        "burst_arrival_jitter": {
+          "count": 477,
+          "mean_ms": 1.212596859538784,
+          "p50_ms": 0.653292,
+          "p95_ms": 3.801,
+          "max_ms": 4.103625
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 12490,
+          "mean_ms": 13.08407724267414,
+          "p50_ms": 9.749292,
+          "p95_ms": 29.847417,
+          "max_ms": 668.940291
+        },
+        "dispatch.OK.begin": {
+          "count": 12490,
+          "mean_ms": 0.3466084543634908,
+          "p50_ms": 0.240542,
+          "p95_ms": 0.779208,
+          "max_ms": 21.7635
+        },
+        "dispatch.OK.call": {
+          "count": 12490,
+          "mean_ms": 13.434525700480386,
+          "p50_ms": 9.759375,
+          "p95_ms": 31.768916,
+          "max_ms": 668.969166
+        },
+        "dispatch.OK.commit": {
+          "count": 12490,
+          "mean_ms": 0.33761545620496397,
+          "p50_ms": 0.250041,
+          "p95_ms": 0.612083,
+          "max_ms": 40.013375
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 12490,
+          "mean_ms": 0.34343916589271417,
+          "p50_ms": 0.003125,
+          "p95_ms": 0.014417,
+          "max_ms": 402.434042
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 7.400281558446758,
+          "p50_ms": 5.536167,
+          "p95_ms": 15.573458,
+          "max_ms": 631.77325
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 6.055790771176942,
+          "p50_ms": 4.900875,
+          "p95_ms": 10.365167,
+          "max_ms": 629.839667
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 12490,
+          "mean_ms": 2.8426918305044033,
+          "p50_ms": 2.306459,
+          "p95_ms": 4.9485,
+          "max_ms": 607.538209
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 12490,
+          "mean_ms": 0.6050153646917534,
+          "p50_ms": 0.456583,
+          "p95_ms": 1.064958,
+          "max_ms": 114.59475
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 12490,
+          "mean_ms": 0.6862011973578863,
+          "p50_ms": 0.535917,
+          "p95_ms": 1.186667,
+          "max_ms": 88.0025
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 12490,
+          "mean_ms": 1.3405440389911931,
+          "p50_ms": 0.490375,
+          "p95_ms": 8.052958,
+          "max_ms": 113.700834
+        },
+        "dispatch.OK.sql.update": {
+          "count": 12490,
+          "mean_ms": 1.5334674847077663,
+          "p50_ms": 1.179333,
+          "p95_ms": 2.881583,
+          "max_ms": 201.754458
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 12490,
+          "mean_ms": 5.332060485668534,
+          "p50_ms": 3.681625,
+          "p95_ms": 19.759958,
+          "max_ms": 475.8285
+        },
+        "dispatch.OK.transaction": {
+          "count": 12490,
+          "mean_ms": 13.08407724267414,
+          "p50_ms": 9.749292,
+          "p95_ms": 29.847417,
+          "max_ms": 668.940291
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 12490,
+          "mean_ms": 23.27167629767814,
+          "p50_ms": 16.92625,
+          "p95_ms": 49.009958,
+          "max_ms": 825.530667
+        },
+        "finish.OK.begin": {
+          "count": 12490,
+          "mean_ms": 1.0104655167333867,
+          "p50_ms": 0.244083,
+          "p95_ms": 1.721792,
+          "max_ms": 537.247916
+        },
+        "finish.OK.call": {
+          "count": 12490,
+          "mean_ms": 24.741268935788632,
+          "p50_ms": 16.946083,
+          "p95_ms": 52.71725,
+          "max_ms": 1108.275667
+        },
+        "finish.OK.commit": {
+          "count": 12490,
+          "mean_ms": 0.33204545372297833,
+          "p50_ms": 0.238208,
+          "p95_ms": 0.644125,
+          "max_ms": 28.404167
+        },
+        "finish.OK.connection_acquire": {
+          "count": 12490,
+          "mean_ms": 1.461575779903923,
+          "p50_ms": 0.0035,
+          "p95_ms": 0.027458,
+          "max_ms": 814.909166
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 6.229294697598078,
+          "p50_ms": 4.667167,
+          "p95_ms": 12.522417,
+          "max_ms": 425.362542
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 12490,
+          "mean_ms": 5.256998859567655,
+          "p50_ms": 4.007167,
+          "p95_ms": 10.259875,
+          "max_ms": 421.08175
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 12490,
+          "mean_ms": 1.3369225405124099,
+          "p50_ms": 0.982167,
+          "p95_ms": 2.587084,
+          "max_ms": 348.80025
+        },
+        "finish.OK.sql.insert": {
+          "count": 12490,
+          "mean_ms": 1.480623006084868,
+          "p50_ms": 1.07875,
+          "p95_ms": 2.894167,
+          "max_ms": 166.219876
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 12490,
+          "mean_ms": 0.6651012159327462,
+          "p50_ms": 0.491,
+          "p95_ms": 1.338166,
+          "max_ms": 52.234458
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 12490,
+          "mean_ms": 0.7842807983186548,
+          "p50_ms": 0.574542,
+          "p95_ms": 1.490209,
+          "max_ms": 208.041833
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 12490,
+          "mean_ms": 0.9675319314651721,
+          "p50_ms": 0.563459,
+          "p95_ms": 2.285,
+          "max_ms": 193.447458
+        },
+        "finish.OK.sql.update": {
+          "count": 12490,
+          "mean_ms": 0.5982442927141713,
+          "p50_ms": 0.453292,
+          "p95_ms": 1.132,
+          "max_ms": 55.668167
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 12490,
+          "mean_ms": 16.022601740832666,
+          "p50_ms": 11.4355,
+          "p95_ms": 36.953542,
+          "max_ms": 804.18875
+        },
+        "finish.OK.transaction": {
+          "count": 12490,
+          "mean_ms": 23.27167629767814,
+          "p50_ms": 16.92625,
+          "p95_ms": 49.009958,
+          "max_ms": 825.530667
+        },
+        "first_wait_to_admit": {
+          "count": 8493,
+          "mean_ms": 906.1196766912751,
+          "p50_ms": 624.386084,
+          "p95_ms": 2782.137666,
+          "max_ms": 8077.114333
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 244,
+          "mean_ms": 30.709898545081966,
+          "p50_ms": 17.764667,
+          "p95_ms": 64.411625,
+          "max_ms": 620.34225
+        },
+        "heartbeat.OK.begin": {
+          "count": 244,
+          "mean_ms": 1.8958918565573772,
+          "p50_ms": 0.261042,
+          "p95_ms": 2.955875,
+          "max_ms": 260.957625
+        },
+        "heartbeat.OK.call": {
+          "count": 244,
+          "mean_ms": 31.703369352459017,
+          "p50_ms": 17.773833,
+          "p95_ms": 72.213125,
+          "max_ms": 627.438042
+        },
+        "heartbeat.OK.commit": {
+          "count": 244,
+          "mean_ms": 0.3563148278688525,
+          "p50_ms": 0.251041,
+          "p95_ms": 0.781125,
+          "max_ms": 4.851625
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 244,
+          "mean_ms": 0.983171262295082,
+          "p50_ms": 0.004209,
+          "p95_ms": 0.291208,
+          "max_ms": 169.754416
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 244,
+          "mean_ms": 4.405934459016394,
+          "p50_ms": 2.846333,
+          "p95_ms": 10.644375,
+          "max_ms": 94.265917
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 244,
+          "mean_ms": 3.297988397540984,
+          "p50_ms": 2.224375,
+          "p95_ms": 8.425292,
+          "max_ms": 78.4735
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 244,
+          "mean_ms": 0.8008906844262296,
+          "p50_ms": 0.506,
+          "p95_ms": 1.548583,
+          "max_ms": 32.079917
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 244,
+          "mean_ms": 0.8730823196721311,
+          "p50_ms": 0.621584,
+          "p95_ms": 2.128167,
+          "max_ms": 11.535459
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 244,
+          "mean_ms": 1.103638286885246,
+          "p50_ms": 0.589666,
+          "p95_ms": 3.544042,
+          "max_ms": 16.289208
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 244,
+          "mean_ms": 1.238140237704918,
+          "p50_ms": 0.709834,
+          "p95_ms": 2.788791,
+          "max_ms": 33.760084
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 244,
+          "mean_ms": 24.403364237704917,
+          "p50_ms": 13.837917,
+          "p95_ms": 53.495916,
+          "max_ms": 479.691833
+        },
+        "heartbeat.OK.transaction": {
+          "count": 244,
+          "mean_ms": 30.709898545081966,
+          "p50_ms": 17.764667,
+          "p95_ms": 64.411625,
+          "max_ms": 620.34225
+        },
+        "steady_arrival_jitter": {
+          "count": 12030,
+          "mean_ms": 0.0004210590191188695,
+          "p50_ms": 0.000333,
+          "p95_ms": 0.000541,
+          "max_ms": 0.083291
+        }
+      },
+      "effective_admission_commits_per_second": 20.460191998064943,
+      "elapsed_seconds": 610.4537045,
+      "errors": null,
+      "final_lease_states": {
+        "RELEASED": 12490
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 594.8000000000001,
+      "idle_capacity_with_live_offer_sample_seconds": 495.55,
+      "idle_capacity_with_live_offer_samples": 9911,
+      "mock_utilization": 0.3921509196924859,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 97973,
+        "admit.ADMITTED.commit": 12490,
+        "admit.ADMITTED.rollback": 85483,
+        "admit.ADMITTED.transaction.committed": 12490,
+        "admit.ADMITTED.transaction.rolled_back": 85483,
+        "admit.ADMITTED.try_lock.acquired": 12490,
+        "admit.ADMITTED.try_lock.missed": 85483,
+        "admit.WAIT.begin": 92641,
+        "admit.WAIT.commit": 8916,
+        "admit.WAIT.rollback": 83725,
+        "admit.WAIT.transaction.committed": 8916,
+        "admit.WAIT.transaction.rolled_back": 83725,
+        "admit.WAIT.try_lock.acquired": 8916,
+        "admit.WAIT.try_lock.missed": 83725,
+        "dispatch.OK.begin": 12490,
+        "dispatch.OK.commit": 12490,
+        "dispatch.OK.transaction.committed": 12490,
+        "finish.OK.begin": 12490,
+        "finish.OK.commit": 12490,
+        "finish.OK.transaction.committed": 12490,
+        "heartbeat.OK.begin": 244,
+        "heartbeat.OK.commit": 244,
+        "heartbeat.OK.transaction.committed": 244
+      },
+      "over": 0,
+      "peak_mock": 50,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 253,
+        "sql.authorization/Client/ClientRead": 25,
+        "sql.candidate_lock/CPU/": 290,
+        "sql.candidate_lock/Client/ClientRead": 30,
+        "sql.capacity_batch/CPU/": 327,
+        "sql.capacity_batch/Client/ClientRead": 37,
+        "sql.dispatch_check/CPU/": 481,
+        "sql.dispatch_check/Client/ClientRead": 13,
+        "sql.idempotency/CPU/": 48,
+        "sql.idempotency/Client/ClientRead": 27,
+        "sql.insert/CPU/": 279,
+        "sql.insert/Client/ClientRead": 85,
+        "sql.insert/IO/DataFileExtend": 2,
+        "sql.instance_lock/CPU/": 51,
+        "sql.instance_lock/Client/ClientRead": 32,
+        "sql.lease_lock/CPU/": 111,
+        "sql.lease_lock/Client/ClientRead": 37,
+        "sql.ledger_check/CPU/": 187,
+        "sql.ledger_check/Client/ClientRead": 26,
+        "sql.other/CPU/": 2449,
+        "sql.other/Client/ClientRead": 239,
+        "sql.other/IO/WalInitWrite": 3,
+        "sql.other/IO/WalWrite": 11,
+        "sql.principal_lock/CPU/": 120,
+        "sql.principal_lock/Client/ClientRead": 74,
+        "sql.principal_lock/Lock/transactionid": 236,
+        "sql.quota/CPU/": 192,
+        "sql.quota/Client/ClientRead": 46,
+        "sql.snapshot/CPU/": 100,
+        "sql.snapshot/Client/ClientRead": 14,
+        "sql.ticket_cleanup/CPU/": 38,
+        "sql.ticket_cleanup/Client/ClientRead": 19,
+        "sql.ticket_read/CPU/": 128,
+        "sql.ticket_read/Client/ClientRead": 77,
+        "sql.try_advisory_lock/CPU/": 86,
+        "sql.try_advisory_lock/Client/ClientRead": 217,
+        "sql.update/CPU/": 311,
+        "sql.update/Client/ClientRead": 86,
+        "sql.update/LWLock/BufferContent": 1,
+        "sql.user_ensure/CPU/": 33,
+        "sql.user_ensure/Client/ClientRead": 27,
+        "sql.user_ensure/Lock/transactionid": 1,
+        "sql.user_lock/CPU/": 222,
+        "sql.user_lock/Client/ClientRead": 46,
+        "sql.user_lock/LWLock/BufferContent": 2,
+        "sql.user_lock/LWLock/LockManager": 5,
+        "sql.user_lock/Lock/transactionid": 5398,
+        "sql.user_lock/Lock/tuple": 2071,
+        "sql.wall_clock/CPU/": 24,
+        "sql.wall_clock/Client/ClientRead": 16
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 257,
+          "wait_ms": 8715.33434
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 268,
+          "wait_ms": 7997.578868
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 233,
+          "wait_ms": 5777.583165
+        }
+      ],
+      "queue_control_sql_calls": 52140,
+      "queue_sql_per_dispatch": 25.380304243394715,
+      "requests": 12507,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 360881,
+        "admit.WAIT": 264860,
+        "dispatch.OK": 87430,
+        "finish.OK": 99920,
+        "heartbeat.OK": 1220
+      },
+      "successful_admissions_per_advisory_attempt": 0.06552509259550715,
+      "timeout_count": 0,
+      "timeout_rate": 0,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 5.664974047662466,
+        "attempts": 232510,
+        "background_sql_wall_ms": 60867.954919,
+        "commits": 49657,
+        "errors": 0,
+        "rollbacks": 182853,
+        "try_lock_acquired": 26624,
+        "try_lock_attempts": 207269,
+        "try_lock_misses": 180645
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.06552509259550715,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "PASS",
+      "retained_occupancy": 0
+    },
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 1051731,
+      "capacity_samples": 12237,
+      "case": "C200_I3",
+      "dispatch_per_second": 41.36144307399006,
+      "dispatches": 25427,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 25427,
+          "mean_ms": 33.344143562512286,
+          "p50_ms": 21.729041,
+          "p95_ms": 95.450619,
+          "max_ms": 1065.384952
+        },
+        "admit.ADMITTED.begin": {
+          "count": 25427,
+          "mean_ms": 3.0298070672120185,
+          "p50_ms": 0.205875,
+          "p95_ms": 17.679953,
+          "max_ms": 333.331203
+        },
+        "admit.ADMITTED.call": {
+          "count": 25427,
+          "mean_ms": 4346.5143680571055,
+          "p50_ms": 3923.108125,
+          "p95_ms": 8213.2,
+          "max_ms": 13775.133083
+        },
+        "admit.ADMITTED.commit": {
+          "count": 25427,
+          "mean_ms": 0.3222119735320722,
+          "p50_ms": 0.240292,
+          "p95_ms": 0.532083,
+          "max_ms": 340.196125
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 11.556500060408228,
+          "p50_ms": 10.063541,
+          "p95_ms": 18.185334,
+          "max_ms": 455.640541
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 25427,
+          "mean_ms": 4322.748444168404,
+          "p50_ms": 3897.517875,
+          "p95_ms": 8192.225208,
+          "max_ms": 13759.312333
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 10.881188350100286,
+          "p50_ms": 9.469458,
+          "p95_ms": 17.17825,
+          "max_ms": 454.866459
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 4246,
+          "mean_ms": 11.987550921808761,
+          "p50_ms": 7.419459,
+          "p95_ms": 36.671122,
+          "max_ms": 347.331542
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 25427,
+          "mean_ms": 1.130677529673182,
+          "p50_ms": 0.942375,
+          "p95_ms": 1.844417,
+          "max_ms": 238.867584
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 25427,
+          "mean_ms": 1.006844885082786,
+          "p50_ms": 0.850125,
+          "p95_ms": 1.662708,
+          "max_ms": 93.248583
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 25427,
+          "mean_ms": 0.9908573169072246,
+          "p50_ms": 0.833958,
+          "p95_ms": 1.604292,
+          "max_ms": 70.774208
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 25427,
+          "mean_ms": 0.602823832658198,
+          "p50_ms": 0.481666,
+          "p95_ms": 1.027416,
+          "max_ms": 114.480333
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 25427,
+          "mean_ms": 2.026255646202855,
+          "p50_ms": 1.703875,
+          "p95_ms": 3.527458,
+          "max_ms": 254.951708
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 25427,
+          "mean_ms": 0.9187830206473434,
+          "p50_ms": 0.737666,
+          "p95_ms": 1.569958,
+          "max_ms": 145.200792
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 25427,
+          "mean_ms": 0.6691891965627089,
+          "p50_ms": 0.530583,
+          "p95_ms": 1.15075,
+          "max_ms": 156.871792
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 25427,
+          "mean_ms": 0.6883880199787628,
+          "p50_ms": 0.55975,
+          "p95_ms": 1.126708,
+          "max_ms": 85.137292
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 25427,
+          "mean_ms": 0.8597460387776772,
+          "p50_ms": 0.71875,
+          "p95_ms": 1.360542,
+          "max_ms": 154.617208
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 25427,
+          "mean_ms": 0.5112399333385771,
+          "p50_ms": 0.428041,
+          "p95_ms": 0.832541,
+          "max_ms": 53.757292
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 25427,
+          "mean_ms": 0.9486303121878319,
+          "p50_ms": 0.792666,
+          "p95_ms": 1.597583,
+          "max_ms": 168.192957
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 25427,
+          "mean_ms": 5.238788280253274,
+          "p50_ms": 0.407667,
+          "p95_ms": 31.637497,
+          "max_ms": 522.79163
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 25427,
+          "mean_ms": 0.5767279277932906,
+          "p50_ms": 0.437167,
+          "p95_ms": 1.127125,
+          "max_ms": 63.783541
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 25427,
+          "mean_ms": 10.841495585440674,
+          "p50_ms": 8.891041,
+          "p95_ms": 21.038083,
+          "max_ms": 400.268125
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 25427,
+          "mean_ms": 0.7489226164706808,
+          "p50_ms": 0.608708,
+          "p95_ms": 1.234791,
+          "max_ms": 90.390874
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 25427,
+          "mean_ms": 23.74288387812168,
+          "p50_ms": 20.652208,
+          "p95_ms": 39.7155,
+          "max_ms": 462.38975
+        },
+        "admit.ERROR.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.REJECTED.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.WAIT.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "arrival_to_admit": {
+          "count": 25427,
+          "mean_ms": 4346.537880447556,
+          "p50_ms": 3923.127208,
+          "p95_ms": 8213.230458,
+          "max_ms": 13775.142125
+        },
+        "arrival_to_dispatch": {
+          "count": 25427,
+          "mean_ms": 4361.141902863492,
+          "p50_ms": 3936.406416,
+          "p95_ms": 8228.485541,
+          "max_ms": 13794.495125
+        },
+        "arrival_to_finish": {
+          "count": 25427,
+          "mean_ms": 5344.3021358911,
+          "p50_ms": 4707.611208,
+          "p95_ms": 10552.261042,
+          "max_ms": 25795.029125
+        },
+        "burst_arrival_jitter": {
+          "count": 1827,
+          "mean_ms": 2.4965355555555555,
+          "p50_ms": 1.890583,
+          "p95_ms": 5.962167,
+          "max_ms": 6.596083
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 25427,
+          "mean_ms": 13.444760326739292,
+          "p50_ms": 10.306875,
+          "p95_ms": 28.484167,
+          "max_ms": 475.734042
+        },
+        "dispatch.OK.begin": {
+          "count": 25427,
+          "mean_ms": 0.3004805413143509,
+          "p50_ms": 0.226667,
+          "p95_ms": 0.607,
+          "max_ms": 27.583541
+        },
+        "dispatch.OK.call": {
+          "count": 25427,
+          "mean_ms": 14.588294525583041,
+          "p50_ms": 10.322541,
+          "p95_ms": 33.401667,
+          "max_ms": 475.747458
+        },
+        "dispatch.OK.commit": {
+          "count": 25427,
+          "mean_ms": 0.3128457718173595,
+          "p50_ms": 0.242625,
+          "p95_ms": 0.5305,
+          "max_ms": 66.171833
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 25427,
+          "mean_ms": 1.1370957423604828,
+          "p50_ms": 0.002875,
+          "p95_ms": 5.4545,
+          "max_ms": 403.950333
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 6.219781497974594,
+          "p50_ms": 5.326833,
+          "p95_ms": 10.067833,
+          "max_ms": 316.419583
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 5.63320038168089,
+          "p50_ms": 4.816125,
+          "p95_ms": 9.10675,
+          "max_ms": 300.285583
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 25427,
+          "mean_ms": 2.7281142511110237,
+          "p50_ms": 2.334167,
+          "p95_ms": 4.453625,
+          "max_ms": 186.257459
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 25427,
+          "mean_ms": 0.5307874465332126,
+          "p50_ms": 0.429709,
+          "p95_ms": 0.860834,
+          "max_ms": 261.542166
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 25427,
+          "mean_ms": 0.6150799214221104,
+          "p50_ms": 0.495833,
+          "p95_ms": 1.011834,
+          "max_ms": 80.50225
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 25427,
+          "mean_ms": 0.5832168262083612,
+          "p50_ms": 0.464791,
+          "p95_ms": 1.033167,
+          "max_ms": 84.029292
+        },
+        "dispatch.OK.sql.update": {
+          "count": 25427,
+          "mean_ms": 1.4022452521335587,
+          "p50_ms": 1.152209,
+          "p95_ms": 2.467417,
+          "max_ms": 91.876666
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 25427,
+          "mean_ms": 6.920005353757817,
+          "p50_ms": 4.36075,
+          "p95_ms": 19.6055,
+          "max_ms": 386.227
+        },
+        "dispatch.OK.transaction": {
+          "count": 25427,
+          "mean_ms": 13.444760326739292,
+          "p50_ms": 10.306875,
+          "p95_ms": 28.484167,
+          "max_ms": 475.734042
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 25427,
+          "mean_ms": 21.24609854536516,
+          "p50_ms": 17.354042,
+          "p95_ms": 44.856584,
+          "max_ms": 511.644167
+        },
+        "finish.OK.begin": {
+          "count": 25427,
+          "mean_ms": 0.597586520313053,
+          "p50_ms": 0.226292,
+          "p95_ms": 1.14575,
+          "max_ms": 230.406
+        },
+        "finish.OK.call": {
+          "count": 25427,
+          "mean_ms": 24.109494282180357,
+          "p50_ms": 17.47875,
+          "p95_ms": 57.269458,
+          "max_ms": 807.908584
+        },
+        "finish.OK.commit": {
+          "count": 25427,
+          "mean_ms": 0.31121335753333074,
+          "p50_ms": 0.235667,
+          "p95_ms": 0.5705,
+          "max_ms": 101.314416
+        },
+        "finish.OK.connection_acquire": {
+          "count": 25427,
+          "mean_ms": 2.856297919809651,
+          "p50_ms": 0.003208,
+          "p95_ms": 7.734584,
+          "max_ms": 774.287959
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 5.447560734770127,
+          "p50_ms": 4.441708,
+          "p95_ms": 9.638375,
+          "max_ms": 297.8425
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 25427,
+          "mean_ms": 4.727815481692689,
+          "p50_ms": 3.831209,
+          "p95_ms": 8.3875,
+          "max_ms": 269.692209
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 25427,
+          "mean_ms": 1.1618829476540684,
+          "p50_ms": 0.943958,
+          "p95_ms": 2.062292,
+          "max_ms": 109.24425
+        },
+        "finish.OK.sql.insert": {
+          "count": 25427,
+          "mean_ms": 1.3202194077948637,
+          "p50_ms": 1.0515,
+          "p95_ms": 2.493125,
+          "max_ms": 130.018833
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 25427,
+          "mean_ms": 0.6112485657372084,
+          "p50_ms": 0.477959,
+          "p95_ms": 1.161958,
+          "max_ms": 108.335542
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 25427,
+          "mean_ms": 0.7166327119597278,
+          "p50_ms": 0.535375,
+          "p95_ms": 1.278167,
+          "max_ms": 190.093458
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 25427,
+          "mean_ms": 0.7154602143784167,
+          "p50_ms": 0.555042,
+          "p95_ms": 1.416042,
+          "max_ms": 71.475167
+        },
+        "finish.OK.sql.update": {
+          "count": 25427,
+          "mean_ms": 0.5542039357769301,
+          "p50_ms": 0.429375,
+          "p95_ms": 0.930834,
+          "max_ms": 245.207958
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 25427,
+          "mean_ms": 15.190566470090847,
+          "p50_ms": 12.270375,
+          "p95_ms": 34.634834,
+          "max_ms": 488.236917
+        },
+        "finish.OK.transaction": {
+          "count": 25427,
+          "mean_ms": 21.24609854536516,
+          "p50_ms": 17.354042,
+          "p95_ms": 44.856584,
+          "max_ms": 511.644167
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 498,
+          "mean_ms": 22.246258257028114,
+          "p50_ms": 16.754458,
+          "p95_ms": 54.513084,
+          "max_ms": 283.9865
+        },
+        "heartbeat.OK.begin": {
+          "count": 498,
+          "mean_ms": 0.929515891566265,
+          "p50_ms": 0.251208,
+          "p95_ms": 1.389625,
+          "max_ms": 84.594917
+        },
+        "heartbeat.OK.call": {
+          "count": 498,
+          "mean_ms": 25.770646481927713,
+          "p50_ms": 17.102166,
+          "p95_ms": 70.592541,
+          "max_ms": 706.067125
+        },
+        "heartbeat.OK.commit": {
+          "count": 498,
+          "mean_ms": 0.3286781526104418,
+          "p50_ms": 0.253208,
+          "p95_ms": 0.746625,
+          "max_ms": 6.152792
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 498,
+          "mean_ms": 3.5145328835341365,
+          "p50_ms": 0.004417,
+          "p95_ms": 8.472917,
+          "max_ms": 669.20175
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 498,
+          "mean_ms": 3.404583867469879,
+          "p50_ms": 2.624125,
+          "p95_ms": 6.448708,
+          "max_ms": 92.419792
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 498,
+          "mean_ms": 2.6184524578313253,
+          "p50_ms": 2.036709,
+          "p95_ms": 5.20725,
+          "max_ms": 45.339208
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 498,
+          "mean_ms": 0.636381140562249,
+          "p50_ms": 0.474125,
+          "p95_ms": 1.170875,
+          "max_ms": 27.010875
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 498,
+          "mean_ms": 0.7204182168674699,
+          "p50_ms": 0.549292,
+          "p95_ms": 1.381583,
+          "max_ms": 11.142667
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 498,
+          "mean_ms": 0.7829785702811244,
+          "p50_ms": 0.544459,
+          "p95_ms": 1.479792,
+          "max_ms": 47.078584
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 498,
+          "mean_ms": 0.8940331425702812,
+          "p50_ms": 0.68025,
+          "p95_ms": 1.950041,
+          "max_ms": 13.923875
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 498,
+          "mean_ms": 17.909458315261045,
+          "p50_ms": 13.729083,
+          "p95_ms": 47.803083,
+          "max_ms": 255.133667
+        },
+        "heartbeat.OK.transaction": {
+          "count": 498,
+          "mean_ms": 22.246258257028114,
+          "p50_ms": 16.754458,
+          "p95_ms": 54.513084,
+          "max_ms": 283.9865
+        },
+        "steady_arrival_jitter": {
+          "count": 23600,
+          "mean_ms": 0.00041889949152542374,
+          "p50_ms": 0.000292,
+          "p95_ms": 0.000542,
+          "max_ms": 0.498042
+        }
+      },
+      "effective_admission_commits_per_second": 41.36144307399006,
+      "elapsed_seconds": 614.75127825,
+      "errors": null,
+      "final_lease_states": {
+        "RELEASED": 25427
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 600.4,
+      "idle_capacity_with_live_offer_sample_seconds": 0,
+      "idle_capacity_with_live_offer_samples": 0,
+      "mock_utilization": 0.1982322901644979,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 210150,
+        "admit.ADMITTED.commit": 25427,
+        "admit.ADMITTED.rollback": 184723,
+        "admit.ADMITTED.transaction.committed": 25427,
+        "admit.ADMITTED.transaction.rolled_back": 184723,
+        "admit.ADMITTED.try_lock.acquired": 25427,
+        "admit.ADMITTED.try_lock.missed": 184723,
+        "dispatch.OK.begin": 25427,
+        "dispatch.OK.commit": 25427,
+        "dispatch.OK.transaction.committed": 25427,
+        "finish.OK.begin": 25427,
+        "finish.OK.commit": 25427,
+        "finish.OK.transaction.committed": 25427,
+        "heartbeat.OK.begin": 498,
+        "heartbeat.OK.commit": 498,
+        "heartbeat.OK.transaction.committed": 498
+      },
+      "over": 0,
+      "peak_mock": 54,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 305,
+        "sql.authorization/Client/ClientRead": 31,
+        "sql.candidate_lock/CPU/": 293,
+        "sql.candidate_lock/Client/ClientRead": 30,
+        "sql.capacity_batch/CPU/": 606,
+        "sql.capacity_batch/Client/ClientRead": 58,
+        "sql.dispatch_check/CPU/": 1003,
+        "sql.dispatch_check/Client/ClientRead": 32,
+        "sql.idempotency/CPU/": 57,
+        "sql.idempotency/Client/ClientRead": 22,
+        "sql.insert/CPU/": 473,
+        "sql.insert/Client/ClientRead": 118,
+        "sql.insert/IO/DataFileExtend": 3,
+        "sql.instance_lock/CPU/": 103,
+        "sql.instance_lock/Client/ClientRead": 65,
+        "sql.lease_lock/CPU/": 176,
+        "sql.lease_lock/Client/ClientRead": 72,
+        "sql.ledger_check/CPU/": 195,
+        "sql.ledger_check/Client/ClientRead": 30,
+        "sql.other/CPU/": 156,
+        "sql.other/Client/ClientRead": 178,
+        "sql.other/IO/WalInitWrite": 1,
+        "sql.other/IO/WalWrite": 5,
+        "sql.principal_lock/CPU/": 230,
+        "sql.principal_lock/Client/ClientRead": 67,
+        "sql.quota/CPU/": 121,
+        "sql.quota/Client/ClientRead": 31,
+        "sql.snapshot/CPU/": 204,
+        "sql.snapshot/Client/ClientRead": 16,
+        "sql.ticket_cleanup/CPU/": 31,
+        "sql.ticket_cleanup/Client/ClientRead": 23,
+        "sql.ticket_read/CPU/": 54,
+        "sql.ticket_read/Client/ClientRead": 42,
+        "sql.try_advisory_lock/CPU/": 158,
+        "sql.try_advisory_lock/Client/ClientRead": 196,
+        "sql.update/CPU/": 278,
+        "sql.update/Client/ClientRead": 76,
+        "sql.user_ensure/CPU/": 50,
+        "sql.user_ensure/Client/ClientRead": 25,
+        "sql.user_lock/CPU/": 367,
+        "sql.user_lock/Client/ClientRead": 82,
+        "sql.user_lock/LWLock/BufferContent": 3,
+        "sql.user_lock/LWLock/LockManager": 6,
+        "sql.user_lock/Lock/transactionid": 9662,
+        "sql.user_lock/Lock/tuple": 6128,
+        "sql.wall_clock/CPU/": 25,
+        "sql.wall_clock/Client/ClientRead": 43
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1767,
+          "wait_ms": 40503.995433
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1917,
+          "wait_ms": 31330.134223
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1552,
+          "wait_ms": 31024.963828
+        }
+      ],
+      "queue_control_sql_calls": 0,
+      "queue_sql_per_dispatch": 0,
+      "requests": 25427,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 667836,
+        "dispatch.OK": 177989,
+        "finish.OK": 203416,
+        "heartbeat.OK": 2490
+      },
+      "successful_admissions_per_advisory_attempt": 0.12099452771829645,
+      "timeout_count": 0,
+      "timeout_rate": 0,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 6.6588864938432595,
+        "attempts": 261502,
+        "background_sql_wall_ms": 0,
+        "commits": 76779,
+        "errors": 0,
+        "rollbacks": 184723,
+        "try_lock_acquired": 25427,
+        "try_lock_attempts": 210150,
+        "try_lock_misses": 184723
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.12099452771829645,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "PASS",
+      "retained_occupancy": 0
+    },
+    {
+      "admitted_transaction_p95_target_20ms_met": false,
+      "all_store_sql_calls": 1035340,
+      "capacity_samples": 12308,
+      "case": "C200_I16",
+      "dispatch_per_second": 40.379188609591765,
+      "dispatches": 24928,
+      "duplicates": 0,
+      "durations": {
+        "admit.ADMITTED.all_transaction_attempts": {
+          "count": 24928,
+          "mean_ms": 34.29613261641528,
+          "p50_ms": 22.443,
+          "p95_ms": 94.97,
+          "max_ms": 1140.031046
+        },
+        "admit.ADMITTED.begin": {
+          "count": 24928,
+          "mean_ms": 3.1455227593469193,
+          "p50_ms": 0.211375,
+          "p95_ms": 17.523874,
+          "max_ms": 430.614963
+        },
+        "admit.ADMITTED.call": {
+          "count": 24928,
+          "mean_ms": 4448.342093156491,
+          "p50_ms": 3993.412917,
+          "p95_ms": 8509.569708,
+          "max_ms": 14345.599375
+        },
+        "admit.ADMITTED.commit": {
+          "count": 24928,
+          "mean_ms": 0.3274003601973684,
+          "p50_ms": 0.246917,
+          "p95_ms": 0.54625,
+          "max_ms": 157.397541
+        },
+        "admit.ADMITTED.lock_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 11.956890350810333,
+          "p50_ms": 10.498083,
+          "p95_ms": 18.909958,
+          "max_ms": 321.242833
+        },
+        "admit.ADMITTED.pre_transaction_wait": {
+          "count": 24928,
+          "mean_ms": 4423.926033919168,
+          "p50_ms": 3969.583834,
+          "p95_ms": 8481.441,
+          "max_ms": 14238.546125
+        },
+        "admit.ADMITTED.principal_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 11.288058105343389,
+          "p50_ms": 9.8925,
+          "p95_ms": 17.841125,
+          "max_ms": 319.356459
+        },
+        "admit.ADMITTED.rollback": {
+          "count": 4241,
+          "mean_ms": 12.284714096203725,
+          "p50_ms": 7.473957,
+          "p95_ms": 38.049953,
+          "max_ms": 499.045286
+        },
+        "admit.ADMITTED.sql.authorization": {
+          "count": 24928,
+          "mean_ms": 1.1442154707958923,
+          "p50_ms": 0.953292,
+          "p95_ms": 1.899834,
+          "max_ms": 114.345584
+        },
+        "admit.ADMITTED.sql.candidate_lock": {
+          "count": 24928,
+          "mean_ms": 1.1622692724646984,
+          "p50_ms": 0.983792,
+          "p95_ms": 1.941084,
+          "max_ms": 44.739917
+        },
+        "admit.ADMITTED.sql.capacity_batch": {
+          "count": 24928,
+          "mean_ms": 1.0245408279845958,
+          "p50_ms": 0.844791,
+          "p95_ms": 1.674792,
+          "max_ms": 174.219166
+        },
+        "admit.ADMITTED.sql.idempotency": {
+          "count": 24928,
+          "mean_ms": 0.5985024948250963,
+          "p50_ms": 0.486542,
+          "p95_ms": 1.076625,
+          "max_ms": 35.336
+        },
+        "admit.ADMITTED.sql.insert": {
+          "count": 24928,
+          "mean_ms": 2.098453282092426,
+          "p50_ms": 1.743291,
+          "p95_ms": 3.621708,
+          "max_ms": 101.837709
+        },
+        "admit.ADMITTED.sql.ledger_check": {
+          "count": 24928,
+          "mean_ms": 0.904375060694801,
+          "p50_ms": 0.75125,
+          "p95_ms": 1.555083,
+          "max_ms": 71.009
+        },
+        "admit.ADMITTED.sql.principal_lock": {
+          "count": 24928,
+          "mean_ms": 0.6625128032734274,
+          "p50_ms": 0.54075,
+          "p95_ms": 1.17475,
+          "max_ms": 44.472417
+        },
+        "admit.ADMITTED.sql.quota": {
+          "count": 24928,
+          "mean_ms": 0.6813303434691912,
+          "p50_ms": 0.567625,
+          "p95_ms": 1.153375,
+          "max_ms": 40.194917
+        },
+        "admit.ADMITTED.sql.snapshot": {
+          "count": 24928,
+          "mean_ms": 0.938152618140244,
+          "p50_ms": 0.788875,
+          "p95_ms": 1.565792,
+          "max_ms": 48.685291
+        },
+        "admit.ADMITTED.sql.ticket_cleanup": {
+          "count": 24928,
+          "mean_ms": 0.5322472621550064,
+          "p50_ms": 0.43625,
+          "p95_ms": 0.892042,
+          "max_ms": 117.252916
+        },
+        "admit.ADMITTED.sql.ticket_read": {
+          "count": 24928,
+          "mean_ms": 0.9723966298138639,
+          "p50_ms": 0.806333,
+          "p95_ms": 1.688333,
+          "max_ms": 51.649791
+        },
+        "admit.ADMITTED.sql.try_advisory_lock": {
+          "count": 24928,
+          "mean_ms": 5.36688392995828,
+          "p50_ms": 0.415291,
+          "p95_ms": 31.363457,
+          "max_ms": 426.295838
+        },
+        "admit.ADMITTED.sql.user_ensure": {
+          "count": 24928,
+          "mean_ms": 0.5849569966302953,
+          "p50_ms": 0.442292,
+          "p95_ms": 1.142,
+          "max_ms": 126.957208
+        },
+        "admit.ADMITTED.sql.user_lock": {
+          "count": 24928,
+          "mean_ms": 11.046715203385752,
+          "p50_ms": 9.143458,
+          "p95_ms": 21.259666,
+          "max_ms": 516.7575
+        },
+        "admit.ADMITTED.sql.wall_clock": {
+          "count": 24928,
+          "mean_ms": 0.7654845718469191,
+          "p50_ms": 0.624624,
+          "p95_ms": 1.363333,
+          "max_ms": 63.402333
+        },
+        "admit.ADMITTED.transaction": {
+          "count": 24928,
+          "mean_ms": 24.393297010550384,
+          "p50_ms": 21.376542,
+          "p95_ms": 40.167959,
+          "max_ms": 582.607584
+        },
+        "admit.ERROR.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.REJECTED.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "admit.WAIT.call": {
+          "count": 0,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0,
+          "max_ms": 0
+        },
+        "arrival_to_admit": {
+          "count": 24928,
+          "mean_ms": 4448.366976017531,
+          "p50_ms": 3993.424208,
+          "p95_ms": 8509.586625,
+          "max_ms": 14345.620208
+        },
+        "arrival_to_dispatch": {
+          "count": 24928,
+          "mean_ms": 4463.117012457557,
+          "p50_ms": 4006.044167,
+          "p95_ms": 8523.503833,
+          "max_ms": 14437.697375
+        },
+        "arrival_to_finish": {
+          "count": 24928,
+          "mean_ms": 5445.291328339177,
+          "p50_ms": 4790.800209,
+          "p95_ms": 10547.19225,
+          "max_ms": 23427.634
+        },
+        "burst_arrival_jitter": {
+          "count": 1827,
+          "mean_ms": 2.337953130815545,
+          "p50_ms": 1.566166,
+          "p95_ms": 6.64775,
+          "max_ms": 9.374291
+        },
+        "dispatch.OK.all_transaction_attempts": {
+          "count": 24928,
+          "mean_ms": 13.784092037949295,
+          "p50_ms": 10.585959,
+          "p95_ms": 28.817459,
+          "max_ms": 498.950208
+        },
+        "dispatch.OK.begin": {
+          "count": 24928,
+          "mean_ms": 0.31727000706033376,
+          "p50_ms": 0.231375,
+          "p95_ms": 0.602416,
+          "max_ms": 121.767459
+        },
+        "dispatch.OK.call": {
+          "count": 24928,
+          "mean_ms": 14.732339163189987,
+          "p50_ms": 10.600667,
+          "p95_ms": 33.27025,
+          "max_ms": 555.3145
+        },
+        "dispatch.OK.commit": {
+          "count": 24928,
+          "mean_ms": 0.314647618220475,
+          "p50_ms": 0.248833,
+          "p95_ms": 0.548792,
+          "max_ms": 20.981625
+        },
+        "dispatch.OK.connection_acquire": {
+          "count": 24928,
+          "mean_ms": 0.9418376559691912,
+          "p50_ms": 0.003125,
+          "p95_ms": 5.296208,
+          "max_ms": 431.13575
+        },
+        "dispatch.OK.lock_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 6.3645352168244544,
+          "p50_ms": 5.440833,
+          "p95_ms": 10.312834,
+          "max_ms": 459.156
+        },
+        "dispatch.OK.principal_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 5.77602741595796,
+          "p50_ms": 4.9205,
+          "p95_ms": 9.345834,
+          "max_ms": 455.568041
+        },
+        "dispatch.OK.sql.dispatch_check": {
+          "count": 24928,
+          "mean_ms": 2.7997215906209885,
+          "p50_ms": 2.384708,
+          "p95_ms": 4.534208,
+          "max_ms": 141.648
+        },
+        "dispatch.OK.sql.instance_lock": {
+          "count": 24928,
+          "mean_ms": 0.5473326655568036,
+          "p50_ms": 0.437166,
+          "p95_ms": 0.914625,
+          "max_ms": 196.872167
+        },
+        "dispatch.OK.sql.lease_lock": {
+          "count": 24928,
+          "mean_ms": 0.6108756467025032,
+          "p50_ms": 0.500583,
+          "p95_ms": 1.004916,
+          "max_ms": 85.024166
+        },
+        "dispatch.OK.sql.principal_lock": {
+          "count": 24928,
+          "mean_ms": 0.5843504300786265,
+          "p50_ms": 0.473042,
+          "p95_ms": 1.056083,
+          "max_ms": 60.984542
+        },
+        "dispatch.OK.sql.update": {
+          "count": 24928,
+          "mean_ms": 1.4574922441030167,
+          "p50_ms": 1.170125,
+          "p95_ms": 2.602333,
+          "max_ms": 419.656541
+        },
+        "dispatch.OK.sql.user_lock": {
+          "count": 24928,
+          "mean_ms": 7.097789436577343,
+          "p50_ms": 4.504,
+          "p95_ms": 19.964375,
+          "max_ms": 449.766834
+        },
+        "dispatch.OK.transaction": {
+          "count": 24928,
+          "mean_ms": 13.784092037949295,
+          "p50_ms": 10.585959,
+          "p95_ms": 28.817459,
+          "max_ms": 498.950208
+        },
+        "finish.OK.all_transaction_attempts": {
+          "count": 24928,
+          "mean_ms": 21.053977270819964,
+          "p50_ms": 17.403541,
+          "p95_ms": 42.944208,
+          "max_ms": 613.267917
+        },
+        "finish.OK.begin": {
+          "count": 24928,
+          "mean_ms": 0.4844883620426829,
+          "p50_ms": 0.227541,
+          "p95_ms": 1.072583,
+          "max_ms": 351.619833
+        },
+        "finish.OK.call": {
+          "count": 24928,
+          "mean_ms": 23.2244356102776,
+          "p50_ms": 17.4795,
+          "p95_ms": 51.403417,
+          "max_ms": 897.639667
+        },
+        "finish.OK.commit": {
+          "count": 24928,
+          "mean_ms": 0.32239635738928113,
+          "p50_ms": 0.238709,
+          "p95_ms": 0.584792,
+          "max_ms": 114.731458
+        },
+        "finish.OK.connection_acquire": {
+          "count": 24928,
+          "mean_ms": 2.1627419269897303,
+          "p50_ms": 0.003375,
+          "p95_ms": 4.927333,
+          "max_ms": 700.840834
+        },
+        "finish.OK.lock_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 5.52734883019095,
+          "p50_ms": 4.5285,
+          "p95_ms": 9.992667,
+          "max_ms": 348.451625
+        },
+        "finish.OK.principal_held_lower_bound": {
+          "count": 24928,
+          "mean_ms": 4.787827566672015,
+          "p50_ms": 3.912875,
+          "p95_ms": 8.617875,
+          "max_ms": 346.494
+        },
+        "finish.OK.sql.capacity_batch": {
+          "count": 24928,
+          "mean_ms": 1.1854970364650192,
+          "p50_ms": 0.950958,
+          "p95_ms": 2.1215,
+          "max_ms": 124.48775
+        },
+        "finish.OK.sql.insert": {
+          "count": 24928,
+          "mean_ms": 1.3597449998395377,
+          "p50_ms": 1.07175,
+          "p95_ms": 2.562749,
+          "max_ms": 268.8325
+        },
+        "finish.OK.sql.instance_lock": {
+          "count": 24928,
+          "mean_ms": 0.6294836168966624,
+          "p50_ms": 0.485458,
+          "p95_ms": 1.209334,
+          "max_ms": 109.847792
+        },
+        "finish.OK.sql.lease_lock": {
+          "count": 24928,
+          "mean_ms": 0.6889174242217586,
+          "p50_ms": 0.539542,
+          "p95_ms": 1.288208,
+          "max_ms": 44.209333
+        },
+        "finish.OK.sql.principal_lock": {
+          "count": 24928,
+          "mean_ms": 0.735318850449294,
+          "p50_ms": 0.560083,
+          "p95_ms": 1.447625,
+          "max_ms": 120.52275
+        },
+        "finish.OK.sql.update": {
+          "count": 24928,
+          "mean_ms": 0.5454087413751605,
+          "p50_ms": 0.434208,
+          "p95_ms": 0.957333,
+          "max_ms": 84.249958
+        },
+        "finish.OK.sql.user_lock": {
+          "count": 24928,
+          "mean_ms": 15.03252996650353,
+          "p50_ms": 12.225958,
+          "p95_ms": 33.33725,
+          "max_ms": 595.565708
+        },
+        "finish.OK.transaction": {
+          "count": 24928,
+          "mean_ms": 21.053977270819964,
+          "p50_ms": 17.403541,
+          "p95_ms": 42.944208,
+          "max_ms": 613.267917
+        },
+        "heartbeat.OK.all_transaction_attempts": {
+          "count": 488,
+          "mean_ms": 22.025299950819672,
+          "p50_ms": 17.594167,
+          "p95_ms": 47.324625,
+          "max_ms": 303.069
+        },
+        "heartbeat.OK.begin": {
+          "count": 488,
+          "mean_ms": 0.703124243852459,
+          "p50_ms": 0.24575,
+          "p95_ms": 1.277708,
+          "max_ms": 50.547333
+        },
+        "heartbeat.OK.call": {
+          "count": 488,
+          "mean_ms": 24.109868534836064,
+          "p50_ms": 17.721,
+          "p95_ms": 55.865625,
+          "max_ms": 338.334625
+        },
+        "heartbeat.OK.commit": {
+          "count": 488,
+          "mean_ms": 0.3602332827868852,
+          "p50_ms": 0.244458,
+          "p95_ms": 0.562833,
+          "max_ms": 14.470125
+        },
+        "heartbeat.OK.connection_acquire": {
+          "count": 488,
+          "mean_ms": 2.0746987028688526,
+          "p50_ms": 0.004375,
+          "p95_ms": 5.575375,
+          "max_ms": 152.586916
+        },
+        "heartbeat.OK.lock_held_lower_bound": {
+          "count": 488,
+          "mean_ms": 3.352258625,
+          "p50_ms": 2.628917,
+          "p95_ms": 6.825041,
+          "max_ms": 42.823417
+        },
+        "heartbeat.OK.principal_held_lower_bound": {
+          "count": 488,
+          "mean_ms": 2.645053774590164,
+          "p50_ms": 2.043042,
+          "p95_ms": 5.298375,
+          "max_ms": 41.962208
+        },
+        "heartbeat.OK.sql.instance_lock": {
+          "count": 488,
+          "mean_ms": 0.5799973299180328,
+          "p50_ms": 0.479125,
+          "p95_ms": 1.164125,
+          "max_ms": 4.463458
+        },
+        "heartbeat.OK.sql.lease_lock": {
+          "count": 488,
+          "mean_ms": 0.7100787336065574,
+          "p50_ms": 0.559459,
+          "p95_ms": 1.347916,
+          "max_ms": 10.587042
+        },
+        "heartbeat.OK.sql.principal_lock": {
+          "count": 488,
+          "mean_ms": 0.7014443913934426,
+          "p50_ms": 0.557833,
+          "p95_ms": 1.4455,
+          "max_ms": 4.648917
+        },
+        "heartbeat.OK.sql.update": {
+          "count": 488,
+          "mean_ms": 0.9729436639344262,
+          "p50_ms": 0.686042,
+          "p95_ms": 2.000166,
+          "max_ms": 34.496792
+        },
+        "heartbeat.OK.sql.user_lock": {
+          "count": 488,
+          "mean_ms": 17.959067454918035,
+          "p50_ms": 14.419459,
+          "p95_ms": 36.185417,
+          "max_ms": 268.898042
+        },
+        "heartbeat.OK.transaction": {
+          "count": 488,
+          "mean_ms": 22.025299950819672,
+          "p50_ms": 17.594167,
+          "p95_ms": 47.324625,
+          "max_ms": 303.069
+        },
+        "steady_arrival_jitter": {
+          "count": 23101,
+          "mean_ms": 0.00045571126791048007,
+          "p50_ms": 0.000334,
+          "p95_ms": 0.000583,
+          "max_ms": 0.316958
+        }
+      },
+      "effective_admission_commits_per_second": 40.379188609591765,
+      "elapsed_seconds": 617.347719416,
+      "errors": null,
+      "final_lease_states": {
+        "RELEASED": 24928
+      },
+      "idle_capacity_with_application_waiters_sample_seconds": 605.65,
+      "idle_capacity_with_live_offer_sample_seconds": 0,
+      "idle_capacity_with_live_offer_samples": 0,
+      "mock_utilization": 0.19351667285701443,
+      "operation_counts": {
+        "admit.ADMITTED.begin": 210276,
+        "admit.ADMITTED.commit": 24928,
+        "admit.ADMITTED.rollback": 185348,
+        "admit.ADMITTED.transaction.committed": 24928,
+        "admit.ADMITTED.transaction.rolled_back": 185348,
+        "admit.ADMITTED.try_lock.acquired": 24928,
+        "admit.ADMITTED.try_lock.missed": 185348,
+        "dispatch.OK.begin": 24928,
+        "dispatch.OK.commit": 24928,
+        "dispatch.OK.transaction.committed": 24928,
+        "finish.OK.begin": 24928,
+        "finish.OK.commit": 24928,
+        "finish.OK.transaction.committed": 24928,
+        "heartbeat.OK.begin": 488,
+        "heartbeat.OK.commit": 488,
+        "heartbeat.OK.transaction.committed": 488
+      },
+      "over": 0,
+      "peak_mock": 51,
+      "pg_wait_backend_samples_50ms": {
+        "sql.authorization/CPU/": 289,
+        "sql.authorization/Client/ClientRead": 43,
+        "sql.candidate_lock/CPU/": 280,
+        "sql.candidate_lock/Client/ClientRead": 30,
+        "sql.capacity_batch/CPU/": 560,
+        "sql.capacity_batch/Client/ClientRead": 79,
+        "sql.dispatch_check/CPU/": 990,
+        "sql.dispatch_check/Client/ClientRead": 43,
+        "sql.idempotency/CPU/": 51,
+        "sql.idempotency/Client/ClientRead": 34,
+        "sql.insert/CPU/": 483,
+        "sql.insert/Client/ClientRead": 175,
+        "sql.instance_lock/CPU/": 84,
+        "sql.instance_lock/Client/ClientRead": 79,
+        "sql.lease_lock/CPU/": 158,
+        "sql.lease_lock/Client/ClientRead": 53,
+        "sql.ledger_check/CPU/": 184,
+        "sql.ledger_check/Client/ClientRead": 36,
+        "sql.other/CPU/": 123,
+        "sql.other/Client/ClientRead": 210,
+        "sql.other/IO/WalInitWrite": 2,
+        "sql.other/IO/WalWrite": 6,
+        "sql.principal_lock/CPU/": 189,
+        "sql.principal_lock/Client/ClientRead": 100,
+        "sql.quota/CPU/": 110,
+        "sql.quota/Client/ClientRead": 30,
+        "sql.snapshot/CPU/": 193,
+        "sql.snapshot/Client/ClientRead": 31,
+        "sql.ticket_cleanup/CPU/": 32,
+        "sql.ticket_cleanup/Client/ClientRead": 38,
+        "sql.ticket_read/CPU/": 36,
+        "sql.ticket_read/Client/ClientRead": 67,
+        "sql.try_advisory_lock/CPU/": 112,
+        "sql.try_advisory_lock/Client/ClientRead": 202,
+        "sql.update/CPU/": 279,
+        "sql.update/Client/ClientRead": 115,
+        "sql.user_ensure/CPU/": 33,
+        "sql.user_ensure/Client/ClientRead": 29,
+        "sql.user_lock/CPU/": 301,
+        "sql.user_lock/Client/ClientRead": 102,
+        "sql.user_lock/LWLock/BufferContent": 4,
+        "sql.user_lock/LWLock/LockManager": 10,
+        "sql.user_lock/Lock/transactionid": 9695,
+        "sql.user_lock/Lock/tuple": 6015,
+        "sql.wall_clock/CPU/": 19,
+        "sql.wall_clock/Client/ClientRead": 46
+      },
+      "pool_stats": [
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1266,
+          "wait_ms": 17795.347546
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1605,
+          "wait_ms": 30938.086881
+        },
+        {
+          "idle": 1,
+          "max_open": 6,
+          "open": 1,
+          "wait_count": 0,
+          "wait_ms": 0
+        },
+        {
+          "idle": 2,
+          "max_open": 2,
+          "open": 2,
+          "wait_count": 1732,
+          "wait_ms": 29280.658592
+        }
+      ],
+      "queue_control_sql_calls": 0,
+      "queue_sql_per_dispatch": 0,
+      "requests": 24928,
+      "scheduled_seconds": 600,
+      "sql_calls": {
+        "admit.ADMITTED": 658980,
+        "dispatch.OK": 174496,
+        "finish.OK": 199424,
+        "heartbeat.OK": 2440
+      },
+      "successful_admissions_per_advisory_attempt": 0.1185489547071468,
+      "timeout_count": 0,
+      "timeout_rate": 0,
+      "transaction_activity": {
+        "all_attempt_mean_wall_ms": 6.655026458752206,
+        "attempts": 260620,
+        "background_sql_wall_ms": 0,
+        "commits": 75272,
+        "errors": 0,
+        "rollbacks": 185348,
+        "try_lock_acquired": 24928,
+        "try_lock_attempts": 210276,
+        "try_lock_misses": 185348
+      },
+      "reported_successful_admissions_per_advisory_attempt": 0.1185489547071468,
+      "advisory_ratio_note": "Recomputed from ALL admit outcomes, including ERROR. Original raw field retained.",
+      "execution_test_status": "PASS",
+      "retained_occupancy": 0
+    }
+  ]
+}

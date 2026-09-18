@@ -1,5 +1,5 @@
 {
-  "report_revision": "admission-time-performance-r1",
+  "report_revision": "local-admission-fairness-r1",
   "task_baseline_sha": "5effa833a988b57ec977a93481be2f75450f8edd",
   "feature_default": "off",
   "supported_target_topology": {
@@ -173,6 +173,91 @@
       "path": "/tmp/sub2api-queue-progress/final-focused-current-head.log",
       "sha256": "1fae54d4d4b668b71f22a8765e13131630ab8731551195f46968d67a0eae8ffc",
       "bytes": 14626
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-fairness/gate-baseline.log",
+      "sha256": "d19db2dedb1d4d3a4622747caa0c89a323c81a40c39d94e9f6c84fcf7c552f46",
+      "bytes": 1872
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-fairness/gate-fixed.log",
+      "sha256": "bc9a913e29a95801192107a87aa350d11a1f937b7f62f34183ec286067072c07",
+      "bytes": 789
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-fairness/gate-race.log",
+      "sha256": "79afaff9b2224e6d09c50c4681320c2adea0a39d19b9e001237c4a817c9171c1",
+      "bytes": 7305
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-isolation/baseline-isolation.log",
+      "sha256": "0b43d3d5229fa1e4463de4da3d6ec86404ead7f358027a05c2f95e088764f448",
+      "bytes": 2714
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-isolation/fixed-isolation.log",
+      "sha256": "af1d2bc7b2422266e273b540e1d71bce3202e8b231527fd2d1be3d6d267f8433",
+      "bytes": 3769
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-isolation/registry-unit.log",
+      "sha256": "2d5495cbab469d142ded286cd2c04927b60853131da52629f9c6477c10679819",
+      "bytes": 8505
+    },
+    {
+      "path": "/tmp/sub2api-local-admission-isolation/registry-race.log",
+      "sha256": "800bb95ad43debd30cbf0db3dc023331ef2964beceef73aea4f2f49703ee3cbc",
+      "bytes": 8505
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/handler/before.log",
+      "sha256": "942a4f49f3010ba2e07987c359f7248dd242c463f6ac06ac3375c642604d8d02",
+      "bytes": 13190
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/handler/after.log",
+      "sha256": "e0d7345a7b9114c4ae01079931ccd8ce6cf0b12b0aa684104b65862ec38114e1",
+      "bytes": 284
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/handler/after-stable.log",
+      "sha256": "5a903db36be62f4307cf88970812b8d57cef8103c9aebac783dd54b78ee18e4a",
+      "bytes": 19967
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/trace-verify.log",
+      "sha256": "c4b6cb5e13a7c5d8c50dfee1484b0cb3c5f8a5700e3e7c5aa8040cf05a913ea0",
+      "bytes": 2218
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/single-principal-cost.log",
+      "sha256": "38e48f4b7dbe391203be78ac9cdefdf6fd6f7fde9fbcfdd82df7d7640ebc552c",
+      "bytes": 22495
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/endurance-E4-local.log",
+      "sha256": "a85529a0c3fc5c243a517c83cd532f4012e5f55955c0f3a97c74da9e93fdbbdf",
+      "bytes": 151429
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/E4-C10-I16-repeat.log",
+      "sha256": "88eb37f1cd8ec81f241430df15318e2ed03ce0c62e2e3393a92ab094b8ae1cee",
+      "bytes": 24954
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/environment/contention.json",
+      "sha256": "faac5b30e45c3b8e3163f78fa420e2893530accba3276f7373b40649b28ead1b",
+      "bytes": 1846
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/environment/local-db-contention.txt",
+      "sha256": "6b14a7f288e130efe8d2ddd17a1a38bd5cb5284dbaa315a4b58911f0d07553b3",
+      "bytes": 671
+    },
+    {
+      "path": "/tmp/sub2api-local-admission/root/final-metrics-check.log",
+      "sha256": "d4b42b0430dee25a56925f7fb22d856df79745b128e1b0be8f06f486058129c3",
+      "bytes": 23640
     }
   ],
   "runs": [
@@ -252,5 +337,61 @@
     "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^(TestCredentialQueueThreeProcessesPausedOwner|TestCredentialQueueProgress|TestCredentialLifecycleResources|TestCredentialOverloadRecovery|TestCredentialAdmissionTurn|TestCredentialUsageCrashWindowsRecoverWithoutReplay|TestCredentialGatewayGlobalUserLimitAndBilling|TestCredentialGatewayLegacyAndGroupedShareUserCapacity|TestPrincipalAdmissionTime)' -count=1 -v",
     "exit_code": 0,
     "artifact": "/tmp/sub2api-queue-progress/final-focused-current-head.log"
+  },
+  "local_admission_fairness": {
+    "baseline_code_sha": "44f88b3d55c170205b1e6d120895f8691132bb3a",
+    "tested_code_sha": "d2ee90c3c1d634f7fc9956ae595de858bbcb85ff",
+    "benchmark_code_sha": "d2ee90c3c1d634f7fc9956ae595de858bbcb85ff",
+    "acceptance_scope": "local only per latest user instruction; native Linux/amd64 is not part of this run",
+    "transaction_p95_goal_ms": 20,
+    "not_a_goal": "call + local wait + capacity queue <20ms under arbitrary load",
+    "gate": {
+      "code_sha": "4c0c3f8fe3349ab4c3c83e5cfd6da9b0d1117106",
+      "baseline": "three deterministic failures",
+      "fixed": "unit PASS, race 10 runs PASS; 1000 cancellation/grant interleavings"
+    },
+    "principal_isolation": {
+      "code_sha": "ec091df810d6fbd9e12a3bfba74286e3d41acb13",
+      "baseline": "B deadline exceeded in 750ms while A lock still held",
+      "fixed": "B admitted 315.58ms with A lock still held; registry 20 runs and race 20 runs PASS"
+    },
+    "handler_budget": {
+      "code_sha": "b53f2b7d8bf72d3e5398c34037b391320ded4788",
+      "result": "PASS after observed late acknowledgement sends and misclassified timeouts",
+      "queue_seconds": 15,
+      "compensation_seconds": 3,
+      "log": "/tmp/sub2api-local-admission/handler/after-stable.log"
+    },
+    "e4": {
+      "status": "FAIL",
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -timeout=85m -v",
+      "artifact": "/tmp/sub2api-local-admission/root/endurance-E4-local.log",
+      "six_cases_sequential": true,
+      "summary_artifact": "local-admission-E4-results.json",
+      "cases": {
+        "C10_I3": "PASS",
+        "C10_I16": "FAIL",
+        "C50_I3": "PASS",
+        "C50_I16": "PASS",
+        "C200_I3": "PASS",
+        "C200_I16": "PASS"
+      },
+      "exit_code": 1
+    },
+    "deployment": "not deployed; production host read-only architecture and load inspection only; no production credentials in artifacts",
+    "failed_case_repeat": {
+      "status": "PASS",
+      "exit_code": 0,
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m SUB2API_CREDENTIAL_MATRIX_CASE=C10_I16 /tmp/sub2api-local-admission/root/matrix-tested.test -test.run='^TestCredentialAcceptanceEndurance$' -test.count=1 -test.timeout=15m -test.v",
+      "summary_artifact": "local-admission-E4-C10-I16-repeat.json",
+      "binary_sha256": "855af0cee9eef0b881054bac8cafe401e5f01d136f885f9835e636116d32e740"
+    },
+    "other_worktree_commit_not_tested_in_fixed_matrix": "f416f1a93 (unrelated concurrent public-transit/channel-monitor work preserved; matrix compiled before it)",
+    "final_metrics_check": {
+      "tested_code_sha": "225168175",
+      "exit_code": 0,
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=1s SUB2API_CREDENTIAL_MATRIX_CASE=C10_I3 go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialAdmissionTraceCountsRetriesAndCommit$|^TestCredentialAcceptanceEndurance$|^TestCredentialGatewayQueueBudgetLocalOverload' -count=1 -timeout=3m -v",
+      "purpose": "counter/label and local-overload checks only; not a performance comparison"
+    }
   }
 }
