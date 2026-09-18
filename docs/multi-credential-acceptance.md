@@ -57,7 +57,7 @@
 - `go test ./...`：当前最终 HEAD `01fbfcd6c` 实际退出 1。基线 `fde7e8ec4` 与当前最终 HEAD 各自完整运行均记录 78 个失败事件、141 个父测试中断/未完成事件；完整最终 HEAD 逐测试对照见 [`full-suite-comparison-final.json`](credential-acceptance/full-suite-comparison-final.json)；原始日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，逐项复跑证据见 [`failure-comparison.md`](credential-acceptance/failure-comparison.md)。相同结果不能自动归因基线；WS/流错误代表性失败已单测复跑，仍有其他范围外失败需要单独归因。
 - `go test -race ./internal/service ./internal/handler ./internal/repository ./internal/handler/admin -run '^TestCredential|^TestPrincipal|^TestUpstreamPrincipal' -count=1`：通过。
 - PostgreSQL/Redis/HTTP mock 集成命令和真实 Gin handler 命令见 [`gateway.md`](credential-acceptance/gateway.md)、[`usage-recovery.md`](credential-acceptance/usage-recovery.md)。
-- 10 分钟 endurance 原日志：C10/I3、C10/I16 通过；C50/I16 通过；C50/I3 和 C200/I3 出现 `ADMISSION_OWNERSHIP_LOST`；C200/I16 无超限但 admission p95 约 4.34s。复核发现该次发生器使用30秒 request deadline，高锁竞争等待超过deadline后 BeginDispatch按设计拒绝，不能把它直接归因实现缺陷。发生器已改为2分钟 deadline；修正后六组合5秒 smoke均通过，但未重新完成6×10分钟矩阵。结论：持续压测整体 PARTIAL，未达到p95≤20ms。
+- 10 分钟 endurance 原日志使用30秒 request deadline，C50/I3、C200/I3的ownership loss不作为实现失败证据。修正为2分钟 deadline后，六组合10分钟矩阵全部完成且账本无超限/重复/漏释放：C10/I3 p95=488.66ms、C10/I16=500.36ms、C50/I3=1.47s、C50/I16=1.46s、C200/I3=9.79s、C200/I16=9.69s；所有组合测试PASS，但全部高于20ms目标，因此性能验收PARTIAL。日志 `/tmp/sub2api-acceptance-closure/endurance-corrected-C*.log`。
 - 旧 binary fence、离线迁移/canary/rollback 证据见 [`rollout.md`](credential-acceptance/rollout.md)。
 - 五个扫描漏洞逐项调用路径和处置见 [`vulnerabilities.md`](credential-acceptance/vulnerabilities.md)。扫描结果未被忽略；grpc/x/image 未在本任务升级，生产仍受漏洞处置门槛约束。
 
