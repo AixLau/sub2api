@@ -42,7 +42,7 @@ func admissionDatabaseClock(t *testing.T) time.Time {
 
 func waitAdmissionDeadline(t *testing.T, deadline time.Time) {
 	t.Helper()
-	require.Eventually(t, func() bool { return !admissionDatabaseClock(t).Before(deadline) }, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return !admissionDatabaseClock(t).Before(deadline) }, max(5*time.Second, time.Until(deadline)+5*time.Second), 5*time.Millisecond)
 }
 
 func TestPrincipalAdmissionTimeDispatchDeadlineAfterLockWait(t *testing.T) {
@@ -97,8 +97,10 @@ func TestPrincipalAdmissionTimeHeartbeatAfterLockWait(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- store.Heartbeat(context.Background(), d.Snapshot.Lease) }()
 	waitAdmissionBlocked(t, pid)
-	// This lower bound is strictly after the heartbeat transaction began. No
-	// 30-second sleep is needed to prove renewal uses the post-wait wall clock.
+	// Cross the real 30-second stale threshold, using a DB-clock barrier. This
+	// repository test deliberately supplies a long-lived context; the executor's
+	// shorter 3-second heartbeat cancellation is covered separately under load.
+	waitAdmissionDeadline(t, admissionDatabaseClock(t).Add(31*time.Second))
 	releasedAfter := admissionDatabaseClock(t)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, <-done)

@@ -66,3 +66,9 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 1620次准入均ADMITTED，每次SQL由25降到18，Finish由12降到8。准入call p95 3401.62ms（P0 4364.08ms），事务p95 222.78ms（317.31ms），持锁下界p95 10.66ms（14.69ms）；吞吐37.71/s（29.63/s），平均mock利用率17.99%（14.17%）。这些单次短运行只支持有限改善，**不满足20ms，也未解决生命周期连接等待尾部超时**。保留心跳3秒失败及安全未知处理，不提高其预算来掩盖问题。六组合持续验证将把该风险继续作为失败项记录。
 
 回滚退回对应二进制优化，保留258索引及完整账本；不得用回滚清除未知lease或恢复旧token。数据修改CTE语义依据 [PostgreSQL WITH 文档](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-MODIFYING)，一致性结论依赖上述实际故障测试。
+
+### Dispatch 提交边界与31秒心跳锁等待
+
+补充真实handler测试：BeginDispatch已经提交但模拟丢失提交应答时，零HTTP发送仍保守进入ORPHANED/UNKNOWN，PG与Redis占用各保留1；不冒充已知未发送。提交明确返回成功、执行context已到期且尚未进入transport时，则凭本地确定证据释放为NOT_SENT，PG和Redis同时归零。二者没有混为一类。
+
+`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^(TestCredentialGatewayTime|TestPrincipalAdmissionTime)' -count=1 -v` 通过（`long-wait-and-commit.log`，42.378s）。心跳回归实际持锁等待31秒，跨过30秒陈旧阈值，提交后的heartbeat仍不早于释放锁的时刻；这里只在仓储测试提供长context，产品执行器3秒心跳预算不变。提交丢应答由装饰器注入，未声称真实网络丢包。
