@@ -45,6 +45,12 @@ go test -p 2 -tags=integration ./internal/repository \
 
 `full-gateway-fifth.log` 实际完成至两个主体的安全回滚分支，可靠终结恢复约 11.15 秒，仍因测试错误要求 UNKNOWN 没有任何 receipt 行而退出 1。实际仓储会保存部分观察但明确标成 `Complete=false / REVIEW_REQUIRED / USAGE_UNKNOWN`；修正验收为不能存在终结 receipt、不能结算为零，保留人工核对记录。本次修正没有更改产品 usage 处理。
 
+## 后续补入但尚未执行的持久存储重启窗口
+
+在全部网关被 UNKNOWN rollback fence 后，测试新增：Redis 显式 `SAVE` 后重启同一容器，核对原 epoch 与 UNKNOWN 用户 hold 分数原样存在；重启同一 PostgreSQL 主库，核对账本、profile、binding 保持，再启动三个完整网关观察实际 reconciler 续期。没有初始化丢失 epoch，没有导入快照，也没有恢复旧 token。该窗口覆盖正常持久数据保留后的受控 restart，不覆盖存储丢失、备份还原或 HA。
+
+这段测试在 `22bc1ac77` 的初次 PASS **之后新增，目前 NOT_RUN**。`full-gateway-rollout-results.json` 仍描述旧 test source SHA256 的原结果，不能将其作为新窗口的通过证据；最终候选必须重建后执行完整测试并补结果。AT-33/34 不因此提前从 PARTIAL 改为 PASS。
+
 ## 迁移影响与回滚
 
 本项只新增 opt-in 验收源码和 mock fixture，不新增产品 schema 或运行时开关。可以撤销测试代码而不触及事实表。安全回滚继续通过产品控制逻辑先 PAUSED、fence，再要求已知工作已终结且计费持久化；UNKNOWN/ORPHANED 阻断回滚，不能删除记录、清零占用或恢复旧 token 快照。

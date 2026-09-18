@@ -148,6 +148,30 @@ func TestCredentialFullGatewayOfflineRollout(t *testing.T) {
 	require.GreaterOrEqual(t, fixture.scalar(`SELECT count(*) FROM credential_audit_outbox WHERE principal_id=$1 AND actor_id=$2 AND event_type='PRINCIPAL_UPDATED'`, pb, actor), int64(1), "manual review retains the administrator's pause audit")
 	var unknownSlot string
 	require.NoError(t, integrationDB.QueryRow(`SELECT global_user_slot FROM request_leases WHERE principal_id=$1 AND state='ORPHANED'`, pb).Scan(&unknownSlot))
+	identityUnknownBefore, bindingsUnknownBefore := fixture.identityAndBindings(pb)
+	epochBefore, err := integrationRedis.Get(ctx, credentialRedisEpochKey).Result()
+	require.NoError(t, err)
+	slotBefore, err := integrationRedis.ZScore(ctx, fmt.Sprintf("concurrency:user:%d", actor), unknownSlot).Result()
+	require.NoError(t, err)
+	// Every gateway is already fenced by the rejected rollback. Restart the
+	// same persisted single Redis / PostgreSQL instances, never a stale backup.
+	// SAVE is an explicit fixture durability boundary; do not initialize or
+	// reconstruct a missing epoch. Loss must remain fail-closed.
+	require.NoError(t, integrationRedis.Save(ctx).Err())
+	fixture.docker("restart", "--time", "2", fixture.redisID)
+	require.Eventually(t, func() bool { return integrationRedis.Ping(ctx).Err() == nil }, 10*time.Second, 50*time.Millisecond)
+	epochAfter, err := integrationRedis.Get(ctx, credentialRedisEpochKey).Result()
+	require.NoError(t, err)
+	require.Equal(t, epochBefore, epochAfter)
+	slotAfter, err := integrationRedis.ZScore(ctx, fmt.Sprintf("concurrency:user:%d", actor), unknownSlot).Result()
+	require.NoError(t, err)
+	require.Equal(t, slotBefore, slotAfter)
+	fixture.docker("restart", "--time", "2", fixture.postgresID)
+	require.Eventually(t, func() bool { return integrationDB.PingContext(ctx) == nil }, 15*time.Second, 50*time.Millisecond)
+	require.Equal(t, int64(1), fixture.scalar(`SELECT occupied FROM upstream_principals WHERE id=$1 AND admin_state='PAUSED'`, pb))
+	identityUnknownAfter, bindingsUnknownAfter := fixture.identityAndBindings(pb)
+	require.JSONEq(t, identityUnknownBefore, identityUnknownAfter)
+	require.JSONEq(t, bindingsUnknownBefore, bindingsUnknownAfter)
 	restartedAt := time.Now()
 	fixture.startNodes(true)
 	// Observe an actual periodic global-user reconcile after process restart,
@@ -158,6 +182,7 @@ func TestCredentialFullGatewayOfflineRollout(t *testing.T) {
 	}, 20*time.Second, 50*time.Millisecond)
 	require.Equal(t, int64(1), fixture.scalar(`SELECT occupied FROM upstream_principals WHERE id=$1 AND admin_state='PAUSED'`, pb))
 	require.Equal(t, before+5, fixture.mockStats()["calls"])
+	t.Logf("full_gateway_persisted_store_restart=%s unknown_preserved=1 epoch_preserved=true upstream_replay=0", time.Since(restartedAt))
 	_, err = fence.Fence(ctx)
 	require.NoError(t, err)
 	// Rotate the synthetic credential through the versioned store while fenced.
@@ -206,6 +231,7 @@ type fullGatewayRollout struct {
 	t                                                          *testing.T
 	ctx                                                        context.Context
 	project, network, directory, server, mock, mockURL, mockID string
+	postgresID, redisID                                        string
 	containers                                                 []string
 	nodes                                                      []fullRolloutNode
 }
@@ -243,6 +269,11 @@ func newFullGatewayRollout(t *testing.T, ctx context.Context, server, mock strin
 		}
 		require.Len(t, matching, 1)
 		f.docker("network", "connect", "--alias", endpoint.alias, f.network, matching[0])
+		if endpoint.alias == "database" {
+			f.postgresID = matching[0]
+		} else {
+			f.redisID = matching[0]
+		}
 	}
 	f.certificate()
 	for _, mode := range []bool{false, true} {
