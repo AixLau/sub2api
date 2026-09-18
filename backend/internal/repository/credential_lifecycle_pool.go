@@ -29,7 +29,9 @@ func ProvidePrincipalAdmissionStore(db *sql.DB, cfg *config.Config) (service.Pri
 	critical := sql.OpenDB(connector)
 	critical.SetMaxOpenConns(2)
 	critical.SetMaxIdleConns(2)
-	critical.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetimeMinutes) * time.Minute)
+	settings := clampDBPoolSettings(cfg)
+	critical.SetConnMaxLifetime(settings.ConnMaxLifetime)
+	critical.SetConnMaxIdleTime(settings.ConnMaxIdleTime)
 	ctx, end := context.WithTimeout(context.Background(), 5*time.Second)
 	defer end()
 	if err = critical.PingContext(ctx); err != nil {

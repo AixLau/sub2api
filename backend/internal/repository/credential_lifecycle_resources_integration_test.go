@@ -5,10 +5,14 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -102,4 +106,38 @@ func TestCredentialLifecycleResourcesThreeNodeAdmissionPressure(t *testing.T) {
 	stop()
 	wg.Wait()
 	assertAdmissionLedger(t, f, 0)
+}
+
+func TestCredentialLifecyclePoolBudgetAndDisabledGate(t *testing.T) {
+	db, err := openSQLWithRetry(context.Background(), integrationDSN, time.Second)
+	require.NoError(t, err)
+	defer db.Close()
+	db.SetMaxOpenConns(8)
+	cfg := &config.Config{Timezone: "UTC"}
+	cfg.Database.MaxOpenConns = 8
+	cfg.Database.MaxIdleConns = 8
+	disabled, err := ProvidePrincipalAdmissionStore(db, cfg)
+	require.NoError(t, err)
+	require.Nil(t, disabled.(*principalAdmissionStore).lifecycleDB)
+	require.Equal(t, 8, db.Stats().MaxOpenConnections)
+	cfg.Gateway.MultiCredentialHTTPEnabled = true
+	cfg.Database.MaxOpenConns = 3
+	_, err = ProvidePrincipalAdmissionStore(db, cfg)
+	require.ErrorContains(t, err, "at least four")
+	parsed, err := url.Parse(integrationDSN)
+	require.NoError(t, err)
+	cfg.Database.MaxOpenConns = 8
+	cfg.Database.Host = parsed.Hostname()
+	cfg.Database.Port, err = strconv.Atoi(parsed.Port())
+	require.NoError(t, err)
+	cfg.Database.User = parsed.User.Username()
+	cfg.Database.Password, _ = parsed.User.Password()
+	cfg.Database.DBName = strings.TrimPrefix(parsed.Path, "/")
+	cfg.Database.SSLMode = "disable"
+	enabled, err := ProvidePrincipalAdmissionStore(db, cfg)
+	require.NoError(t, err)
+	store := enabled.(*principalAdmissionStore)
+	defer store.Close()
+	require.Equal(t, 6, db.Stats().MaxOpenConnections)
+	require.Equal(t, 2, store.criticalDB().Stats().MaxOpenConnections)
 }
