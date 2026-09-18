@@ -29,3 +29,9 @@
 本安全变更没有数据库迁移、配置开关或业务权限修改。发布需要重新构建网关和自有插件，更新宿主依赖不会自动重写已经分发的第三方插件二进制。旧插件包必须单独重新构建/审计；版本号升级不能代表旧二进制已修复。
 
 如兼容问题要求撤回，优先暂停受影响插件并保持多凭证关闭，在安全修复版本上修复兼容问题；不得把降回 grpc 1.82.1 / x/image 0.41.0 视为可生产启用的安全回滚。若撤销本提交用于诊断，五项版本风险恢复，B2 必须重新标记 BLOCKED。此过程不触碰凭证身份、token、租约或 usage 事实。
+
+## 最终候选复验
+
+`tested_code_sha=b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8` 的追踪文件快照已重跑插件/头像/皮肤相关定向和race（命令与根/子测试记录归入发布收尾证据）。显式 `GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...` 实际退出0，仍为0可达、0导入包、6仅模块级发现；原五项不再出现。日志 `/tmp/sub2api-release-closure/final-logs/candidate-govulncheck-go127.stdout`，SHA-256 `410dea70b554ad5de426c88e3ddaf8b9c7ada1266b73b7bd9d6ecd2778b8f71a`。
+
+首次未固定toolchain的运行自动选Go1.26.8，无法解析项目Go1.27，退出1且未完成扫描。其日志和退出码保留在 `candidate-govulncheck.*`，不是漏洞扫描PASS；显式toolchain复验没有改源码、依赖版本或扫描规则。不能把六项模块级发现改写为整个依赖图无漏洞，也不能将宿主升级外推到已分发的第三方插件二进制。

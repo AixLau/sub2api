@@ -192,5 +192,76 @@
       "artifact": "/tmp/sub2api-release-security/GO-2026-6348.json",
       "sha256": "791b166b47c9017ef5340408bd609131a8dad3e57dfb38c2cb0dbe7b85825636"
     }
+  },
+  "final_candidate_scan": {
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "first_toolchain_failure": {
+      "name": "candidate-govulncheck",
+      "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+      "command": [
+        "go",
+        "run",
+        "golang.org/x/vuln/cmd/govulncheck@v1.8.0",
+        "-show",
+        "verbose",
+        "./..."
+      ],
+      "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend",
+      "start": "2026-09-18T20:03:49.354905+00:00",
+      "environment": {
+        "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+        "GOFLAGS": "-p=2",
+        "TESTCONTAINERS_RYUK_DISABLED": "true",
+        "CI": "true"
+      },
+      "exit_code": 1,
+      "elapsed_seconds": 19.152735917,
+      "end": "2026-09-18T20:04:08.508041+00:00",
+      "stdout": {
+        "path": "/tmp/sub2api-release-closure/final-logs/candidate-govulncheck.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/tmp/sub2api-release-closure/final-logs/candidate-govulncheck.stderr",
+        "sha256": "b7f40a536cb889f57b80f677b602c7e351803409cf14caf122c8e7927a134516"
+      }
+    },
+    "go127_verified_scan": {
+      "name": "candidate-govulncheck-go127",
+      "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+      "command": [
+        "env",
+        "GOTOOLCHAIN=go1.27.0",
+        "go",
+        "run",
+        "golang.org/x/vuln/cmd/govulncheck@v1.8.0",
+        "-show",
+        "verbose",
+        "./..."
+      ],
+      "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend",
+      "start": "2026-09-18T20:15:08.627500+00:00",
+      "environment": {
+        "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+        "GOFLAGS": "-p=2",
+        "TESTCONTAINERS_RYUK_DISABLED": "true",
+        "CI": "true"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 15.76103525,
+      "end": "2026-09-18T20:15:24.389498+00:00",
+      "stdout": {
+        "path": "/tmp/sub2api-release-closure/final-logs/candidate-govulncheck-go127.stdout",
+        "sha256": "410dea70b554ad5de426c88e3ddaf8b9c7ada1266b73b7bd9d6ecd2778b8f71a"
+      },
+      "stderr": {
+        "path": "/tmp/sub2api-release-closure/final-logs/candidate-govulncheck-go127.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "reachable_vulnerabilities": 0,
+    "imported_package_vulnerabilities": 0,
+    "module_only_findings": 6,
+    "initial_five_absent": true
   }
 }

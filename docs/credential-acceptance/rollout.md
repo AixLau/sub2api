@@ -46,3 +46,13 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/r
 ```
 
 实际通过，日志 `/tmp/sub2api-admission-time-performance/rollout-fencing-current.log`。这证明合成 Compose fence、迁移预览/安全回滚和 UNVERIFIED 在 fence 前阻断；不证明真实旧完整网关镜像、可信 provider verifier 或未支持 HA 拓扑已完成正式迁移。生产迁移仍需先满足身份契约和声明拓扑限制。
+
+## 924819收尾新增迁移261与回滚约束
+
+本轮仅新增 `261_credential_vault_rotation.sql`，迁移260及已有其他工作流代码保留。261前向创建密钥ID/操作/计数表，不存明文密钥，不改安装标识或token版本。常规迁移由ApplyMigrations执行；真正重封密文由独立离线 `credential-vault-rotate` 工具在受控清单fence后执行，不能把建表等同于已轮换。实际PG故障注入及CLI私密文件检查见[秘密操作专项](credential-secret-operations.md)。
+
+回滚次序：保持功能关闭和主体PAUSED → fence全部网关与持凭证worker → 根据同一operation及当前key ID确认数据库提交结果 → 对可靠终结事实完成本地幂等释放/结算，UNKNOWN/ORPHANED仍占用并人工核对 → 若需回退加密密钥，离线重封**当前**四类密文，保留当前stable fingerprint key、最新refresh token、版本、profile和绑定 → 核对支持新schema/key校验的候选节点后再另行审批启用。工具不会自行恢复网关网络或启服务。禁止删除261、还原旧token快照、清Redis epoch或未知占用来强行通过启动。
+
+准入SQL合并没有新schema和预算变化，代码回退时保留索引/账本/审计即可；安全依赖提交应独立保留，降回旧grpc/image会恢复原五项版本风险。回退到缺少key-ID检查或凭证边界保护的旧程序不能作为安全放行方式。
+
+新完整三网关测试另覆盖正常持久数据保存后的单PG/Redis受控restart；不等于Redis全部丢失后能自动重建或备份还原验收。epoch丢失仍fail closed，未经单独恢复证据不得手工填回旧epoch。部署范围仍单主库、单Redis、同机受控进程，HA/双活/Cluster未纳入。

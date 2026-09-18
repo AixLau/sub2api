@@ -1,5 +1,5 @@
 {
-  "report_revision": "local-admission-fairness-r1",
+  "report_revision": "release-closure-r3",
   "task_baseline_sha": "5effa833a988b57ec977a93481be2f75450f8edd",
   "feature_default": "off",
   "supported_target_topology": {
@@ -393,5 +393,22 @@
       "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=1s SUB2API_CREDENTIAL_MATRIX_CASE=C10_I3 go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialAdmissionTraceCountsRetriesAndCommit$|^TestCredentialAcceptanceEndurance$|^TestCredentialGatewayQueueBudgetLocalOverload' -count=1 -timeout=3m -v",
       "purpose": "counter/label and local-overload checks only; not a performance comparison"
     }
+  },
+  "latest_release_closure": {
+    "task_baseline_sha": "924819c5d04a550801fb4e85441059389dc00caa",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "benchmark_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "full_gateway_fixture_sha": "35aff321ddc65457f65fe2cbf3e0d4a257dce304",
+    "artifacts": "release-validation-results.json",
+    "endurance": "release-endurance-E5-results.json",
+    "at_status_counts": {
+      "BLOCKED": 1,
+      "PARTIAL": 25,
+      "PASS": 14
+    },
+    "feature_default": "off",
+    "overall_system_acceptance": "PARTIAL",
+    "provider_identity": "BLOCKED",
+    "real_compact": "BLOCKED"
   }
 }

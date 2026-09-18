@@ -25,10 +25,16 @@ B重试等待范围为第1次2.5–5ms、第2次5–10ms、第3次10–20ms、�
 
 A1/A2中单独quota往返均mean约0.55ms，三次insert累计mean约1.49ms；用户行锁阶段mean约7.7–7.8ms（包括SQL往返，非纯锁等待）。该阶段是共享生命周期锁的成本，不能简单删锁。后台推进SQL计数为0，说明本场景等待集中在登记前本地/跨节点turn，不能把延迟归因于本次未实际运行的queue pump。
 
-## 第二组：最小往返合并（待运行）
+## 第二组：最小往返合并（实际短测）
 
-保持锁顺序与所有检查：共享quota EXISTS并入已持主体锁后的ledger读；LEASE_RESERVED audit写入并入同事务容量CTE，任何审计错误仍回滚所有计数和lease。最终实时deadline检查仍在写入之后、提交之前。没有增加许可、删除账本核对或修改未知占用。新增实际PostgreSQL触发器故障测试验证审计失败不能留下半批准。第二组结果待执行，不能把静态减少两次往返视为已达到20ms。
+保持锁顺序与所有检查：共享quota EXISTS并入已持主体锁后的ledger读；LEASE_RESERVED audit写入并入同事务容量CTE，任何审计错误仍回滚所有计数和lease。最终实时deadline检查仍在写入之后、提交之前。没有增加许可、删除账本核对或修改未知占用。新增实际PostgreSQL触发器故障测试验证审计失败不能留下半批准。错误优先有两个安全侧变化：quota SQL故障可能先于ledger/config/paused拒绝返回；audit故障可能先于最终deadline拒绝返回。两者均fail closed；审计写入等待现在也受到最后实时deadline检查，不能声称错误排序完全不变。
 
 参考已核对的成熟模式：[PostgreSQL事务级锁](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)、[AWS退避与抖动说明](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)。这些资料支持机制取舍，不证明本系统性能。
 
 无schema变更；回滚本性能变更须保持开关关闭，回退代码即可，保留所有账本、receipt、最新token和UNKNOWN/ORPHANED占用。该对照不涉及真实provider身份或compact契约。
+
+受测代码/发生器 `9f851c18ec771762202d0a359d1c1431b7716cbb`，先保存独立二进制 `/tmp/sub2api-release-closure/perf-sql.test`，编译退出0；执行 `-test.run=^(TestCredentialAdmissionAuditFailure|TestCredentialAdmissionCapacityWriteFailure|TestCredentialFailureOldVersionAndSharedQuota|TestPrincipalAdmissionTime|TestCredentialPrincipalTurn|TestCredentialQueueProgress|TestCredentialLifecycleResources|TestPrincipalAdmissionThreeNodes) -test.count=1 -test.timeout=4m -test.v`，退出0。包括真实审计trigger异常原子回滚、共享quota、长锁等待deadline/heartbeat、取消、三节点最后槽位、提示故障与生命周期保留资源。
+
+同一环境固定5ms，C200/I16 30秒短测退出0，1940个lease全部RELEASED，零超准入、重复、Heartbeat/Finish错误。dispatch/s=43.72，利用率20.96%；获准事务mean=16.70ms、p95=21.08ms，call p95=3643.46ms；Finish p95=20.33ms、Heartbeat p95=18.40ms。相比A1/A2固定5ms对照的mean约17.7ms和41.7dispatch/s，本次变化符合减少往返的预期，但只有一次短测，不能证明持续矩阵已达标。20ms目标仍未达到。
+
+SQL总数73307，其中1940次成功准入和11037次advisory失败重试；按每次dispatch约37.79 SQL，对照A1/A2约40.04/40.06。后台推进SQL仍0，不能据此声称队列pump被优化。quota工作合入 `sql.ledger_check`、audit工作合入 `sql.capacity_batch`，旧独立阶段样本减少不是删除检查的证据。固定十分钟六组合及真实handler现已在b067最终产品快照执行，见release-endurance-E5.md与收尾报告；本段保持为短测原记录，不用短测替代持续验收。
