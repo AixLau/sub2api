@@ -4,25 +4,86 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
-// Six sequential 10-minute scenarios. The actual HTTP mock records every start
-// and end. Three independent admission clients share the real PostgreSQL ledger.
-// This is an admission/transport endurance test, not the full-handler E2E test.
+type enduranceDistribution struct {
+	Count  int     `json:"count"`
+	MeanMS float64 `json:"mean_ms"`
+	P50MS  float64 `json:"p50_ms"`
+	P95MS  float64 `json:"p95_ms"`
+	MaxMS  float64 `json:"max_ms"`
+}
+
+func enduranceSummary(v []time.Duration) enduranceDistribution {
+	if len(v) == 0 {
+		return enduranceDistribution{}
+	}
+	sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
+	var sum time.Duration
+	for _, d := range v {
+		sum += d
+	}
+	return enduranceDistribution{len(v), float64(sum) / float64(len(v)) / 1e6, float64(v[len(v)*50/100]) / 1e6, float64(v[(len(v)-1)*95/100]) / 1e6, float64(v[len(v)-1]) / 1e6}
+}
+
+type enduranceMeasurements struct {
+	mu        sync.Mutex
+	durations map[string][]time.Duration
+	sqlCalls  map[string]int
+	failures  []string
+}
+
+func (m *enduranceMeasurements) duration(key string, d time.Duration) {
+	m.mu.Lock()
+	m.durations[key] = append(m.durations[key], d)
+	m.mu.Unlock()
+}
+func (m *enduranceMeasurements) call(operation, result string, trace *admissionTrace) {
+	elapsed := time.Since(trace.started)
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := operation + "." + result
+	m.durations[prefix+".call"] = append(m.durations[prefix+".call"], elapsed)
+	rounds := 0
+	for phase, d := range trace.values {
+		m.durations[prefix+"."+phase] = append(m.durations[prefix+"."+phase], d)
+		if strings.HasPrefix(phase, "sql.") {
+			rounds += trace.counts[phase]
+		}
+	}
+	m.sqlCalls[prefix] += rounds
+}
+func (m *enduranceMeasurements) failure(stage string, err error) {
+	m.mu.Lock()
+	m.failures = append(m.failures, stage+": "+err.Error())
+	m.mu.Unlock()
+}
+
+// Sequential scenarios, three independent 8-connection pools and one primary.
+// This exercises the admission lifecycle + HTTP mock, not three OS gateway
+// processes or the full handler/billing path (covered by separate tests).
 func TestCredentialAcceptanceEndurance(t *testing.T) {
 	value := os.Getenv("SUB2API_CREDENTIAL_ENDURANCE")
 	if value == "" {
@@ -32,13 +93,15 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 	require.NoError(t, err)
 	for _, capacity := range []int{10, 50, 200} {
 		for _, instances := range []int{3, 16} {
-			if requested := os.Getenv("SUB2API_CREDENTIAL_MATRIX_CASE"); requested != "" && requested != fmt.Sprintf("C%d_I%d", capacity, instances) {
+			name := fmt.Sprintf("C%d_I%d", capacity, instances)
+			if requested := os.Getenv("SUB2API_CREDENTIAL_MATRIX_CASE"); requested != "" && requested != name {
 				continue
 			}
-			t.Run(fmt.Sprintf("C%d_I%d", capacity, instances), func(t *testing.T) {
+			t.Run(name, func(t *testing.T) {
 				f := newAdmissionFixture(t, capacity)
 				extendAdmissionFixture(t, &f, instances)
-				var active, peak, starts, ends, duplicates, over atomic.Int64
+				m := &enduranceMeasurements{durations: map[string][]time.Duration{}, sqlCalls: map[string]int{}}
+				var active, peak, starts, ends, duplicates, over, serviceNanos, timeouts, requests atomic.Int64
 				seen := sync.Map{}
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if _, loaded := seen.LoadOrStore(r.Header.Get("X-Test-Lease"), true); loaded {
@@ -51,14 +114,17 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 						over.Add(1)
 					}
 					n := starts.Add(1)
-					defer func() { active.Add(-1); ends.Add(1) }()
-					// deterministic short/long requests and a 5-second long tail.
+					started := time.Now()
+					defer func() { serviceNanos.Add(int64(time.Since(started))); active.Add(-1); ends.Add(1) }()
 					delay := 200 * time.Millisecond
 					if n%5 == 0 {
 						delay = 2 * time.Second
 					}
 					if n%17 == 0 {
 						delay = 5 * time.Second
+					}
+					if n%51 == 0 {
+						delay = 12 * time.Second
 					}
 					timer := time.NewTimer(delay)
 					defer timer.Stop()
@@ -68,132 +134,246 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 						return
 					}
 					w.WriteHeader(200)
-					io.WriteString(w, "completed")
+					_, _ = io.WriteString(w, "completed")
 				}))
 				defer upstream.Close()
-				// Clients use independent pools to model connection ownership of three nodes.
 				stores := make([]*principalAdmissionStore, 3)
 				for i := range stores {
-					db, err := openSQLWithRetry(context.Background(), integrationDSN, 5*time.Second)
+					parsed, err := url.Parse(integrationDSN)
 					require.NoError(t, err)
+					values := parsed.Query()
+					values.Set("application_name", "admission_endurance")
+					parsed.RawQuery = values.Encode()
+					connector, err := pq.NewConnector(parsed.String())
+					require.NoError(t, err)
+					db := sql.OpenDB(admissionTraceConnector{connector})
 					db.SetMaxOpenConns(8)
+					db.SetMaxIdleConns(8)
 					defer db.Close()
+					require.NoError(t, db.Ping())
 					stores[i] = &principalAdmissionStore{db: db}
 				}
-				until := time.Now().Add(duration)
-				var wg sync.WaitGroup
-				var mu sync.Mutex
-				var timings, dispatchTimes, finishTimes []time.Duration
-				var failures []string
-				var waits atomic.Int64
-				workerCount := capacity + 3
-				for worker := range workerCount {
-					wg.Add(1)
-					go func(worker int) {
-						defer wg.Done()
-						store := stores[worker%3]
-						recordErr := func(stage string, err error) {
-							mu.Lock()
-							failures = append(failures, stage+": "+err.Error())
-							mu.Unlock()
-						}
-						for time.Now().Before(until) {
-							in := f.input()
-							in.Node = "endurance-" + strconv.Itoa(worker%3)
-							in.Deadline = time.Now().Add(2 * time.Minute)
-							var d service.AdmissionDecision
-							var err error
-							for {
-								started := time.Now()
-								d, err = store.TryAdmit(context.Background(), in)
-								elapsed := time.Since(started)
-								mu.Lock()
-								timings = append(timings, elapsed)
-								mu.Unlock()
-								if err != nil {
-									recordErr("admit", err)
-									return
-								}
-								if d.Code != service.AdmissionWait {
-									break
-								}
-								waits.Add(1)
-								if time.Now().After(until) || time.Now().After(in.Deadline) {
-									if err = store.CancelQueued(context.Background(), in); err != nil {
-										recordErr("cancel_queue", err)
-									}
-									return
-								}
-								time.Sleep(100 * time.Millisecond)
-							}
-							if d.Code != service.AdmissionAdmitted {
-								waits.Add(1)
-								if d.Reason != "ADMISSION_QUEUE_TIMEOUT" && d.Reason != "ADMISSION_QUEUE_FULL" {
-									recordErr("unexpected_rejection", fmt.Errorf("%s", d.Reason))
-									return
+				var version string
+				require.NoError(t, integrationDB.QueryRow(`SHOW server_version`).Scan(&version))
+				t.Logf("ENV postgres=%s go=%s cpu=%d gomaxprocs=%d pools=3 max_open_per_pool=8 workers=%d request_deadline=2m context_deadline=2m poll=100ms burst=capacity+3-at-minute-boundary", version, runtime.Version(), runtime.NumCPU(), runtime.GOMAXPROCS(0), capacity+3)
+				// Sample actual database wait events. Counts are backend-samples, not exact
+				// wait durations. SQL phase wall times must not be labelled pure lock waits.
+				samplingCtx, stopSampling := context.WithCancel(context.Background())
+				sampled := make(chan struct{})
+				pgWait := map[string]int{}
+				go func() {
+					defer close(sampled)
+					ticker := time.NewTicker(50 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-samplingCtx.Done():
+							return
+						case <-ticker.C:
+							rows, err := integrationDB.QueryContext(samplingCtx, `SELECT query,COALESCE(wait_event_type,'CPU'),COALESCE(wait_event,''),count(*) FROM pg_stat_activity WHERE application_name='admission_endurance' AND state='active' GROUP BY 1,2,3`)
+							if err != nil {
+								if samplingCtx.Err() == nil {
+									m.failure("pg_sample", err)
 								}
 								continue
 							}
-							var started time.Time
-							var elapsed time.Duration
+							for rows.Next() {
+								var query, kind, event string
+								var n int
+								if err = rows.Scan(&query, &kind, &event, &n); err != nil {
+									m.failure("pg_scan", err)
+									break
+								}
+								pgWait[admissionSQLPhase(query)+"/"+kind+"/"+event] += n
+							}
+							rows.Close()
+						}
+					}
+				}()
+				begun := time.Now()
+				until := begun.Add(duration)
+				var wg sync.WaitGroup
+				execute := func(worker int, arrival time.Time) {
+					requests.Add(1)
+					m.duration("arrival_jitter", time.Since(arrival))
+					store := stores[worker%3]
+					in := f.input()
+					in.Node = "endurance-" + strconv.Itoa(worker%3)
+					in.Deadline = time.Now().Add(2 * time.Minute)
+					ctx, cancel := context.WithDeadline(context.Background(), in.Deadline)
+					defer cancel()
+					requestStarted := time.Now()
+					for {
+						callCtx, trace := newAdmissionTrace(ctx)
+						d, err := store.TryAdmit(callCtx, in)
+						result := string(d.Code)
+						if err != nil {
+							result = "ERROR"
+						}
+						m.call("admit", result, trace)
+						if err != nil {
+							m.failure("admit", err)
+							return
+						}
+						if d.Code != service.AdmissionWait {
+							if d.Code != service.AdmissionAdmitted {
+								if d.Reason == "ADMISSION_QUEUE_TIMEOUT" {
+									timeouts.Add(1)
+								} else if d.Reason != "ADMISSION_QUEUE_FULL" {
+									m.failure("rejection", fmt.Errorf("%s", d.Reason))
+								}
+								// Ticket cancellation is terminal, not a new execution.
+								cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
+								_ = store.CancelQueued(cleanup, in)
+								end()
+								return
+							}
 							ref := d.Snapshot.Lease
-							started = time.Now()
-							err = store.BeginDispatch(context.Background(), ref)
-							elapsed = time.Since(started)
-							mu.Lock()
-							dispatchTimes = append(dispatchTimes, elapsed)
-							mu.Unlock()
+							m.duration("queue_to_admit", time.Since(requestStarted))
+							dispatchCtx, dispatchTrace := newAdmissionTrace(ctx)
+							err = store.BeginDispatch(dispatchCtx, ref)
+							result = "OK"
 							if err != nil {
-								var debugState string
-								_ = integrationDB.QueryRow(`SELECT state FROM request_leases WHERE id=$1`, ref.ID).Scan(&debugState)
-								recordErr("dispatch "+ref.ID+" state="+debugState, err)
-								_ = store.Cancel(context.Background(), ref)
+								result = "ERROR"
+							}
+							m.call("dispatch", result, dispatchTrace)
+							if err != nil {
+								m.failure("dispatch", err)
+								cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
+								_ = store.Cancel(cleanup, ref)
+								end()
 								return
 							}
-							req, _ := http.NewRequest("POST", upstream.URL, nil)
+							m.duration("arrival_to_dispatch", time.Since(requestStarted))
+							// Match the executor's 10s renewal / 3s timeout. A small 12s tail
+							// below makes real heartbeats observable without renewing every request.
+							heartbeatDone := make(chan struct{})
+							heartbeatStopped := make(chan struct{})
+							go func() {
+								defer close(heartbeatStopped)
+								ticker := time.NewTicker(10 * time.Second)
+								defer ticker.Stop()
+								for {
+									select {
+									case <-heartbeatDone:
+										return
+									case <-ticker.C:
+										hbCtx, hbEnd := context.WithTimeout(context.Background(), 3*time.Second)
+										trCtx, tr := newAdmissionTrace(hbCtx)
+										hbErr := store.Heartbeat(trCtx, ref)
+										hbEnd()
+										outcome := "OK"
+										if hbErr != nil {
+											outcome = "ERROR"
+										}
+										m.call("heartbeat", outcome, tr)
+										if hbErr != nil {
+											m.failure("heartbeat", hbErr)
+											cancel()
+											return
+										}
+									}
+								}
+							}()
+							req, _ := http.NewRequestWithContext(ctx, "POST", upstream.URL, nil)
 							req.Header.Set("X-Test-Lease", ref.ID)
-							resp, err := http.DefaultClient.Do(req)
+							resp, httpErr := http.DefaultClient.Do(req)
 							complete := false
-							if err == nil {
-								_, err = io.Copy(io.Discard, resp.Body)
+							if httpErr == nil {
+								_, httpErr = io.Copy(io.Discard, resp.Body)
 								resp.Body.Close()
-								complete = err == nil
+								complete = httpErr == nil
 							}
-							started = time.Now()
-							finishErr := store.Finish(context.Background(), service.FinishAdmissionInput{Lease: ref, Complete: complete, Outcome: "COMPLETED"})
-							elapsed = time.Since(started)
-							mu.Lock()
-							finishTimes = append(finishTimes, elapsed)
-							mu.Unlock()
-							if err != nil {
-								recordErr("http", err)
-								return
+							close(heartbeatDone)
+							<-heartbeatStopped
+							cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
+							finishCtx, finishTrace := newAdmissionTrace(cleanup)
+							finishErr := store.Finish(finishCtx, service.FinishAdmissionInput{Lease: ref, Complete: complete, Outcome: "COMPLETED"})
+							end()
+							result = "OK"
+							if finishErr != nil {
+								result = "ERROR"
+							}
+							m.call("finish", result, finishTrace)
+							m.duration("arrival_to_finish", time.Since(requestStarted))
+							if httpErr != nil {
+								m.failure("http", httpErr)
 							}
 							if finishErr != nil {
-								recordErr("finish", finishErr)
-								return
+								m.failure("finish", finishErr)
 							}
-							// On each minute boundary all workers form a synchronized request burst.
-							if time.Now().Unix()%60 == 0 {
-								time.Sleep(100 * time.Millisecond)
+							return
+						}
+						if time.Now().After(until) || ctx.Err() != nil {
+							cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
+							cancelErr := store.CancelQueued(cleanup, in)
+							end()
+							if cancelErr != nil {
+								m.failure("cancel_queue", cancelErr)
 							}
+							return
+						}
+						timer := time.NewTimer(100 * time.Millisecond)
+						select {
+						case <-timer.C:
+						case <-ctx.Done():
+						}
+						timer.Stop()
+					}
+				}
+				// Initial arrival barrier, then closed-loop sustained load.
+				start := make(chan struct{})
+				for worker := range capacity + 3 {
+					wg.Add(1)
+					go func(worker int) {
+						defer wg.Done()
+						<-start
+						for time.Now().Before(until) {
+							execute(worker, time.Now())
 						}
 					}(worker)
 				}
+				close(start)
+				// Explicit scheduled bursts: a separate finite batch is released by one
+				// barrier each minute, independent of existing workers finishing requests.
+				for at := begun.Add(time.Minute); at.Before(until); at = at.Add(time.Minute) {
+					timer := time.NewTimer(time.Until(at))
+					<-timer.C
+					gate := make(chan struct{})
+					for worker := range capacity + 3 {
+						wg.Add(1)
+						go func(worker int, arrival time.Time) { defer wg.Done(); <-gate; execute(worker, arrival) }(worker, at)
+					}
+					close(gate)
+				}
 				wg.Wait()
+				elapsed := time.Since(begun)
+				stopSampling()
+				<-sampled
+				summary := map[string]enduranceDistribution{}
+				for k, v := range m.durations {
+					summary[k] = enduranceSummary(v)
+				}
+				poolStats := make([]map[string]any, 0, 3)
+				for _, store := range stores {
+					v := store.db.Stats()
+					poolStats = append(poolStats, map[string]any{"max_open": v.MaxOpenConnections, "wait_count": v.WaitCount, "wait_ms": float64(v.WaitDuration) / 1e6, "open": v.OpenConnections, "idle": v.Idle})
+				}
+				report := map[string]any{"case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
+				data, err := json.Marshal(report)
+				require.NoError(t, err)
+				t.Logf("MEASUREMENTS %s", data)
+				// Retain query plans to show whether history/queue size changes access cost.
+				for _, q := range []string{`SELECT count(*) FROM request_leases WHERE principal_id=$1 AND state<>'RELEASED'`, `SELECT count(*) FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND deadline>statement_timestamp()`} {
+					var plan []byte
+					require.NoError(t, integrationDB.QueryRow("EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+q, f.principal).Scan(&plan))
+					t.Logf("PLAN %s", plan)
+				}
 				require.Zero(t, over.Load())
 				require.Zero(t, duplicates.Load())
 				require.Equal(t, starts.Load(), ends.Load())
 				assertAdmissionLedger(t, f, 0)
-				percentile := func(v []time.Duration) time.Duration {
-					if len(v) == 0 {
-						return 0
-					}
-					sort.Slice(v, func(i, j int) bool { return v[i] < v[j] })
-					return v[len(v)*95/100]
-				}
-				t.Logf("RESULT duration=%s C=%d instances=%d workers=%d admitted=%d denied=%d peak_mock=%d duplicates=%d over=%d admission_p95=%s dispatch_p95=%s finish_p95=%s", duration, capacity, instances, workerCount, starts.Load(), waits.Load(), peak.Load(), duplicates.Load(), over.Load(), percentile(timings), percentile(dispatchTimes), percentile(finishTimes))
-				require.Empty(t, failures)
+				require.Empty(t, m.failures)
 			})
 		}
 	}

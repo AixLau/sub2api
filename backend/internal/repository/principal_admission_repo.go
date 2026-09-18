@@ -23,7 +23,7 @@ func admissionReject(reason string) service.AdmissionDecision {
 }
 func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.AdmissionInput) (decision service.AdmissionDecision, admissionErr error) {
 	started := time.Now()
-	defer func() { service.ObserveCredentialAdmission(time.Since(started).Seconds(), decision.Code) }()
+	defer func() { service.ObserveCredentialAdmission(time.Since(started).Seconds(), decision.Code, admissionErr) }()
 	rejected := admissionReject("ADMISSION_STORE_UNAVAILABLE")
 	if _, err := uuid.Parse(in.RequestID); err != nil {
 		return admissionReject("INVALID_REQUEST_ID"), nil

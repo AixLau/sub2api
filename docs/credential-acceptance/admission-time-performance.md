@@ -26,3 +26,21 @@ HTTP 修复：在数据库 dispatch 等待前连接执行 context 和 snapshot d
 ## 性能证据
 
 待本专项测量和持续矩阵完成后补充。20ms 目标不变，旧混合结果 p95 不代表成功准入事务 p95；不把 30 秒与两分钟请求预算的差异单独归因为发生器或实现问题。
+
+### 优化前测量 P0（30秒诊断，不是持续验收）
+
+产品代码 `3d9a7c124`；压测程序为后续 measurement 提交所记录的版本。命令：
+
+```sh
+TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2API_CREDENTIAL_MATRIX_CASE=C200_I16 go test -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -v
+```
+
+原始日志 `profile-before-C200_I16.log`（上述专项 /tmp 目录）。PG18.4 / Go1.27.0 / 8核 / OrbStack约4GiB；一个主库，三个独立8连接pool，203个worker，同用户同主体。此次1292次全部ADMITTED，WAIT/REJECTED/ERROR无样本，不能凭零样本判断这些结果的延迟。请求200ms/2s/5s，每第51个为12s，以覆盖真实10s心跳/3s续约超时；两分钟业务和context deadline。每分钟计划突发的机制已实现，但30秒诊断没有分钟突发。实际执行和收尾43.60秒。
+
+- ADMITTED call p95 4364.08ms；连接取得前阶段 p95 4162.08ms；事务 p95 317.31ms；取得用户锁后持锁下界 p95 14.69ms；commit p95 0.399ms。
+- 用户锁 SQL p95 289.89ms；PG采样在该语句观察到13,870个tuple-lock、634个transactionid-lock backend样本。连接前阶段含Go调度和首次建连，不能单称纯连接池等待；DB.Stats独立记录三个pool累计等待各1511.69s、1518.59s、1481.95s，确认池等待占主导。
+- 每次成功准入25个SQL调用；空队列也执行3条公平计算SQL（均值合计2.30ms）。候选锁SQL均值0.964ms、票据清理0.444ms、ledger检查0.977ms。候选锁没有显示为主要阻塞，不据此改锁范围；不删除逐次账本核对。
+- Dispatch/Finish/Heartbeat call p95分别3530.83/3362.95/2555.19ms。上游峰值55/200，平均利用率14.17%，吞吐29.63/s，无超限、重复或残留占用。没有WAIT，故此次不能归因100ms轮询风暴。
+- 最后ledger count查询的EXPLAIN实际过滤1292条RELEASED历史记录，访问57个shared块，执行2.931ms；当前索引只按principal定位再过滤state。这支持增加活跃ledger的部分索引，不能推断所有SQL都由历史扫描主导。
+
+此次测量说明长SQL串行临界区让24个数据库连接排在同一用户行锁上，其余调用在pool等待。持锁阶段的多轮往返与历史扫描是可测成本；先保留权限/账本/候选锁检查，缩减无队列时的计算与写入往返，再用相同发生器对照。不能把持锁14.69ms写成事务p95达标。
