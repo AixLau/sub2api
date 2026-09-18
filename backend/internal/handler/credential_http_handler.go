@@ -86,8 +86,14 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 			_ = store.CancelQueued(cleanup, input)
 		}
 	}
+	cancelReservation := func(snapshot *service.CredentialExecutionSnapshot) {
+		cleanup, end := context.WithTimeout(context.Background(), 3*time.Second)
+		defer end()
+		_ = runtime.Store.Cancel(cleanup, snapshot.Lease)
+	}
+	queueExpired := func() bool { return ctx.Err() != nil || !time.Now().Before(queueDeadline) }
 	for {
-		if ctx.Err() != nil || time.Now().After(queueDeadline) {
+		if queueExpired() {
 			cancelQueue()
 			fail("ADMISSION_QUEUE_TIMEOUT")
 			return true
@@ -99,19 +105,50 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 			if recoverer, ok := runtime.Store.(interface {
 				RecoverReserved(context.Context, service.AdmissionInput) (*service.CredentialExecutionSnapshot, error)
 			}); ok {
-				snap, _ = recoverer.RecoverReserved(ctx, input)
+				// A cancelled caller still needs bounded recovery of its own
+				// RESERVED commit so that known-unsent capacity can be cancelled.
+				// This never recovers or replays a dispatched/unknown execution.
+				cleanup, end := context.WithTimeout(context.Background(), 3*time.Second)
+				snap, _ = recoverer.RecoverReserved(cleanup, input)
+				end()
+			}
+			if queueExpired() {
+				if snap != nil {
+					cancelReservation(snap)
+				} else {
+					cancelQueue()
+				}
+				fail("ADMISSION_QUEUE_TIMEOUT")
+				return true
 			}
 			if snap == nil {
+				cancelQueue()
 				fail("ADMISSION_STORE_UNAVAILABLE")
 				return true
 			}
 			break
+		}
+		// The commit or its acknowledgement may complete at the edge of the
+		// admission deadline. An expired queue budget is never permission to send.
+		if queueExpired() {
+			if decision.Code == service.AdmissionAdmitted && decision.Snapshot != nil {
+				cancelReservation(decision.Snapshot)
+			} else {
+				cancelQueue()
+			}
+			fail("ADMISSION_QUEUE_TIMEOUT")
+			return true
 		}
 		if decision.Code == service.AdmissionAdmitted {
 			snap = decision.Snapshot
 			break
 		}
 		if decision.Code != service.AdmissionWait {
+			if decision.Reason == "ADMISSION_LOCAL_QUEUE_FULL" {
+				cancelQueue()
+				fail(decision.Reason)
+				return true
+			}
 			h.errorResponse(c, http.StatusConflict, decision.Reason, "Grouped request was not admitted")
 			return true
 		}
