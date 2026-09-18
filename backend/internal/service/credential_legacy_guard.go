@@ -34,12 +34,17 @@ func (g *CredentialLegacyTokenGuard) Check(ctx context.Context, tokens ...string
 	} // direct unit constructors; production providers always install a guard
 	var fingerprints []string
 	for _, token := range tokens {
-		token = strings.TrimSpace(token)
-		if token == "" {
+		trimmed := strings.TrimSpace(token)
+		if trimmed == "" {
 			continue
 		}
 		if g.vault != nil {
 			fingerprints = append(fingerprints, g.vault.Fingerprint("token", token))
+			// Imports retain exact secret bytes; legacy inputs can normalize them.
+			// Check both aliases without claiming provider identity equivalence.
+			if trimmed != token {
+				fingerprints = append(fingerprints, g.vault.Fingerprint("token", trimmed))
+			}
 		} else {
 			fingerprints = append(fingerprints, "")
 		}

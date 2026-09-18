@@ -40,6 +40,9 @@ func TestCredentialLegacyKnownTokenGuard(t *testing.T) {
 	guard := NewCredentialLegacyTokenGuard(registry, cfg)
 	require.ErrorIs(t, guard.Check(context.Background(), "known-refresh"), ErrCredentialLegacyBypass)
 	require.NotContains(t, strings.Join(registry.seen, ","), "known-refresh")
+	require.ErrorIs(t, guard.Check(context.Background(), " known-refresh "), ErrCredentialLegacyBypass)
+	registry.known[v.Fingerprint("token", " whitespace-preserved ")] = true
+	require.ErrorIs(t, guard.Check(context.Background(), " whitespace-preserved "), ErrCredentialLegacyBypass)
 	require.ErrorIs(t, guard.CheckCredentials(context.Background(), map[string]any{"access_token": "historical-access"}), ErrCredentialLegacyBypass)
 	require.NoError(t, guard.Check(context.Background(), "unknown-token"), "no registered equality match is not proof of independent provider authorization")
 	require.ErrorIs(t, NewCredentialLegacyTokenGuard(registry, &config.Config{}).Check(context.Background(), "any-token"), ErrCredentialLegacyBypass)
