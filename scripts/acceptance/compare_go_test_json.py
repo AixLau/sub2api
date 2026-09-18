@@ -69,11 +69,22 @@ def read_run(path):
         # Only assertion and stack evidence; do not copy arbitrary runtime logs
         # (which may contain credentials) into a tracked comparison report.
         selected = []
+        in_assertion = False
         for line in text.splitlines():
+            # Structured application logs can contain stack traces with test
+            # filenames, but are not test assertion evidence.
+            if line.lstrip().startswith("{"):
+                in_assertion = False
+                continue
+            if line.startswith(("===", "---", "PASS", "FAIL")):
+                in_assertion = False
             if any(marker in line for marker in (
                 "Error:", "Messages:", "expected:", "actual  :", "panic:",
                 "Error Trace:", "_test.go:", "[build failed]", "undefined:",
             )):
+                selected.append(line.strip()[:600])
+                in_assertion = "Error:" in line or "Error Trace:" in line or in_assertion
+            elif in_assertion and line.startswith(("\t", "        ")) and "Test:" not in line:
                 selected.append(line.strip()[:600])
         record["assertion_excerpt"] = selected[:30]
     return records, {"path": str(path), "sha256": sha256(path), "json_events": events,

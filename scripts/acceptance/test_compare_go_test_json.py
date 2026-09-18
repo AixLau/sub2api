@@ -64,6 +64,17 @@ class RecordedGoTestEvidenceTest(unittest.TestCase):
         self.assertEqual(counts(run)["package"], {"FAIL": 1})
         self.assertEqual(counts(run)["root_test"], {})
 
+    def test_runtime_json_stack_does_not_enter_assertion_excerpt(self):
+        run = self.parse([
+            self.event("run", "TestFailure"),
+            self.event("output", "TestFailure", Output='{"stacktrace":"case_test.go:10","secret":"do-not-copy"}\n'),
+            self.event("output", "TestFailure", Output="        Error:      Received unexpected error:\n        model unavailable\n"),
+            self.event("fail", "TestFailure"),
+        ])
+        excerpt = run[("example.test/service", "TestFailure")]["assertion_excerpt"]
+        self.assertNotIn("do-not-copy", str(excerpt))
+        self.assertIn("model unavailable", excerpt)
+
 
 if __name__ == "__main__":
     unittest.main()
