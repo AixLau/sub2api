@@ -1,0 +1,133 @@
+{
+  "report_revision": "admission-time-performance-r1",
+  "task_baseline_sha": "5effa833a988b57ec977a93481be2f75450f8edd",
+  "feature_default": "off",
+  "supported_target_topology": {
+    "postgres": "single writable primary",
+    "redis": "single shared instance, noeviction",
+    "gateway": "at least 3 controlled processes on one host"
+  },
+  "unsupported": [
+    "automatic PostgreSQL HA",
+    "replica admission",
+    "Redis Cluster/HA",
+    "cross-region active-active",
+    "multi-tenant deployment"
+  ],
+  "benchmark_topology": {
+    "postgres_actual": "18.4",
+    "redis_image": "redis:8.4-alpine",
+    "host_cpu": "Apple M2, 8 cores",
+    "host_memory_bytes": 8589934592,
+    "docker": "OrbStack, Docker 29.4.0",
+    "docker_memory_bytes": 4181295104,
+    "go": "go1.27.0",
+    "gomaxprocs": 8,
+    "admission_clients": "3 independent pools in one Go process",
+    "max_open_per_pool": 8,
+    "max_idle_per_pool": 8,
+    "workers": "C+3 plus an independent C+3 scheduled burst each minute",
+    "duration_per_case_seconds": 600,
+    "mock_duration_distribution": "200ms; every 5th=2s; every 17th=5s; every 51st=12s",
+    "request_and_context_deadline_seconds": 120,
+    "heartbeat_interval_seconds": 10,
+    "heartbeat_timeout_seconds": 3,
+    "finish_timeout_seconds": 5,
+    "queue_poll_seconds": 0.1,
+    "pg_activity_sample_seconds": 0.05
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/sub2api-admission-time-performance/time-before.log",
+      "sha256": "5974244f4bd0abdb890ca9c0fb755740f64340274442ae5061ccec1297af94c7",
+      "bytes": 5340
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/gateway-time-before.log",
+      "sha256": "2def5fd2a5e501f4c23fe69d0da778168df307e6e3036f26b09e3e9d6dbd6f0f",
+      "bytes": 5140
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/time-after.log",
+      "sha256": "aca4e6f85d01adcbe13f582aedea2efc528484c85b4181ef6329c10a0428a963",
+      "bytes": 5035
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/http-unit.log",
+      "sha256": "4a306f51f508dca9d56ba60587cbd673059545f2f4cd5ed969b9a37c6d300de9",
+      "bytes": 57
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/time-regression.log",
+      "sha256": "9cb43564bd85757e4e65a5aaae6be1d987cf4acfb190ad4d5e54ee9ed80b9ca1",
+      "bytes": 18872
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/queue-fastpath.log",
+      "sha256": "9c28ce73d51e591d8c445ecb28b7c2801e43a1241ebd846fb1d51ed1121fc7ee",
+      "bytes": 2454
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/batch-and-time-regression.log",
+      "sha256": "baa8c3e3b152e48d2191aaca85cd66e853dcf8dca328da4efb06aba23e4ef9c2",
+      "bytes": 9043
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/long-wait-and-commit.log",
+      "sha256": "977c2c2438df4696b6aab3a0c036426dff0ee0fbb10010bb9b9800e2ba3d6b11",
+      "bytes": 7528
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/race-targeted.log",
+      "sha256": "15635dc657c092475c347023c9870df8157a3cc9d8cd8189e62d967df9aa320b",
+      "bytes": 24529
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/profile-before-C200_I16.log",
+      "sha256": "0c3f43e7fd2abc6086d679ff5139ffe6d9e0c4da41c5c9d2ff64245f10fd8c45",
+      "bytes": 20012
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/profile-index-C200_I16.log",
+      "sha256": "a02ee98b37a2473bdfe12ce03889d468eb5945e5a30bbb39167561522e9e0b48",
+      "bytes": 20617
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/profile-batch-C200_I16.log",
+      "sha256": "d8a23f06f30d376ffd4c6ef16f44ced46c41adac911845bd61e81b851093cf66",
+      "bytes": 35121
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "F2",
+      "tested_code_sha": "8c1bfcbff45883c730e37f6382c4c9fd70344122",
+      "benchmark_code_sha": null,
+      "status": "historical full suite FAIL; not rerun in performance专项",
+      "artifact": "/tmp/sub2api-acceptance-closure/head-final2-full.jsonl"
+    },
+    {
+      "run_id": "E1",
+      "tested_code_sha": "8434b67482b89a70b7a8a310ea94bd9843e3e108",
+      "benchmark_code_sha": "53164d062b3c88f6f2f4f7cb16d8483cc6392c5f",
+      "status": "historical six parallel 10-minute runs; correctness assertions PASS, performance PARTIAL; no synchronized burst",
+      "artifact": "/tmp/sub2api-acceptance-closure/endurance-corrected-C*.log"
+    },
+    {
+      "run_id": "E2",
+      "tested_code_sha": "c594d92e3d6580cb9069a7c788deec1380eb22ea",
+      "benchmark_code_sha": "c594d92e3d6580cb9069a7c788deec1380eb22ea",
+      "status": "RUNNING",
+      "command": "TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m go test -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -timeout=85m -v",
+      "working_directory": "backend",
+      "artifact": "/tmp/sub2api-admission-time-performance/endurance-six-sequential.log"
+    }
+  ],
+  "notes": [
+    "测试前未提交补丁随后独立提交时，SHA指对应受测源码快照；P0将445c1ec9b的测试文件叠加于3d9a7c124产品代码。",
+    "旧8c1bfcbff到5effa833只有文档变化，backend/frontend diff为空；不因文档变更无限重跑。",
+    "SQL阶段wall time不等于纯lock wait；pg_stat_activity计数是backend样本。",
+    "receipt之前没有恢复所需usage事实，UNKNOWN/人工核对而非自动重建。",
+    "mock不证明真实provider身份或compact契约。"
+  ]
+}

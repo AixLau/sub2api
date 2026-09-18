@@ -27,3 +27,11 @@ fencing采用Docker实际控制：关闭restart policy → stop（最长30秒）
 三个真实Docker网络命名空间中的合成旧进程，停止/隔离/重启后网络为空；PG迁移保留ID/extra/组/倍率；单主体canary；凭证轮换后rollback保留最新token；旧generation/profile不变；UNVERIFIED没有调用fence。
 
 限制：旧容器是合成进程，不是fde7e8ec4完整网关镜像；mock验证器仅测试中注入。真实旧版完整部署、HA、Redis故障重建、旧sticky绑定导入与多实例自动回滚均未据此验收。对应AT-34/37/38继续PARTIAL/BLOCKED，禁止概括为生产可用。
+
+## 时间/性能专项迁移与回滚补充
+
+258仅新增活跃lease部分索引，不改事实表/占用/身份/凭证。正式迁移仍经原ApplyMigrations在受支持的离线窗口执行；普通CREATE INDEX期间会阻挡request_leases写入，大表必须预留停机时间，不能将其描述为无锁在线迁移。回退优化代码时保留索引即可，不回退已轮换凭证，也不删除UNKNOWN/ORPHANED记录。时间修复之前的二进制有已复现的到期判断缺陷，禁止将回退旧二进制作为生产放行方案。
+
+第一版部署限制：单PostgreSQL主库、单共享Redis（noeviction）、同主机受控网关清单。拒绝把自动HA、只读副本准入、Redis Cluster或跨地域双活标成已支持；更换拓扑必须保持功能关闭并另行验收。现有CLI能核验受控容器/网络，不能从DSN自动证明外部数据库没有HA或副本切换，部署操作者仍须核对该限制。此报告没有新增拓扑自动探测代码，也没有重跑生产迁移。
+
+真实compact只接受provider契约或可信provider集成验证；受控mock只证明本地适配器满足mock，不可用于批准真实端点能力。真实导入无verifier继续UNVERIFIED，迁移/canary前置检查不放宽。

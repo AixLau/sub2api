@@ -2,7 +2,7 @@
 
 修复：256新增内容白名单 usage receipt，上游终结结果解析后先持久化再释放lease；receipt不含headers/token/prompt/output。后台以receipt恢复既有计费器；已定价命令仍使用255 outbox。配置/价格变化时保留REVIEW_REQUIRED，不擅自换价格。usage未观察到不能记作KNOWN=0。
 
-命令：`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredentialUsageCrashWindowsRecoverWithoutReplay$' -count=1 -v`（backend）。六项在真实handler+PG+Redis+HTTP mock上通过；日志 `/tmp/sub2api-acceptance-closure/usage-windows-fixed.log`。
+命令：`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredentialUsageCrashWindowsRecoverWithoutReplay$' -count=1 -v`（backend）。六个窗口的预期安全行为在真实handler+PG+Redis+HTTP mock上通过（其中一个为UNKNOWN人工核对，五个具有持久事实的窗口可恢复）；日志 `/tmp/sub2api-acceptance-closure/usage-windows-fixed.log`。
 
 | 窗口 | 注入方法 | 恢复事实 |
 |---|---|---|
@@ -17,4 +17,4 @@
 
 迁移：仅新增256表/索引；不改原计费价格，不改旧路径。回滚：暂停grouped，处理PENDING receipt/outbox后才降级；不得删除未消费receipt，不能恢复旧数据库快照覆盖扣款。
 
-修复过程中实际发现：鉴权缓存的Group投影没有UpdatedAt，直接比较时间戳会把所有恢复误判为配置变化；已改为对实际计费字段做摘要。重复执行的最终命令日志 `/tmp/sub2api-acceptance-closure/usage-final.log`，六窗口及三个完整网关测试通过。既有后台计费/通知仍在原计费器执行；恢复不修改价格规则。
+修复过程中实际发现：鉴权缓存的Group投影没有UpdatedAt，直接比较时间戳会把所有恢复误判为配置变化；已改为对实际计费字段做摘要。重复执行的最终命令日志 `/tmp/sub2api-acceptance-closure/usage-final.log`，六窗口的安全行为及三个完整网关测试通过；不表示receipt之前丢失的usage能自动恢复。既有后台计费/通知仍在原计费器执行；恢复不修改价格规则。

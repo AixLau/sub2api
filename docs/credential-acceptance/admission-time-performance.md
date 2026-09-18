@@ -80,3 +80,7 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 真实HTTP mock记录开始/结束、峰值和累计service时间，报告吞吐和平均容量利用率。`arrival_to_admit`包含首次准入；`first_wait_to_admit`只统计曾WAIT的请求，自首次WAIT响应（票据已提交）至获准，不包括首次准入调用。minute barrier释放独立有限批次，`burst_arrival_jitter`单独统计计划到达到实际调用的偏差。业务和context均2分钟；心跳10秒/3秒，Finish使用与执行器一致的5秒预算。短P0/P1/P3诊断的Finish原为30秒，因此它们的成功结果不能证明5秒Finish预算已满足；最终持续矩阵不扩大预算。
 
 `TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=2s SUB2API_CREDENTIAL_MATRIX_CASE=C10_I3 go test -race -tags=integration ./internal/repository -run '^(TestCredential(GatewayTime|AdmissionCapacityWrite|AdmissionCompeting|AcceptanceEndurance))' -count=1 -v` 通过（`race-targeted.log`，17.554s）。仅证明这些回归和测量包装器未报告数据竞争；race下2秒样本不参与性能对照，分钟突发未在此运行。
+
+测量与旧E1的可比性限制：P0/P1/P3/E2统一设置MaxIdleConns=8（旧发生器沿用database/sql默认2），MaxOpenConns始终8；P0与后续优化对照使用同一设置，不能把P0/E2和旧E1的差异全部归于执行代码优化。事务追踪包装器只在integration测试编译，产品指标仅增加固定decision维度、ERROR区分和正确的call定义。
+
+`timeout_count/timeout_rate`原始字段仅计明确返回ADMISSION_QUEUE_TIMEOUT的请求；Heartbeat/Finish/HTTP错误通过各自ERROR计数及错误列表披露，不能把该字段误读为全部端到端超时率。未记录精确逐请求跨阶段关联，无法从聚合值推导去重后的全生命周期超时率。连接池和阶段ERROR样本仍完整保留，生产总超时率需另行接入网关请求结果指标。

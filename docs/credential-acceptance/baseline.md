@@ -1,6 +1,15 @@
 # 验收起点
 
-验收收尾当前 HEAD：`01fbfcd6c`（commit written after the final full-suite run documentation update）。分支 `feat/multi-credential-http`。
+分支 `feat/multi-credential-http`。验收收尾起点 `e00ea2cab7a9c5375d34ea911557948d6eea278f`；时间/性能专项起点 `5effa833a988b57ec977a93481be2f75450f8edd`。
+
+证据版本分开记录：
+
+- `tested_code_sha`：该次运行对应的产品代码提交；
+- `benchmark_code_sha`：发生器/测量程序提交，若使用产品代码较早的版本则明确叠加测试文件；
+- `report_revision`：报告版本号，当前为 `admission-time-performance-r1`，不等于受测代码HEAD；
+- `artifacts`：原始日志、命令、环境、摘要及内容散列，见 [专项报告](admission-time-performance.md) 和 [证据清单](evidence-manifest.json)。
+
+历史完整suite记录的代码快照为 `8c1bfcbff45883c730e37f6382c4c9fd70344122`；`8c1bfcbff..5effa833` 与 `01fbfcd6c..5effa833` 的 backend/frontend 差异均为空。因此旧文档把多个文档提交称为“当前最终HEAD”不代表测试代码改变。专项修改执行代码后的证据另列，不把历史全套结果当作本专项最终代码的全套结果。
 
 对照基线：`fde7e8ec4ff9af1b2645661d6a28cec19f6b347f`；规格基线：`9bdb388b83f05e678e83990d9b19afbc3f088a8f`。
 
@@ -19,7 +28,7 @@
 
 原有未跟踪 `backend/internal/service/zz_debug_test.go` 不编辑、不提交；对照测试使用独立提交快照排除该文件。
 
-拓扑声明：验收目标是同一部署/管理作用域、一个 PostgreSQL 主库、一个共享 Redis、至少三个同机网关进程；HA、跨地域双活均不在已验证拓扑。身份 verifier 和真实 compact 契约仍缺失；真实导入 UNVERIFIED、默认关闭。
+拓扑声明：验收目标是同一部署/管理作用域、一个 PostgreSQL 主库、一个共享 Redis、至少三个同机网关进程；第一版不支持PostgreSQL自动HA/只读副本准入、Redis Cluster/HA、跨地域双活，不能把这些拓扑当作本期必须追加实现的范围。切换到未支持拓扑须单独验收，禁止沿用本报告放行。身份 verifier 和真实 compact 契约仍缺失；真实导入 UNVERIFIED、默认关闭。
 
 
 验收收尾提交（不计入原八个实现提交）：

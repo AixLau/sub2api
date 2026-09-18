@@ -207,17 +207,21 @@
 
 汇总：{'两边独立失败': 55, '两边单独通过（整套顺序/中断差异，仍需定位）': 141}。所有子测试逐项结果另存JSON，不能把父测试通过概括成全套通过。
 
-## 当前最终 HEAD 对照
+## 历史完整 suite 对照 F2
 
-当前最终 HEAD 为 `8c1bfcbff`；完整 suite 重新运行日志为 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，基线日志为 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`。逐测试（含父测试未完成）机器表见 `full-suite-comparison-final.json`。结果按整套运行事件统计：
+`tested_code_sha=8c1bfcbff45883c730e37f6382c4c9fd70344122`（与专项起点5effa833的执行代码相同）；完整 suite 重新运行日志为 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，基线日志为 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`。逐测试（含父测试未完成）机器表见 `full-suite-comparison-final.json`。结果按整套运行事件统计：
 
 - NOT_RUN → PASS：22
 - SKIP → SKIP：14
 - FAIL → FAIL：78
 - INCOMPLETE → INCOMPLETE：141
 
-完整 suite 两边均有78个失败测试事件和141个因父测试中断/未完成事件；这只表明最终当前 HEAD 与 fde7e8ec4 的整套结果计数相同。逐项的“相同”不能归因于基线，必须结合单测重跑和调用路径；WS/流错误代表性单测已重跑，仍需对其余失败单独归因。
+完整 suite 两边均有78个失败测试事件和141个因父测试中断/未完成事件；这只表明F2快照与fde7e8ec4的整套结果计数相同；不是时间/性能专项新代码的全套重跑。逐项的“相同”不能归因于基线，必须结合单测重跑和调用路径；WS/流错误代表性单测已重跑，仍需对其余失败单独归因。
 
-## 压测解释
+## 压测运行历史与当前证据
 
-十分钟旧运行使用30秒请求deadline；C50/I3、C200/I3 ownership loss发生在高锁等待超过该deadline后，BeginDispatch按设计拒绝过期lease。修正发生器使用2分钟deadline，5秒六组合均通过；完整6×10分钟矩阵尚未重跑，性能继续PARTIAL。
+- E0：30秒请求deadline的旧六组合运行；C50/I3、C200/I3出现ownership loss。旧文档将其直接归因为“BeginDispatch按设计拒绝过期lease/发生器问题”，证据不足，撤回该归因。没有完整事件时间线，不能用本次独立发现的时间缺陷倒推它就是E0根因。
+- E1：请求deadline为两分钟、调用context为Background的六个并行10分钟运行，已完成（`endurance-corrected-C*.log`）。这是对E0的补充，**“完整六组合尚未重跑”已不是当前事实**。E1无测试观察到的超限/重复/残留，但mixed TryAdmit call p95全部超过20ms，且不是同步突发证据。
+- P0/P1/P3及E2：本专项改为分结果、分连接/SQL阶段测量，独立短deadline回归，显式分钟到达barrier，最终六组合串行。具体SHA、命令、失败及性能结果以 [专项报告](admission-time-performance.md) 和 [证据清单](evidence-manifest.json) 为准。
+
+E0、E1均保留，不相互抹去；不把更长deadline的PASS当作时间正确性证明，也不以文档提交变化为由无限重跑旧全套。
