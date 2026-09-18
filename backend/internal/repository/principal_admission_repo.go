@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -13,7 +14,37 @@ import (
 	"github.com/lib/pq"
 )
 
-type principalAdmissionStore struct{ db *sql.DB }
+type principalAdmissionStore struct {
+	db            *sql.DB
+	lifecycleDB   *sql.DB
+	initOnce      sync.Once
+	admissionGate chan struct{}
+	waitMu        sync.Mutex
+	waiters       map[string]*credentialAdmissionWaiter
+	pumpRunning   bool
+	wake          chan struct{}
+}
+
+func (s *principalAdmissionStore) initializeQueue() {
+	s.initOnce.Do(func() {
+		s.admissionGate = make(chan struct{}, 1)
+		s.waiters = map[string]*credentialAdmissionWaiter{}
+		s.wake = make(chan struct{}, 1)
+	})
+}
+func (s *principalAdmissionStore) criticalDB() *sql.DB {
+	if s.lifecycleDB != nil {
+		return s.lifecycleDB
+	}
+	return s.db
+}
+func (s *principalAdmissionStore) signalQueue() {
+	s.initializeQueue()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
 
 func NewPrincipalAdmissionStore(db *sql.DB) service.PrincipalAdmissionStore {
 	return &principalAdmissionStore{db: db}
@@ -40,11 +71,27 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if in.HasState && in.OriginalSession == "" {
 		return admissionReject("SESSION_SCOPE_REQUIRED"), nil
 	}
+	s.initializeQueue()
+	select {
+	case s.admissionGate <- struct{}{}:
+	case <-ctx.Done():
+		return rejected, ctx.Err()
+	}
+	defer func() { <-s.admissionGate }()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return rejected, service.ErrAdmissionStoreUnavailable
 	}
 	defer tx.Rollback()
+	// A global nonblocking advisory lock limits admission competition across
+	// nodes. It grants no capacity; lifecycle operations do not wait for it.
+	var turn bool
+	if err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, -in.PrincipalID).Scan(&turn); err != nil {
+		return rejected, err
+	}
+	if !turn {
+		return service.AdmissionDecision{Code: service.AdmissionWait, Reason: "ADMISSION_BUSY"}, nil
+	}
 	// All operations use user -> principal -> instance -> request/binding/lease.
 	_, err = tx.ExecContext(ctx, `INSERT INTO principal_user_capacity(user_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, in.UserID, in.PrincipalID)
 	if err != nil {
@@ -294,14 +341,18 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		return rejected, err
 	}
 	fairWait := false
-	// The principal lock serializes ticket creation with this authoritative read.
-	// With no competing ticket there is no fairness comparison to compute. Do
-	// not filter by ready_at here: a future ticket may become ready in this tx.
 	if selected != nil && competingTicket {
-		fairWait, err = credentialQueuePrecedes(ctx, tx, in.PrincipalID, in.UserID, in.RequestID, selected.id, limit, now)
+		// Issue bounded offers once, then only the selected original owners may
+		// retry. Every capacity/permission check above remains authoritative.
+		if err = advanceCredentialOffers(ctx, tx, in.PrincipalID); err != nil {
+			return rejected, err
+		}
+		var offered bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM admission_tickets WHERE request_id=$1 AND state='QUEUED' AND offer_until>clock_timestamp()) OR NOT EXISTS(SELECT 1 FROM admission_tickets WHERE principal_id=$2 AND state='QUEUED' AND offer_until>clock_timestamp())`, in.RequestID, in.PrincipalID).Scan(&offered)
 		if err != nil {
 			return rejected, err
 		}
+		fairWait = !offered
 	}
 	// Persist a logical request only after authenticating its scope.
 	if requestID == "" {
@@ -423,7 +474,7 @@ func admissionAudit(ctx context.Context, tx *sql.Tx, ref service.LeaseRef, event
 
 // lockLease validates all fencing fields after locking resources in one order.
 func (s *principalAdmissionStore) lockLease(ctx context.Context, ref service.LeaseRef) (*sql.Tx, string, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.criticalDB().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, "", service.ErrAdmissionStoreUnavailable
 	}
@@ -516,6 +567,7 @@ func (s *principalAdmissionStore) Heartbeat(ctx context.Context, ref service.Lea
 	return tx.Commit()
 }
 func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishAdmissionInput) error {
+	defer s.signalQueue()
 	tx, state, err := s.lockLease(ctx, in.Lease)
 	if err != nil {
 		return err
@@ -588,6 +640,7 @@ func releaseAdmission(ctx context.Context, tx *sql.Tx, ref service.LeaseRef, out
 	return admissionAudit(ctx, tx, ref, "LEASE_RELEASED")
 }
 func (s *principalAdmissionStore) Cancel(ctx context.Context, ref service.LeaseRef) error {
+	defer s.signalQueue()
 	tx, state, err := s.lockLease(ctx, ref)
 	if err != nil {
 		return err
@@ -611,7 +664,7 @@ func (s *principalAdmissionStore) Cancel(ctx context.Context, ref service.LeaseR
 // the same request identity and owner. It never creates a second attempt.
 func (s *principalAdmissionStore) RecoverReserved(ctx context.Context, in service.AdmissionInput) (*service.CredentialExecutionSnapshot, error) {
 	var snap service.CredentialExecutionSnapshot
-	err := s.db.QueryRowContext(ctx, `SELECT l.id,l.request_id,l.principal_id,l.instance_id,l.generation,l.user_id,l.owner_nonce,l.epoch,
+	err := s.criticalDB().QueryRowContext(ctx, `SELECT l.id,l.request_id,l.principal_id,l.instance_id,l.generation,l.user_id,l.owner_nonce,l.epoch,
  i.account_id,l.credential_version,l.config_version,p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,l.proxy_id,r.endpoint,r.caller_scope_hash,l.deadline,l.account_updated_at,l.proxy_updated_at
  FROM request_leases l JOIN logical_requests r ON r.id=l.request_id JOIN credential_instances i ON i.id=l.instance_id
  JOIN credential_identity_profiles p ON p.instance_id=i.id AND p.generation=l.generation
@@ -626,7 +679,7 @@ func (s *principalAdmissionStore) RecoverReserved(ctx context.Context, in servic
 	if err != nil {
 		return nil, service.ErrAdmissionStoreUnavailable
 	}
-	if err = loadCredentialSnapshotProxy(ctx, s.db, &snap); err != nil {
+	if err = loadCredentialSnapshotProxy(ctx, s.criticalDB(), &snap); err != nil {
 		return nil, service.ErrAdmissionOwnership
 	}
 	return &snap, nil

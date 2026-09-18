@@ -175,3 +175,7 @@ func TestCredentialHTTPStreamFailureIsTerminalButNotSuccess(t *testing.T) {
 	require.True(t, e.terminal)
 	require.Equal(t, "FAILED", e.terminalOutcome)
 }
+
+func (r *credentialAdmissionRecorder) WaitAdmission(context.Context, AdmissionInput) error {
+	return nil
+}

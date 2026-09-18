@@ -113,14 +113,15 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 			h.errorResponse(c, http.StatusConflict, decision.Reason, "Grouped request was not admitted")
 			return true
 		}
-		timer := time.NewTimer(100 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		waitCtx, stop := context.WithDeadline(ctx, queueDeadline)
+		err = runtime.Store.WaitAdmission(waitCtx, input)
+		stop()
+		if err != nil {
 			cancelQueue()
+			fail("ADMISSION_QUEUE_TIMEOUT")
 			return true
-		case <-timer.C:
 		}
+
 	}
 	memoryRelease()
 	// Existing global user authority remains Redis for every provider. This gate

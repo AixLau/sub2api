@@ -68,6 +68,7 @@ type FinishAdmissionInput struct {
 	UpstreamRequestID         string
 }
 type PrincipalAdmissionStore interface {
+	WaitAdmission(context.Context, AdmissionInput) error
 	TryAdmit(context.Context, AdmissionInput) (AdmissionDecision, error)
 	BeginDispatch(context.Context, LeaseRef) error
 	Heartbeat(context.Context, LeaseRef) error
