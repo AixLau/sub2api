@@ -59,3 +59,12 @@ E3继续使用原C10/50/200 × I3/16、C+3个稳态worker、每分钟额外C+3�
 最终定向命令：`GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^TestCredential(Queue|LifecycleResources|OverloadRecovery|UsageCrashWindows|Gateway|AdmissionTurn|AdmissionCapacity|AdmissionCompeting)|^TestPrincipalAdmission' -count=1 -timeout=5m -v`，通过，`focused-final.log`，74.997秒。
 
 实际Wire生成及最小cleanup接线测试通过：`go generate ./cmd/server`；`GOCACHE=/tmp/sub2api-queue-progress/go-cache go test -p 2 ./cmd/server -run '^TestProvideCleanup_WithMinimalDependencies_NoPanic$' -count=1`。pool保留生命周期复用现有连接寿命clamp规则；`final-harness-check.log`验证实际provider预算与关闭默认，以及最终测量程序的1秒冒烟（不作为性能验收）。未执行全量测试/全量编译，沿用先前全套失败作为历史证据，不声称本次修复了范围外失败。
+
+
+## 三个独立进程的owner暂停
+
+新增真实子进程测试 `TestCredentialQueueThreeProcessesPausedOwner`：三个独立Go运行时/SQL pool经同一HTTP barrier同时开始，先全部登记WAIT；SIGSTOP最早owner，释放总额1的占用，两个存活owner约1.240秒内推进；SIGCONT后原owner仍自行执行。总上游开始3次、三个不同lease、三个隔离binding，峰值不超过1，最终无占用。其他节点没有接管暂停进程的body。
+
+实际命令：`GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialQueueThreeProcessesPausedOwner$' -count=1 -v`，PASS，日志`three-process-queue.log`。这是三独立准入测试进程，不冒称三个完整网关服务器；完整handler+receipt链路另有单进程联测。
+
+测量条件披露：该进程测试的编译和约10秒运行与E3的C10/I3尾段有重叠，因此C10/I3不应描述为完全独占机器的性能测量。其余五组无这项并行工作，所有执行代码在E3期间保持冻结。没有为了文档更新重复整套压力测试。

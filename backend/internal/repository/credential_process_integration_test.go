@@ -24,6 +24,8 @@ import (
 type credentialWorkerInput struct {
 	Admission service.AdmissionInput
 	Upstream  string
+	Barrier   string
+	Wait      bool
 }
 type credentialWorkerOutput struct {
 	Code  service.AdmissionDecisionCode
@@ -48,6 +50,13 @@ func runCredentialAdmissionTestWorker() bool {
 	}
 	defer db.Close()
 	store := NewPrincipalAdmissionStore(db)
+	if in.Barrier != "" {
+		response, err := http.Get(in.Barrier)
+		if err != nil {
+			os.Exit(6)
+		}
+		response.Body.Close()
+	}
 	decision, err := store.TryAdmit(context.Background(), in.Admission)
 	output := credentialWorkerOutput{Code: decision.Code}
 	if err != nil {
@@ -58,6 +67,24 @@ func runCredentialAdmissionTestWorker() bool {
 	}
 	if err = json.NewEncoder(os.Stdout).Encode(output); err != nil {
 		os.Exit(4)
+	}
+	if in.Wait && decision.Code == service.AdmissionWait {
+		waitCtx, end := context.WithTimeout(context.Background(), 20*time.Second)
+		defer end()
+		for decision.Code == service.AdmissionWait {
+			if store.WaitAdmission(waitCtx, in.Admission) != nil {
+				os.Exit(7)
+			}
+			decision, err = store.TryAdmit(waitCtx, in.Admission)
+			if err != nil {
+				os.Exit(8)
+			}
+		}
+		output = credentialWorkerOutput{Code: decision.Code}
+		if decision.Snapshot != nil {
+			output.Lease = decision.Snapshot.Lease
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(output)
 	}
 	if decision.Code != service.AdmissionAdmitted {
 		return true
