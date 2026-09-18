@@ -236,6 +236,6 @@ cd backend
 go test ./... -count=1 -json > /tmp/sub2api-admission-time-performance/current-head-full.jsonl
 ```
 
-命令退出1。逐测试机器对照文件为 [`current-failure-comparison.json`](current-failure-comparison.json)，基线使用 `fde7e8ec4ff9af1b2645661d6a28cec19f6b347f` 的 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`；当前日志和摘要的SHA在 [`evidence-manifest.json`](evidence-manifest.json)。两次日志各记录81个失败事件，失败并集81：`FAIL_BOTH=81`、`BASELINE_ONLY=0`、`CURRENT_ONLY=0`。这表示本轮逐项对照中没有出现只在当前HEAD新增的失败，也不表示这些失败全部属于基线；它们仍然是当前HEAD实际失败，且每一项需要结合调用路径。此前文档中的78计数来自不同运行快照，已保留为历史记录，不能与F3计数混称。
+命令退出1。逐测试机器对照文件为 [`current-failure-comparison.json`](current-failure-comparison.json)，基线使用 `fde7e8ec4ff9af1b2645661d6a28cec19f6b347f` 的 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`；当前日志和摘要的SHA在 [`evidence-manifest.json`](evidence-manifest.json)。两次日志各记录81个失败事件，失败并集81：`FAIL_BOTH=81`、`BASELINE_ONLY=0`、`CURRENT_ONLY=0`。这表示本轮逐项对照中没有出现只在当前HEAD新增的失败，也不表示这些失败全部属于基线；它们仍然是当前HEAD实际失败，且每一项需要结合调用路径。口径更正：81包含78个测试失败事件和3个包级失败事件；旧文档的78排除了包级事件，两者并非新增了3个失败测试。本专项不因文档修订重复全套运行。
 
 F3覆盖了当前完整非integration suite；WS、streaming、moderation、model catalogue 等范围外失败仍被记录为当前失败。没有因为对照结果相同就修改这些无关路径，也没有把对照结果当作多凭证系统验收通过。

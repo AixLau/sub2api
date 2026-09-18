@@ -71,6 +71,9 @@ func (m *enduranceMeasurements) call(operation, result string, trace *admissionT
 	}
 	rounds := 0
 	for phase, d := range trace.values {
+		if operation == "admit" && phase == "connection_acquire" {
+			phase = "pre_transaction_wait"
+		}
 		m.durations[prefix+"."+phase] = append(m.durations[prefix+"."+phase], d)
 		if strings.HasPrefix(phase, "sql.") {
 			rounds += trace.counts[phase]
@@ -141,6 +144,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				}))
 				defer upstream.Close()
 				stores := make([]*principalAdmissionStore, 3)
+				totals := &admissionSQLCounts{}
 				for i := range stores {
 					parsed, err := url.Parse(integrationDSN)
 					require.NoError(t, err)
@@ -149,21 +153,27 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					parsed.RawQuery = values.Encode()
 					connector, err := pq.NewConnector(parsed.String())
 					require.NoError(t, err)
-					db := sql.OpenDB(admissionTraceConnector{connector})
-					db.SetMaxOpenConns(8)
-					db.SetMaxIdleConns(8)
+					db := sql.OpenDB(admissionTraceConnector{Connector: connector, totals: totals})
+					db.SetMaxOpenConns(6)
+					db.SetMaxIdleConns(6)
 					defer db.Close()
 					require.NoError(t, db.Ping())
-					stores[i] = &principalAdmissionStore{db: db}
+					critical := sql.OpenDB(admissionTraceConnector{Connector: connector, totals: totals})
+					critical.SetMaxOpenConns(2)
+					critical.SetMaxIdleConns(2)
+					defer critical.Close()
+					require.NoError(t, critical.Ping())
+					stores[i] = &principalAdmissionStore{db: db, lifecycleDB: critical}
 				}
 				var version string
 				require.NoError(t, integrationDB.QueryRow(`SHOW server_version`).Scan(&version))
-				t.Logf("ENV postgres=%s go=%s cpu=%d gomaxprocs=%d pools=3 max_open_per_pool=8 workers=%d request_deadline=2m context_deadline=2m poll=100ms burst=capacity+3-at-minute-boundary", version, runtime.Version(), runtime.NumCPU(), runtime.GOMAXPROCS(0), capacity+3)
+				t.Logf("ENV postgres=%s go=%s cpu=%d gomaxprocs=%d nodes=3 pools_per_node=6+2 total_max_open=24 workers=%d request_deadline=2m context_deadline=2m poll=100ms burst=capacity+3-at-minute-boundary", version, runtime.Version(), runtime.NumCPU(), runtime.GOMAXPROCS(0), capacity+3)
 				// Sample actual database wait events. Counts are backend-samples, not exact
 				// wait durations. SQL phase wall times must not be labelled pure lock waits.
 				samplingCtx, stopSampling := context.WithCancel(context.Background())
 				sampled := make(chan struct{})
 				pgWait := map[string]int{}
+				var idleOfferSamples, idleApplicationSamples, allSamples int64
 				go func() {
 					defer close(sampled)
 					ticker := time.NewTicker(50 * time.Millisecond)
@@ -190,6 +200,25 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 								pgWait[admissionSQLPhase(query)+"/"+kind+"/"+event] += n
 							}
 							rows.Close()
+							var hasIdleOffer, hasCapacity bool
+							sampleErr := integrationDB.QueryRowContext(samplingCtx, `SELECT EXISTS(SELECT 1 FROM upstream_principals p JOIN admission_tickets t ON t.principal_id=p.id JOIN credential_instances i ON i.id=t.offer_instance_id
+ WHERE p.id=$1 AND p.occupied<p.requested_limit AND t.state='QUEUED' AND t.offer_until>clock_timestamp()
+ AND i.occupied<LEAST(p.requested_limit,COALESCE(i.hard_max,p.requested_limit),COALESCE(i.health_capacity,p.requested_limit))), (SELECT occupied<requested_limit FROM upstream_principals WHERE id=$1)`, f.principal).Scan(&hasIdleOffer, &hasCapacity)
+							if sampleErr == nil {
+								allSamples++
+								var pending int
+								for _, store := range stores {
+									store.admissionGate.mu.Lock()
+									pending += len(store.admissionGate.offered) + len(store.admissionGate.fresh)
+									store.admissionGate.mu.Unlock()
+								}
+								if hasCapacity && pending > 0 {
+									idleApplicationSamples++
+								}
+								if hasIdleOffer {
+									idleOfferSamples++
+								}
+							}
 						}
 					}
 				}()
@@ -327,12 +356,16 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 							}
 							return
 						}
-						timer := time.NewTimer(100 * time.Millisecond)
-						select {
-						case <-timer.C:
-						case <-ctx.Done():
+						waitCtx, end := context.WithDeadline(ctx, until)
+						err = store.WaitAdmission(waitCtx, in)
+						end()
+						if err != nil {
+							cleanup, stop := context.WithTimeout(context.Background(), 3*time.Second)
+							_ = store.CancelQueued(cleanup, in)
+							stop()
+							return
 						}
-						timer.Stop()
+
 					}
 				}
 				// Initial arrival barrier, then closed-loop sustained load.
@@ -378,8 +411,10 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				}
 				poolStats := make([]map[string]any, 0, 3)
 				for _, store := range stores {
-					v := store.db.Stats()
-					poolStats = append(poolStats, map[string]any{"max_open": v.MaxOpenConnections, "wait_count": v.WaitCount, "wait_ms": float64(v.WaitDuration) / 1e6, "open": v.OpenConnections, "idle": v.Idle})
+					for _, pool := range []*sql.DB{store.db, store.criticalDB()} {
+						v := pool.Stats()
+						poolStats = append(poolStats, map[string]any{"max_open": v.MaxOpenConnections, "wait_count": v.WaitCount, "wait_ms": float64(v.WaitDuration) / 1e6, "open": v.OpenConnections, "idle": v.Idle})
+					}
 				}
 				states := map[string]int{}
 				rows, err := integrationDB.Query(`SELECT state,count(*) FROM request_leases WHERE principal_id=$1 GROUP BY state`, f.principal)
@@ -392,7 +427,10 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				}
 				require.NoError(t, rows.Err())
 				rows.Close()
-				report := map[string]any{"final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
+				totals.mu.Lock()
+				allSQL, queueSQL := totals.calls, totals.queueCalls
+				totals.mu.Unlock()
+				report := map[string]any{"idle_capacity_with_application_waiters_sample_seconds": float64(idleApplicationSamples) * 0.05, "idle_capacity_with_live_offer_samples": idleOfferSamples, "capacity_samples": allSamples, "idle_capacity_with_live_offer_sample_seconds": float64(idleOfferSamples) * 0.05, "all_store_sql_calls": allSQL, "queue_control_sql_calls": queueSQL, "queue_sql_per_dispatch": float64(queueSQL+int64(m.sqlCalls["admit.WAIT"])) / float64(max(starts.Load(), 1)), "final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
 				data, err := json.Marshal(report)
 				require.NoError(t, err)
 				t.Logf("MEASUREMENTS %s", data)

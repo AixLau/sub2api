@@ -38,7 +38,7 @@ HTTP 修复：在数据库 dispatch 等待前连接执行 context 和 snapshot d
 
 这里的 `PASS（执行断言）` 只表示该子场景结束时没有残留 lease、重复发送或超限；它仍远高于20ms且有967次明确队列超时，所以性能验收是 PARTIAL。C50/I3 的1条、C200/I3的101条、C200/I16的90条 `DISPATCHING` lease 来自 Finish在5秒连接获取/锁等待预算内未完成；C200两组还分别有8/12次3秒Heartbeat错误。它们被保留在账本中，测试没有直接清零。
 
-六组均使用203或13个worker、三独立8连接pool、2分钟业务/context deadline、100ms轮询、10秒心跳/3秒心跳预算、5秒Finish预算和明确分钟barrier。C10两组连接池等待为0但成功准入仍超过20ms；C50/C200在公平等待和相同用户行锁竞争下出现累计pool等待与低上游利用率。E2证明了当前实现的性能和生命周期缺口，不能用更长deadline或删权威查询绕过。
+六组分别使用13/53/203个worker、三独立8连接pool、2分钟业务/context deadline、100ms轮询、10秒心跳/3秒心跳预算、5秒Finish预算和明确分钟barrier。C10两组连接池等待为0但成功准入仍超过20ms；C50/C200在公平等待和相同用户行锁竞争下出现累计pool等待与低上游利用率。E2证明了当前实现的性能和生命周期缺口，不能用更长deadline或删权威查询绕过。
 
 原始逐组 JSON/环境/SQL计划/等待样本见 [`admission-endurance-results.json`](admission-endurance-results.json)、[`admission-profile-results.json`](admission-profile-results.json) 和 [`evidence-manifest.json`](evidence-manifest.json)。旧 E0/E1 仍是历史记录；不以代表性重现推断所有旧失败均属基线，也不以 C10 子场景通过推断全部矩阵通过。
 

@@ -99,17 +99,40 @@ func admissionSQLPhase(query string) string {
 	}
 }
 
-type admissionTraceConnector struct{ driver.Connector }
+type admissionSQLCounts struct {
+	mu                sync.Mutex
+	calls, queueCalls int64
+}
+
+func (c *admissionSQLCounts) add(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.calls++
+	if ctx.Value(admissionTraceKey{}) == nil {
+		c.queueCalls++
+	}
+	c.mu.Unlock()
+}
+
+type admissionTraceConnector struct {
+	driver.Connector
+	totals *admissionSQLCounts
+}
 
 func (c admissionTraceConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	conn, err := c.Connector.Connect(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &admissionTraceConn{Conn: conn}, nil
+	return &admissionTraceConn{Conn: conn, totals: c.totals}, nil
 }
 
-type admissionTraceConn struct{ driver.Conn }
+type admissionTraceConn struct {
+	driver.Conn
+	totals *admissionSQLCounts
+}
 
 func (c *admissionTraceConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
 	trace, _ := ctx.Value(admissionTraceKey{}).(*admissionTrace)
@@ -128,6 +151,7 @@ func (c *admissionTraceConn) BeginTx(ctx context.Context, opts driver.TxOptions)
 	return &admissionTraceTx{Tx: tx, trace: trace}, nil
 }
 func (c *admissionTraceConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
+	c.totals.add(ctx)
 	trace, _ := ctx.Value(admissionTraceKey{}).(*admissionTrace)
 	started := time.Now()
 	r, err := c.Conn.(driver.ExecerContext).ExecContext(ctx, q, args)
@@ -135,6 +159,7 @@ func (c *admissionTraceConn) ExecContext(ctx context.Context, q string, args []d
 	return r, err
 }
 func (c *admissionTraceConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	c.totals.add(ctx)
 	trace, _ := ctx.Value(admissionTraceKey{}).(*admissionTrace)
 	started := time.Now()
 	r, err := c.Conn.(driver.QueryerContext).QueryContext(ctx, q, args)

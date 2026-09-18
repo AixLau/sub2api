@@ -46,3 +46,16 @@
 `TestCredentialAdmissionTurnOffersPrecedeFreshAndCancel`验证就绪owner先于fresh及取消不遗留turn；`TestCredentialQueueProgressNoTicketlessWait`在真实PG持有跨节点锁时确认不伪造WAIT；`TestCredentialQueueProgressOffersRecheckRevocationAndCapacity`验证提示后缩容、撤销仍由权威准入拒绝。`offer-boundaries.log`通过。
 
 75秒诊断`burst-durable-wait.log`（包含一次分钟barrier）通过：3545次执行全部RELEASED，Heartbeat/Finish无错误，Finish最大2.63秒、Heartbeat最大875ms，保留3秒/5秒预算。此次诊断运行期间还做过定向测试/编译，不作为独占硬件SLO对照。较高负载已主要排在本地数据库访问队列，单次准入call p95仍11.01秒；权威事务p95 38.51ms。**不能把等待搬到进程内后宣称20ms达标**，最终六组合须同时报告call和事务。
+
+
+## 固定持续发生器与定向验证
+
+E3继续使用原C10/50/200 × I3/16、C+3个稳态worker、每分钟额外C+3的明确barrier、200ms/2s/5s/12s混合mock、2分钟业务/context、Heartbeat10s/3s和Finish5s预算。唯有等待方式接入WaitAdmission，每节点pool从8改成6+2（总24不变），没有增加容量或延长预算。
+
+增加计数覆盖未带请求trace的后台批量推进SQL，避免只把WAIT调用变少却漏算后台开销。`queue_sql_per_dispatch`为(WAIT SQL+queue/control SQL)/实际dispatch；完整全部SQL另列。`pre_transaction_wait`包含本地准入队列、跨节点非阻塞turn重试和connection取得，不能冒称纯pool等待；pool真实等待由各DB.Stats给出。`transaction`统计最后一次取得跨节点turn的权威事务，call包含全部此前等待与重试。SQL阶段时间包括SQL往返、执行、锁等待，pg活动样本不换算精确锁毫秒。
+
+`idle_capacity_with_live_offer_sample_seconds`是50ms周期下有有效提示且主体/实例容量可用的样本估计；`idle_capacity_with_application_waiters_sample_seconds`还覆盖等待首次登记的本地队列。样本会有漏采/配置变化边界，不能作为精确墙钟保证；性能fixture保持权限/凭证/端点健康不变，无状态候选相同，才可把后者解释为可执行需求。暂停owner测试另给出确定性推进时限。
+
+最终定向命令：`GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^TestCredential(Queue|LifecycleResources|OverloadRecovery|UsageCrashWindows|Gateway|AdmissionTurn|AdmissionCapacity|AdmissionCompeting)|^TestPrincipalAdmission' -count=1 -timeout=5m -v`，通过，`focused-final.log`，74.997秒。
+
+实际Wire生成及最小cleanup接线测试通过：`go generate ./cmd/server`；`GOCACHE=/tmp/sub2api-queue-progress/go-cache go test -p 2 ./cmd/server -run '^TestProvideCleanup_WithMinimalDependencies_NoPanic$' -count=1`。pool保留生命周期复用现有连接寿命clamp规则；`final-harness-check.log`验证实际provider预算与关闭默认，以及最终测量程序的1秒冒烟（不作为性能验收）。未执行全量测试/全量编译，沿用先前全套失败作为历史证据，不声称本次修复了范围外失败。
