@@ -26,7 +26,10 @@
       "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
       "GOFLAGS": "-p=2",
       "TESTCONTAINERS_RYUK_DISABLED": "true",
-      "CI": "true"
+      "CI": "true",
+      "SUB2API_ACCEPTANCE_SERVER_BINARY": "/tmp/sub2api-release-closure/candidate-binaries/server",
+      "SUB2API_ACCEPTANCE_MOCK_BINARY": "/tmp/sub2api-release-closure/candidate-binaries/rollout-mock",
+      "SUB2API_ACCEPTANCE_ARTIFACT_DIR": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs"
     },
     "exit_code": 0,
     "elapsed_seconds": 50.654369208,
