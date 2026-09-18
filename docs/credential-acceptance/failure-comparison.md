@@ -225,3 +225,17 @@
 - P0/P1/P3及E2：本专项改为分结果、分连接/SQL阶段测量，独立短deadline回归，显式分钟到达barrier，最终六组合串行。具体SHA、命令、失败及性能结果以 [专项报告](admission-time-performance.md) 和 [证据清单](evidence-manifest.json) 为准。
 
 E0、E1均保留，不相互抹去；不把更长deadline的PASS当作时间正确性证明，也不以文档提交变化为由无限重跑旧全套。
+
+
+## 当前专项 HEAD 逐失败对照（F3）
+
+本专项在当前 HEAD `e2a2342228c58074dca9b0d8ede5968ec3b44c6b` 上实际执行：
+
+```sh
+cd backend
+go test ./... -count=1 -json > /tmp/sub2api-admission-time-performance/current-head-full.jsonl
+```
+
+命令退出1。逐测试机器对照文件为 [`current-failure-comparison.json`](current-failure-comparison.json)，基线使用 `fde7e8ec4ff9af1b2645661d6a28cec19f6b347f` 的 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`；当前日志和摘要的SHA在 [`evidence-manifest.json`](evidence-manifest.json)。两次日志各记录81个失败事件，失败并集81：`FAIL_BOTH=81`、`BASELINE_ONLY=0`、`CURRENT_ONLY=0`。这表示本轮逐项对照中没有出现只在当前HEAD新增的失败，也不表示这些失败全部属于基线；它们仍然是当前HEAD实际失败，且每一项需要结合调用路径。此前文档中的78计数来自不同运行快照，已保留为历史记录，不能与F3计数混称。
+
+F3覆盖了当前完整非integration suite；WS、streaming、moderation、model catalogue 等范围外失败仍被记录为当前失败。没有因为对照结果相同就修改这些无关路径，也没有把对照结果当作多凭证系统验收通过。

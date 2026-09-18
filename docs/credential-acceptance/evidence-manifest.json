@@ -118,6 +118,16 @@
       "path": "/tmp/sub2api-admission-time-performance/C200_I3-live-after-first-burst.txt",
       "sha256": "821ac8f8b00d8d71b15952d10e3a886a2fe3ae91f5d1af59f1260d5064316d78",
       "bytes": 613
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/current-head-full.jsonl",
+      "sha256": "2c3526a8f5e8570880ce4d3442f795e903f7e99dd6754ddc42593e78d5a85716",
+      "bytes": 15606909
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/current-failure-comparison.json",
+      "sha256": "43b6f71417f9dc68751b59abfe1802b31b9bb0a76d84171120c1caf4a9b937f6",
+      "bytes": 19977
     }
   ],
   "runs": [
@@ -162,5 +172,19 @@
     "receipt之前没有恢复所需usage事实，UNKNOWN/人工核对而非自动重建。",
     "mock不证明真实provider身份或compact契约。",
     "本轮为Apple M2上的darwin/arm64 Go进程与linux/amd64 PostgreSQL镜像；不能外推原生Linux硬件SLO，也未以跨架构推断所有慢查询/竞争都属环境问题。"
-  ]
+  ],
+  "current_full_suite": {
+    "tested_code_sha": "e2a2342228c58074dca9b0d8ede5968ec3b44c6b",
+    "command": "cd backend && go test ./... -count=1 -json",
+    "exit_code": 1,
+    "log": "/tmp/sub2api-admission-time-performance/current-head-full.jsonl",
+    "failure_comparison": "current-failure-comparison.json",
+    "summary": {
+      "baseline_fde7e8ec4_fail_events": 81,
+      "current_e2a234222_fail_events": 81,
+      "FAIL_BOTH": 81,
+      "BASELINE_ONLY": 0,
+      "CURRENT_ONLY": 0
+    }
+  }
 }

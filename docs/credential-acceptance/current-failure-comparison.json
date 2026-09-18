@@ -1,0 +1,578 @@
+{
+  "baseline_code_sha": "fde7e8ec4ff9af1b2645661d6a28cec19f6b347f",
+  "current_code_sha": "e2a2342228c58074dca9b0d8ede5968ec3b44c6b",
+  "baseline_log": "/tmp/sub2api-acceptance-closure/baseline-full.jsonl",
+  "current_log": "/tmp/sub2api-admission-time-performance/current-head-full.jsonl",
+  "counts": {
+    "FAIL_BOTH": 81
+  },
+  "failure_union": [
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "<package>",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestGatewayAdmissionError_BareResponsesFailedIncludesGatewayCode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestGatewayHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIAdmissionError_ResponsesFailedIncludesGatewayCode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_BareResponsesRouteEmitsResponseFailed",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingCarriesCreatedAt",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingIncludesModel",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号+反斜杠",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/反斜杠",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/换行与制表",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/普通",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingOmitsEmptyModel",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingReusesRequestID",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestResolveOpenAIMessagesDispatchMappedModel_CompositeCNTargetsSkipGroupMapping",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/anthropic/fallback",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/anthropic/mapped",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/composite/fallback",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/composite/mapped",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/gemini/fallback",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/gemini/mapped",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/grok/fallback",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/grok/mapped",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/openai/fallback",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrieveModelMatchesVisibleCatalogue/openai/mapped",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors/hidden",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+      "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors/metadata",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+      "test": "<package>",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+      "test": "TestDashboardNativeCompactionFilterPropagatesAlongsideTransport",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+      "test": "TestDashboardNativeCompactionFilterRejectsInvalidBoolean",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "<package>",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateAccountRetryReusesPriorCandidateDecision",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateCheckAllowsMissWithoutCallingReviewers",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateCheckFailsClosedWhenCriticalSemanticReviewUnavailable",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateCheckRoutesCyberCandidateToSemanticReview",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateCheckUsesOneBoundedOrdinaryPayloadAndCachesRetry",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateSemanticReviewRequiresFinalReviewerForAmbiguousHighRisk",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCandidateSemanticReviewRequiresFinalReviewerForLowRiskAmbiguity",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCheckAccountAttemptDoesNotEnqueueAfterSynchronousSemanticReview",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCheckAccountAttemptObserveMissingProviderKeyPersistsError",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCheckAccountAttemptObserveMissingProviderKeyPersistsErrorWithoutSemanticRouter",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowAccountIntersection",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowAccountIntersection/independent_minima",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowAccountIntersection/invalid_maximum_uses_known_default",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowAccountIntersection/legacy_snapshot_caps_maximum",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowRegistryEnrichment",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowRegistryEnrichment/preserve_upstream_limits",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowSyncRoundTrip",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowSyncRoundTrip/distinct_windows",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexContextWindowSyncRoundTrip/maximum_below_default",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheckMissingProviderKeyEnqueuesSemanticFallbackInObserveMode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_ConfiguredCyberScanKeywordDowngradesLocalPathToReview",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_ContextualCyberIntentBlocksPublicPenetration",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_KeywordsIgnoredInObserveMode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_ObserveModeIgnoresBlockingHashCache",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_TriggerAllAmbientUIRejectIsRecordedWithoutBlocking",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_TriggerAllAuditsMissWithoutKeyword",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_TriggerAllHighRiskModelRejectBlocks",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_TriggerAllRequiresFinalReviewer",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlocking",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationConfigNormalize_DefaultsAuditScopeAndPrivacyOptions",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationLoadConfig_LegacyConfigDefaultsModelFilterToAll",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationLoadConfig_LegacyKeywordOnlyConfigKeepsRuleOnlyMode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationLoadConfig_MissingConfigUsesCandidateOnly",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationStatusEffectiveProtection",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationUpdateConfig_EngineModeUpdateOverridesLegacyKeywordMode",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestContentModerationUpdateConfig_KeywordModeUpdateWithoutEngineModeKeepsLegacyUICompatible",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestPromptInjectionV2FailClosedNeverFallsBackToGeneralReviewer",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestPromptInjectionV2GlobalBaselineRunsBeforeGroupScopeAndNoHitSkipsReviewer",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestSelectedAccountBaselineDecisionIsReusedByCandidateAttempt",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestSetOpenAIFastPolicySettings_Validation",
+      "baseline": "fail",
+      "current": "fail",
+      "disposition": "FAIL_BOTH"
+    }
+  ]
+}

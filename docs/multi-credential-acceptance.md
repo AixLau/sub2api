@@ -59,6 +59,7 @@
 
 - 历史代码快照的 `go test ./... -run '^$'` 编译通过；本专项不将其冒称为最终代码全套重跑。
 - `go test ./...`：历史F2受测代码 `8c1bfcbff` 实际退出1。基线 `fde7e8ec4` 与F2各自完整运行均记录 78 个失败事件、141 个父测试中断/未完成事件；F2逐测试对照见 [`full-suite-comparison-final.json`](credential-acceptance/full-suite-comparison-final.json)；原始日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，逐项复跑证据见 [`failure-comparison.md`](credential-acceptance/failure-comparison.md)。相同结果不能自动归因基线；WS/流错误代表性失败已单测复跑，仍有其他范围外失败需要单独归因。
+- 当前专项 HEAD `e2a2342228c58074dca9b0d8ede5968ec3b44c6b` 实际执行 `cd backend && go test ./... -count=1 -json`，退出1，81个失败事件；与 `fde7e8ec4` 当前对照为 `FAIL_BOTH=81`、`BASELINE_ONLY=0`、`CURRENT_ONLY=0`。逐测试记录见 [`current-failure-comparison.json`](credential-acceptance/current-failure-comparison.json)，不能将两边相同改写成PASS或“全部基线问题”。
 - `go test -race ./internal/service ./internal/handler ./internal/repository ./internal/handler/admin -run '^TestCredential|^TestPrincipal|^TestUpstreamPrincipal' -count=1`：历史运行通过；本专项另有race定向命令，见专项报告。
 - PostgreSQL/Redis/HTTP mock 集成命令和真实 Gin handler 命令见 [`gateway.md`](credential-acceptance/gateway.md)、[`usage-recovery.md`](credential-acceptance/usage-recovery.md)。
 - E0历史30秒请求预算运行有两组ownership loss，根因时间线未证明；不推断全部为发生器问题。E1已完成两分钟预算的六个并行10分钟运行，无测试观察到的超限/重复/残留，mixed call p95为0.49～9.79s，仍超20ms。它补充E0，旧“尚未重跑/两组当前失败”结论不再代表最新矩阵。
