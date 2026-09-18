@@ -18,16 +18,17 @@ type principalAdmissionStore struct {
 	db            *sql.DB
 	lifecycleDB   *sql.DB
 	initOnce      sync.Once
-	admissionGate chan struct{}
+	admissionGate credentialAdmissionTurn
 	waitMu        sync.Mutex
 	waiters       map[string]*credentialAdmissionWaiter
+	retryReady    map[string]bool
 	pumpRunning   bool
 	wake          chan struct{}
 }
 
 func (s *principalAdmissionStore) initializeQueue() {
 	s.initOnce.Do(func() {
-		s.admissionGate = make(chan struct{}, 1)
+		s.retryReady = map[string]bool{}
 		s.waiters = map[string]*credentialAdmissionWaiter{}
 		s.wake = make(chan struct{}, 1)
 	})
@@ -72,26 +73,19 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		return admissionReject("SESSION_SCOPE_REQUIRED"), nil
 	}
 	s.initializeQueue()
-	select {
-	case s.admissionGate <- struct{}{}:
-	case <-ctx.Done():
-		return rejected, ctx.Err()
-	}
-	defer func() { <-s.admissionGate }()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return rejected, service.ErrAdmissionStoreUnavailable
-	}
-	defer tx.Rollback()
-	// A global nonblocking advisory lock limits admission competition across
-	// nodes. It grants no capacity; lifecycle operations do not wait for it.
-	var turn bool
-	if err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, -in.PrincipalID).Scan(&turn); err != nil {
+	s.waitMu.Lock()
+	priority := s.retryReady[in.RequestID]
+	delete(s.retryReady, in.RequestID)
+	s.waitMu.Unlock()
+	if err := s.admissionGate.acquire(ctx, priority); err != nil {
 		return rejected, err
 	}
-	if !turn {
-		return service.AdmissionDecision{Code: service.AdmissionWait, Reason: "ADMISSION_BUSY"}, nil
+	defer s.admissionGate.release()
+	tx, err := s.beginAdmissionTurn(ctx, in.PrincipalID)
+	if err != nil {
+		return rejected, err
 	}
+	defer tx.Rollback()
 	// All operations use user -> principal -> instance -> request/binding/lease.
 	_, err = tx.ExecContext(ctx, `INSERT INTO principal_user_capacity(user_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, in.UserID, in.PrincipalID)
 	if err != nil {

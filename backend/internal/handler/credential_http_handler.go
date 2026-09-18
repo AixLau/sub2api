@@ -92,7 +92,9 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 			fail("ADMISSION_QUEUE_TIMEOUT")
 			return true
 		}
-		decision, err := runtime.Store.TryAdmit(ctx, input)
+		admitCtx, stopAdmission := context.WithDeadline(ctx, queueDeadline)
+		decision, err := runtime.Store.TryAdmit(admitCtx, input)
+		stopAdmission()
 		if err != nil {
 			if recoverer, ok := runtime.Store.(interface {
 				RecoverReserved(context.Context, service.AdmissionInput) (*service.CredentialExecutionSnapshot, error)

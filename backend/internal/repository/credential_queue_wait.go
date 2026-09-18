@@ -31,6 +31,9 @@ func (s *principalAdmissionStore) WaitAdmission(ctx context.Context, in service.
 	s.waitMu.Unlock()
 	defer func() {
 		s.waitMu.Lock()
+		if ctx.Err() != nil {
+			delete(s.retryReady, in.RequestID)
+		}
 		if s.waiters[in.RequestID] == w {
 			delete(s.waiters, in.RequestID)
 		}
@@ -70,12 +73,10 @@ func (s *principalAdmissionStore) pumpAdmissionQueue() {
 func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pending []*credentialAdmissionWaiter) {
 	// One new admission/queue-advance transaction per process, one per principal
 	// across processes. No queued background transactions can flood row locks.
-	select {
-	case s.admissionGate <- struct{}{}:
-	default:
+	if err := s.admissionGate.acquire(ctx, true); err != nil {
 		return
 	}
-	defer func() { <-s.admissionGate }()
+	defer s.admissionGate.release()
 	principals := map[int64]bool{}
 	var ids, nodes []string
 	for _, w := range pending {
@@ -107,7 +108,7 @@ func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pendin
 		}
 		_ = tx.Commit()
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT x.request FROM unnest($1::uuid[],$2::text[]) AS x(request,node)
+	rows, err := s.db.QueryContext(ctx, `SELECT x.request,COALESCE(t.offer_until>clock_timestamp(),false) FROM unnest($1::uuid[],$2::text[]) AS x(request,node)
  LEFT JOIN logical_requests r ON r.id=x.request LEFT JOIN admission_tickets t ON t.request_id=x.request
  WHERE r.id IS NULL OR (r.owner_node=x.node AND (r.status<>'QUEUED' OR t.state<>'QUEUED' OR t.deadline<=clock_timestamp() OR t.offer_until>clock_timestamp()))`, pq.Array(ids), pq.Array(nodes))
 	if err != nil {
@@ -116,9 +117,15 @@ func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pendin
 	var ready []string
 	for rows.Next() {
 		var id string
-		if err = rows.Scan(&id); err != nil {
+		var offered bool
+		if err = rows.Scan(&id, &offered); err != nil {
 			break
 		}
+		s.waitMu.Lock()
+		if s.waiters[id] != nil {
+			s.retryReady[id] = offered
+		}
+		s.waitMu.Unlock()
 		ready = append(ready, id)
 	}
 	if rows.Err() != nil {

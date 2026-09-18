@@ -2,12 +2,18 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 func (s *principalAdmissionStore) CancelQueued(ctx context.Context, in service.AdmissionInput) error {
 	defer s.signalQueue()
+	s.initializeQueue()
+	s.waitMu.Lock()
+	delete(s.retryReady, in.RequestID)
+	s.waitMu.Unlock()
 	tx, err := s.criticalDB().BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -15,15 +21,24 @@ func (s *principalAdmissionStore) CancelQueued(ctx context.Context, in service.A
 	defer tx.Rollback()
 	var n int
 	err = tx.QueryRowContext(ctx, `SELECT occupied FROM principal_user_capacity WHERE user_id=$1 AND principal_id=$2 FOR UPDATE`, in.UserID, in.PrincipalID).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	err = tx.QueryRowContext(ctx, `SELECT occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE`, in.PrincipalID).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	var status string
 	err = tx.QueryRowContext(ctx, `SELECT status FROM logical_requests WHERE id=$1 AND user_id=$2 AND api_key_id IS NOT DISTINCT FROM $3 AND owner_node=$4 FOR UPDATE`, in.RequestID, in.UserID, nullablePositive(in.APIKeyID), in.Node).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

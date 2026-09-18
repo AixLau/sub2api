@@ -35,3 +35,14 @@
 进一步 `-run '^TestCredentialOverloadRecoveryTerminalAndUnknown$'` 使用实际`ProvideCredentialReconciler`接线：停止新增压力后20.159秒内（定义预算25秒，默认10秒周期不变）完成PG释放与Redis用户槽释放。真正未知lease仍ORPHANED，占用1；上游仅调用1次，usage和扣费各1条，重复恢复幂等。日志`recovery-reconciler.log`。这是完整handler+receipt+reconciler+计费证据，与持续发生器不含receipt恢复的边界分开。
 
 无schema变化；回滚必须先消化可靠receipt的待完成lease，保留UNKNOWN，不恢复旧数据库快照。
+
+
+## Q4：提示owner优先进入本地数据库访问队列
+
+75秒C200/I16冒烟发现：新到请求能排在已有有效提示的owner前面，耗尽其响应窗口；最初global try-lock失败还直接返回WAIT但未登记票据。现改为有界本地数据库访问排队（最多256项；生产HTTP已有更小body/请求数预算），就绪owner及批量推进优先于新登记请求；仍只有一个本地准入事务。跨节点try-lock竞争发生在本地登记阶段，释放DB连接后5ms再试，不持SQL事务睡眠，不对外返回没有票据的WAIT。最终许可完全不变。
+
+取消尚未登记的请求为幂等no-op，无外部副作用。handler把既有15秒排队期限传入TryAdmit context，防止本地数据库访问排队超过入口预算。
+
+`TestCredentialAdmissionTurnOffersPrecedeFreshAndCancel`验证就绪owner先于fresh及取消不遗留turn；`TestCredentialQueueProgressNoTicketlessWait`在真实PG持有跨节点锁时确认不伪造WAIT；`TestCredentialQueueProgressOffersRecheckRevocationAndCapacity`验证提示后缩容、撤销仍由权威准入拒绝。`offer-boundaries.log`通过。
+
+75秒诊断`burst-durable-wait.log`（包含一次分钟barrier）通过：3545次执行全部RELEASED，Heartbeat/Finish无错误，Finish最大2.63秒、Heartbeat最大875ms，保留3秒/5秒预算。此次诊断运行期间还做过定向测试/编译，不作为独占硬件SLO对照。较高负载已主要排在本地数据库访问队列，单次准入call p95仍11.01秒；权威事务p95 38.51ms。**不能把等待搬到进程内后宣称20ms达标**，最终六组合须同时报告call和事务。

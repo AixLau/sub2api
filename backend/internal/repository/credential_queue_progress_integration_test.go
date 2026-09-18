@@ -95,3 +95,61 @@ func TestCredentialQueueProgressLostDuplicateHintsAndOwnerFence(t *testing.T) {
 	require.NoError(t, first.Cancel(ctx, winner.Lease))
 	assertAdmissionLedger(t, f, 0)
 }
+
+func TestCredentialQueueProgressOffersRecheckRevocationAndCapacity(t *testing.T) {
+	ctx := context.Background()
+	f := newAdmissionFixture(t, 1)
+	s := &principalAdmissionStore{db: integrationDB}
+	first, err := s.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	in := f.input()
+	q, err := s.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionWait, q.Code)
+	require.NoError(t, s.Cancel(ctx, first.Snapshot.Lease))
+	waitCtx, end := context.WithTimeout(ctx, time.Second)
+	defer end()
+	require.NoError(t, s.WaitAdmission(waitCtx, in))
+	_, err = integrationDB.Exec(`UPDATE upstream_principals SET requested_limit=0,config_version=config_version+1 WHERE id=$1`, f.principal)
+	require.NoError(t, err)
+	q, err = s.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionWait, q.Code)
+	assertAdmissionLedger(t, f, 0)
+	_, err = integrationDB.Exec(`UPDATE api_keys SET status='disabled' WHERE id=$1`, f.key)
+	require.NoError(t, err)
+	q, err = s.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, "AUTHORIZATION_REVOKED", q.Reason)
+	assertAdmissionLedger(t, f, 0)
+}
+
+func TestCredentialQueueProgressNoTicketlessWait(t *testing.T) {
+	ctx := context.Background()
+	f := newAdmissionFixture(t, 1)
+	s := &principalAdmissionStore{db: integrationDB}
+	tx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer tx.Rollback()
+	_, err = tx.Exec(`SELECT pg_advisory_xact_lock($1)`, -f.principal)
+	require.NoError(t, err)
+	type result struct {
+		d   service.AdmissionDecision
+		err error
+	}
+	done := make(chan result, 1)
+	go func() { d, err := s.TryAdmit(ctx, f.input()); done <- result{d, err} }()
+	require.Eventually(t, func() bool { s.admissionGate.mu.Lock(); defer s.admissionGate.mu.Unlock(); return s.admissionGate.busy }, time.Second, time.Millisecond)
+	select {
+	case r := <-done:
+		t.Fatalf("contention must stay local before registration, got %s %v", r.d.Code, r.err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	assertAdmissionLedger(t, f, 0)
+	require.NoError(t, tx.Commit())
+	r := <-done
+	require.NoError(t, r.err)
+	require.Equal(t, service.AdmissionAdmitted, r.d.Code)
+	require.NoError(t, s.Cancel(ctx, r.d.Snapshot.Lease))
+	assertAdmissionLedger(t, f, 0)
+}
