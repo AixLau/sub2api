@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -44,12 +45,30 @@ func (c *CredentialRefreshCoordinator) Refresh(ctx context.Context, instanceID i
 		return ErrCredentialUnverified
 	}
 	// Database family uniqueness is authoritative; singleflight only reduces local work.
-	_, err, _ := c.local.Do(strconv.FormatInt(instanceID, 10), func() (any, error) {
-		op, err := c.store.BeginCredentialRefresh(ctx, instanceID)
+	_, err, _ := c.local.Do(strconv.FormatInt(instanceID, 10), func() (value any, retErr error) {
+		var op CredentialRefreshOperation
+		var pendingResult *CredentialRefreshResult
+		var markUnknown func(*CredentialRefreshResult)
+		defer func() {
+			if recover() != nil {
+				if markUnknown != nil {
+					markUnknown(pendingResult)
+				}
+				retErr = errors.New("REFRESH_RESULT_UNKNOWN")
+				slog.Error("credential_refresh_panic", "action", "retain_unknown_refresh")
+			}
+		}()
+		var err error
+		op, err = c.store.BeginCredentialRefresh(ctx, instanceID)
 		if err != nil {
 			return nil, err
 		}
-		markUnknown := func(result *CredentialRefreshResult) {
+		markUnknown = func(result *CredentialRefreshResult) {
+			defer func() {
+				if recover() != nil {
+					slog.Error("credential_refresh_compensation_panic", "action", "retain_pending_refresh_for_reconciliation")
+				}
+			}()
 			cleanup, end := context.WithTimeout(context.Background(), 5*time.Second)
 			defer end()
 			_ = c.store.MarkCredentialRefreshUnknown(cleanup, op, result)
@@ -76,6 +95,7 @@ func (c *CredentialRefreshCoordinator) Refresh(ctx context.Context, instanceID i
 			return nil, err
 		}
 		result := CredentialRefreshResult{Ciphertext: sealed, AAD: op.ID, ExpiresAt: expires, AccessFingerprint: c.vault.Fingerprint("token", next.AccessToken), RefreshFingerprint: c.vault.Fingerprint("token", next.RefreshToken)}
+		pendingResult = &result
 		if err = c.store.CompleteCredentialRefresh(ctx, op, result); err != nil {
 			markUnknown(&result)
 			return nil, errors.New("REFRESH_RESULT_UNKNOWN")

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -33,6 +34,15 @@ type credentialHTTPExecution struct {
 // adapter. Calling the upstream twice (including an adapter compatibility retry)
 // is refused. This entry does not select accounts or acquire legacy slots.
 func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin.Context, account *Account, body []byte, snapshot CredentialExecutionSnapshot, vault *CredentialVault, store PrincipalAdmissionStore) (result *OpenAIForwardResult, retErr error) {
+	// HTTP/client hooks may panic with headers or token-bearing values. Existing
+	// lease cleanup defers run first; an unknown dispatch is never replayed.
+	defer func() {
+		if recover() != nil {
+			result = nil
+			retErr = errors.New("CREDENTIAL_HTTP_EXECUTION_PANIC")
+			slog.Error("credential_http_execution_panic", "action", "retain_unproven_dispatch")
+		}
+	}()
 	entered := false
 	defer func() {
 		if !entered {
@@ -180,7 +190,24 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 		}
 	}()
 	entered = true
-	return s.Forward(ctx, c, &copyAccount, body)
+	return s.forwardCredentialHTTPAdapter(ctx, c, &copyAccount, body, execution)
+}
+
+// Recover before the outer terminal/receipt cleanup: a terminal HTTP body alone
+// is not a durable usage fact when the adapter failed to return its result.
+func (s *OpenAIGatewayService) forwardCredentialHTTPAdapter(ctx context.Context, c *gin.Context, account *Account, body []byte, execution *credentialHTTPExecution) (result *OpenAIForwardResult, err error) {
+	defer func() {
+		if recover() != nil {
+			execution.mu.Lock()
+			execution.terminal = false
+			execution.terminalOutcome = ""
+			execution.mu.Unlock()
+			result = nil
+			err = errors.New("CREDENTIAL_HTTP_EXECUTION_PANIC")
+			slog.Error("credential_http_execution_panic", "action", "retain_unproven_dispatch")
+		}
+	}()
+	return s.Forward(ctx, c, account, body)
 }
 
 func credentialExecutionFromContext(ctx context.Context) *credentialHTTPExecution {

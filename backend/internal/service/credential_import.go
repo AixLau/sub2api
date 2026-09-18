@@ -10,10 +10,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -162,7 +165,14 @@ type CredentialImportService struct {
 func NewCredentialImportService(store CredentialImportStore, vault *CredentialVault, verifier CredentialVerifier) *CredentialImportService {
 	return &CredentialImportService{store: store, vault: vault, verifier: verifier}
 }
-func (s *CredentialImportService) Import(ctx context.Context, owner int64, operation string, secret CredentialSecret) (CredentialImportView, error) {
+func (s *CredentialImportService) Import(ctx context.Context, owner int64, operation string, secret CredentialSecret) (view CredentialImportView, retErr error) {
+	defer func() {
+		if recover() != nil {
+			view = CredentialImportView{}
+			retErr = ErrCredentialUnverified
+			slog.Error("credential_import_panic", "action", "rejected_without_secret_diagnostics")
+		}
+	}()
 	if s.vault == nil {
 		return CredentialImportView{}, ErrCredentialVaultUnavailable
 	}
@@ -273,4 +283,26 @@ func (v *CredentialVault) FingerprintKeyID() string {
 		return ""
 	}
 	return v.Fingerprint("key-check", "v1")
+}
+
+// Prevent accidental structured/debug/panic formatting from expanding secrets.
+// JSON marshaling remains internal to the authenticated-encryption boundary.
+func (CredentialSecret) Format(state fmt.State, verb rune) {
+	_, _ = state.Write([]byte("[credential secret redacted]"))
+}
+func (CredentialSecret) LogValue() slog.Value {
+	return slog.StringValue("[credential secret redacted]")
+}
+func (CredentialVault) Format(state fmt.State, verb rune) {
+	_, _ = state.Write([]byte("[credential vault redacted]"))
+}
+func (CredentialVault) LogValue() slog.Value { return slog.StringValue("[credential vault redacted]") }
+
+func (CredentialSecret) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	enc.AddString("secret", "[redacted]")
+	return nil
+}
+func (CredentialVault) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	enc.AddString("vault", "[redacted]")
+	return nil
 }
