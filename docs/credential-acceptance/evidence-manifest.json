@@ -138,6 +138,36 @@
       "path": "/tmp/sub2api-admission-time-performance/gateway-ledger-usage-focused.log",
       "sha256": "7ca6cce299de73434fe7ad36dee562e3fc57032b227cf6c6c3ab20e846ab833e",
       "bytes": 13712
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/endurance-E3.log",
+      "sha256": "06abf293f58d8901af06ee370082531b64085153d0dd0f1430415ba495210f9a",
+      "bytes": 128257
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/burst-priority.log",
+      "sha256": "24056ba9dc2bbbc65f0303938a6ce10754c8704685c778b186870c9aec6dc9a9",
+      "bytes": 21407
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/three-process-queue.log",
+      "sha256": "58909f95b173291dc1941f779b640ab95f856de165e4ed6d698ca690d64fd0b1",
+      "bytes": 2302
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/recovery-reconciler.log",
+      "sha256": "b549103a6dbbaa294e627fbac441cedc1bd4a475c8d128c327f971eb76364668",
+      "bytes": 3505
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/recovery-after-isolated.log",
+      "sha256": "104b6bc82ca0d7d1458688d5f61f93e2b7b9e1a329314436af15d17d322b887b",
+      "bytes": 16155
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/focused-final.log",
+      "sha256": "98c2d2af6281b89fcf8bb3a2577040847ac18e83259a4b89ae2977b96062299b",
+      "bytes": 20506
     }
   ],
   "runs": [
@@ -196,5 +226,20 @@
       "BASELINE_ONLY": 0,
       "CURRENT_ONLY": 0
     }
+  },
+  "queue_progress_e3": {
+    "tested_code_sha": "7ba4602131b11e51a9647f2455d650ff71e7b5e8",
+    "benchmark_code_sha": "7ba4602131b11e51a9647f2455d650ff71e7b5e8",
+    "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -timeout=85m -v",
+    "exit_code": 0,
+    "cases": {
+      "C10_I3": "PASS",
+      "C10_I16": "PASS",
+      "C50_I3": "PASS",
+      "C50_I16": "PASS",
+      "C200_I3": "PASS",
+      "C200_I16": "PASS"
+    },
+    "artifact": "admission-endurance-queue-progress-results.json"
   }
 }

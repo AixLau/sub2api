@@ -68,3 +68,27 @@ E3继续使用原C10/50/200 × I3/16、C+3个稳态worker、每分钟额外C+3�
 实际命令：`GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialQueueThreeProcessesPausedOwner$' -count=1 -v`，PASS，日志`three-process-queue.log`。这是三独立准入测试进程，不冒称三个完整网关服务器；完整handler+receipt链路另有单进程联测。
 
 测量条件披露：该进程测试的编译和约10秒运行与E3的C10/I3尾段有重叠，因此C10/I3不应描述为完全独占机器的性能测量。其余五组无这项并行工作，所有执行代码在E3期间保持冻结。没有为了文档更新重复整套压力测试。
+
+
+## E3：固定六组合矩阵结果
+
+固定命令：
+
+```sh
+GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m go test -p 2 -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -timeout=85m -v
+```
+
+受测 `tested_code_sha=7ba4602131b11e51a9647f2455d650ff71e7b5e8`，报告/发生器同SHA；C10/I3尾段与三进程owner测试有时间重叠，仍在报告中披露。六组执行断言全部通过，最终 lease 均 `RELEASED`，无 `ERROR`、明确队列超时、重复或超准入：
+
+| 场景 | ADMITTED call p95 | 权威事务 p95 | 本地/连接前等待 p95 | Finish p95 | Heartbeat p95 | dispatch/s | pool waits | 空间利用率 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| C10/I3 | 61.25ms | 25.36ms | 40.34ms | 21.73ms | 21.66ms | 9.32 | 0 | 89.29% |
+| C10/I16 | 64.37ms | 26.78ms | 42.20ms | 22.29ms | 23.07ms | 9.32 | 0 | 89.23% |
+| C50/I3 | 498.99ms | 29.06ms | 475.74ms | 26.67ms | 25.65ms | 23.21 | 0 | 44.47% |
+| C50/I16 | 544.01ms | 32.69ms | 518.10ms | 30.81ms | 31.31ms | 21.41 | 0 | 41.04% |
+| C200/I3 | 7098.51ms | 30.87ms | 7078.88ms | 33.61ms | 33.22ms | 47.07 | 0 | 22.55% |
+| C200/I16 | 8120.32ms | 34.77ms | 8097.78ms | 45.07ms | 46.25ms | 43.50 | 0 | 20.85% |
+
+E3 的生命周期资源问题已通过本矩阵预算：没有 E2 的 Finish/Heartbeat 超时和残留 `DISPATCHING`。但 C200 的端到端 call p95 仍由本地等待占主导，权威事务 p95 也高于20ms；不能把等待搬到有界应用队列后称为性能达标。`queue_sql_per_dispatch` 在C10/C50约31.7–40.1；C200没有WAIT调用，后台提示扫描和本地访问等待仍需单独看待。所有SQL、提示空闲样本、pool stats、等待事件和终态见 [admission-endurance-queue-progress-results.json](admission-endurance-queue-progress-results.json)。
+
+与E2相比，E3将“有容量但owner不推进”转为确定的有界提示推进；E2 C50/C200 的Finish/Heartbeat错误和残留占用不再复现。E3并不证明任意生产压力、跨地域拓扑或真实provider行为，仍需保持功能关闭。

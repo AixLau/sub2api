@@ -3,7 +3,7 @@
 本账本逐项记录 AT-01～AT-40。组件测试通过不等于整项系统验收通过。
 
 验收分支：`feat/multi-credential-http`。
-报告版本 `admission-time-performance-r1`。历史完整suite受测代码 `8c1bfcbff45883c730e37f6382c4c9fd70344122`；专项起点 `5effa833a988b57ec977a93481be2f75450f8edd`。本专项持续矩阵的 `tested_code_sha` / `benchmark_code_sha` 均为 `c594d92e3d6580cb9069a7c788deec1380eb22ea`，与报告提交分开，见 [证据清单](credential-acceptance/evidence-manifest.json)。
+报告版本 `admission-time-performance-r1`。历史完整suite受测代码 `8c1bfcbff45883c730e37f6382c4c9fd70344122`；专项起点 `5effa833a988b57ec977a93481be2f75450f8edd`。历史E2持续矩阵的 `tested_code_sha` / `benchmark_code_sha` 为 `c594d92e3d6580cb9069a7c788deec1380eb22ea`；队列推进E3为 `7ba4602131b11e51a9647f2455d650ff71e7b5e8`，与报告提交分开，见 [证据清单](credential-acceptance/evidence-manifest.json)。
 规格基线：`9bdb388b83f05e678e83990d9b19afbc3f088a8f`；代码对照基线：`fde7e8ec4ff9af1b2645661d6a28cec19f6b347f`。
 
 状态定义：PASS表示本项在声明拓扑和测试契约内完整通过，不能外推为全系统PASS；PARTIAL表示已有局部证据但整项仍有缺口；BLOCKED表示缺少外部契约或前置条件；NOT_RUN表示无实际执行证据。历史证据与本轮复跑用SHA/命令区分；保留历史PASS不意味着本轮重跑了全部AT。
@@ -84,3 +84,6 @@
 - 在声明的单PG主库、单Redis、同机三网关范围内完成旧节点离线fencing、故障恢复和灰度/回滚闭环；不得以本报告启用HA/跨地域等未支持拓扑；
 - 完成全套失败测试逐项归因、日志/APM/权限旁路扫描、完整管理端 drain/revoke/replace/resolve 影响预览；
 - 完成上述条件前保持 `gateway.multi_credential_http_enabled=false`，禁止生产启用。
+
+
+- E3公平队列/生命周期矩阵：六组合10分钟执行断言全部PASS，C50/C200无Finish/Heartbeat错误、无残留lease；但权威事务p95 25.36–34.77ms，端到端call p95最高8.12s，性能仍PARTIAL。E3结果、提示空闲样本和本地等待数据见 `queue-progress-lifecycle.md`/`admission-endurance-queue-progress-results.json`。生命周期安全问题已修复到本轮矩阵预算，不能把端到端性能声明为达标。

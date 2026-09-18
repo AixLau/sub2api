@@ -119,3 +119,8 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/r
 ```
 
 退出0，覆盖完整网关的跨主体/旧路径用户容量、准入失败补偿、usage恢复六窗口、随机账本、绑定/配置重查和本专项时间边界；日志 `/tmp/sub2api-admission-time-performance/gateway-ledger-usage-focused.log`。它是定向正确性证据，不能抵消E2持续矩阵的性能/生命周期失败。
+
+
+### E3补充：队列推进后的六组合
+
+公平提示和生命周期保留资源修复后，E3六组合10分钟全部执行断言通过，C50/C200没有E2中的Finish/Heartbeat错误或残留占用。端到端call p95仍为61ms、64ms、499ms、544ms、7.10s、8.12s；权威事务p95为25.36–34.77ms。新增本地访问等待不是执行槽位或上游延迟，不能用它替代20ms目标；E3说明生命周期安全优先级问题已分离，但准入端到端性能仍未达标。
