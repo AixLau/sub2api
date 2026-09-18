@@ -1,133 +1,362 @@
 {
-  "report_revision": "full-gateway-rollout-20260918-initial",
-  "tested_code_sha": "7ed6277a28486470763a1dfb7be112e0b0070be3",
-  "tested_code_has_uncommitted_changes": true,
-  "tracked_backend_sha256_at_build": "42348c6231875f9ec0a63df58cd51b642a5d6d05024ab43b3cca2915d91ab356",
-  "benchmark_code_sha": null,
-  "benchmark_source_sha256": "449be3ffa14a8007dd4567b7c303ed27b109930987d2b7ebf58ce17439f98cfe",
-  "server_binary_sha256": "80bdde51bd80fb88738120468dde7772fa8622af035aad921d4d6bd881df146b",
-  "mock_binary_sha256": "e00cd5f9b7f6315837fde98a134e8d5c4e3c5f461859e1b4762bdbe9bb55af02",
-  "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache SUB2API_ACCEPTANCE_SERVER_BINARY=/tmp/sub2api-full-gateway-rollout/server SUB2API_ACCEPTANCE_MOCK_BINARY=/tmp/sub2api-full-gateway-rollout/rollout-mock SUB2API_ACCEPTANCE_ARTIFACT_DIR=/tmp/sub2api-full-gateway-rollout/gateway-logs TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run ^TestCredentialFullGatewayOfflineRollout$ -count=1 -v",
-  "exit_code": 0,
-  "test_seconds": 43.01,
-  "suite_seconds": 50.154,
-  "receipt_recovery_seconds": 11.087173917,
+  "report_revision": "full-gateway-rollout-20260918-final-fixture-35aff321d",
+  "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+  "benchmark_code_sha": "35aff321ddc65457f65fe2cbf3e0d4a257dce304",
+  "benchmark_source_sha256": "3e062059d96a152b269cae529baef51874686814cd3c8859482e3fa56f7af168",
+  "source_change_since_tested_code": [
+    "backend/internal/repository/credential_rollout_full_gateway_acceptance_test.go"
+  ],
+  "product_and_migration_changes_since_tested_code": [],
+  "repository_test_binary_sha256": "d8ddcba62ef1440756b04d2aa77e91c9f8723e4d6dab8d0f44800ec49be0f948",
+  "server_binary_sha256": "48e0942233b064ebe39d9bb3478ae275fd0d03ea1c54b1ef889e5c157ec3b2b7",
+  "mock_binary_sha256": "17b41784e9a9b627a1d81c727d64251b8c2726d284f7da36e4cc2245dfed286f",
+  "command_metadata": {
+    "name": "candidate-full-gateways-fixture-35aff321d",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "command": [
+      "/tmp/sub2api-full-gateway-final-35aff321d/repository.test",
+      "-test.run",
+      "^TestCredentialFullGatewayOfflineRollout$",
+      "-test.count=1",
+      "-test.v"
+    ],
+    "cwd": "/tmp/sub2api-full-gateway-final-35aff321d/backend/internal/repository",
+    "start": "2026-09-18T21:24:56.422254+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 50.654369208,
+    "end": "2026-09-18T21:25:47.078260+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways-fixture-35aff321d.stdout",
+      "sha256": "8e8f0b701e732ca58be263ccf9c1b4e3371ab9e761f79f469de854e47f705594"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways-fixture-35aff321d.stderr",
+      "sha256": "58ce80a8d57c4104c66c7c98be75d978ce20e79032bb806e674d3a0a08415459"
+    }
+  },
+  "test_seconds": 44.03,
+  "receipt_recovery_seconds": 11.0142815,
+  "persisted_store_restart_reconcile_seconds": 11.130630583,
   "gateway_processes_per_generation": 3,
   "generations": 5,
   "mock_calls": 8,
   "usage_rows": 7,
   "unknown_retained": 1,
-  "raw_log": "/tmp/sub2api-full-gateway-rollout/full-gateway-sixth.log",
-  "raw_log_sha256": "455773c7e2b1dc839f5e74a6c5b87fea6ba2343767791f574b432e03848b38a7",
+  "upstream_replay": 0,
+  "host_port_restart_observations": [
+    {
+      "service": "redis",
+      "before": 32895,
+      "after": 32896,
+      "changed": true
+    },
+    {
+      "service": "postgres",
+      "before": 32894,
+      "after": 32897,
+      "changed": true
+    }
+  ],
   "gateway_logs": [
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-01.log",
-      "sha256": "b5f88464c0402d5922bd864a0b067e367d5b09d0b91f29598786c6055450ac67",
-      "bytes": 25309
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-01.log",
+      "sha256": "4fbec553c7c6c88f3fab6d137a789dccb55d9060aedff81207762e548d9a398d",
+      "bytes": 25634
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-02.log",
-      "sha256": "73009ce4523cca539e1a4a193b9a27bf39b4b7b01618e908698925e7ce1a36a7",
-      "bytes": 25133
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-02.log",
+      "sha256": "e305455c5120f500f786ca148d3c181308f6c0d418091f3dfc3df2989652e934",
+      "bytes": 25457
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-03.log",
-      "sha256": "adccfceaaf22c4b367a429431ad8ff565d8cf19cbb8cb4c1e758ba6b43be92b7",
-      "bytes": 25133
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-03.log",
+      "sha256": "be9f58c4bd6971d1d8094fa428fb2515975c222d8c74bc5a077db650e72f3e2e",
+      "bytes": 25457
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-04.log",
-      "sha256": "9b12c0c9b9a36afde4b883780796d2706101bcadc12087db32deec077e64158d",
-      "bytes": 33097
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-04.log",
+      "sha256": "e45f4e62b37242c8c3f4f06ecbaac56b4b28e3774689333f34102a32d40545be",
+      "bytes": 33421
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-05.log",
-      "sha256": "9bfdbafc811c71c2a3e5326214574194f91f0d7f6be9f581ec49034666f67ab3",
-      "bytes": 24491
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-05.log",
+      "sha256": "cc7a305d677468cde7f90a9db278f640e94e764199c9debc7cec256feea0c22d",
+      "bytes": 24816
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-06.log",
-      "sha256": "0e3e8357790807a52acde63b20f5fad56c62938a96bc8856efa3c39d72627a70",
-      "bytes": 24490
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-06.log",
+      "sha256": "598f1434667badc21562ec21ae7417e1ed3c9a9142f24f1a894975673cc81b66",
+      "bytes": 24815
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-07.log",
-      "sha256": "c9561eb22816cbc2045fee305c2860f7dcfe4bdc9008b9a35067170db04123e8",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-07.log",
+      "sha256": "3cb47fc1342d136ec48d94f854f5548d034b5ccc0352a3a3d9ed2b8de337f291",
+      "bytes": 21159
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-08.log",
-      "sha256": "0459dd3f975f6757c7099afdb6fe2f9c7f850b8b6833238a100b111589655689",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-08.log",
+      "sha256": "b50e6218e0a70a9ea20b39f9472d1fae2114c077e7cc6955cf602ec762fb0a68",
+      "bytes": 21160
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-09.log",
-      "sha256": "38387d83777125c9e23ea84ada62c7cc8ef6baabfeaa38e9580db9d02db08d9d",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-09.log",
+      "sha256": "b022c43539fc74501d2a14f52bbcff4f1a6dc3617c80e905984a4424f96e90eb",
+      "bytes": 21160
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-10.log",
-      "sha256": "410dd33e91f0e40eb1731d45398bd5640becf1ecff4f7b44101854741bde90e8",
-      "bytes": 24490
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-10.log",
+      "sha256": "4774650278f88716a20bad5119ee8587d0b920acef92a4c12159e0f02b52a91c",
+      "bytes": 24815
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-11.log",
-      "sha256": "824609a6f4802f27f0fa04b05b01dded2bb0abfb845b73af06729de11775ce3e",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-11.log",
+      "sha256": "5d60ec43115c53e809079ba3e4d3e578e1657a05fc9180f7197bab717ce73246",
+      "bytes": 21160
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-12.log",
-      "sha256": "a5b91c6ac573d767de53d4481c962ef9e369ab475515f8ee923174242d13a390",
-      "bytes": 20837
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-12.log",
+      "sha256": "ffc51ba0c1da39aefccdda9b2d5a3819c9294ef4cc50fb6a75d75f8b7c55d523",
+      "bytes": 21160
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-13.log",
-      "sha256": "c0c4621b56c36429a82fcb93bd4b3123717b3b60deb5beed4dcfead6488e2c94",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-13.log",
+      "sha256": "d191e9e0d30fafb63a18ac84df271e7e3666dc42ce89c30b8d76a7ca61b786f1",
+      "bytes": 21159
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-14.log",
-      "sha256": "2abb2c27448dad0b3e29d3c3f3338f8851cadbcf1257d9644740ceb6770f22a7",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-14.log",
+      "sha256": "29080419d1bb8c9109ee3f6d6d76034e3a51c035444289daf4fb485687716861",
+      "bytes": 21160
     },
     {
-      "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-15.log",
-      "sha256": "87e7dda10053412b2b4806df0102ec78b230d1e746556278f8f53a0269d0ef10",
-      "bytes": 20836
+      "path": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs/gateway-15.log",
+      "sha256": "6d148b4e24b3baeb646af7cf39933d404485e2f547ab3582c393838a4892cd17",
+      "bytes": 21160
     }
   ],
-  "prior_failures": [
-    {
-      "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-first.log",
-      "exit_code": 1,
-      "sha256": "c21a9969c1a5bc6cf455442b50a2e8f877162a875501dfcede9d0fbfee7290d0"
+  "prior_final_candidate_failure": {
+    "name": "candidate-full-gateways",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "command": [
+      "env",
+      "SUB2API_ACCEPTANCE_SERVER_BINARY=/tmp/sub2api-release-closure/candidate-binaries/server",
+      "SUB2API_ACCEPTANCE_MOCK_BINARY=/tmp/sub2api-release-closure/candidate-binaries/rollout-mock",
+      "SUB2API_ACCEPTANCE_ARTIFACT_DIR=/tmp/sub2api-release-closure/final-gateway-logs",
+      "/tmp/sub2api-release-closure/candidate-binaries/repository.test",
+      "-test.run=^TestCredentialFullGatewayOfflineRollout$",
+      "-test.count=1",
+      "-test.timeout=8m",
+      "-test.v"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository",
+    "start": "2026-09-18T20:17:41.066294+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
     },
-    {
-      "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-second.log",
-      "exit_code": 1,
-      "sha256": "d0bb575e0d05734083c417a6e5c1a02af32cf184d3007cec35b85158e44d723e"
+    "exit_code": 1,
+    "elapsed_seconds": 46.015185625,
+    "end": "2026-09-18T20:18:27.081733+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways.stdout",
+      "sha256": "d19e70904cee0fd5cbd3a202d1eaed32f2b015e9cac6b60051865cab3a716b9e"
     },
-    {
-      "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-third.log",
-      "exit_code": 1,
-      "sha256": "90d20d9902a7a64dbed10bbd12c37f76246b3f737f85d08bb86cf181c39dc433"
-    },
-    {
-      "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-fourth.log",
-      "exit_code": 1,
-      "sha256": "9063cf747bd79fb2ef64daaaf9b504c5defa8586d246e84d72693c669e85bd7c"
-    },
-    {
-      "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-fifth.log",
-      "exit_code": 1,
-      "sha256": "090d0b779873d9ae3b36d3be12b525e8faef4cdb467b3acba9e404efab79472b"
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways.stderr",
+      "sha256": "9b4e617f873483c51436cba6297f464d032eddc36c5f43551adb71f575a1f65c"
     }
-  ],
+  },
+  "prior_initial_run": {
+    "report_revision": "full-gateway-rollout-20260918-initial",
+    "tested_code_sha": "7ed6277a28486470763a1dfb7be112e0b0070be3",
+    "tested_code_has_uncommitted_changes": true,
+    "tracked_backend_sha256_at_build": "42348c6231875f9ec0a63df58cd51b642a5d6d05024ab43b3cca2915d91ab356",
+    "benchmark_code_sha": null,
+    "benchmark_source_sha256": "449be3ffa14a8007dd4567b7c303ed27b109930987d2b7ebf58ce17439f98cfe",
+    "server_binary_sha256": "80bdde51bd80fb88738120468dde7772fa8622af035aad921d4d6bd881df146b",
+    "mock_binary_sha256": "e00cd5f9b7f6315837fde98a134e8d5c4e3c5f461859e1b4762bdbe9bb55af02",
+    "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache SUB2API_ACCEPTANCE_SERVER_BINARY=/tmp/sub2api-full-gateway-rollout/server SUB2API_ACCEPTANCE_MOCK_BINARY=/tmp/sub2api-full-gateway-rollout/rollout-mock SUB2API_ACCEPTANCE_ARTIFACT_DIR=/tmp/sub2api-full-gateway-rollout/gateway-logs TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run ^TestCredentialFullGatewayOfflineRollout$ -count=1 -v",
+    "exit_code": 0,
+    "test_seconds": 43.01,
+    "suite_seconds": 50.154,
+    "receipt_recovery_seconds": 11.087173917,
+    "gateway_processes_per_generation": 3,
+    "generations": 5,
+    "mock_calls": 8,
+    "usage_rows": 7,
+    "unknown_retained": 1,
+    "raw_log": "/tmp/sub2api-full-gateway-rollout/full-gateway-sixth.log",
+    "raw_log_sha256": "455773c7e2b1dc839f5e74a6c5b87fea6ba2343767791f574b432e03848b38a7",
+    "gateway_logs": [
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-01.log",
+        "sha256": "b5f88464c0402d5922bd864a0b067e367d5b09d0b91f29598786c6055450ac67",
+        "bytes": 25309
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-02.log",
+        "sha256": "73009ce4523cca539e1a4a193b9a27bf39b4b7b01618e908698925e7ce1a36a7",
+        "bytes": 25133
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-03.log",
+        "sha256": "adccfceaaf22c4b367a429431ad8ff565d8cf19cbb8cb4c1e758ba6b43be92b7",
+        "bytes": 25133
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-04.log",
+        "sha256": "9b12c0c9b9a36afde4b883780796d2706101bcadc12087db32deec077e64158d",
+        "bytes": 33097
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-05.log",
+        "sha256": "9bfdbafc811c71c2a3e5326214574194f91f0d7f6be9f581ec49034666f67ab3",
+        "bytes": 24491
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-06.log",
+        "sha256": "0e3e8357790807a52acde63b20f5fad56c62938a96bc8856efa3c39d72627a70",
+        "bytes": 24490
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-07.log",
+        "sha256": "c9561eb22816cbc2045fee305c2860f7dcfe4bdc9008b9a35067170db04123e8",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-08.log",
+        "sha256": "0459dd3f975f6757c7099afdb6fe2f9c7f850b8b6833238a100b111589655689",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-09.log",
+        "sha256": "38387d83777125c9e23ea84ada62c7cc8ef6baabfeaa38e9580db9d02db08d9d",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-10.log",
+        "sha256": "410dd33e91f0e40eb1731d45398bd5640becf1ecff4f7b44101854741bde90e8",
+        "bytes": 24490
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-11.log",
+        "sha256": "824609a6f4802f27f0fa04b05b01dded2bb0abfb845b73af06729de11775ce3e",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-12.log",
+        "sha256": "a5b91c6ac573d767de53d4481c962ef9e369ab475515f8ee923174242d13a390",
+        "bytes": 20837
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-13.log",
+        "sha256": "c0c4621b56c36429a82fcb93bd4b3123717b3b60deb5beed4dcfead6488e2c94",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-14.log",
+        "sha256": "2abb2c27448dad0b3e29d3c3f3338f8851cadbcf1257d9644740ceb6770f22a7",
+        "bytes": 20836
+      },
+      {
+        "path": "/tmp/sub2api-full-gateway-rollout/gateway-logs/gateway-15.log",
+        "sha256": "87e7dda10053412b2b4806df0102ec78b230d1e746556278f8f53a0269d0ef10",
+        "bytes": 20836
+      }
+    ],
+    "prior_failures": [
+      {
+        "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-first.log",
+        "exit_code": 1,
+        "sha256": "c21a9969c1a5bc6cf455442b50a2e8f877162a875501dfcede9d0fbfee7290d0"
+      },
+      {
+        "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-second.log",
+        "exit_code": 1,
+        "sha256": "d0bb575e0d05734083c417a6e5c1a02af32cf184d3007cec35b85158e44d723e"
+      },
+      {
+        "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-third.log",
+        "exit_code": 1,
+        "sha256": "90d20d9902a7a64dbed10bbd12c37f76246b3f737f85d08bb86cf181c39dc433"
+      },
+      {
+        "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-fourth.log",
+        "exit_code": 1,
+        "sha256": "9063cf747bd79fb2ef64daaaf9b504c5defa8586d246e84d72693c669e85bd7c"
+      },
+      {
+        "log": "/tmp/sub2api-full-gateway-rollout/full-gateway-fifth.log",
+        "exit_code": 1,
+        "sha256": "090d0b779873d9ae3b36d3be12b525e8faef4cdb467b3acba9e404efab79472b"
+      }
+    ],
+    "limitations": [
+      "local arm64 Docker host with linux/amd64 binaries/images; not native performance evidence",
+      "production importer verifier remains nil; test imports use synthetic mock verifier only",
+      "old nodes use candidate binary with multi-credential disabled, not fde7e8ec4 binary",
+      "server was built from a dirty source snapshot; final candidate must rebuild and rerun",
+      "APM sink not configured; only actual process stdout/stderr scanned here"
+    ]
+  },
   "limitations": [
     "local arm64 Docker host with linux/amd64 binaries/images; not native performance evidence",
     "production importer verifier remains nil; test imports use synthetic mock verifier only",
     "old nodes use candidate binary with multi-credential disabled, not fde7e8ec4 binary",
-    "server was built from a dirty source snapshot; final candidate must rebuild and rerun",
-    "APM sink not configured; only actual process stdout/stderr scanned here"
-  ]
+    "normal persisted-state Redis/PostgreSQL restart only; not state loss, backup restoration or HA",
+    "external APM sink not configured; actual process stdout/stderr scanned here"
+  ],
+  "fixture_environment": {
+    "SUB2API_ACCEPTANCE_SERVER_BINARY": "/tmp/sub2api-release-closure/candidate-binaries/server",
+    "SUB2API_ACCEPTANCE_MOCK_BINARY": "/tmp/sub2api-release-closure/candidate-binaries/rollout-mock",
+    "SUB2API_ACCEPTANCE_ARTIFACT_DIR": "/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs",
+    "postgres_reported_version": "PostgreSQL 18.4 x86_64-pc-linux-musl",
+    "redis_maxmemory_policy": "noeviction",
+    "host_arch": "arm64",
+    "server_arch": "linux/amd64",
+    "network": "Docker internal; no gateway external published ports",
+    "database_max_connections_per_gateway": 8
+  },
+  "fixture_build_metadata": {
+    "name": "candidate-full-gateways-fixture-build-35aff321d-v2",
+    "tested_code_sha": "35aff321ddc65457f65fe2cbf3e0d4a257dce304",
+    "command": [
+      "go",
+      "test",
+      "-p",
+      "2",
+      "-c",
+      "-tags=integration",
+      "-o",
+      "/tmp/sub2api-full-gateway-final-35aff321d/repository.test",
+      "./internal/repository"
+    ],
+    "cwd": "/tmp/sub2api-full-gateway-final-35aff321d/backend",
+    "start": "2026-09-18T21:23:27.842619+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 60.198657374999996,
+    "end": "2026-09-18T21:24:28.042830+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways-fixture-build-35aff321d-v2.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-full-gateways-fixture-build-35aff321d-v2.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
 }

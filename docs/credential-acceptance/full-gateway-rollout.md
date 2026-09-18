@@ -47,13 +47,30 @@ go test -p 2 -tags=integration ./internal/repository \
 
 `full-gateway-fifth.log` 实际完成至两个主体的安全回滚分支，可靠终结恢复约 11.15 秒，仍因测试错误要求 UNKNOWN 没有任何 receipt 行而退出 1。实际仓储会保存部分观察但明确标成 `Complete=false / REVIEW_REQUIRED / USAGE_UNKNOWN`；修正验收为不能存在终结 receipt、不能结算为零，保留人工核对记录。本次修正没有更改产品 usage 处理。
 
-## 后续补入但尚未执行的持久存储重启窗口
+## 最终候选与持久存储重启结果
 
 在全部网关被 UNKNOWN rollback fence 后，测试新增：Redis 显式 `SAVE` 后重启同一容器，核对原 epoch 与 UNKNOWN 用户 hold 分数原样存在；重启同一 PostgreSQL 主库，核对账本、profile、binding 保持，再启动三个完整网关观察实际 reconciler 续期。没有初始化丢失 epoch，没有导入快照，也没有恢复旧 token。该窗口覆盖正常持久数据保留后的受控 restart，不覆盖存储丢失、备份还原或 HA。
 
-这段测试在 `22bc1ac77` 的初次 PASS **之后新增，目前 NOT_RUN**。`full-gateway-rollout-results.json` 仍描述旧 test source SHA256 的原结果，不能将其作为新窗口的通过证据；最终候选必须重建后执行完整测试并补结果。AT-33/34 不因此提前从 PARTIAL 改为 PASS。
+这段测试在 `22bc1ac77` 的初次 PASS 之后新增；新增时为 NOT_RUN，原初次日志不覆盖该窗口。最终产品代码固定为 `b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8`，测试夹具固定为 `35aff321ddc65457f65fe2cbf3e0d4a257dce304`；两者之间 backend 仅该 `_test.go` 改变，产品源码及 migration 没有变化。
 
-最终候选第一次运行新增窗口时，Redis restart 之后测试客户端继续访问原宿主机映射端口，Ping 失败；该失败记录在候选 `final-logs/candidate-full-gateways.stdout/stderr`，未被初次结果覆盖。仅修改验收 fixture：restart 后重新 inspect Redis／PostgreSQL 当前 HostPort，重新连接同一容器的持久服务，并重建保留 SQL 句柄的 rollout 与 Ent 对象。网关内部地址始终为 `redis:6379`／`database:5432`，产品配置、epoch、TTL 和持久内容不变。下一次执行会记录端口 before/after/changed，以实际证据确定是否重分配；修正后的窗口此时仍 **NOT_RUN**，不预先断言上次失败唯一原因。
+最终候选第一次运行新增窗口时，Redis restart 之后测试客户端继续访问原宿主机映射端口，Ping 失败；该失败记录在 `/tmp/sub2api-release-closure/final-logs/candidate-full-gateways.stdout/stderr`，继续保留。仅修改验收 fixture：restart 后重新 inspect Redis／PostgreSQL 当前 HostPort，重新连接同一容器的持久服务，并重建保留 SQL 句柄的 rollout 与 Ent 对象。网关内部地址始终为 `redis:6379`／`database:5432`，产品配置、epoch、TTL 和持久内容不变。
+
+2026-09-18 21:24:56–21:25:47 UTC，修正后的夹具使用新 fresh TestMain 进程实际通过：测试 44.03 秒，总时长 50.654 秒，退出 0。本次观测到 Redis 宿主映射端口 `32895→32896`、PostgreSQL `32894→32897`，证明本机确有重启重新映射行为。重连后，同一 Redis 的 epoch 和 UNKNOWN 用户 hold 原样存在；同一 PG 的账本、profile、binding 保持，随后完整网关周期续期约 11.131 秒。可靠终结 receipt 恢复约 11.014 秒；最终 UNKNOWN occupied=1、上游请求=8、usage=7、恢复重放=0，安全回滚只恢复最新 token。15 份实际进程日志再次通过 fixture token/API key/panic 扫描。
+
+保存的 server 二进制 SHA-256 为 `48e0942233b064ebe39d9bb3478ae275fd0d03ea1c54b1ef889e5c157ec3b2b7`，mock 为 `17b41784e9a9b627a1d81c727d64251b8c2726d284f7da36e4cc2245dfed286f`，本次独立测试二进制为 `d8ddcba62ef1440756b04d2aa77e91c9f8723e4d6dab8d0f44800ec49be0f948`。测试代码从 `git archive 35aff321d` 的独立快照编译，不含原未跟踪文件。最终结果及旧日志元数据共同保存在 `full-gateway-rollout-results.json`，旧失败没有被改写。
+
+实际运行命令（cwd 为该快照 `backend/internal/repository`）：
+
+```sh
+SUB2API_ACCEPTANCE_SERVER_BINARY=/tmp/sub2api-release-closure/candidate-binaries/server \
+SUB2API_ACCEPTANCE_MOCK_BINARY=/tmp/sub2api-release-closure/candidate-binaries/rollout-mock \
+SUB2API_ACCEPTANCE_ARTIFACT_DIR=/tmp/sub2api-full-gateway-final-35aff321d/gateway-logs \
+TESTCONTAINERS_RYUK_DISABLED=true CI=true \
+/tmp/sub2api-full-gateway-final-35aff321d/repository.test \
+  -test.run '^TestCredentialFullGatewayOfflineRollout$' -test.count=1 -test.v
+```
+
+完整命令、环境、起止时间、退出码及 stdout/stderr 摘要记录在 `/tmp/sub2api-release-closure/final-logs/candidate-full-gateways-fixture-35aff321d.json`；构建记录为同目录 `candidate-full-gateways-fixture-build-35aff321d-v2.json`。本次通过覆盖正常持久状态重启，不扩展到 epoch 丢失的自动初始化、旧快照还原或任何 HA 拓扑。
 
 此测试要求单独测试进程的新 PostgreSQL／Redis，不能接在会遗留 GROUPED 主体或未知租约的广泛 integration 套件后共享 TestMain 数据。否则旧路径 `enabled=false` 网关会因现有 GROUPED 正确拒绝启动。直接运行保存的测试二进制时 cwd 必须为 `backend/internal/repository`，以正确解析定价 fixture 路径。
 
