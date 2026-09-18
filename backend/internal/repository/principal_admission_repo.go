@@ -15,16 +15,18 @@ import (
 )
 
 type principalAdmissionStore struct {
-	db             *sql.DB
-	lifecycleDB    *sql.DB
-	initOnce       sync.Once
-	admissionGate  credentialAdmissionTurn
-	principalTurns credentialPrincipalTurns
-	waitMu         sync.Mutex
-	waiters        map[string]*credentialAdmissionWaiter
-	retryReady     map[string]bool
-	pumpRunning    bool
-	wake           chan struct{}
+	// Test seam for controlled retry comparisons; runtime leaves this nil.
+	advisoryRetryDelay func(int) time.Duration
+	db                 *sql.DB
+	lifecycleDB        *sql.DB
+	initOnce           sync.Once
+	admissionGate      credentialAdmissionTurn
+	principalTurns     credentialPrincipalTurns
+	waitMu             sync.Mutex
+	waiters            map[string]*credentialAdmissionWaiter
+	retryReady         map[string]bool
+	pumpRunning        bool
+	wake               chan struct{}
 }
 
 func (s *principalAdmissionStore) initializeQueue() {

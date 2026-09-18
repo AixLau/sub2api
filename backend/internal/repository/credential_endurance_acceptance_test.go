@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -176,6 +177,17 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					defer critical.Close()
 					require.NoError(t, critical.Ping())
 					stores[i] = &principalAdmissionStore{db: db, lifecycleDB: critical}
+					// Opt-in test policy, never a product configuration.
+					switch os.Getenv("SUB2API_CREDENTIAL_RETRY_EXPERIMENT") {
+					case "", "fixed5":
+					case "bounded":
+						stores[i].advisoryRetryDelay = func(attempt int) time.Duration {
+							ceiling := (5 * time.Millisecond) << min(attempt, 3)
+							return ceiling/2 + time.Duration(rand.Int64N(int64(ceiling/2)+1))
+						}
+					default:
+						t.Fatal("unknown retry experiment")
+					}
 				}
 				var version string
 				require.NoError(t, integrationDB.QueryRow(`SHOW server_version`).Scan(&version))
@@ -454,7 +466,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					"background_sql_wall_ms":   float64(totals.backgroundSQLWall) / 1e6,
 				}
 				totals.mu.Unlock()
-				report := map[string]any{"idle_capacity_with_application_waiters_sample_seconds": float64(idleApplicationSamples) * 0.05, "idle_capacity_with_live_offer_samples": idleOfferSamples, "capacity_samples": allSamples, "idle_capacity_with_live_offer_sample_seconds": float64(idleOfferSamples) * 0.05, "all_store_sql_calls": allSQL, "queue_control_sql_calls": queueSQL, "queue_sql_per_dispatch": float64(queueSQL+int64(m.sqlCalls["admit.WAIT"])) / float64(max(starts.Load(), 1)), "final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
+				report := map[string]any{"retry_experiment": os.Getenv("SUB2API_CREDENTIAL_RETRY_EXPERIMENT"), "idle_capacity_with_application_waiters_sample_seconds": float64(idleApplicationSamples) * 0.05, "idle_capacity_with_live_offer_samples": idleOfferSamples, "capacity_samples": allSamples, "idle_capacity_with_live_offer_sample_seconds": float64(idleOfferSamples) * 0.05, "all_store_sql_calls": allSQL, "queue_control_sql_calls": queueSQL, "queue_sql_per_dispatch": float64(queueSQL+int64(m.sqlCalls["admit.WAIT"])) / float64(max(starts.Load(), 1)), "final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
 				report["transaction_activity"] = transactionStats
 				report["operation_counts"] = m.counts
 				admitted := summary["admit.ADMITTED.call"].Count

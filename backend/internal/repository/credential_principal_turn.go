@@ -90,7 +90,7 @@ func (r *credentialPrincipalTurns) acquire(ctx context.Context, principal int64,
 // can use the unchanged single-transaction node budget. No execution capacity
 // is reserved here and no ticketless public WAIT is returned.
 func (s *principalAdmissionStore) beginAdmissionTurn(ctx context.Context, principal int64, priority bool) (*sql.Tx, func(), error) {
-	for {
+	for attempts := 0; ; attempts++ {
 		if err := s.admissionGate.acquire(ctx, priority); err != nil {
 			return nil, nil, err
 		}
@@ -112,7 +112,11 @@ func (s *principalAdmissionStore) beginAdmissionTurn(ctx context.Context, princi
 		if err != nil {
 			return nil, nil, err
 		}
-		timer := time.NewTimer(5 * time.Millisecond)
+		delay := 5 * time.Millisecond
+		if s.advisoryRetryDelay != nil {
+			delay = s.advisoryRetryDelay(attempts)
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
