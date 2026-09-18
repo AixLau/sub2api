@@ -36,10 +36,10 @@
 | AT-20 | PARTIAL | `TestCredentialHTTPWithPostgresLedgerAndMockUpstream` 的 Responses/透传/compact 三子测试通过；Gin+PG+Redis+mock 联测 `TestCredentialGateway*` 通过 | compact 真实契约未确认，真实 provider BLOCKED | E/I |
 | AT-21 | PARTIAL | HTTP guard 拒绝无快照受控账号；WS snapshot 明确拒绝；旧二进制 fencing 通过 | 完整旧路由所有旁路未穷举 | I |
 | AT-22 | PASS | 无队头阻塞、ticket 不占 lease、队列预算测试通过 | 跨节点可靠通知未测 | —（限制见前列） |
-| AT-23 | PARTIAL | 取消/准入竞态；本轮完整handler锁等待deadline/client cancel、已确认提交后取消均零发送且NOT_SENT（专项命令T2） | 其他长时断连矩阵未完成 | I |
+| AT-23 | PASS | 取消/准入竞态、暂停owner/丢失和重复提示、未登记取消均有定向PG/三进程测试；原lease至多一次执行 | 真实跨地域故障不在支持范围 | I/T |
 | AT-24 | PASS | 相同 request/owner 恢复 RESERVED，不生成第二 lease；handler lost-commit 测试通过 | 真实网络 commit response 丢失注入仍有限 | —（限制见前列） |
 | AT-25 | PASS | 双 release、旧 owner/epoch、旧 nonce 均幂等/拒绝 | 极端时钟偏移未测 | —（限制见前列） |
-| AT-26 | PARTIAL | 三独立进程SIGKILL后ORPHANED占用不减；本轮心跳31秒锁等待和dispatch提交未知保留占用通过 | 声明拓扑告警联动仍缺；UNKNOWN可人工核对；HA不支持 | I/T/M |
+| AT-26 | PARTIAL | 三独立进程SIGKILL后ORPHANED占用不减；E3六组合Heartbeat/Finish均在预算内完成；reconciler可靠receipt恢复通过 | 真实旧网关完整拓扑和HA不支持；UNKNOWN仍需人工核对 | I/T/M |
 | AT-27 | PARTIAL | partial SSE 无终结事件不释放、不重放；failure terminal 不是 success | 各 provider 流协议事件未全覆盖 | E/I/M |
 | AT-28 | PARTIAL | 旧 version 401 不停用新 version；generation/version CAS 通过 | 真实 provider 401 分类未验证 | E |
 | AT-29 | PARTIAL | refresh family singleflight/CAS/unknown补偿；usage六窗口验证安全结果，其中receipt前只能UNKNOWN人工核对 | 真实远端成功本地全存储失败不能自动恢复，转人工 | E/M |

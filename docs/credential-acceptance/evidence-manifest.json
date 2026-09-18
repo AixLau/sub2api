@@ -168,6 +168,11 @@
       "path": "/tmp/sub2api-queue-progress/focused-final.log",
       "sha256": "98c2d2af6281b89fcf8bb3a2577040847ac18e83259a4b89ae2977b96062299b",
       "bytes": 20506
+    },
+    {
+      "path": "/tmp/sub2api-queue-progress/final-focused-current-head.log",
+      "sha256": "1fae54d4d4b668b71f22a8765e13131630ab8731551195f46968d67a0eae8ffc",
+      "bytes": 14626
     }
   ],
   "runs": [
@@ -241,5 +246,11 @@
       "C200_I16": "PASS"
     },
     "artifact": "admission-endurance-queue-progress-results.json"
+  },
+  "queue_progress_final_focused": {
+    "tested_code_sha": "7ba4602131b11e51a9647f2455d650ff71e7b5e8",
+    "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^(TestCredentialQueueThreeProcessesPausedOwner|TestCredentialQueueProgress|TestCredentialLifecycleResources|TestCredentialOverloadRecovery|TestCredentialAdmissionTurn|TestCredentialUsageCrashWindowsRecoverWithoutReplay|TestCredentialGatewayGlobalUserLimitAndBilling|TestCredentialGatewayLegacyAndGroupedShareUserCapacity|TestPrincipalAdmissionTime)' -count=1 -v",
+    "exit_code": 0,
+    "artifact": "/tmp/sub2api-queue-progress/final-focused-current-head.log"
   }
 }

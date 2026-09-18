@@ -92,3 +92,6 @@ GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true C
 E3 的生命周期资源问题已通过本矩阵预算：没有 E2 的 Finish/Heartbeat 超时和残留 `DISPATCHING`。但 C200 的端到端 call p95 仍由本地等待占主导，权威事务 p95 也高于20ms；不能把等待搬到有界应用队列后称为性能达标。`queue_sql_per_dispatch` 在C10/C50约31.7–40.1；C200没有WAIT调用，后台提示扫描和本地访问等待仍需单独看待。所有SQL、提示空闲样本、pool stats、等待事件和终态见 [admission-endurance-queue-progress-results.json](admission-endurance-queue-progress-results.json)。
 
 与E2相比，E3将“有容量但owner不推进”转为确定的有界提示推进；E2 C50/C200 的Finish/Heartbeat错误和残留占用不再复现。E3并不证明任意生产压力、跨地域拓扑或真实provider行为，仍需保持功能关闭。
+
+
+当前 HEAD 定向回归复核在 E3 后再次通过（`final-focused-current-head.log`，72.191s）：三进程暂停owner、五个提示边界、连接资源、receipt/reconciler恢复、usage六窗口、网关跨主体/旧路径用户上限、31秒heartbeat均PASS。该命令不包含重复的10分钟矩阵，矩阵结果仍以E3原始artifact为准。
