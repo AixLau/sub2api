@@ -56,3 +56,13 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 锁住主体后，在原账本核对语句中读取是否有其他QUEUED票据；没有竞争者时省去三条公平计算SQL，有票据仍执行原算法。没有按deadline/ready_at提前过滤该存在性判断，避免事务内新就绪票据被错误跳过。保留权限、实例硬上限、会话、完整ledger检查及候选实例行锁。
 
 `TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredential(AdmissionCompeting|Queue|LedgerRandom)' -count=1 -v` 通过，日志 `queue-fastpath.log`。新增排队公平回归确认：容量释放后，新来者不能抢在已有就绪票据之前；原无队头阻塞/TTL/随机账本测试通过。无schema或配置变更，回滚仅退回该优化，账本和绑定保留。
+
+### P3：合并已锁定容量行的写入
+
+把准入/释放各五条独立UPDATE合并为一条数据修改CTE。所有容量行仍先按原顺序加锁，每张表只更新一次，CTE不读取兄弟CTE的写入；权限、上限、租约和审计仍在原事务内。新增故障trigger分别使准入和释放中途写入失败，验证全部计数/lease/logical request回滚，解除故障后可继续且重复取消不重复减槽。无新增配置、无调度策略变化、无schema变更。
+
+实际命令：`TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2API_CREDENTIAL_MATRIX_CASE=C200_I16 go test -tags=integration ./internal/repository -run '^(TestCredential(Admission|Gateway|UsageCrash|Queue|LedgerRandom|AcceptanceEndurance)|TestPrincipalAdmission)' -count=1 -v`。日志 `profile-batch-C200_I16.log`。准入/释放故障回滚、网关全局用户容量及旧路径、未发送补偿、同ID恢复、六个usage窗口、队列和随机账本、时间边界全部通过；独立旧冒烟测试因未设置其环境变量SKIP。**持续发生器的30秒诊断子测试失败：一次heartbeat在3秒内未取得连接，返回ADMISSION_STORE_UNAVAILABLE**；该次HTTP已完成，所有lease最终释放，无上游超限或重复。不能写成整条命令通过。
+
+1620次准入均ADMITTED，每次SQL由25降到18，Finish由12降到8。准入call p95 3401.62ms（P0 4364.08ms），事务p95 222.78ms（317.31ms），持锁下界p95 10.66ms（14.69ms）；吞吐37.71/s（29.63/s），平均mock利用率17.99%（14.17%）。这些单次短运行只支持有限改善，**不满足20ms，也未解决生命周期连接等待尾部超时**。保留心跳3秒失败及安全未知处理，不提高其预算来掩盖问题。六组合持续验证将把该风险继续作为失败项记录。
+
+回滚退回对应二进制优化，保留258索引及完整账本；不得用回滚清除未知lease或恢复旧token。数据修改CTE语义依据 [PostgreSQL WITH 文档](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-MODIFYING)，一致性结论依赖上述实际故障测试。

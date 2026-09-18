@@ -52,6 +52,8 @@ func (t *admissionTrace) end() {
 func admissionSQLPhase(query string) string {
 	q := strings.Join(strings.Fields(query), " ")
 	switch {
+	case strings.HasPrefix(q, "WITH user_capacity AS"):
+		return "sql.capacity_batch"
 	case strings.HasPrefix(q, "INSERT INTO principal_user_capacity"):
 		return "sql.user_ensure"
 	case strings.HasPrefix(q, "SELECT occupied FROM principal_user_capacity"):

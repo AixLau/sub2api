@@ -377,20 +377,23 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if err != nil {
 		return rejected, err
 	}
-	for _, q := range []struct {
-		sql  string
-		args []any
-	}{
-		{`UPDATE principal_user_capacity SET occupied=occupied+1,last_admitted_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND principal_id=$2`, []any{in.UserID, in.PrincipalID}},
-		{`UPDATE upstream_principals SET occupied=occupied+1,last_instance_id=$2 WHERE id=$1`, []any{in.PrincipalID, selected.id}},
-		{`UPDATE credential_instances SET occupied=occupied+1 WHERE id=$1`, []any{selected.id}},
-		{`UPDATE logical_requests SET status='EXECUTING' WHERE id=$1`, []any{in.RequestID}},
-		{`UPDATE admission_tickets SET state='ADMITTED' WHERE request_id=$1`, []any{in.RequestID}},
-	} {
-		if _, err = tx.ExecContext(ctx, q.sql, q.args...); err != nil {
-			return rejected, err
-		}
+	// Every capacity row is already locked in the global order. Batch writes
+	// to distinct rows in one statement; no CTE reads another CTE's table
+	// changes. This removes network round trips, not any admission check.
+	_, err = tx.ExecContext(ctx, `WITH user_capacity AS (
+ UPDATE principal_user_capacity SET occupied=occupied+1,last_admitted_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND principal_id=$2
+), principal_capacity AS (
+ UPDATE upstream_principals SET occupied=occupied+1,last_instance_id=$3 WHERE id=$2
+), instance_capacity AS (
+ UPDATE credential_instances SET occupied=occupied+1 WHERE id=$3
+), request_state AS (
+ UPDATE logical_requests SET status='EXECUTING' WHERE id=$4
+)
+ UPDATE admission_tickets SET state='ADMITTED' WHERE request_id=$4`, in.UserID, in.PrincipalID, selected.id, in.RequestID)
+	if err != nil {
+		return rejected, err
 	}
+
 	var stillLive bool
 	err = tx.QueryRowContext(ctx, `SELECT clock_timestamp()<$1 AND ($2::timestamptz IS NULL OR clock_timestamp()<$2)`, in.Deadline, nullableAdmissionTime(ticketDeadline)).Scan(&stillLive)
 	if err != nil {
@@ -566,20 +569,22 @@ func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishA
 	return tx.Commit()
 }
 func releaseAdmission(ctx context.Context, tx *sql.Tx, ref service.LeaseRef, outcome string) error {
-	for _, q := range []struct {
-		sql  string
-		args []any
-	}{
-		{`UPDATE principal_user_capacity SET occupied=occupied-1 WHERE user_id=$1 AND principal_id=$2`, []any{ref.UserID, ref.PrincipalID}},
-		{`UPDATE upstream_principals SET occupied=occupied-1 WHERE id=$1`, []any{ref.PrincipalID}},
-		{`UPDATE credential_instances SET occupied=occupied-1 WHERE id=$1`, []any{ref.InstanceID}},
-		{`UPDATE request_leases SET state='RELEASED',outcome=$2,released_at=CURRENT_TIMESTAMP WHERE id=$1`, []any{ref.ID, outcome}},
-		{`UPDATE logical_requests SET status=CASE WHEN $2='COMPLETED' THEN 'COMPLETED' ELSE 'FAILED' END WHERE id=$1`, []any{ref.RequestID, outcome}},
-	} {
-		if _, err := tx.ExecContext(ctx, q.sql, q.args...); err != nil {
-			return err
-		}
+	// lockLease holds user, principal, instance and lease locks before this
+	// statement. A failed write rolls back all counters and the terminal state.
+	_, err := tx.ExecContext(ctx, `WITH user_capacity AS (
+ UPDATE principal_user_capacity SET occupied=occupied-1 WHERE user_id=$1 AND principal_id=$2
+), principal_capacity AS (
+ UPDATE upstream_principals SET occupied=occupied-1 WHERE id=$2
+), instance_capacity AS (
+ UPDATE credential_instances SET occupied=occupied-1 WHERE id=$3
+), request_state AS (
+ UPDATE logical_requests SET status=CASE WHEN $5='COMPLETED' THEN 'COMPLETED' ELSE 'FAILED' END WHERE id=$6
+)
+ UPDATE request_leases SET state='RELEASED',outcome=$5,released_at=CURRENT_TIMESTAMP WHERE id=$4`, ref.UserID, ref.PrincipalID, ref.InstanceID, ref.ID, outcome, ref.RequestID)
+	if err != nil {
+		return err
 	}
+
 	return admissionAudit(ctx, tx, ref, "LEASE_RELEASED")
 }
 func (s *principalAdmissionStore) Cancel(ctx context.Context, ref service.LeaseRef) error {
