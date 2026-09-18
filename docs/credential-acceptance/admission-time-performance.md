@@ -50,3 +50,9 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 新增前向迁移258，仅索引 `state <> RELEASED` 的principal；对账SQL/状态集合/容量不变。与P0相同30秒C200/I16命令（另加时间/借用回归过滤）运行通过，日志 `profile-index-C200_I16.log`。准入call p95 4658.77ms、事务p95 303.84ms、ledger SQL均值0.897ms；吞吐29.41/s。**未观察到调用尾延迟改善**，不能把索引当作池排队问题的解决。索引用于避免终结历史继续扩大扫描，EXPLAIN与持续矩阵另存。
 
 迁移在声明的停机窗口执行，普通CREATE INDEX会暂时阻挡该表写入；不在活跃大表上承诺无锁在线迁移。回滚保留加法索引即可，不删除lease，不改变准入事实源。
+
+### P2：无竞争票据时跳过公平计算
+
+锁住主体后，在原账本核对语句中读取是否有其他QUEUED票据；没有竞争者时省去三条公平计算SQL，有票据仍执行原算法。没有按deadline/ready_at提前过滤该存在性判断，避免事务内新就绪票据被错误跳过。保留权限、实例硬上限、会话、完整ledger检查及候选实例行锁。
+
+`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredential(AdmissionCompeting|Queue|LedgerRandom)' -count=1 -v` 通过，日志 `queue-fastpath.log`。新增排队公平回归确认：容量释放后，新来者不能抢在已有就绪票据之前；原无队头阻塞/TTL/随机账本测试通过。无schema或配置变更，回滚仅退回该优化，账本和绑定保留。

@@ -69,8 +69,10 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	// Read wall time in a separate statement AFTER the principal lock. Even a
 	// clock_timestamp() expression in a locking SELECT can run before its wait.
 	var ledgerCount, instanceCount int
+	var competingTicket bool
 	err = tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM request_leases WHERE principal_id=$1 AND state<>'RELEASED'),
-        (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1),clock_timestamp()`, in.PrincipalID).Scan(&ledgerCount, &instanceCount, &now)
+        (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1),clock_timestamp(),
+        EXISTS(SELECT 1 FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND request_id<>$2)`, in.PrincipalID, in.RequestID).Scan(&ledgerCount, &instanceCount, &now, &competingTicket)
 	if err != nil {
 		return rejected, err
 	}
@@ -292,7 +294,10 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		return rejected, err
 	}
 	fairWait := false
-	if selected != nil {
+	// The principal lock serializes ticket creation with this authoritative read.
+	// With no competing ticket there is no fairness comparison to compute. Do
+	// not filter by ready_at here: a future ticket may become ready in this tx.
+	if selected != nil && competingTicket {
 		fairWait, err = credentialQueuePrecedes(ctx, tx, in.PrincipalID, in.UserID, in.RequestID, selected.id, limit, now)
 		if err != nil {
 			return rejected, err
