@@ -47,7 +47,7 @@ func (s *credentialRouteStore) BoundCredentialPrincipal(ctx context.Context, sco
 }
 func (s *credentialRouteStore) IsControlledCredentialAccount(ctx context.Context, id int64) (bool, error) {
 	var found bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_instances WHERE account_id=$1)`, id).Scan(&found)
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_instances WHERE account_id=$1 AND NOT retired_to_legacy)`, id).Scan(&found)
 	return found, err
 }
 

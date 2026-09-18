@@ -220,3 +220,26 @@ type CreateCredentialInstanceInput struct {
 type CredentialPrincipalCreator interface {
 	CreateCredentialPrincipal(context.Context, int64, string, CreateCredentialPrincipalInput) (int64, error)
 }
+
+// SealData/OpenData are also used for encrypted migration snapshots. AAD is a
+// purpose-prefixed operation ID; it never contains an access/refresh token.
+func (v *CredentialVault) SealData(aad string, plain []byte) ([]byte, error) {
+	if v == nil {
+		return nil, ErrCredentialVaultUnavailable
+	}
+	nonce := make([]byte, v.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return v.aead.Seal(nonce, nonce, plain, []byte(aad)), nil
+}
+func (v *CredentialVault) OpenData(aad string, sealed []byte) ([]byte, error) {
+	if v == nil {
+		return nil, ErrCredentialVaultUnavailable
+	}
+	n := v.aead.NonceSize()
+	if len(sealed) < n {
+		return nil, errors.New("invalid ciphertext")
+	}
+	return v.aead.Open(nil, sealed[:n], sealed[n:], []byte(aad))
+}
