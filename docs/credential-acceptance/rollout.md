@@ -28,6 +28,8 @@ fencing采用Docker实际控制：关闭restart policy → stop（最长30秒）
 
 限制：旧容器是合成进程，不是fde7e8ec4完整网关镜像；mock验证器仅测试中注入。真实旧版完整部署、HA、Redis故障重建、旧sticky绑定导入与多实例自动回滚均未据此验收。对应AT-34/37/38继续PARTIAL/BLOCKED，禁止概括为生产可用。
 
+2026-09-18 补充的 [完整网关闭环](full-gateway-rollout.md) 已实际运行普通 `cmd/server`，每轮三个进程，覆盖 legacy 请求→真实 fence→两主体迁移→单主体 canary→receipt 恢复→UNKNOWN 保留→最新 token 安全回滚，并扫描 15 份进程日志。它补足“只有合成 sleep 旧进程”的证据缺口；旧节点仍为候选二进制的 legacy 配置，真实 provider 验证、fde7e8ec4 历史发行镜像和最终候选重建仍不可由初次运行推出。详细二进制和代码快照边界见该报告。
+
 ## 时间/性能专项迁移与回滚补充
 
 258仅新增活跃lease部分索引，不改事实表/占用/身份/凭证。正式迁移仍经原ApplyMigrations在受支持的离线窗口执行；普通CREATE INDEX期间会阻挡request_leases写入，大表必须预留停机时间，不能将其描述为无锁在线迁移。回退优化代码时保留索引即可，不回退已轮换凭证，也不删除UNKNOWN/ORPHANED记录。时间修复之前的二进制有已复现的到期判断缺陷，禁止将回退旧二进制作为生产放行方案。
