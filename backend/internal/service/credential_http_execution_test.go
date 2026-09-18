@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,9 +18,10 @@ import (
 )
 
 type credentialAdmissionRecorder struct {
-	begins   int
-	finished FinishAdmissionInput
-	beginErr error
+	begins     int
+	finished   FinishAdmissionInput
+	beginErr   error
+	afterBegin func()
 }
 
 func (r *credentialAdmissionRecorder) TryAdmit(context.Context, AdmissionInput) (AdmissionDecision, error) {
@@ -27,7 +29,41 @@ func (r *credentialAdmissionRecorder) TryAdmit(context.Context, AdmissionInput) 
 }
 func (r *credentialAdmissionRecorder) BeginDispatch(context.Context, LeaseRef) error {
 	r.begins++
+	if r.afterBegin != nil {
+		r.afterBegin()
+	}
 	return r.beginErr
+}
+
+func TestCredentialHTTPTimeCancellationAroundDispatch(t *testing.T) {
+	for _, cancelAtCommit := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelAtCommit), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			store := &credentialAdmissionRecorder{}
+			if cancelAtCommit {
+				store.afterBegin = cancel
+			} else {
+				cancel()
+			}
+			e := &credentialHTTPExecution{transportContext: ctx, store: store, snapshot: CredentialExecutionSnapshot{AccountID: 1}}
+			// The existing protocol adapter can detach context for draining.
+			req := httptest.NewRequest("POST", "http://mock/responses", nil)
+			_, err := e.roundTrip(req, 1, func(*http.Request) (*http.Response, error) {
+				t.Fatal("cancelled execution entered HTTP transport")
+				return nil, nil
+			})
+			require.ErrorIs(t, err, context.Canceled)
+			if cancelAtCommit {
+				require.Equal(t, 1, store.begins)
+				require.True(t, e.terminal)
+				require.Equal(t, "NOT_SENT", e.terminalOutcome)
+			} else {
+				require.Zero(t, store.begins)
+			}
+			require.False(t, e.transportStarted)
+		})
+	}
 }
 func (r *credentialAdmissionRecorder) Heartbeat(context.Context, LeaseRef) error { return nil }
 func (r *credentialAdmissionRecorder) Finish(_ context.Context, in FinishAdmissionInput) error {

@@ -22,6 +22,7 @@ type credentialHTTPExecution struct {
 	snapshot             CredentialExecutionSnapshot
 	mu                   sync.Mutex
 	dispatched, terminal bool
+	transportStarted     bool
 	status               int
 	terminalOutcome      string
 	headers              http.Header
@@ -138,12 +139,15 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 		execution.mu.Unlock()
 		if observer, ok := store.(interface {
 			ObserveCredentialFailure(context.Context, CredentialFailureObservation) error
-		}); ok && (status >= 400 || execution.dispatched && status == 0) {
+		}); ok && (status >= 400 || execution.transportStarted && status == 0) {
 			obsCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = observer.ObserveCredentialFailure(obsCtx, ClassifyCredentialFailure(snapshot, status, headers, terminal, time.Now()))
 			stop()
 		}
 		outcome := "FAILED"
+		if terminal && terminalOutcome == "NOT_SENT" {
+			outcome = "NOT_SENT"
+		}
 		if terminal && status >= 200 && status < 300 {
 			outcome = "COMPLETED"
 			if terminalOutcome != "" {
@@ -205,22 +209,52 @@ func (e *credentialHTTPExecution) roundTrip(req *http.Request, accountID int64, 
 		req.ContentLength = int64(len(rebuilt))
 		req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(rebuilt)), nil }
 	}
-	if err := e.store.BeginDispatch(req.Context(), e.snapshot.Lease); err != nil {
+	// Preserve protocol/profile context values while connecting detached request
+	// cancellation to the owning execution BEFORE waiting in BeginDispatch.
+	// Do not replace UA/TLS context. AfterFunc alone is asynchronous, so check
+	// cancellation synchronously on both sides of the database commit as well.
+	transportCtx, cancel := context.WithCancel(req.Context())
+	stop := func() bool { return false }
+	if e.transportContext != nil {
+		stop = context.AfterFunc(e.transportContext, cancel)
+	}
+	deadlineCancel := func() {}
+	if !e.snapshot.Deadline.IsZero() {
+		transportCtx, deadlineCancel = context.WithDeadline(transportCtx, e.snapshot.Deadline)
+	}
+	cancelTransport := func() { stop(); deadlineCancel(); cancel() }
+	req = req.WithContext(transportCtx)
+	checkCancelled := func() error {
+		if e.transportContext != nil && e.transportContext.Err() != nil {
+			return e.transportContext.Err()
+		}
+		return transportCtx.Err()
+	}
+	if err := checkCancelled(); err != nil {
+		cancelTransport()
 		return nil, err
 	}
-	// Preserve protocol/profile context values while connecting detached request
-	// cancellation to the owning execution. Do not replace UA/TLS context.
-	cancelTransport := func() {}
-	if e.transportContext != nil {
-		transportCtx, cancel := context.WithCancel(req.Context())
-		stop := context.AfterFunc(e.transportContext, cancel)
-		cancelTransport = func() { stop(); cancel() }
-		req = req.WithContext(transportCtx)
+	if err := e.store.BeginDispatch(transportCtx, e.snapshot.Lease); err != nil {
+		cancelTransport()
+		return nil, err
+	}
+	if err := checkCancelled(); err != nil {
+		// Commit was acknowledged but this executor has not entered the HTTP
+		// transport. This is positive NOT_SENT evidence, not a timeout inference
+		// about an already running upstream. An uncertain commit above stays unknown.
+		e.mu.Lock()
+		e.terminal, e.terminalOutcome = true, "NOT_SENT"
+		e.mu.Unlock()
+		cancelTransport()
+		return nil, err
 	}
 	// The existing adapter may detach its context for usage draining. Grouped
 	// ownership cancellation must still stop the actual transport.
 	req.Header.Del("Idempotency-Key")
 	req.Header.Del("X-Idempotency-Key")
+	e.mu.Lock()
+	e.transportStarted = true
+	e.mu.Unlock()
 	resp, err := send(req)
 	if err != nil {
 		cancelTransport()

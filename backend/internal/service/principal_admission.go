@@ -59,8 +59,9 @@ type LeaseRef struct {
 }
 type FinishAdmissionInput struct {
 	Lease LeaseRef
-	// Complete means an upstream terminal response was observed, never merely
-	// EOF after a partial stream, local timeout, or client disconnect.
+	// Complete means an upstream terminal response was observed, or the executor
+	// proves NOT_SENT before entering transport after an acknowledged dispatch
+	// commit. A partial EOF, timeout after send, or uncertain commit is not proof.
 	Outcome                   string
 	Complete                  bool
 	InputTokens, OutputTokens *int64
