@@ -164,11 +164,14 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 
 // ProvideOpenAIOAuthService creates OpenAIOAuthService with privacy/account enrichment support.
 func ProvideOpenAIOAuthService(
+	accountRepo AccountRepository,
+	cfg *config.Config,
 	proxyRepo ProxyRepository,
 	oauthClient OpenAIOAuthClient,
 	privacyClientFactory PrivacyClientFactory,
 ) *OpenAIOAuthService {
 	svc := NewOpenAIOAuthService(proxyRepo, oauthClient)
+	svc.credentialTokenGuard = NewCredentialLegacyTokenGuard(accountRepo, cfg)
 	svc.SetPrivacyClientFactory(privacyClientFactory)
 	return svc
 }

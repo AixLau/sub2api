@@ -684,6 +684,7 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
+	credentialTokenGuard *CredentialLegacyTokenGuard
 	cfg                  *config.Config
 	userRepo             UserRepository
 	groupRepo            GroupRepository
@@ -757,6 +758,7 @@ func NewAdminService(
 	channelCacheInvalidator ChannelCacheInvalidator,
 ) AdminService {
 	return &adminServiceImpl{
+		credentialTokenGuard: NewCredentialLegacyTokenGuard(accountRepo, cfg),
 		cfg:                  cfg,
 		userRepo:             userRepo,
 		groupRepo:            groupRepo,

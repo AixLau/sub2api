@@ -20,12 +20,13 @@ import (
 )
 
 type CRSSyncService struct {
-	accountRepo        AccountRepository
-	proxyRepo          ProxyRepository
-	oauthService       *OAuthService
-	openaiOAuthService *OpenAIOAuthService
-	geminiOAuthService *GeminiOAuthService
-	cfg                *config.Config
+	credentialTokenGuard *CredentialLegacyTokenGuard
+	accountRepo          AccountRepository
+	proxyRepo            ProxyRepository
+	oauthService         *OAuthService
+	openaiOAuthService   *OpenAIOAuthService
+	geminiOAuthService   *GeminiOAuthService
+	cfg                  *config.Config
 }
 
 func NewCRSSyncService(
@@ -37,12 +38,13 @@ func NewCRSSyncService(
 	cfg *config.Config,
 ) *CRSSyncService {
 	return &CRSSyncService{
-		accountRepo:        accountRepo,
-		proxyRepo:          proxyRepo,
-		oauthService:       oauthService,
-		openaiOAuthService: openaiOAuthService,
-		geminiOAuthService: geminiOAuthService,
-		cfg:                cfg,
+		credentialTokenGuard: NewCredentialLegacyTokenGuard(accountRepo, cfg),
+		accountRepo:          accountRepo,
+		proxyRepo:            proxyRepo,
+		oauthService:         oauthService,
+		openaiOAuthService:   openaiOAuthService,
+		geminiOAuthService:   geminiOAuthService,
+		cfg:                  cfg,
 	}
 }
 
@@ -290,6 +292,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			Kind:         src.Kind,
 			Name:         src.Name,
 		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
+		}
 
 		targetType := strings.TrimSpace(src.AuthType)
 		if targetType == "" {
@@ -459,6 +468,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			Kind:         src.Kind,
 			Name:         src.Name,
 		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
+		}
 
 		apiKey, _ := src.Credentials["api_key"].(string)
 		if strings.TrimSpace(apiKey) == "" {
@@ -580,6 +596,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			CRSAccountID: src.ID,
 			Kind:         src.Kind,
 			Name:         src.Name,
+		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
 		}
 
 		accessToken, _ := src.Credentials["access_token"].(string)
@@ -743,6 +766,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			Kind:         src.Kind,
 			Name:         src.Name,
 		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
+		}
 
 		apiKey, _ := src.Credentials["api_key"].(string)
 		if strings.TrimSpace(apiKey) == "" {
@@ -888,6 +918,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			Kind:         src.Kind,
 			Name:         src.Name,
 		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
+		}
 
 		refreshToken, _ := src.Credentials["refresh_token"].(string)
 		if strings.TrimSpace(refreshToken) == "" {
@@ -1023,6 +1060,13 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			CRSAccountID: src.ID,
 			Kind:         src.Kind,
 			Name:         src.Name,
+		}
+		if guardErr := s.credentialTokenGuard.CheckCredentials(ctx, src.Credentials); guardErr != nil {
+			item.Action = "failed"
+			item.Error = guardErr.Error()
+			result.Failed++
+			result.Items = append(result.Items, item)
+			continue
 		}
 
 		apiKey, _ := src.Credentials["api_key"].(string)

@@ -138,6 +138,19 @@ func (s *credentialRefreshStore) MarkCredentialRefreshUnknown(ctx context.Contex
 		if err != nil {
 			return err
 		}
+		// A remotely rotated token is already a known controlled credential even
+		// when publishing its new version failed. Preserve its aliases with the
+		// encrypted compensation so legacy refresh/import cannot replay it. An
+		// existing alias owned elsewhere already blocks legacy use; do not steal
+		// it or discard the encrypted result on that conflict.
+		for _, fp := range []struct{ kind, value string }{{"ACCESS", result.AccessFingerprint}, {"REFRESH", result.RefreshFingerprint}} {
+			if fp.value == "" {
+				continue
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT INTO credential_fingerprints(fingerprint,instance_id,kind) VALUES($1,$2,$3) ON CONFLICT(fingerprint) DO NOTHING`, fp.value, op.InstanceID, fp.kind); err != nil {
+				return err
+			}
+		}
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE credential_refresh_ops SET state='REFRESH_RESULT_UNKNOWN' WHERE id=$1`, op.ID)
 	if err != nil {

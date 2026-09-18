@@ -167,3 +167,7 @@ func runCRSOpenAILongContextSync(t *testing.T, repo AccountRepository, source cr
 	require.NoError(t, err)
 	return result
 }
+
+func (*crsLongContextAccountRepo) KnownCredentialTokenFingerprints(context.Context, []string) (bool, error) {
+	return false, nil
+}

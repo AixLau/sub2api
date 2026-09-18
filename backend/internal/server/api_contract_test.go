@@ -2990,3 +2990,8 @@ var (
 	_ service.UsageLogRepository         = (*stubUsageLogRepo)(nil)
 	_ service.SettingRepository          = (*stubSettingRepo)(nil)
 )
+
+// This API-contract fixture has no controlled credential registry.
+func (*stubAccountRepo) KnownCredentialTokenFingerprints(context.Context, []string) (bool, error) {
+	return false, nil
+}
