@@ -1,0 +1,3121 @@
+{
+  "schema_version": 1,
+  "baseline_run": {
+    "name": "baseline-integration-comparison",
+    "tested_code_sha": "924819c5d04a550801fb4e85441059389dc00caa",
+    "command": [
+      "go",
+      "test",
+      "-p",
+      "2",
+      "-tags=integration",
+      "./internal/repository",
+      "-run",
+      "^(TestCredential|TestPrincipalAdmission|TestMultiCredentialControl)",
+      "-skip",
+      "^TestCredentialFullGatewayOfflineRollout$",
+      "-count=1",
+      "-timeout=15m",
+      "-json"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/baseline-924819/backend",
+    "start": "2026-09-18T20:13:21.882606+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 1,
+    "elapsed_seconds": 65.99335454099999,
+    "end": "2026-09-18T20:14:27.876824+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/baseline-integration-comparison.stdout",
+      "sha256": "80f0a21e7d62215d086307e70087dc5bd731112d6f0036dc377bb4572ffb73a6"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/baseline-integration-comparison.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "counts": {
+      "package": {
+        "FAIL": 1
+      },
+      "root_test": {
+        "PASS": 54,
+        "SKIP": 3,
+        "FAIL": 15
+      },
+      "subtest": {
+        "FAIL": 17,
+        "PASS": 3
+      }
+    }
+  },
+  "candidate_run": {
+    "name": "candidate-integration",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "command": [
+      "env",
+      "SUB2API_ACCEPTANCE_SERVER_BINARY=/tmp/sub2api-release-closure/candidate-binaries/server",
+      "SUB2API_ACCEPTANCE_MOCK_BINARY=/tmp/sub2api-release-closure/candidate-binaries/rollout-mock",
+      "SUB2API_ACCEPTANCE_ARTIFACT_DIR=/tmp/sub2api-release-closure/final-gateway-logs",
+      "/tmp/sub2api-release-closure/candidate-binaries/repository.test",
+      "-test.run=^(TestCredential|TestPrincipalAdmission|TestMultiCredentialControl)",
+      "-test.count=1",
+      "-test.timeout=15m",
+      "-test.v",
+      "-test.skip=^TestCredentialFullGatewayOfflineRollout$"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository",
+    "start": "2026-09-18T20:02:55.309916+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 1,
+    "elapsed_seconds": 53.967387959,
+    "end": "2026-09-18T20:03:49.278492+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-integration.stdout",
+      "sha256": "4eb2f4be75c930f82e3a95a32f40e64b2c1c422a77d05d3d4f45a01912828d1d"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-integration.stderr",
+      "sha256": "caed2f4403e39b38757be728dfd88e9a49da11afaa0a23d92fbb128bb539eb24"
+    },
+    "counts": {
+      "package": {
+        "FAIL": 1
+      },
+      "root_test": {
+        "PASS": 56,
+        "SKIP": 3,
+        "FAIL": 15
+      },
+      "subtest": {
+        "FAIL": 17,
+        "PASS": 3
+      }
+    }
+  },
+  "parser_validation": "Candidate plain -test.v outcome parser reproduced all baseline authoritative JSON test statuses; no Go or product test rerun performed for conversion.",
+  "derived_candidate_events": {
+    "path": "/tmp/sub2api-release-closure/candidate-integration-derived-events.jsonl",
+    "sha256": "0ea6143275438a40bbea8d2c48554f943211ffae859dff0e1d249e75874214d8",
+    "json_events": 358,
+    "non_json_lines": []
+  },
+  "comparison_counts": {
+    "FAIL_TO_FAIL": 33
+  },
+  "problem_union": [
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "<package>",
+      "level": "package",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 0,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 1,
+        "last_event_line": 547,
+        "event_times": {
+          "start": "2026-09-19T04:13:35.395039+08:00",
+          "fail": "2026-09-19T04:14:27.677288+08:00"
+        },
+        "output_sha256": "d3cb3b4e418fbdd60d550f7c8640a21cc34f14a39c6254249d1ffb510246649d",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 0,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 358,
+        "last_event_line": 358,
+        "event_times": {
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {}
+      },
+      "attribution": "AGGREGATE_PACKAGE_FAILURE",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 0,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 81,
+        "last_event_line": 81,
+        "event_times": {
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {}
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayBeforeDispatchCompensation",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 73,
+        "last_event_line": 82,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.776776+08:00",
+          "fail": "2026-09-19T04:13:41.787726+08:00"
+        },
+        "output_sha256": "87695c1e23c4adc04c3691aa09ceed2bd870c24be03c8575f6823777a33eb93e",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:301",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:301:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:301",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 45,
+        "last_event_line": 52,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "f23c221c99e338f97d827a13ce91d353177cb24608ff4c61dffcf645074bfcbc",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:301",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:301:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:301",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 45,
+          "terminal_source_line": 52
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 5,
+        "last_event_line": 6,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 5,
+          "terminal_source_line": 6
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayGlobalUserLimitAndBilling",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 53,
+        "last_event_line": 62,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.744414+08:00",
+          "fail": "2026-09-19T04:13:41.763984+08:00"
+        },
+        "output_sha256": "c2ce0dae3520ce3272c4c7b7bc2ce7171e3db5040338ee6fe2b0ad26b99be657",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:168",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:168:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:168",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 29,
+        "last_event_line": 36,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "0e5028c03d5c947d07f8c177b7b470c22788c95e87d88bde047d6c57b53e0301",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:168",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:168:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:168",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 29,
+          "terminal_source_line": 36
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 1,
+        "last_event_line": 2,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 1,
+          "terminal_source_line": 2
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayLegacyAndGroupedShareUserCapacity",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 63,
+        "last_event_line": 72,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.76402+08:00",
+          "fail": "2026-09-19T04:13:41.776765+08:00"
+        },
+        "output_sha256": "36dcd77bf10b2c97deea5911c1be5913daf57880ec5290f5e9bc71d5e5d32fba",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:253",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:253:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:253",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 37,
+        "last_event_line": 44,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "c4f8c296ea41dffb334de9efa86dcdbb49720787c5e103f98942a654017424b4",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:253",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:253:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:253",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 37,
+          "terminal_source_line": 44
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 3,
+        "last_event_line": 4,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 3,
+          "terminal_source_line": 4
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayLostAdmissionResponseRecoversSameLease",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 93,
+        "last_event_line": 102,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.807886+08:00",
+          "fail": "2026-09-19T04:13:41.818297+08:00"
+        },
+        "output_sha256": "d25c30c1928d24d927c24520fa689b30a1e99d288a9aac4a53dd05a3546e12e3",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:384",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:384:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:384",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 61,
+        "last_event_line": 68,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "1c42331e3c8c13d36d8e47cbd3d23486030f95bae738d507e9510320c5ac177d",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:384",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:384:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:384",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 61,
+          "terminal_source_line": 68
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 9,
+        "last_event_line": 10,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 9,
+          "terminal_source_line": 10
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 147,
+        "last_event_line": 200,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.874066+08:00",
+          "fail": "2026-09-19T04:13:41.998057+08:00"
+        },
+        "output_sha256": "30fa177733ffab390595d441ea3c46de9f2d009f5386981aeb4767c5a16f3fd6",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 103,
+        "last_event_line": 139,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 103,
+          "terminal_source_line": 139
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "failed_child_evidence": [
+        "TestCredentialGatewayQueueBudgetCancellationPhases/admitted",
+        "TestCredentialGatewayQueueBudgetCancellationPhases/admitted_lost_ack",
+        "TestCredentialGatewayQueueBudgetCancellationPhases/offered",
+        "TestCredentialGatewayQueueBudgetCancellationPhases/registered",
+        "TestCredentialGatewayQueueBudgetCancellationPhases/unregistered"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 29,
+        "last_event_line": 40,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 29,
+          "terminal_source_line": 40
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases/admitted",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 179,
+        "last_event_line": 188,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.979878+08:00",
+          "fail": "2026-09-19T04:13:41.989216+08:00"
+        },
+        "output_sha256": "8dd4e31b5aebf89efca82d92848afae16fa65306c59b1367adf897d07ac6c207",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 125,
+        "last_event_line": 143,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "baf23207f5c720a0b1b788c4e04acfcf0b4dc5bb0be5cf3be473f44aef525731",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 125,
+          "terminal_source_line": 143
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 36,
+        "last_event_line": 44,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "a4336af8970d345a8e5e22e6e2266118ed96c2bd567b25607f13df1c00c89eb6",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:303"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:303: phase=admitted result=client_cancelled compensation=3.899125ms upstream_starts=0"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 36,
+          "terminal_source_line": 44
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases/admitted_lost_ack",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 189,
+        "last_event_line": 198,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.989221+08:00",
+          "fail": "2026-09-19T04:13:41.998049+08:00"
+        },
+        "output_sha256": "cfaba627fb46784670bcf37d1807a9a0573d190690f96883d4035e9e4a9bb1b6",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 132,
+        "last_event_line": 144,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "b4b9f29d66de193c0bfaa8e9ff144216d209872d52ac6e5722d9f0dd07b4b5ea",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 132,
+          "terminal_source_line": 144
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 38,
+        "last_event_line": 45,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "533dbf8efad7904f758aadf5950a504233c00b8f144a5ff5ea742ff860e7164a",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:303"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:303: phase=admitted_lost_ack result=client_cancelled compensation=5.792958ms upstream_starts=0"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 38,
+          "terminal_source_line": 45
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases/offered",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 169,
+        "last_event_line": 178,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.959265+08:00",
+          "fail": "2026-09-19T04:13:41.979863+08:00"
+        },
+        "output_sha256": "15aaec6a4e80a0e602703707b21946bb8a41063a60e36f6c85d2cc36474c4773",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 118,
+        "last_event_line": 142,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "7b46c2807796479ad8d19c0e649748221d397544195d8dea343e67cbe48c0e22",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 118,
+          "terminal_source_line": 142
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 34,
+        "last_event_line": 43,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "c6a5f69dd6c87a25313a00016fc04c018adb49e4081199c60ce3d9b6ebf2d7ea",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:303"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:303: phase=offered result=client_cancelled compensation=3.636291ms upstream_starts=0"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 34,
+          "terminal_source_line": 43
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases/registered",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 159,
+        "last_event_line": 168,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.935391+08:00",
+          "fail": "2026-09-19T04:13:41.959211+08:00"
+        },
+        "output_sha256": "b6d5d5ef2fb73f048beb797702fcf5cdcce30fd18d035b9918fdf7d96cc51c86",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 111,
+        "last_event_line": 141,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "9f69b858a7cee16ce8ef5dfb0d8f3972cda5ad5f448a446ebac71e59042a2358",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 111,
+          "terminal_source_line": 141
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 32,
+        "last_event_line": 42,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "c6112a49ab0e81ed34195bcd6284e731aab22efa369643f4fd4fc7d379de08e8",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:303"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:303: phase=registered result=client_cancelled compensation=16.627958ms upstream_starts=0"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 32,
+          "terminal_source_line": 42
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetCancellationPhases/unregistered",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 149,
+        "last_event_line": 158,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.874099+08:00",
+          "fail": "2026-09-19T04:13:41.93538+08:00"
+        },
+        "output_sha256": "9f3c3d85a6d1fdb304d8e1b71b3d01865a827d71ee06a8467a0960f006448813",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 104,
+        "last_event_line": 140,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "c897fa791de6df288d54e3dd5f942c7ead1d037fea1256a1def5165e4d41d97b",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:270"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:270:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:270",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 104,
+          "terminal_source_line": 140
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 30,
+        "last_event_line": 41,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "3f6d0f544dc1b06c3b93da2c876e8def97b0fd5c4b142a60f91272dbbbae9bed",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:303"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:303: phase=unregistered result=client_cancelled compensation=87.144958ms upstream_starts=0"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 30,
+          "terminal_source_line": 41
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetLateAdmissionAcknowledgement",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 123,
+        "last_event_line": 146,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.852288+08:00",
+          "fail": "2026-09-19T04:13:41.874063+08:00"
+        },
+        "output_sha256": "169f2c288ba25d1e2ebdb3902f9d570650f0ca112030a0551c925e5325617b8f",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 85,
+        "last_event_line": 100,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 85,
+          "terminal_source_line": 100
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "failed_child_evidence": [
+        "TestCredentialGatewayQueueBudgetLateAdmissionAcknowledgement/lost_ack=false",
+        "TestCredentialGatewayQueueBudgetLateAdmissionAcknowledgement/lost_ack=true"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 21,
+        "last_event_line": 26,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 21,
+          "terminal_source_line": 26
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetLateAdmissionAcknowledgement/lost_ack=false",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 125,
+        "last_event_line": 134,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.852315+08:00",
+          "fail": "2026-09-19T04:13:41.863098+08:00"
+        },
+        "output_sha256": "e8568996af61643dc8a66f194b2d74e82c361d48ef8f53224104f085dd6f828d",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:221"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:221:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:221",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 86,
+        "last_event_line": 101,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "180c32fa83f22af1f57633eac2dcaa518a598653b18d8a29b4630cc593766b36",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:221"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:221:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:221",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 86,
+          "terminal_source_line": 101
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 22,
+        "last_event_line": 27,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "31a64b22bfdb57b03b0ba53d57e26db999e1977f015e1d7154c7a0effbbe6fba",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:238"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:238: phase=admitted lost_ack=false result=queue_timeout_not_sent elapsed=15.071553542s"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 22,
+          "terminal_source_line": 27
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetLateAdmissionAcknowledgement/lost_ack=true",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 135,
+        "last_event_line": 144,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.863102+08:00",
+          "fail": "2026-09-19T04:13:41.874056+08:00"
+        },
+        "output_sha256": "a8bb60ff53edd1d41fa3293e417ebab4fead632e5d672e47d49485549cde5b16",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:221"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:221:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:221",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 93,
+        "last_event_line": 102,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "8b55c7d3b542f149b9255159839c790869c9d92150d88709474cf5dcfb6fb649",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:221"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:221:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:221",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 93,
+          "terminal_source_line": 102
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 24,
+        "last_event_line": 28,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "3ddb94f9c2f5b969da01fe64c9fc0a7d0af235e4516a1c52fbbc77144566f94d",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:238"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:238: phase=admitted lost_ack=true result=queue_timeout_not_sent elapsed=15.065920167s"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 24,
+          "terminal_source_line": 28
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetLocalOverloadAfterOffer",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 211,
+        "last_event_line": 220,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.007024+08:00",
+          "fail": "2026-09-19T04:13:42.026668+08:00"
+        },
+        "output_sha256": "9c684098be381bbe0af21c5531ad73b15ea87645c411a8a2eaecf3bf994a8916",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:339"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:339:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:339",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 153,
+        "last_event_line": 160,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "6222099932ad60bdd246079c11246faa2223307e5e70efe041636cedc2a2b671",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:339"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:339:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:339",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 153,
+          "terminal_source_line": 160
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 48,
+        "last_event_line": 49,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 48,
+          "terminal_source_line": 49
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetLocalOverloadReason",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 201,
+        "last_event_line": 210,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.99806+08:00",
+          "fail": "2026-09-19T04:13:42.00702+08:00"
+        },
+        "output_sha256": "bea2cd952521111d984f95b1a08322e0394774649ea5fb964def27a544a5685b",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:316"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:316:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:316",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 145,
+        "last_event_line": 152,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "64ec83e9ce745236217f87b10ee1eee945fbe77c130249114d907a6175573961",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:316"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:316:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:316",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 145,
+          "terminal_source_line": 152
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 46,
+        "last_event_line": 47,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 46,
+          "terminal_source_line": 47
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetRegisteredBurst",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 113,
+        "last_event_line": 122,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.828752+08:00",
+          "fail": "2026-09-19T04:13:41.852269+08:00"
+        },
+        "output_sha256": "ac130e20cfd0510c820b6d7916582da52abb68bea1149c3e09d8bd66f3ff197b",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:182"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:182:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:182",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 77,
+        "last_event_line": 84,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "fb8e1329865ae79f4e6c805b4861d39e1065040364e5f05d1b03084fabbf6f5a",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:182"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:182:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:182",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 77,
+          "terminal_source_line": 84
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 16,
+        "last_event_line": 20,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "8e928ee082df48aad5b1b2d448244acda3246542b7954662170ea93e3a9434fb",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:202"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:202: phase=registered result=queue_timeout elapsed=15.058594375s",
+          "credential_gateway_queue_deadline_integration_test.go:202: phase=registered result=queue_timeout elapsed=15.069134292s",
+          "credential_gateway_queue_deadline_integration_test.go:202: phase=registered result=queue_timeout elapsed=15.088761833s"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 16,
+          "terminal_source_line": 20
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayQueueBudgetUnregisteredBurst",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 103,
+        "last_event_line": 112,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.818303+08:00",
+          "fail": "2026-09-19T04:13:41.828747+08:00"
+        },
+        "output_sha256": "bbb541c063e1f154eb58e8290aaf0d289070e09480a53df012423d51c09b34c7",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:138"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:138:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:138",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 69,
+        "last_event_line": 76,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "4d10c1980ddc93f786e6c7201543370a616b736146cdfa0bfa287ef4bd132a05",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_queue_deadline_integration_test.go:138"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:138:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_queue_deadline_integration_test.go:138",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 69,
+          "terminal_source_line": 76
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 11,
+        "last_event_line": 15,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "20f123ba3460b02df941fe07114e1c8f0286d1d2b44e9a71c9d93b8dff16f126",
+        "assertion_locations": [
+          "credential_gateway_queue_deadline_integration_test.go:160"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_queue_deadline_integration_test.go:160: phase=unregistered result=queue_timeout elapsed=15.149881958s",
+          "credential_gateway_queue_deadline_integration_test.go:160: phase=unregistered result=queue_timeout elapsed=15.137802792s",
+          "credential_gateway_queue_deadline_integration_test.go:160: phase=unregistered result=queue_timeout elapsed=15.221580625s"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 11,
+          "terminal_source_line": 15
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeDispatchCommitBoundary",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 221,
+        "last_event_line": 244,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.026702+08:00",
+          "fail": "2026-09-19T04:13:42.045871+08:00"
+        },
+        "output_sha256": "9f43797d5d049a1c460b59c6dbae00b9bcfa8e619d2e3aa59381659008f87275",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 161,
+        "last_event_line": 176,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 161,
+          "terminal_source_line": 176
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "failed_child_evidence": [
+        "TestCredentialGatewayTimeDispatchCommitBoundary/commit_unknown_false",
+        "TestCredentialGatewayTimeDispatchCommitBoundary/commit_unknown_true"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 50,
+        "last_event_line": 53,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 50,
+          "terminal_source_line": 53
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeDispatchCommitBoundary/commit_unknown_false",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 223,
+        "last_event_line": 232,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.026739+08:00",
+          "fail": "2026-09-19T04:13:42.035976+08:00"
+        },
+        "output_sha256": "82fd462a1cc37b49765aada90fba23c755f9bf6fb130443e67e95e26598703e8",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:58"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:58:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_time_acceptance_test.go:58",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 162,
+        "last_event_line": 177,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "97fbc84ad40a8c75f83debc64785534a98716b373dc2d5b2ade18ec70c7c5b1b",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:58"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:58:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_time_acceptance_test.go:58",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 162,
+          "terminal_source_line": 177
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 51,
+        "last_event_line": 54,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 51,
+          "terminal_source_line": 54
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeDispatchCommitBoundary/commit_unknown_true",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 233,
+        "last_event_line": 242,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.035993+08:00",
+          "fail": "2026-09-19T04:13:42.045864+08:00"
+        },
+        "output_sha256": "b1f11f621286bc38acc4d80b146075604a313adf970ccd2de1a91e3190c46148",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:58"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:58:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_time_acceptance_test.go:58",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 169,
+        "last_event_line": 178,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "1b02a83f379d39df9b90f842b1bc4bb47854386d1ac80b69117a670108fe3931",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:58"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:58:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_time_acceptance_test.go:58",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 169,
+          "terminal_source_line": 178
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 52,
+        "last_event_line": 55,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 52,
+          "terminal_source_line": 55
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeUnsentCompensation",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 245,
+        "last_event_line": 268,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.045876+08:00",
+          "fail": "2026-09-19T04:13:42.06315+08:00"
+        },
+        "output_sha256": "4b6e5f9ae975b56e1c62942b62d3924ce8115f133d5e676c1ca554351bd4206d",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 179,
+        "last_event_line": 194,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 179,
+          "terminal_source_line": 194
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "failed_child_evidence": [
+        "TestCredentialGatewayTimeUnsentCompensation/client_cancel",
+        "TestCredentialGatewayTimeUnsentCompensation/deadline"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 56,
+        "last_event_line": 59,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 56,
+          "terminal_source_line": 59
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeUnsentCompensation/client_cancel",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 257,
+        "last_event_line": 266,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.054913+08:00",
+          "fail": "2026-09-19T04:13:42.063142+08:00"
+        },
+        "output_sha256": "744d37a7399f5d37d3b2f2c38a2adc21ffe6c2f33ed5e7e712ba170c18e2b037",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:106"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:106:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_time_acceptance_test.go:106",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 187,
+        "last_event_line": 196,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "2428b2774aaae3fd8517dbb8c24e2ceb5082bc6d0f4d93fb528cb777f7fb80ca",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:106"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:106:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_time_acceptance_test.go:106",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 187,
+          "terminal_source_line": 196
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 58,
+        "last_event_line": 61,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 58,
+          "terminal_source_line": 61
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGatewayTimeUnsentCompensation/deadline",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 247,
+        "last_event_line": 256,
+        "event_times": {
+          "run": "2026-09-19T04:13:42.045919+08:00",
+          "fail": "2026-09-19T04:13:42.054909+08:00"
+        },
+        "output_sha256": "bd5da509248fe2625d7165624f187c439eb287b672964b691c460579f82f3849",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:106"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:106:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_time_acceptance_test.go:106",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 180,
+        "last_event_line": 195,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "5fedc008a510554c390a3b762fd20292cad64bbcd52f1a8e3248e80106e42585",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_gateway_time_acceptance_test.go:106"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_time_acceptance_test.go:106:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_time_acceptance_test.go:106",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 180,
+          "terminal_source_line": 195
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 57,
+        "last_event_line": 60,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 57,
+          "terminal_source_line": 60
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialGlobalUserOrphanAndRedisLossFailClosed",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 83,
+        "last_event_line": 92,
+        "event_times": {
+          "run": "2026-09-19T04:13:41.787732+08:00",
+          "fail": "2026-09-19T04:13:41.80788+08:00"
+        },
+        "output_sha256": "e9903688ecf9a2a94f912b556e6bbc5b5e8d41de1aac272913106828db0d2d23",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:325",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:325:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:325",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 53,
+        "last_event_line": 60,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "380994194cd6ba9b308d178b20106564e52d4f7a6b0c1949b6bec7eb836bfd7b",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:325",
+          "credential_gateway_acceptance_test.go:74"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_gateway_acceptance_test.go:325:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:325",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 53,
+          "terminal_source_line": 60
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 7,
+        "last_event_line": 8,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 7,
+          "terminal_source_line": 8
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialOverloadRecoveryTerminalAndUnknown",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 341,
+        "last_event_line": 350,
+        "event_times": {
+          "run": "2026-09-19T04:13:43.297892+08:00",
+          "fail": "2026-09-19T04:13:43.350668+08:00"
+        },
+        "output_sha256": "992e85fbccc661f06e23a4bda5df3b392223dd8e0fc31fd279cbfd4505c161ac",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_overload_recovery_integration_test.go:52"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_overload_recovery_integration_test.go:52:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_overload_recovery_integration_test.go:52",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 231,
+        "last_event_line": 238,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "9ee287ef09ba6d6d62390eae9a0dcc3a25d0807f04be2118c55cfe98a41ca25c",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_overload_recovery_integration_test.go:52"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_overload_recovery_integration_test.go:52:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_overload_recovery_integration_test.go:52",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 231,
+          "terminal_source_line": 238
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 62,
+        "last_event_line": 65,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "fbea3ef2d9a8a79dbec229f52896d6946b6f9c353da32c2a4caf4db51e1feda8",
+        "assertion_locations": [
+          "credential_overload_recovery_integration_test.go:104",
+          "credential_overload_recovery_integration_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_overload_recovery_integration_test.go:61: after_timeout lease=DISPATCHING receipt=RECORDED",
+          "credential_overload_recovery_integration_test.go:104: recovery_after_pressure=20.1182155s"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 62,
+          "terminal_source_line": 65
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 413,
+        "last_event_line": 476,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.756348+08:00",
+          "fail": "2026-09-19T04:13:52.842964+08:00"
+        },
+        "output_sha256": "7c682961d81ff3ab3bf6eca8d160529a3912ed17ab33569bc710ee983414ad35",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 271,
+        "last_event_line": 314,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 271,
+          "terminal_source_line": 314
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "failed_child_evidence": [
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_finish_commit",
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_priced_command",
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_receipt_commit",
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_settlement_before_usage_log",
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_usage_log_before_ack",
+        "TestCredentialUsageCrashWindowsRecoverWithoutReplay/before_receipt_commit"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 66,
+        "last_event_line": 73,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 66,
+          "terminal_source_line": 73
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_finish_commit",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 435,
+        "last_event_line": 444,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.785259+08:00",
+          "fail": "2026-09-19T04:13:52.796702+08:00"
+        },
+        "output_sha256": "f673dfe8760725d01562757b47029d9b9f4dd79cbdeaa518ffffb459ad915d26",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 286,
+        "last_event_line": 317,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "473d7b88c5c1a93cefe61e34f186a3f49e5cbe9dcb55168cf2f8ec55e2bcf150",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 286,
+          "terminal_source_line": 317
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 69,
+        "last_event_line": 76,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 69,
+          "terminal_source_line": 76
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_priced_command",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 445,
+        "last_event_line": 454,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.796706+08:00",
+          "fail": "2026-09-19T04:13:52.817322+08:00"
+        },
+        "output_sha256": "a59df66930440f47c29e278b5fd90772a9bc07336223c871f9a93011720b2187",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 293,
+        "last_event_line": 318,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "e5dc8fc9e6530ece18dd6f811aecb01d0f118066356edc092d9085876cfcd304",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 293,
+          "terminal_source_line": 318
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 70,
+        "last_event_line": 77,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 70,
+          "terminal_source_line": 77
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_receipt_commit",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 425,
+        "last_event_line": 434,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.77422+08:00",
+          "fail": "2026-09-19T04:13:52.785253+08:00"
+        },
+        "output_sha256": "1267d9074d0cc1394305e76287a771f11bfcc9873f92e24f3c1d52e326cf321c",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 279,
+        "last_event_line": 316,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "27d6521a6384ff1ea44375b818bfb6254e25d52030b862186b68fa71d32596cc",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 279,
+          "terminal_source_line": 316
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 68,
+        "last_event_line": 75,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 68,
+          "terminal_source_line": 75
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_settlement_before_usage_log",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 455,
+        "last_event_line": 464,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.817352+08:00",
+          "fail": "2026-09-19T04:13:52.830158+08:00"
+        },
+        "output_sha256": "785027c3408a2a0a99213a0945b811552b7bf5d38ca9eec8690b03483b17921d",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 300,
+        "last_event_line": 319,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "1bec221399dfe6ef823ce510ba902ceee77e5dd326f16cd0f407b82a1734ef3c",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 300,
+          "terminal_source_line": 319
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 71,
+        "last_event_line": 78,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 71,
+          "terminal_source_line": 78
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/after_usage_log_before_ack",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 465,
+        "last_event_line": 474,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.830169+08:00",
+          "fail": "2026-09-19T04:13:52.842951+08:00"
+        },
+        "output_sha256": "245d931f839c12001bcda9bb744474a848ab2ae9378f46e46989d871edab9ecf",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 307,
+        "last_event_line": 320,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "7e46e8c84400df29555941ef29c36d7ac86327867d9c1905005790994af2abcc",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 307,
+          "terminal_source_line": 320
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 72,
+        "last_event_line": 80,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "c26de83abdc9496cd1301470918ec39ecca1cf389ef0ae1c6504da1800d1c431",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 72,
+          "terminal_source_line": 79
+        }
+      }
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+      "test": "TestCredentialUsageCrashWindowsRecoverWithoutReplay/before_receipt_commit",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 415,
+        "last_event_line": 424,
+        "event_times": {
+          "run": "2026-09-19T04:13:52.75639+08:00",
+          "fail": "2026-09-19T04:13:52.774215+08:00"
+        },
+        "output_sha256": "0612b54322391cf1f5e9a321ef53d065c4633c162284d8ca42762dd1bcceb7b1",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 272,
+        "last_event_line": 315,
+        "event_times": {
+          "run": null,
+          "fail": null
+        },
+        "output_sha256": "dad95271c61baeb3564fa7741020a6544a1a8aef0f7f8611f78bff0b40b6560e",
+        "assertion_locations": [
+          "credential_gateway_acceptance_test.go:74",
+          "credential_usage_recovery_acceptance_test.go:78"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "credential_usage_recovery_acceptance_test.go:78:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_gateway_acceptance_test.go:74",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository/credential_usage_recovery_acceptance_test.go:78",
+          "Error:      \tReceived unexpected error:",
+          "CREDENTIAL_REDIS_STATE_LOST"
+        ],
+        "original_stdout_lines": {
+          "first_source_line": 272,
+          "terminal_source_line": 315
+        }
+      },
+      "attribution": "EXISTING_TEST_ORDER_DEPENDENCY",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "此前直接仓储AuditOutbox测试留下RESERVED；首次gateway fixture在已有非RELEASED lease且缺少Redis epoch时按安全默认拒绝初始化。此行两边实际失败，不算系统PASS。",
+      "source_evidence": [
+        "backend/internal/repository/credential_billing_integration_test.go:40",
+        "backend/internal/repository/credential_user_capacity.go:56",
+        "backend/internal/repository/credential_gateway_acceptance_test.go:74"
+      ],
+      "isolated_candidate_rerun": {
+        "status": "PASS",
+        "run_events": 1,
+        "terminal_events": [
+          "PASS"
+        ],
+        "first_event_line": 67,
+        "last_event_line": 74,
+        "event_times": {
+          "run": null,
+          "pass": null
+        },
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": [],
+        "original_stdout_lines": {
+          "first_source_line": 67,
+          "terminal_source_line": 74
+        }
+      }
+    }
+  ],
+  "acceptance": "NOT_PASS",
+  "limitations": "First broad-suite fixture failure retained. Fresh isolated handler/usage rerun must be recorded separately and cannot overwrite these results.",
+  "isolated_candidate_run": {
+    "name": "candidate-handler-recovery-isolated",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "command": [
+      "/tmp/sub2api-release-closure/candidate-binaries/repository.test",
+      "-test.run=^(TestCredentialGateway|TestCredentialGlobalUser|TestCredentialUsageCrash|TestCredentialOverloadRecovery)",
+      "-test.count=1",
+      "-test.timeout=5m",
+      "-test.v"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend/internal/repository",
+    "start": "2026-09-18T20:15:24.527164+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 98.119972125,
+    "end": "2026-09-18T20:17:02.647420+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-handler-recovery-isolated.stdout",
+      "sha256": "a9f022f7f282f2ee9e32c96849df87eabf20a22ecc4230cf4d552bed2e68c199"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-handler-recovery-isolated.stderr",
+      "sha256": "67162ad63fe2f19068842413e5bff16f4291e4bf4eede27d31dd410fe3416dbc"
+    },
+    "counts": {
+      "package": {
+        "PASS": 1
+      },
+      "root_test": {
+        "PASS": 15
+      },
+      "subtest": {
+        "PASS": 17
+      }
+    }
+  },
+  "isolated_rerun_boundary": "Same saved candidate binary, independent TestMain PostgreSQL/Redis environment, matching 15 roots and 17 subtests pass. Initial broad FAIL remains; demonstrates fixture-order dependence, not broad-suite acceptance.",
+  "saved_candidate_binary_sha256": "dff0ea2fa26e3965c1ae64349efb44af29225a2c1925c88ba223a10a5f1117de"
+}

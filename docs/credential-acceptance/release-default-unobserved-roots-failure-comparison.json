@@ -1,0 +1,1675 @@
+{
+  "schema_version": 2,
+  "suite": "default-unobserved-roots",
+  "baseline_run": {
+    "name": "baseline-default-unobserved-roots",
+    "tested_code_sha": "924819c5d04a550801fb4e85441059389dc00caa",
+    "command": [
+      "go",
+      "test",
+      "-p",
+      "2",
+      "./internal/service",
+      "-run",
+      "^(TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable|TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable|TestCanonicalCodexIdentityValidatesBeforeTrimming|TestCodexDirectImagesAccountTestAndWhitelist|TestOpenAIGatewayServiceRecordUsage_OutputImageSizeWinsBeforeBillingAndPersistence|TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity|TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StateBoundToExecutionScope|TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput)$",
+      "-count=1",
+      "-timeout=120s",
+      "-json"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/baseline-924819/backend",
+    "start": "2026-09-18T20:05:52.411010+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 1,
+    "elapsed_seconds": 14.593978625,
+    "end": "2026-09-18T20:06:07.005377+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/baseline-default-unobserved-roots.stdout",
+      "sha256": "e65fec70432f9a7ab8ef0dd68973de6d2d64c7dc38dae61247b97435be5ded65"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/baseline-default-unobserved-roots.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "counts": {
+      "package": {
+        "FAIL": 1
+      },
+      "root_test": {
+        "FAIL": 8
+      },
+      "subtest": {
+        "FAIL": 14
+      }
+    }
+  },
+  "candidate_run": {
+    "name": "candidate-default-unobserved-roots",
+    "tested_code_sha": "b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8",
+    "command": [
+      "go",
+      "test",
+      "-p",
+      "2",
+      "./internal/service",
+      "-run",
+      "^(TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable|TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable|TestCanonicalCodexIdentityValidatesBeforeTrimming|TestCodexDirectImagesAccountTestAndWhitelist|TestOpenAIGatewayServiceRecordUsage_OutputImageSizeWinsBeforeBillingAndPersistence|TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity|TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StateBoundToExecutionScope|TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput)$",
+      "-count=1",
+      "-timeout=120s",
+      "-json"
+    ],
+    "cwd": "/tmp/sub2api-release-closure/candidate-b06789/backend",
+    "start": "2026-09-18T20:06:07.054218+00:00",
+    "environment": {
+      "GOCACHE": "/tmp/sub2api-queue-progress/go-cache",
+      "GOFLAGS": "-p=2",
+      "TESTCONTAINERS_RYUK_DISABLED": "true",
+      "CI": "true"
+    },
+    "exit_code": 1,
+    "elapsed_seconds": 12.191038791,
+    "end": "2026-09-18T20:06:19.245674+00:00",
+    "stdout": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-default-unobserved-roots.stdout",
+      "sha256": "c903335cfac5553a2fdcc5a77e5db7a0da6e4366de0deb00cd6c067852541e37"
+    },
+    "stderr": {
+      "path": "/tmp/sub2api-release-closure/final-logs/candidate-default-unobserved-roots.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "counts": {
+      "package": {
+        "FAIL": 1
+      },
+      "root_test": {
+        "FAIL": 8
+      },
+      "subtest": {
+        "FAIL": 14
+      }
+    }
+  },
+  "comparison_counts": {
+    "FAIL_TO_FAIL": 23
+  },
+  "counts_by_level": {
+    "package": {
+      "FAIL_TO_FAIL": 1
+    },
+    "root_test": {
+      "FAIL_TO_FAIL": 8
+    },
+    "subtest": {
+      "FAIL_TO_FAIL": 14
+    }
+  },
+  "attribution_counts": {
+    "AGGREGATE_PACKAGE_FAILURE": 1,
+    "EXISTING_FAILURE_CAUSE_UNATTRIBUTED": 22
+  },
+  "coverage_limit": "Only observed events. Initial full-suite failures and INCOMPLETE are retained; supplemental runs do not overwrite them. Matching failures remain NOT_PASS.",
+  "problem_union": [
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "<package>",
+      "level": "package",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 0,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 1,
+        "last_event_line": 229,
+        "event_times": {
+          "start": "2026-09-19T04:06:03.134536+08:00",
+          "fail": "2026-09-19T04:06:06.919541+08:00"
+        },
+        "output_sha256": "7f69040cded046a650f790261143b9a5735582e81588d996195197a02efa96e0",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 0,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 1,
+        "last_event_line": 229,
+        "event_times": {
+          "start": "2026-09-19T04:06:15.362155+08:00",
+          "fail": "2026-09-19T04:06:19.150244+08:00"
+        },
+        "output_sha256": "b4a5fda46ff21524a63342453dd8797c355eff499bd350613077a6167c2e53a8",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "attribution": "AGGREGATE_PACKAGE_FAILURE",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "包级聚合失败，具体失败/中断见同包逐测试证据；不另计一个独立业务根因。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": []
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 129,
+        "last_event_line": 177,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.913516+08:00",
+          "fail": "2026-09-19T04:06:06.914638+08:00"
+        },
+        "output_sha256": "4a1da759018e4dfb785740c5e65ebbeb0cac442fe836ab5cef0bb642394bab55",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 129,
+        "last_event_line": 177,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.142932+08:00",
+          "fail": "2026-09-19T04:06:19.144786+08:00"
+        },
+        "output_sha256": "4a1da759018e4dfb785740c5e65ebbeb0cac442fe836ab5cef0bb642394bab55",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "failed_child_evidence": [
+        "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash",
+        "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-high",
+        "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-low",
+        "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-medium",
+        "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-tiered"
+      ],
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": []
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 131,
+        "last_event_line": 139,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.913542+08:00",
+          "fail": "2026-09-19T04:06:06.913638+08:00"
+        },
+        "output_sha256": "5329a1a3afc88eb012cb328955f8b2a72afd0e7be5ec7c1ddfb2a376758fce49",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 131,
+        "last_event_line": 139,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.143512+08:00",
+          "fail": "2026-09-19T04:06:19.144231+08:00"
+        },
+        "output_sha256": "a61bd2f66891a00d165fdb5f616f4f840370f5df7d4e600bf17b2d92b7e86966",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-high",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 140,
+        "last_event_line": 148,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.913647+08:00",
+          "fail": "2026-09-19T04:06:06.913789+08:00"
+        },
+        "output_sha256": "d9bed38021944ca57968bd741f4dba34c50a7bbedfdcdac50a8218777b4196e4",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-high"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 140,
+        "last_event_line": 148,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.144244+08:00",
+          "fail": "2026-09-19T04:06:19.144349+08:00"
+        },
+        "output_sha256": "992fca8d8e561883c6da8ac5a9ba1205de387a0f4c57451e63e3c061b63b8d52",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-high"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-low",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 149,
+        "last_event_line": 157,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.913855+08:00",
+          "fail": "2026-09-19T04:06:06.914102+08:00"
+        },
+        "output_sha256": "e4f54ba3aa4252559279c2fb76265c7175db0588880cc3026e8a77469ffb5cb1",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-low"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 149,
+        "last_event_line": 157,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.144366+08:00",
+          "fail": "2026-09-19T04:06:19.144472+08:00"
+        },
+        "output_sha256": "e4cf71b8a3c7a7c7922f8774a46029876d426da80e139e452b0f873763ecdf09",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-low"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-medium",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 158,
+        "last_event_line": 166,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.914122+08:00",
+          "fail": "2026-09-19T04:06:06.914376+08:00"
+        },
+        "output_sha256": "e7f3a594dcd79fae259e2eba71b1ba2f7d801d0be5a1ae791c40c5bc00c6085b",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-medium"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 158,
+        "last_event_line": 166,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.144482+08:00",
+          "fail": "2026-09-19T04:06:19.144641+08:00"
+        },
+        "output_sha256": "5fc201fe92afc694072e176b16632bebc993ac923ee370470242fd4cf730f52a",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-medium"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini37FlashThinkingTierFallbacksAreBillable/gemini-3.7-flash-tiered",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 167,
+        "last_event_line": 175,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.914398+08:00",
+          "fail": "2026-09-19T04:06:06.914596+08:00"
+        },
+        "output_sha256": "ecdc5d14fbcfb90a4139f178f5d1680fa85a84d877c9d3420bcba22ceed7c9c4",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-tiered"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 167,
+        "last_event_line": 175,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.144652+08:00",
+          "fail": "2026-09-19T04:06:19.144765+08:00"
+        },
+        "output_sha256": "f9bf6ed80f6ae83398a5eafbcccade28d0522f066e732f4219899302aed2690f",
+        "assertion_locations": [
+          "pricing_service_test.go:660"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:660:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:660",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.7-flash-tiered"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 178,
+        "last_event_line": 226,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.914657+08:00",
+          "fail": "2026-09-19T04:06:06.915587+08:00"
+        },
+        "output_sha256": "56a304a0c21d6085881b75bd698852f00c77c2f7177e3c095b745cd59f5d9110",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 178,
+        "last_event_line": 226,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.1448+08:00",
+          "fail": "2026-09-19T04:06:19.145376+08:00"
+        },
+        "output_sha256": "56a304a0c21d6085881b75bd698852f00c77c2f7177e3c095b745cd59f5d9110",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "failed_child_evidence": [
+        "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash",
+        "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-high",
+        "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-low",
+        "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-medium",
+        "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-tiered"
+      ],
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": []
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 180,
+        "last_event_line": 188,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.914694+08:00",
+          "fail": "2026-09-19T04:06:06.914866+08:00"
+        },
+        "output_sha256": "d6fe3cfb7121a99a36a276cecf574292090c0e387d9b639578d5319201f45fe9",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 180,
+        "last_event_line": 188,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.14482+08:00",
+          "fail": "2026-09-19T04:06:19.144915+08:00"
+        },
+        "output_sha256": "924597060e5335fff0fbe747016a0a8189abda39a468963f4dc6807a466ddabb",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-high",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 189,
+        "last_event_line": 197,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.914886+08:00",
+          "fail": "2026-09-19T04:06:06.915051+08:00"
+        },
+        "output_sha256": "5da7e6a9db6ec40d225e40fd318e173351d4ecb28aae0ff76b522e404b181090",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-high"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 189,
+        "last_event_line": 197,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.144925+08:00",
+          "fail": "2026-09-19T04:06:19.145016+08:00"
+        },
+        "output_sha256": "a96683c762402de5328c98dcdfa80598224438513d15278ca08bad93e3879ba5",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-high"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-low",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 198,
+        "last_event_line": 206,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.91507+08:00",
+          "fail": "2026-09-19T04:06:06.915292+08:00"
+        },
+        "output_sha256": "c2536afcb3d0e397942a4d32b36b2ade654749ad38ec42323fba6792dc9ec1fa",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-low"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 198,
+        "last_event_line": 206,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.145027+08:00",
+          "fail": "2026-09-19T04:06:19.145134+08:00"
+        },
+        "output_sha256": "a0a83b5691727c1577d89f29cf2d7075213bdc36e2b84444914b67b598513648",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-low"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-medium",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 207,
+        "last_event_line": 215,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.915331+08:00",
+          "fail": "2026-09-19T04:06:06.915491+08:00"
+        },
+        "output_sha256": "247c2f2bf2a96e127cc34abc1dded4febe7784315aecabc7de587e1954bb8e1e",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-medium"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 207,
+        "last_event_line": 215,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.145145+08:00",
+          "fail": "2026-09-19T04:06:19.145246+08:00"
+        },
+        "output_sha256": "0f98b160f9e69d91c2bf2efbe6c1a860cd10a53913ff43d9c094b8f07b1cef71",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-medium"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestBillingService_Gemini38FlashThinkingTierFallbacksAreBillable/gemini-3.8-flash-tiered",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 216,
+        "last_event_line": 224,
+        "event_times": {
+          "run": "2026-09-19T04:06:06.915499+08:00",
+          "fail": "2026-09-19T04:06:06.91557+08:00"
+        },
+        "output_sha256": "c73ae47d7194e6bbc121fd8b0f892dcc7236e479184cdf861fe92f6a55886a0f",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-tiered"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 216,
+        "last_event_line": 224,
+        "event_times": {
+          "run": "2026-09-19T04:06:19.145256+08:00",
+          "fail": "2026-09-19T04:06:19.14534+08:00"
+        },
+        "output_sha256": "3377182fbe080fe32fb70cca03a9b421d200b3f9f259f2b973142175b0198fc7",
+        "assertion_locations": [
+          "pricing_service_test.go:705"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "pricing_service_test.go:705:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/pricing_service_test.go:705",
+          "Error:      \tReceived unexpected error:",
+          "pricing not found for model: gemini-3.8-flash-tiered"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/repository/pricing_service_test.go",
+          "baseline_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "candidate_blob": "ef2f214b0e96e2ce6a7aefcef813b17e26c2144d",
+          "unchanged": true
+        },
+        {
+          "path": "backend/internal/service/pricing_service_test.go",
+          "baseline_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "candidate_blob": "0dce3e435cf08a5d693b3dedaccca9484c82caea",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCanonicalCodexIdentityValidatesBeforeTrimming",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 75,
+        "last_event_line": 91,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.177757+08:00",
+          "fail": "2026-09-19T04:06:03.17802+08:00"
+        },
+        "output_sha256": "79828b8bbd0846931d8fefbdc097ca4cc4dc518cce5b22f5093ec729e008533d",
+        "assertion_locations": [
+          "openai_ua_validation_test.go:22"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ua_validation_test.go:22:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_ua_validation_test.go:22",
+          "Error:      \tNot equal:",
+          "expected: \"codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color\"",
+          "actual  : \"codex-tui/0.200.1 (Windows)\"",
+          "",
+          "Diff:",
+          "--- Expected",
+          "+++ Actual",
+          "@@ -1 +1 @@",
+          "-codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color",
+          "+codex-tui/0.200.1 (Windows)"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 75,
+        "last_event_line": 91,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.403938+08:00",
+          "fail": "2026-09-19T04:06:15.404179+08:00"
+        },
+        "output_sha256": "6a1af00f8e4e2b8b3bca57127575eb08caec322425ad0f869569da40e99f8c5d",
+        "assertion_locations": [
+          "openai_ua_validation_test.go:22"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ua_validation_test.go:22:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_ua_validation_test.go:22",
+          "Error:      \tNot equal:",
+          "expected: \"codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color\"",
+          "actual  : \"codex-tui/0.200.1 (Windows)\"",
+          "",
+          "Diff:",
+          "--- Expected",
+          "+++ Actual",
+          "@@ -1 +1 @@",
+          "-codex-tui/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color",
+          "+codex-tui/0.200.1 (Windows)"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_ua_validation_test.go",
+          "baseline_blob": "08872f40591c889937850ef006fa9954e31ef5e3",
+          "candidate_blob": "08872f40591c889937850ef006fa9954e31ef5e3",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestCodexDirectImagesAccountTestAndWhitelist",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 25,
+        "last_event_line": 34,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.176866+08:00",
+          "fail": "2026-09-19T04:06:03.176901+08:00"
+        },
+        "output_sha256": "edcccee7030d73e7b2f623887ed77d398bb724197072d28ec9ecdf526c9a0dee",
+        "assertion_locations": [
+          "openai_images_direct_test.go:219"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_images_direct_test.go:219:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_images_direct_test.go:219",
+          "Error:      \tReceived unexpected error:",
+          "No images returned from responses API"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 25,
+        "last_event_line": 34,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.401906+08:00",
+          "fail": "2026-09-19T04:06:15.402621+08:00"
+        },
+        "output_sha256": "baae4016b8ec22618f4e13c960337701636c3d36d69d497b54f6b038aa10d87a",
+        "assertion_locations": [
+          "openai_images_direct_test.go:219"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_images_direct_test.go:219:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_images_direct_test.go:219",
+          "Error:      \tReceived unexpected error:",
+          "No images returned from responses API"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_images_direct_test.go",
+          "baseline_blob": "ea723f50144c64dedaa9ac34efa7fe580b4ffe71",
+          "candidate_blob": "ea723f50144c64dedaa9ac34efa7fe580b4ffe71",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIGatewayServiceRecordUsage_OutputImageSizeWinsBeforeBillingAndPersistence",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 3,
+        "last_event_line": 24,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.176234+08:00",
+          "fail": "2026-09-19T04:06:03.176393+08:00"
+        },
+        "output_sha256": "214a653c94a2ed88ce6f0f8f287e2a7dbf08142c3d2115e849d927bd50049cce",
+        "assertion_locations": [
+          "openai_gateway_record_usage_test.go:2399"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_gateway_record_usage_test.go:2399:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_gateway_record_usage_test.go:2399",
+          "Error:      \tNot equal:",
+          "expected: map[string]int{\"4K\":1, \"image_cache_read_tokens\":40}",
+          "actual  : map[string]int{\"4K\":1}",
+          "",
+          "Diff:",
+          "--- Expected",
+          "+++ Actual",
+          "@@ -1,4 +1,3 @@",
+          "-(map[string]int) (len=2) {",
+          "- (string) (len=2) \"4K\": (int) 1,",
+          "- (string) (len=23) \"image_cache_read_tokens\": (int) 40",
+          "+(map[string]int) (len=1) {",
+          "+ (string) (len=2) \"4K\": (int) 1",
+          "}"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 3,
+        "last_event_line": 24,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.400885+08:00",
+          "fail": "2026-09-19T04:06:15.401894+08:00"
+        },
+        "output_sha256": "629dfb4be1faa8b3cbc8e70031adade1eb45ccc109c838ad1118fd7c04ea304a",
+        "assertion_locations": [
+          "openai_gateway_record_usage_test.go:2399"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_gateway_record_usage_test.go:2399:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_gateway_record_usage_test.go:2399",
+          "Error:      \tNot equal:",
+          "expected: map[string]int{\"4K\":1, \"image_cache_read_tokens\":40}",
+          "actual  : map[string]int{\"4K\":1}",
+          "",
+          "Diff:",
+          "--- Expected",
+          "+++ Actual",
+          "@@ -1,4 +1,3 @@",
+          "-(map[string]int) (len=2) {",
+          "- (string) (len=2) \"4K\": (int) 1,",
+          "- (string) (len=23) \"image_cache_read_tokens\": (int) 40",
+          "+(map[string]int) (len=1) {",
+          "+ (string) (len=2) \"4K\": (int) 1",
+          "}"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_gateway_record_usage_test.go",
+          "baseline_blob": "a94147839ecbd6b81249e05076ca09cc7c469c9d",
+          "candidate_blob": "a94147839ecbd6b81249e05076ca09cc7c469c9d",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 104,
+        "last_event_line": 128,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.180379+08:00",
+          "fail": "2026-09-19T04:06:06.912865+08:00"
+        },
+        "output_sha256": "ca8254ec1055bcc0950416bf90c02e4b44dc6d63239c5c3b6addd01b82a4f338",
+        "assertion_locations": [
+          "openai_ws_forwarder_v2_execution_scope_test.go:171",
+          "openai_ws_forwarder_v2_execution_scope_test.go:196"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ws_forwarder_v2_execution_scope_test.go:171:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_ws_forwarder_v2_execution_scope_test.go:171",
+          "/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_ws_forwarder_v2_execution_scope_test.go:196",
+          "Error:      \tReceived unexpected error:",
+          "openai ws fallback: write_request: openai ws connection closed"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 104,
+        "last_event_line": 128,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.406516+08:00",
+          "fail": "2026-09-19T04:06:19.142635+08:00"
+        },
+        "output_sha256": "9af58281d4ac15d98594ae8b870662c46b9f312695622144dbff4fcb62895cc7",
+        "assertion_locations": [
+          "openai_ws_forwarder_v2_execution_scope_test.go:171",
+          "openai_ws_forwarder_v2_execution_scope_test.go:196"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ws_forwarder_v2_execution_scope_test.go:171:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_ws_forwarder_v2_execution_scope_test.go:171",
+          "/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_ws_forwarder_v2_execution_scope_test.go:196",
+          "Error:      \tReceived unexpected error:",
+          "openai ws fallback: write_request: openai ws connection closed"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_ws_forwarder_v2_execution_scope_test.go",
+          "baseline_blob": "da13cd1fcbdf602dd52cbefd13f620883198b08f",
+          "candidate_blob": "da13cd1fcbdf602dd52cbefd13f620883198b08f",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_StateBoundToExecutionScope",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 92,
+        "last_event_line": 103,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.178023+08:00",
+          "fail": "2026-09-19T04:06:03.180357+08:00"
+        },
+        "output_sha256": "9e6af81170df426449228c773ac5368dc70ec4422bb77d5b4fe977541635a85b",
+        "assertion_locations": [
+          "openai_ws_forwarder_ingress_execution_scope_test.go:154"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ws_forwarder_ingress_execution_scope_test.go:154:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_ws_forwarder_ingress_execution_scope_test.go:154",
+          "Error:      \tShould be false",
+          "Messages:   \t上游连接不得绑定到按 session-id 算出的会话哈希"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 92,
+        "last_event_line": 103,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.404183+08:00",
+          "fail": "2026-09-19T04:06:15.406483+08:00"
+        },
+        "output_sha256": "a893aa7a47934f11fb619774360316e057104ea7d78626791d86cfca9e1bf610",
+        "assertion_locations": [
+          "openai_ws_forwarder_ingress_execution_scope_test.go:154"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_ws_forwarder_ingress_execution_scope_test.go:154:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_ws_forwarder_ingress_execution_scope_test.go:154",
+          "Error:      \tShould be false",
+          "Messages:   \t上游连接不得绑定到按 session-id 算出的会话哈希"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_ws_forwarder_ingress_execution_scope_test.go",
+          "baseline_blob": "c9a18fc748513b822d5cc10c1e2a477c28452cba",
+          "candidate_blob": "c9a18fc748513b822d5cc10c1e2a477c28452cba",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput",
+      "level": "root_test",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 35,
+        "last_event_line": 74,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.176908+08:00",
+          "fail": "2026-09-19T04:06:03.177753+08:00"
+        },
+        "output_sha256": "5cda5219eeaa871c90d246460fc7dd68428fa1483865c984cf0e4a4696436e75",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 35,
+        "last_event_line": 74,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.402656+08:00",
+          "fail": "2026-09-19T04:06:15.403936+08:00"
+        },
+        "output_sha256": "5cda5219eeaa871c90d246460fc7dd68428fa1483865c984cf0e4a4696436e75",
+        "assertion_locations": [],
+        "panicked": false,
+        "assertion_excerpt": []
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "failed_child_evidence": [
+        "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/native",
+        "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/native/error_then_failed",
+        "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/passthrough",
+        "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/passthrough/error_then_failed"
+      ],
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": []
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/native",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 37,
+        "last_event_line": 45,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.176914+08:00",
+          "fail": "2026-09-19T04:06:03.17726+08:00"
+        },
+        "output_sha256": "8557925a73db6d0d9d3c8d0a01a4299e1f4065e78ffc62de6ad311aed5cb3e9e",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x4ea9bcc21b00 0x4ea9bcc21c00]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 37,
+        "last_event_line": 45,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.402705+08:00",
+          "fail": "2026-09-19T04:06:15.403517+08:00"
+        },
+        "output_sha256": "04946ae426eb549c8edc58fe1775840118b37d09b6986f856b9814ab13c724cf",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x5a2f9399a400 0x5a2f9399a500]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_stream_terminal_ops_test.go",
+          "baseline_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "candidate_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/native/error_then_failed",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 46,
+        "last_event_line": 54,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.177264+08:00",
+          "fail": "2026-09-19T04:06:03.177405+08:00"
+        },
+        "output_sha256": "760f7349228119ab1cbe3c124c16c61d8ca3680ded12cec504a03618eb851bd9",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x4ea9bcc21e00 0x4ea9bc470300]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 46,
+        "last_event_line": 54,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.403521+08:00",
+          "fail": "2026-09-19T04:06:15.403629+08:00"
+        },
+        "output_sha256": "9fbfe18e4a6aae71249b2792c2386d2dd082ea83f1ccd16a98c6697dedb4edcf",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x5a2f9399a700 0x5a2f9399a800]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_stream_terminal_ops_test.go",
+          "baseline_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "candidate_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/passthrough",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 55,
+        "last_event_line": 63,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.177425+08:00",
+          "fail": "2026-09-19T04:06:03.177635+08:00"
+        },
+        "output_sha256": "a9e10e84904f05240c7f3fa5de19e8604ad92fa20f7393029cfbbc5e8de84fbe",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x4ea9bc470500 0x4ea9bc470600]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 55,
+        "last_event_line": 63,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.403638+08:00",
+          "fail": "2026-09-19T04:06:15.403819+08:00"
+        },
+        "output_sha256": "8601e6ce4eeb5c6e0091e7f6bd957054a0f93852520c69641f820cbbe6da8a8b",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x5a2f9399ab00 0x5a2f9399ad00]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_stream_terminal_ops_test.go",
+          "baseline_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "candidate_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "unchanged": true
+        }
+      ]
+    },
+    {
+      "package": "github.com/Wei-Shaw/sub2api/internal/service",
+      "test": "TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput/passthrough/error_then_failed",
+      "level": "subtest",
+      "comparison": "FAIL_TO_FAIL",
+      "baseline": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 64,
+        "last_event_line": 72,
+        "event_times": {
+          "run": "2026-09-19T04:06:03.177647+08:00",
+          "fail": "2026-09-19T04:06:03.177743+08:00"
+        },
+        "output_sha256": "3c56f7c040b77c1c62e7124e162d8336492f57bb93e8961d85821272b849706d",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/baseline-924819/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x4ea9bc470800 0x4ea9bc470b00]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "candidate": {
+        "status": "FAIL",
+        "run_events": 1,
+        "terminal_events": [
+          "FAIL"
+        ],
+        "first_event_line": 64,
+        "last_event_line": 72,
+        "event_times": {
+          "run": "2026-09-19T04:06:15.403823+08:00",
+          "fail": "2026-09-19T04:06:15.403926+08:00"
+        },
+        "output_sha256": "a734e958514327c53c4b5ca2985050e921e6e6536a0009901e825d1d29e63152",
+        "assertion_locations": [
+          "openai_stream_terminal_ops_test.go:61"
+        ],
+        "panicked": false,
+        "assertion_excerpt": [
+          "openai_stream_terminal_ops_test.go:61:",
+          "Error Trace:\t/private/tmp/sub2api-release-closure/candidate-b06789/backend/internal/service/openai_stream_terminal_ops_test.go:61",
+          "Error:      \t\"[0x5a2f9399af00 0x5a2f9399b100]\" should have 1 item(s), but has 2",
+          "Messages:   \terror + response.failed is one terminal failure"
+        ]
+      },
+      "attribution": "EXISTING_FAILURE_CAUSE_UNATTRIBUTED",
+      "acceptance": "NOT_PASS",
+      "attribution_reason": "本项在两个固定版本实际失败，保留自身断言、栈及源码身份；现存失败表现已复现，根因仍未完全定位，不写PASS或环境豁免。",
+      "candidate_acceptance": "NOT_PASS",
+      "source_evidence": [
+        {
+          "path": "backend/internal/service/openai_stream_terminal_ops_test.go",
+          "baseline_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "candidate_blob": "c12fb65bfcf85600ceed68ba2aa42467453e41fb",
+          "unchanged": true
+        }
+      ]
+    }
+  ]
+}
