@@ -79,31 +79,31 @@
   },
   {
     "package": "github.com/Wei-Shaw/sub2api/internal/handler",
-    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/\u53cc\u5f15\u53f7",
     "baseline": "FAIL",
     "head": "FAIL"
   },
   {
     "package": "github.com/Wei-Shaw/sub2api/internal/handler",
-    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号+反斜杠",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/\u53cc\u5f15\u53f7+\u53cd\u659c\u6760",
     "baseline": "FAIL",
     "head": "FAIL"
   },
   {
     "package": "github.com/Wei-Shaw/sub2api/internal/handler",
-    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/反斜杠",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/\u53cd\u659c\u6760",
     "baseline": "FAIL",
     "head": "FAIL"
   },
   {
     "package": "github.com/Wei-Shaw/sub2api/internal/handler",
-    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/换行与制表",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/\u6362\u884c\u4e0e\u5236\u8868",
     "baseline": "FAIL",
     "head": "FAIL"
   },
   {
     "package": "github.com/Wei-Shaw/sub2api/internal/handler",
-    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/普通",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/\u666e\u901a",
     "baseline": "FAIL",
     "head": "FAIL"
   },

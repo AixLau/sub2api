@@ -209,7 +209,7 @@
 
 ## 当前最终 HEAD 对照
 
-当前最终 HEAD 为 `e00ea2cab` 之后的收尾提交；完整 suite 重新运行日志为 `/tmp/sub2api-acceptance-closure/head-final-full.jsonl`，基线日志为 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`。逐测试（含父测试未完成）机器表见 `full-suite-comparison-final.json`。结果按整套运行事件统计：
+当前最终 HEAD 为 `8c1bfcbff`；完整 suite 重新运行日志为 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，基线日志为 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`。逐测试（含父测试未完成）机器表见 `full-suite-comparison-final.json`。结果按整套运行事件统计：
 
 - NOT_RUN → PASS：22
 - SKIP → SKIP：14
