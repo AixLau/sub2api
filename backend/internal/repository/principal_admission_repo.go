@@ -15,15 +15,16 @@ import (
 )
 
 type principalAdmissionStore struct {
-	db            *sql.DB
-	lifecycleDB   *sql.DB
-	initOnce      sync.Once
-	admissionGate credentialAdmissionTurn
-	waitMu        sync.Mutex
-	waiters       map[string]*credentialAdmissionWaiter
-	retryReady    map[string]bool
-	pumpRunning   bool
-	wake          chan struct{}
+	db             *sql.DB
+	lifecycleDB    *sql.DB
+	initOnce       sync.Once
+	admissionGate  credentialAdmissionTurn
+	principalTurns credentialPrincipalTurns
+	waitMu         sync.Mutex
+	waiters        map[string]*credentialAdmissionWaiter
+	retryReady     map[string]bool
+	pumpRunning    bool
+	wake           chan struct{}
 }
 
 func (s *principalAdmissionStore) initializeQueue() {
@@ -77,14 +78,22 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	priority := s.retryReady[in.RequestID]
 	delete(s.retryReady, in.RequestID)
 	s.waitMu.Unlock()
-	if err := s.admissionGate.acquire(ctx, priority); err != nil {
-		return rejected, err
-	}
-	defer s.admissionGate.release()
-	tx, err := s.beginAdmissionTurn(ctx, in.PrincipalID)
+	releasePrincipal, err := s.principalTurns.acquire(ctx, in.PrincipalID, priority)
 	if err != nil {
+		if errors.Is(err, service.ErrAdmissionLocalQueueFull) {
+			return admissionReject("ADMISSION_LOCAL_QUEUE_FULL"), nil
+		}
 		return rejected, err
 	}
+	defer releasePrincipal()
+	tx, releaseNode, err := s.beginAdmissionTurn(ctx, in.PrincipalID, priority)
+	if err != nil {
+		if errors.Is(err, service.ErrAdmissionLocalQueueFull) {
+			return admissionReject("ADMISSION_LOCAL_QUEUE_FULL"), nil
+		}
+		return rejected, err
+	}
+	defer releaseNode()
 	defer tx.Rollback()
 	// All operations use user -> principal -> instance -> request/binding/lease.
 	_, err = tx.ExecContext(ctx, `INSERT INTO principal_user_capacity(user_id,principal_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, in.UserID, in.PrincipalID)

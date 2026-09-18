@@ -2,17 +2,15 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 // A bounded local database-access queue, not an execution-capacity authority.
 // Durable offer owners and queue pumps have bounded priority: at most one
-// offer batch can pass a waiting fresh registration. Each class is FIFO. The
+// offer batch can pass the oldest waiting fresh registration. Each class is FIFO. The
 // bound is in completed access turns, not wall time or execution capacity.
 type credentialAdmissionTurn struct {
 	mu             sync.Mutex
@@ -111,33 +109,4 @@ func (q *credentialAdmissionTurn) removeCancelledLocked() {
 	cancelled := func(w *credentialTurnWaiter) bool { return w.cancelled || w.ctx.Err() != nil }
 	q.offered = slices.DeleteFunc(q.offered, cancelled)
 	q.fresh = slices.DeleteFunc(q.fresh, cancelled)
-}
-
-// Contention before registration stays in the bounded local access queue. It
-// must not return a public WAIT with no durable ticket (which would lose queue
-// age and its 15s TTL). Release the connection between nonblocking attempts.
-func (s *principalAdmissionStore) beginAdmissionTurn(ctx context.Context, principal int64) (*sql.Tx, error) {
-	for {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return nil, service.ErrAdmissionStoreUnavailable
-		}
-		var turn bool
-		err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, -principal).Scan(&turn)
-		if err != nil {
-			_ = tx.Rollback()
-			return nil, err
-		}
-		if turn {
-			return tx, nil
-		}
-		_ = tx.Rollback()
-		timer := time.NewTimer(5 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-	}
 }

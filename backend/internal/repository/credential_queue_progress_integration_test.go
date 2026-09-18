@@ -139,7 +139,11 @@ func TestCredentialQueueProgressNoTicketlessWait(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() { d, err := s.TryAdmit(ctx, f.input()); done <- result{d, err} }()
-	require.Eventually(t, func() bool { s.admissionGate.mu.Lock(); defer s.admissionGate.mu.Unlock(); return s.admissionGate.busy }, time.Second, time.Millisecond)
+	require.Eventually(t, func() bool {
+		s.principalTurns.mu.Lock()
+		defer s.principalTurns.mu.Unlock()
+		return s.principalTurns.active > 0
+	}, time.Second, time.Millisecond)
 	select {
 	case r := <-done:
 		t.Fatalf("contention must stay local before registration, got %s %v", r.d.Code, r.err)

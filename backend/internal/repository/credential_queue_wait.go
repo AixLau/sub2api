@@ -71,12 +71,6 @@ func (s *principalAdmissionStore) pumpAdmissionQueue() {
 	}
 }
 func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pending []*credentialAdmissionWaiter) {
-	// One new admission/queue-advance transaction per process, one per principal
-	// across processes. No queued background transactions can flood row locks.
-	if err := s.admissionGate.acquire(ctx, true); err != nil {
-		return
-	}
-	defer s.admissionGate.release()
 	principals := map[int64]bool{}
 	var ids, nodes []string
 	for _, w := range pending {
@@ -85,29 +79,12 @@ func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pendin
 		nodes = append(nodes, w.in.Node)
 	}
 	for principal := range principals {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return
-		}
-		var turn bool
-		err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, -principal).Scan(&turn)
-		if err != nil || !turn {
-			_ = tx.Rollback()
-			continue
-		}
-		var n int
-		// SKIP LOCKED is appropriate only for hint generation. It is never used to
-		// read partial authoritative capacity when approving an execution.
-		err = tx.QueryRowContext(ctx, `SELECT occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE SKIP LOCKED`, principal).Scan(&n)
-		if err == nil {
-			err = advanceCredentialOffers(ctx, tx, principal)
-		}
-		if err != nil {
-			_ = tx.Rollback()
-			continue
-		}
-		_ = tx.Commit()
+		s.advanceAdmissionPrincipal(ctx, principal)
 	}
+	if err := s.admissionGate.acquire(ctx, true); err != nil {
+		return
+	}
+	defer s.admissionGate.release()
 	rows, err := s.db.QueryContext(ctx, `SELECT x.request,COALESCE(t.offer_until>clock_timestamp(),false) FROM unnest($1::uuid[],$2::text[]) AS x(request,node)
  LEFT JOIN logical_requests r ON r.id=x.request LEFT JOIN admission_tickets t ON t.request_id=x.request
  WHERE r.id IS NULL OR (r.owner_node=x.node AND (r.status<>'QUEUED' OR t.state<>'QUEUED' OR t.deadline<=clock_timestamp() OR t.offer_until>clock_timestamp()))`, pq.Array(ids), pq.Array(nodes))
@@ -136,6 +113,36 @@ func (s *principalAdmissionStore) pollAdmissionQueue(ctx context.Context, pendin
 		return
 	}
 	s.deliverAdmissionHints(ready)
+}
+
+// Take the same bounded node turn as admission for each principal separately.
+// A large pump batch must not monopolize the node budget, and a principal owned
+// by another node is skipped without waiting or retaining the local turn.
+func (s *principalAdmissionStore) advanceAdmissionPrincipal(ctx context.Context, principal int64) {
+	if err := s.admissionGate.acquire(ctx, true); err != nil {
+		return
+	}
+	defer s.admissionGate.release()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	var turn bool
+	err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, -principal).Scan(&turn)
+	if err != nil || !turn {
+		return
+	}
+	var n int
+	// SKIP LOCKED is appropriate only for hint generation. It is never used to
+	// read partial authoritative capacity when approving an execution.
+	err = tx.QueryRowContext(ctx, `SELECT occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE SKIP LOCKED`, principal).Scan(&n)
+	if err == nil {
+		err = advanceCredentialOffers(ctx, tx, principal)
+	}
+	if err == nil {
+		_ = tx.Commit()
+	}
 }
 func (s *principalAdmissionStore) deliverAdmissionHints(ids []string) {
 	s.waitMu.Lock()
