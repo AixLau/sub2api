@@ -21,3 +21,7 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/r
 `TestCredentialGlobalUserOrphanAndRedisLossFailClosed` 实际通过：半流保持PG占用和Redis用户hold；同用户另一个主体拒绝；模拟成员老化后reconciler续期；隔离测试Redis的FLUSHDB后grouped和旧共享用户计数申请都拒绝。原始日志 `/tmp/sub2api-acceptance-closure/global-user-final.log`。
 
 拓扑仍限定单Redis持久实例；Redis丢失epoch后**不能自动初始化**。必须fence所有执行者、核对在途/孤儿/旧路径未知工作后做受控恢复。关闭开关不是恢复方法。Redis Cluster/自动failover未验收。
+
+## 当前全球用户容量状态
+
+Redis user slot 与 PostgreSQL lease 现在保存同一 `global_user_slot` 关联；unknown lease不释放，reconciler续期。grouped开关开启时，Redis epoch必须存在且配置为 `noeviction`；FLUSHDB/epoch丢失后所有旧/新 user slot申请fail closed。这个设计保留现有 Redis global user cap，不宣称 PostgreSQL与Redis跨存储获得原子事务。

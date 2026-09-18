@@ -217,3 +217,7 @@
 - INCOMPLETE → INCOMPLETE：141
 
 完整 suite 两边均有78个失败测试事件和141个因父测试中断/未完成事件；这只表明最终当前 HEAD 与 fde7e8ec4 的整套结果计数相同。逐项的“相同”不能归因于基线，必须结合单测重跑和调用路径；WS/流错误代表性单测已重跑，仍需对其余失败单独归因。
+
+## 压测解释
+
+十分钟旧运行使用30秒请求deadline；C50/I3、C200/I3 ownership loss发生在高锁等待超过该deadline后，BeginDispatch按设计拒绝过期lease。修正发生器使用2分钟deadline，5秒六组合均通过；完整6×10分钟矩阵尚未重跑，性能继续PARTIAL。
