@@ -136,6 +136,9 @@ func TestMain(m *testing.M) {
 	_ = integrationRedis.Close()
 	_ = integrationDB.Close()
 
+	// os.Exit skips defers; terminate only this harness's own containers here.
+	_ = redisContainer.Terminate(ctx)
+	_ = pgContainer.Terminate(ctx)
 	os.Exit(code)
 }
 
