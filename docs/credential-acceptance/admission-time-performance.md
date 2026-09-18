@@ -44,3 +44,9 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 - 最后ledger count查询的EXPLAIN实际过滤1292条RELEASED历史记录，访问57个shared块，执行2.931ms；当前索引只按principal定位再过滤state。这支持增加活跃ledger的部分索引，不能推断所有SQL都由历史扫描主导。
 
 此次测量说明长SQL串行临界区让24个数据库连接排在同一用户行锁上，其余调用在pool等待。持锁阶段的多轮往返与历史扫描是可测成本；先保留权限/账本/候选锁检查，缩减无队列时的计算与写入往返，再用相同发生器对照。不能把持锁14.69ms写成事务p95达标。
+
+### P1：活跃 ledger 索引
+
+新增前向迁移258，仅索引 `state <> RELEASED` 的principal；对账SQL/状态集合/容量不变。与P0相同30秒C200/I16命令（另加时间/借用回归过滤）运行通过，日志 `profile-index-C200_I16.log`。准入call p95 4658.77ms、事务p95 303.84ms、ledger SQL均值0.897ms；吞吐29.41/s。**未观察到调用尾延迟改善**，不能把索引当作池排队问题的解决。索引用于避免终结历史继续扩大扫描，EXPLAIN与持续矩阵另存。
+
+迁移在声明的停机窗口执行，普通CREATE INDEX会暂时阻挡该表写入；不在活跃大表上承诺无锁在线迁移。回滚保留加法索引即可，不删除lease，不改变准入事实源。
