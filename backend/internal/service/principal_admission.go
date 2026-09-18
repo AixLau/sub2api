@@ -20,6 +20,7 @@ const (
 )
 
 var ErrAdmissionStoreUnavailable = errors.New("ADMISSION_STORE_UNAVAILABLE")
+var ErrAdmissionLocalQueueFull = errors.New("ADMISSION_LOCAL_QUEUE_FULL")
 var ErrAdmissionOwnership = errors.New("ADMISSION_OWNERSHIP_LOST")
 
 type AdmissionInput struct {

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"sync"
 	"time"
 
@@ -10,14 +11,16 @@ import (
 )
 
 // A bounded local database-access queue, not an execution-capacity authority.
-// Durable offer owners and the queue pump go before fresh registrations so a
-// new burst cannot consume the owners' entire response window before they run.
-// At most one admission/advance transaction leaves this queue per node.
+// Durable offer owners and queue pumps have bounded priority: at most one
+// offer batch can pass a waiting fresh registration. Each class is FIFO. The
+// bound is in completed access turns, not wall time or execution capacity.
 type credentialAdmissionTurn struct {
 	mu             sync.Mutex
 	busy           bool
+	offeredRun     int
 	offered, fresh []*credentialTurnWaiter
 }
+
 type credentialTurnWaiter struct {
 	ctx                context.Context
 	ready              chan struct{}
@@ -29,14 +32,27 @@ func (q *credentialAdmissionTurn) acquire(ctx context.Context, offered bool) err
 		return err
 	}
 	q.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		q.mu.Unlock()
+		return err
+	}
 	if !q.busy {
 		q.busy = true
+		q.offeredRun = 0
+		if offered {
+			q.offeredRun = 1
+		}
 		q.mu.Unlock()
 		return nil
 	}
 	if len(q.offered)+len(q.fresh) >= 256 {
+		// A cancelled caller may not yet have run its cancellation branch.
+		// Queue capacity counts live waiters, even in that scheduling window.
+		q.removeCancelledLocked()
+	}
+	if len(q.offered)+len(q.fresh) >= 256 {
 		q.mu.Unlock()
-		return service.ErrAdmissionStoreUnavailable
+		return service.ErrAdmissionLocalQueueFull
 	}
 	w := &credentialTurnWaiter{ctx: ctx, ready: make(chan struct{})}
 	if offered {
@@ -47,22 +63,29 @@ func (q *credentialAdmissionTurn) acquire(ctx context.Context, offered bool) err
 	q.mu.Unlock()
 	select {
 	case <-w.ready:
-		return nil
 	case <-ctx.Done():
-		q.mu.Lock()
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if err := ctx.Err(); err != nil {
 		w.cancelled = true
 		if w.granted {
+			// Ownership has transferred, but acquire has not returned it to
+			// the caller. Pass it on exactly once under the same mutex.
 			q.releaseLocked()
+		} else {
+			q.removeCancelledLocked()
 		}
-		q.mu.Unlock()
-		return ctx.Err()
+		return err
 	}
+	return nil
 }
 func (q *credentialAdmissionTurn) release() { q.mu.Lock(); defer q.mu.Unlock(); q.releaseLocked() }
 func (q *credentialAdmissionTurn) releaseLocked() {
 	for len(q.offered) > 0 || len(q.fresh) > 0 {
 		queue := &q.offered
-		if len(*queue) == 0 {
+		offered := len(q.offered) > 0 && (len(q.fresh) == 0 || q.offeredRun < credentialOfferBatch)
+		if !offered {
 			queue = &q.fresh
 		}
 		w := (*queue)[0]
@@ -71,11 +94,23 @@ func (q *credentialAdmissionTurn) releaseLocked() {
 		if w.cancelled || w.ctx.Err() != nil {
 			continue
 		}
+		if offered {
+			q.offeredRun = min(q.offeredRun+1, credentialOfferBatch)
+		} else {
+			q.offeredRun = 0
+		}
 		w.granted = true
 		close(w.ready)
 		return
 	}
 	q.busy = false
+	q.offeredRun = 0
+}
+
+func (q *credentialAdmissionTurn) removeCancelledLocked() {
+	cancelled := func(w *credentialTurnWaiter) bool { return w.cancelled || w.ctx.Err() != nil }
+	q.offered = slices.DeleteFunc(q.offered, cancelled)
+	q.fresh = slices.DeleteFunc(q.fresh, cancelled)
 }
 
 // Contention before registration stays in the bounded local access queue. It
