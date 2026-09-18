@@ -75,11 +75,11 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
 	NewUpstreamPrincipalReader,
-	NewPrincipalAdmissionStore,
+	ProvidePrincipalAdmissionStore,
 	NewCredentialRouteStore,
 	ProvideCredentialGlobalUserSlots,
 	NewCredentialRefreshStore,
-	NewCredentialOperations,
+	ProvideCredentialOperations,
 	NewCredentialInstanceLifecycle,
 	NewCredentialMigrationStore,
 	NewCredentialImportRepository,
@@ -255,12 +255,12 @@ func ProvideRedis(cfg *config.Config) *redis.Client {
 	return InitRedis(cfg)
 }
 
-func ProvideCredentialGlobalUserSlots(db *sql.DB, rdb *redis.Client, cfg *config.Config, cache service.ConcurrencyCache) (service.CredentialGlobalUserSlots, error) {
+func ProvideCredentialGlobalUserSlots(db *sql.DB, rdb *redis.Client, cfg *config.Config, cache service.ConcurrencyCache, store service.PrincipalAdmissionStore) (service.CredentialGlobalUserSlots, error) {
 	if !cfg.Gateway.MultiCredentialHTTPEnabled {
 		return nil, nil
 	}
 
-	guard, err := newCredentialGlobalUserSlots(db, rdb, cache)
+	guard, err := newCredentialGlobalUserSlots(store.(*principalAdmissionStore).criticalDB(), rdb, cache)
 	if err == nil {
 		cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
 	}

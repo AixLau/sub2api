@@ -195,7 +195,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	publicTransitHandler := handler.NewPublicTransitHandler(publicTransitService, settingService)
 	credentialMigrationStore := repository.NewCredentialMigrationStore(db)
 	credentialMigrationHandler := admin.NewCredentialMigrationHandler(credentialMigrationStore)
-	credentialOperations := repository.NewCredentialOperations(db)
+	principalAdmissionStore, err := repository.ProvidePrincipalAdmissionStore(db, configConfig)
+	if err != nil {
+		return nil, err
+	}
+	credentialOperations := repository.ProvideCredentialOperations(principalAdmissionStore)
 	credentialInstanceLifecycle := repository.NewCredentialInstanceLifecycle(db)
 	credentialOperationsHandler := admin.NewCredentialOperationsHandler(credentialOperations, configConfig, credentialInstanceLifecycle)
 	credentialImportStore := repository.NewCredentialImportRepository(db)
@@ -224,9 +228,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	grokQuotaService := service.ProvideGrokQuotaService(accountRepository, proxyRepository, grokTokenProvider, httpUpstream, configConfig, usageLogRepository, settingService)
 	openAIQuotaService := service.ProvideOpenAIQuotaService(accountRepository, proxyRepository, openAITokenProvider, privacyClientFactory, openAIGatewayService)
 	usageCache := service.NewUsageCache()
-	principalAdmissionStore := repository.NewPrincipalAdmissionStore(db)
 	credentialRouteStore := repository.NewCredentialRouteStore(db)
-	credentialGlobalUserSlots, err := repository.ProvideCredentialGlobalUserSlots(db, redisClient, configConfig, concurrencyCache)
+	credentialGlobalUserSlots, err := repository.ProvideCredentialGlobalUserSlots(db, redisClient, configConfig, concurrencyCache, principalAdmissionStore)
 	if err != nil {
 		return nil, err
 	}

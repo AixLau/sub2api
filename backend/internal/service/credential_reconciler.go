@@ -8,6 +8,7 @@ import (
 )
 
 type CredentialReconciler struct {
+	closeAdmission  func() error
 	globalUserSlots CredentialGlobalUserSlots
 	usageStore      CredentialUsageReceiptStore
 	gateway         *OpenAIGatewayService
@@ -69,4 +70,13 @@ func (r *CredentialReconciler) Start() {
 		}
 	}()
 }
-func (r *CredentialReconciler) Stop() { r.once.Do(func() { close(r.stop) }); <-r.done }
+func (r *CredentialReconciler) Stop() {
+	r.once.Do(func() {
+		close(r.stop)
+		<-r.done
+		if r.closeAdmission != nil {
+			_ = r.closeAdmission()
+		}
+	})
+	<-r.done
+}

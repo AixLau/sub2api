@@ -16,7 +16,7 @@ func (s *principalAdmissionStore) SaveCredentialUsageReceipt(ctx context.Context
 	if len(payload) > 65536 {
 		return errors.New("CREDENTIAL_USAGE_RECEIPT_TOO_LARGE")
 	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO credential_usage_receipts(lease_id,receipt,state,reason)
+	result, err := s.criticalDB().ExecContext(ctx, `INSERT INTO credential_usage_receipts(lease_id,receipt,state,reason)
  SELECT l.id,$2::jsonb,CASE WHEN $6 THEN 'PENDING' ELSE 'REVIEW_REQUIRED' END,CASE WHEN $6 THEN '' ELSE 'USAGE_UNKNOWN' END FROM request_leases l JOIN logical_requests r ON r.id=l.request_id JOIN credential_instances i ON i.id=l.instance_id
  WHERE l.id=$1 AND r.user_id=$3 AND r.api_key_id=$4 AND i.account_id=$5
  ON CONFLICT(lease_id) DO NOTHING`, in.LeaseID, string(payload), in.UserID, in.APIKeyID, in.AccountID, in.Result.Usage.HasBillableUsage() || in.Result.ImageCount > 0)
@@ -29,7 +29,7 @@ func (s *principalAdmissionStore) SaveCredentialUsageReceipt(ctx context.Context
 	}
 	if n == 0 {
 		var stored []byte
-		if err = s.db.QueryRowContext(ctx, `SELECT receipt FROM credential_usage_receipts WHERE lease_id=$1`, in.LeaseID).Scan(&stored); err != nil {
+		if err = s.criticalDB().QueryRowContext(ctx, `SELECT receipt FROM credential_usage_receipts WHERE lease_id=$1`, in.LeaseID).Scan(&stored); err != nil {
 			return err
 		}
 		var original service.CredentialUsageReceipt
@@ -44,7 +44,7 @@ func (s *principalAdmissionStore) SaveCredentialUsageReceipt(ctx context.Context
 	return nil
 }
 func (s *principalAdmissionStore) PendingCredentialUsageReceipts(ctx context.Context) ([]service.CredentialUsageReceipt, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT receipt FROM credential_usage_receipts WHERE state='PENDING' ORDER BY created_at LIMIT 20`)
+	rows, err := s.criticalDB().QueryContext(ctx, `SELECT receipt FROM credential_usage_receipts WHERE state='PENDING' ORDER BY created_at LIMIT 20`)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *principalAdmissionStore) PendingCredentialUsageReceipts(ctx context.Con
 	return out, rows.Err()
 }
 func (s *principalAdmissionStore) CompleteCredentialUsageReceipt(ctx context.Context, lease, state, reason string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE credential_usage_receipts SET state=$2,reason=$3,recorded_at=CASE WHEN $2='RECORDED' THEN CURRENT_TIMESTAMP END WHERE lease_id=$1 AND state='PENDING'`, lease, state, reason)
+	_, err := s.criticalDB().ExecContext(ctx, `UPDATE credential_usage_receipts SET state=$2,reason=$3,recorded_at=CASE WHEN $2='RECORDED' THEN CURRENT_TIMESTAMP END WHERE lease_id=$1 AND state='PENDING'`, lease, state, reason)
 	return err
 }
 
