@@ -128,6 +128,11 @@
       "path": "/tmp/sub2api-admission-time-performance/current-failure-comparison.json",
       "sha256": "43b6f71417f9dc68751b59abfe1802b31b9bb0a76d84171120c1caf4a9b937f6",
       "bytes": 19977
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/rollout-fencing-current.log",
+      "sha256": "9f8ed9746ce932ee60b4fc21a8a12604711b9f77acadf618a95b7c651f6c0dd5",
+      "bytes": 2473
     }
   ],
   "runs": [

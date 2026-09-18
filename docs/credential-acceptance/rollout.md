@@ -35,3 +35,12 @@ fencing采用Docker实际控制：关闭restart policy → stop（最长30秒）
 第一版部署限制：单PostgreSQL主库、单共享Redis（noeviction）、同主机受控网关清单。拒绝把自动HA、只读副本准入、Redis Cluster或跨地域双活标成已支持；更换拓扑必须保持功能关闭并另行验收。现有CLI能核验受控容器/网络，不能从DSN自动证明外部数据库没有HA或副本切换，部署操作者仍须核对该限制。此报告没有新增拓扑自动探测代码，也没有重跑生产迁移。
 
 真实compact只接受provider契约或可信provider集成验证；受控mock只证明本地适配器满足mock，不可用于批准真实端点能力。真实导入无verifier继续UNVERIFIED，迁移/canary前置检查不放宽。
+
+
+当前专项 HEAD 受控复核（代码快照与专项测试相同，文档提交不改产品代码）：
+
+```sh
+TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^(TestCredentialComposeFence|TestCredentialRolloutUnverified|TestCredentialMigrationPreviewAndRollback)' -count=1 -v
+```
+
+实际通过，日志 `/tmp/sub2api-admission-time-performance/rollout-fencing-current.log`。这证明合成 Compose fence、迁移预览/安全回滚和 UNVERIFIED 在 fence 前阻断；不证明真实旧完整网关镜像、可信 provider verifier 或未支持 HA 拓扑已完成正式迁移。生产迁移仍需先满足身份契约和声明拓扑限制。
