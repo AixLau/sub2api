@@ -1,0 +1,1532 @@
+[
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestCredentialHTTPHandlerFailClosedBeforeLegacySlots",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestCredentialHTTPHandlerFailClosedBeforeLegacySlots/mixed",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestCredentialHTTPHandlerFailClosedBeforeLegacySlots/store_down",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestDingTalkOAuthStart_Disabled",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestGatewayAdmissionError_BareResponsesFailedIncludesGatewayCode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestGatewayHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestGatewayModels_CompositeCustomModelsListFiltersAcrossConcretePlatforms",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIAdmissionError_ResponsesFailedIncludesGatewayCode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_BareResponsesRouteEmitsResponseFailed",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingCarriesCreatedAt",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingIncludesModel",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/双引号+反斜杠",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/反斜杠",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/换行与制表",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingJSONEscaping/普通",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingOmitsEmptyModel",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIHandleStreamingAwareError_ResponsesStreamingReusesRequestID",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestResolveOpenAIMessagesDispatchMappedModel_CompositeCNTargetsSkipGroupMapping",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/anthropic/fallback",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/anthropic/mapped",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/composite/fallback",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/composite/mapped",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/gemini/fallback",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/gemini/mapped",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/grok/fallback",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/grok/mapped",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/openai/fallback",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrieveModelMatchesVisibleCatalogue/openai/mapped",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors/hidden",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler",
+    "test": "TestRetrievePinnedModelPreservesMetadataFilteringAndErrors/metadata",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+    "test": "TestCredentialImportHandlerDoesNotEchoSecrets",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+    "test": "TestDashboardNativeCompactionFilterPropagatesAlongsideTransport",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+    "test": "TestDashboardNativeCompactionFilterRejectsInvalidBoolean",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/handler/admin",
+    "test": "TestUpstreamPrincipalReadBoundary",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+    "test": "TestCredentialHTTPGuardAT21AT40",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/repository",
+    "test": "TestPrincipalAdmissionDatabaseUnavailable",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditConfigCASSecretRoundTripInvalidationAndTTL",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditDatabasePersistsFullPromptOnEventsOnly",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditMigrationSchemaAndLeakageGate",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryAdmissionClaimFencingAndEventTransaction",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryConcurrentDuplicateAdmissionCreatesOneJob",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryDeduplicatesPendingAndRecentSuccessfulScans",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryDeduplicationSeparatesIdentityAndPolicy",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryForeignKeysFiltersAndStableIdentitySnapshots",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditRepositoryHighWaterAndSafeDeletion",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptAuditServiceConfirmationKeepsPostPreviewEventsAndConcurrentDeletesAreSafe",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestPromptRuntimeAggregatesConfigWorkersQueueRedisEndpointsAndGuardMetrics",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/securityaudit",
+    "test": "TestRedisPayloadStoreRoundTripTTLNamespaceAndDelete",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_GetOpenAIUsage_DoesNotPromoteCodexExtraToRateLimit",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_GetUsageBatch_BestEffortByAccount",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_PendingWindowStartIsVisible",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_PersistOpenAICodexProbeSnapshotOnlyUpdatesExtra",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_SuccessfulProbeClearsGlobal429State",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_WindowStartRemainsPendingDuringClaim",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAccountUsageService_WindowStartRequiresSuccessfulClaim",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestApplyGrokImagineImageGeometryKeepsClientGeometry",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestApplyGrokImagineImageGeometryMapsOpenAISize",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestApplyOpenAICompatModelNormalization",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestAdvertisesPriorityServiceTierForFastGPTModels",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestAdvertisesUltrafastServiceTierForSol",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupAdvertisesOfficialGrokResponsesImageInput",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupAdvertisesOfficialOpenAIResponsesImageInput",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupAdvertisesSearchOnlyForChatBridgeRoutes",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupCorrectsOfficialAstraStaleModalities",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupDoesNotAdvertiseNoneWhenAccountReasoningConflicts",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupFallsBackToSchedulableWhenAvailabilityLookupFails",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupFallsBackWhenCapabilityLookupFails",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupIgnoresPersistentlyDisabledMappedAccounts",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithoutLeakingAlias",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupIntersectsTransientlyUnschedulableMappedAccounts",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupKeepsCrossPlatformAliasAmbiguityClosed",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupLoadsAccountsOnce",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupOmitsDedicatedMediaTargetAlias",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupPrefersSyncedOpenAIImageCapabilities",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupPreservesCompatibleAstraTextOnlyMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesAccountMappingOwnershipAndMappedModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesExplicitCompositeResponsesRouteModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesFallbackWhenTextOnlyPlatformHasNoSnapshot",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesMappedTargetMetadataForCompositeAlias",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesNoneForExplicitNonReasoningMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesProviderImageCapabilities",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesSafeFallbackForConflictingAliasTargets",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestForGroupUsesSyncedAccountMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestKeepsKnownReasoningChoices",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestLeavesServiceTiersEmptyForOtherModels",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestOmitsDedicatedImageModels",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexModelsManifestUsesSingleNoneReasoningChoiceForCustomModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildCodexUsageProgressFromExtra_ZerosExpiredWindow",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildGroupConfiguredCodexModelsManifestExpandsSelectedModelCoveredByWildcardMapping",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildGroupConfiguredCodexModelsManifestFallsThroughWithoutConfiguration",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildGroupConfiguredCodexModelsManifestIgnoresPersistentlyDisabledMappedAccounts",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildGroupConfiguredCodexModelsManifestIntersectsTransientlyUnschedulableMappedAccounts",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestBuildOpenAIEmbeddingsURL",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCalculateAudioCost",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCalculateSearchCost",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateAccountRetryReusesPriorCandidateDecision",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateCheckAllowsMissWithoutCallingReviewers",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateCheckFailsClosedWhenCriticalSemanticReviewUnavailable",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateCheckRoutesCyberCandidateToSemanticReview",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateCheckUsesOneBoundedOrdinaryPayloadAndCachesRetry",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateSemanticReviewRequiresFinalReviewerForAmbiguousHighRisk",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCandidateSemanticReviewRequiresFinalReviewerForLowRiskAmbiguity",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCheckAccountAttemptDoesNotEnqueueAfterSynchronousSemanticReview",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCheckAccountAttemptObserveMissingProviderKeyPersistsError",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCheckAccountAttemptObserveMissingProviderKeyPersistsErrorWithoutSemanticRouter",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowAccountIntersection",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowAccountIntersection/independent_minima",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowAccountIntersection/invalid_maximum_uses_known_default",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowAccountIntersection/legacy_snapshot_caps_maximum",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowRegistryEnrichment",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowRegistryEnrichment/preserve_upstream_limits",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowSyncRoundTrip",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowSyncRoundTrip/distinct_windows",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCodexContextWindowSyncRoundTrip/maximum_below_default",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCollectOpenAIEncryptedContentDigestsRaw",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexManifestSearchCapabilityPreservesUpstreamAndFailsClosed",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientFillsMissingProviderFieldsWithoutOverwritingExplicitMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientFiltersOfficialNonAgentModels",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientMarksOnlyOfficialVisionGPTImageInput",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientPreservesProviderMetadata",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedNativeManifest",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientUsesKnownGPTImageFallback",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConvertedModelList",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheckMissingProviderKeyEnqueuesSemanticFallbackInObserveMode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_ConfiguredCyberScanKeywordDowngradesLocalPathToReview",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_ContextualCyberIntentBlocksPublicPenetration",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_KeywordsIgnoredInObserveMode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_ObserveModeIgnoresBlockingHashCache",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_TriggerAllAmbientUIRejectIsRecordedWithoutBlocking",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_TriggerAllAuditsMissWithoutKeyword",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_TriggerAllHighRiskModelRejectBlocks",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_TriggerAllRequiresFinalReviewer",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlocking",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationConfigNormalize_DefaultsAuditScopeAndPrivacyOptions",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationLoadConfig_LegacyConfigDefaultsModelFilterToAll",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationLoadConfig_LegacyKeywordOnlyConfigKeepsRuleOnlyMode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationLoadConfig_MissingConfigUsesCandidateOnly",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationStatusEffectiveProtection",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationUpdateConfig_EngineModeUpdateOverridesLegacyKeywordMode",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestContentModerationUpdateConfig_KeywordModeUpdateWithoutEngineModeKeepsLegacyUICompatible",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestConvertOpenAIModelListToCompleteCodexManifest",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsFromJSONBytes",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsFromJSONBytes_FallsBackWhenNestedOutputNull",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsFromJSONBytes_PrefersNestedResponse",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsFromSSEBodyDedups",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsInSSEDataDedup_LiveStreamPath",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsInSSEDataDedup_MultipleNoIDCalls",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCountGrokNativeSearchCallsInSSEDataDedup_NoIDStillDedups",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCreateOpenAITestPayloadHasProbeInputAndInstructions",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialFailureRetryAfterNeverShortened",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPAmbiguousCarriersRejected",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPFinalReportsThreeEndpoints",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPFinalReportsThreeEndpoints/compact",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPFinalReportsThreeEndpoints/passthrough",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPFinalReportsThreeEndpoints/responses",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPPartialStreamAndReplay",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPRejectsWebSocketSnapshot",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialHTTPStreamFailureIsTerminalButNotSuccess",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialImportRequiresProviderEvidence",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialImportScopesWorkspaceAndUser",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialQueueBudgetBoundsAndIdempotentRelease",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialRefreshRemoteSuccessLocalFailureKeepsEncryptedResult",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialTargetsAT10",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestCredentialVaultAuthentication",
+    "baseline": "NOT_RUN",
+    "head": "PASS"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestDataManagementService_DeprecatedRPCMethods",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestDataManagementService_EnsureAgentEnabled_Deprecated",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestDataManagementService_GetAgentHealth_Deprecated",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestEstimateSetupTokenUsage_ActiveWindowPreservesUtilization",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestEstimateSetupTokenUsage_ExpiredWindowZeroes",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestExtractGrokVideoBillingFromStatusBodyFallsBackToPending",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestExtractGrokVideoBillingFromStatusBodyPrefersUpstreamParams",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestExtractGrokVideoBillingRejectsNonDoneStatus",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestExtractOpenAICodexProbeUpdatesAccepts429WithCodexHeaders",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestFilterCodexModelIDsForGroupOmitsWildcardKeys",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_APIKeyMetadataSessionSurvivesChangingCacheControlAnchorAfterContinuationDisabled",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_AttachesPreviousResponseIDForCompatContinuation",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_AutoDerivesPromptCacheKeyWhenMessagesDispatchHasNoSessionID",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_DisablesAPIKeyContinuationWhenUpstreamRequiresWebSocketV2",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_DoesNotAttachPreviousResponseIDForOAuthCompat",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_DoesNotAutoDerivePromptCacheKeyForNonCodexModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_ForcedCodexInstructionsTemplatePrependsRenderedInstructions",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_ForcedCodexInstructionsTemplateUsesCachedTemplateContent",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_GPT6AstraPromptCacheIdentityStableAcrossAppendedTurns",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_InjectsPromptCacheKeyForAPIKeyMessagesDispatch",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_MappedClaudeModelAcceptsChatUsageShape",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_NormalizesRoutingAndEffortForGpt54XHigh",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthAddsClaudeCodeTodoGuardForCompatModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthCompatKeepsFullReplayForCacheGrowth",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthDigestFallbackReusesTurnStateWithoutExplicitKey",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthKeepsSystemAsDeveloperInput",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthMetadataSessionSurvivesChangingCacheControlAnchor",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthMetadataSessionSurvivesDigestPrefixRewrite",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_OAuthPreservesClaudeCodeToolCallID",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_PreservesMaxForFinalGPT56ResponsesModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_PreviousResponseIDKeepsMultiToolCallContext",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_PreviousResponseUnavailableRetryFailureDoesNotLoop",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_ReplaysFullToolHistoryWhenPreviousResponseUnavailable",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_ReusesOAuthCodexTurnState",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_StoresStreamingResponseIDWithoutUsage",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_TrimsFullReplayOnlyForCodexCompatModels",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestForwardAsAnthropic_UsesExactFableMessagesDispatchModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGetOpenAIUsage_SparkShadow_WritesExtraAndReturnsNonEmptyWindows",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGrokImagineAspectRatioFromSize",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGrokMediaUsageFromResponseVideoCreateDoesNotBill",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGrokMediaUsageFromResponseVideoStatusBillsOnOfficialDone",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGrokVideoE2EDurationFromCreatedAt",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestGrokVideoPendingCreatedAtStampOnStoreShape",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestIsGrokVideoStatusBillable",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestIsRetryableCodexModelsManifestStatus",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMerchantSSORechargeRecordsMapFieldsAndDeduplicate",
+    "baseline": "SKIP",
+    "head": "SKIP"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeBalanceHistoryCodesIncludesAffiliateTransfersByDefault",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeBalanceHistoryCodesPaginatesAfterCombiningSources",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeGroupConfiguredCodexModelsFiltersAccountMappedAutoReviewByDefault",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeGroupConfiguredCodexModelsFiltersAutoReviewByDefault",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeGroupConfiguredCodexModelsHonorsCustomListAndFinalETag",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeGroupConfiguredCodexModelsInjectsCurrentGroupAliases",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeGroupConfiguredCodexModelsKeepsExplicitAutoReviewSelection",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestMergeUserHistoryCodesIncludesSubscriptionsInChronologicalOrder",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestNormalizeOpenAICompatRequestedModel",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestOpenAICompatPreviousResponseUnavailableRecognitionIsStrict",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestOpenAIQuotaShowsAvailableRequiresExplicitAllowedState",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestOpenAIWSStateStoreInvalidEncryptedContentLineage",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestOpenAIWindowStartDueAtPreservesRandomDelayForExpiredRows",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestParseGrokMediaRequestKeepsImageResolutionOutOfVideoNormalize",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestPromptInjectionV2FailClosedNeverFallsBackToGeneralReviewer",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestPromptInjectionV2GlobalBaselineRunsBeforeGroupScopeAndNoHitSkipsReviewer",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestRandomOpenAIProbeIntervalWithinRange",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestRandomOpenAIWindowStartDelayWithinRange",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestResolveDefaultTierID",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestSanitizeGrokMediaForwardBodyConvertsImageSize",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestSelectedAccountBaselineDecisionIsReusedByCandidateAttempt",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestSetOpenAIFastPolicySettings_Validation",
+    "baseline": "FAIL",
+    "head": "FAIL"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestShouldProbeOpenAICodexSnapshotForceReschedules",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestShouldProbeOpenAICodexSnapshotUsesRandomNextProbeTime",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestShouldRefreshOpenAICodexSnapshot",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestShouldRefreshOpenAICodexSnapshot_SparkShadowIgnoresWSv2",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestStripOpenAIInvalidEncryptedContentFromReplayItems",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestStripOpenAIInvalidEncryptedContentItems",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestStripOpenAIInvalidEncryptedContentRaw",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestSyncActiveToPassive_SkipsSessionWindowEndWhenResetMissing",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestSyncActiveToPassive_WritesFiveHourSessionWindowEnd",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  },
+  {
+    "package": "github.com/Wei-Shaw/sub2api/internal/service",
+    "test": "TestUserSubscriptionHistoryCodeIncludesSubscriptionDetails",
+    "baseline": "INCOMPLETE",
+    "head": "INCOMPLETE"
+  }
+]

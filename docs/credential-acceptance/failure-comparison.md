@@ -206,3 +206,14 @@
 | service | `TestUserSubscriptionHistoryCodeIncludesSubscriptionDetails` | 0 | 0 | 两边单独通过（整套顺序/中断差异，仍需定位） |
 
 汇总：{'两边独立失败': 55, '两边单独通过（整套顺序/中断差异，仍需定位）': 141}。所有子测试逐项结果另存JSON，不能把父测试通过概括成全套通过。
+
+## 当前最终 HEAD 对照
+
+当前最终 HEAD 为 `e00ea2cab` 之后的收尾提交；完整 suite 重新运行日志为 `/tmp/sub2api-acceptance-closure/head-final-full.jsonl`，基线日志为 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`。逐测试（含父测试未完成）机器表见 `full-suite-comparison-final.json`。结果按整套运行事件统计：
+
+- NOT_RUN → PASS：22
+- SKIP → SKIP：14
+- FAIL → FAIL：78
+- INCOMPLETE → INCOMPLETE：141
+
+完整 suite 两边均有78个失败测试事件和141个因父测试中断/未完成事件；这只表明最终当前 HEAD 与 fde7e8ec4 的整套结果计数相同。逐项的“相同”不能归因于基线，必须结合单测重跑和调用路径；WS/流错误代表性单测已重跑，仍需对其余失败单独归因。
