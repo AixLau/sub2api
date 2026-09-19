@@ -13,8 +13,10 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const (
@@ -236,13 +238,22 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	ownerID := int64(0)
+	if h.credentialImports != nil && h.credentialCreator != nil {
+		subject, ok := middleware.GetAuthSubjectFromContext(c)
+		if !ok || subject.UserID <= 0 {
+			response.Unauthorized(c, "Authorization required")
+			return
+		}
+		ownerID = subject.UserID
+	}
 
 	executeAdminIdempotentJSON(c, "admin.accounts.import_data", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		return h.importData(ctx, req)
+		return h.importData(ctx, req, ownerID)
 	})
 }
 
-func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) (DataImportResult, error) {
+func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest, ownerID int64) (DataImportResult, error) {
 	skipDefaultGroupBind := true
 	if req.SkipDefaultGroupBind != nil {
 		skipDefaultGroupBind = *req.SkipDefaultGroupBind
@@ -433,6 +444,16 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 
 		enrichCredentialsFromIDToken(&item)
 
+		if h.credentialImports != nil && h.credentialCreator != nil && item.Platform == service.PlatformOpenAI && (item.Type == service.AccountTypeOAuth || item.Type == service.AccountTypeSetupToken) {
+			if err := h.importOpenAIMultiCredential(ctx, ownerID, item, proxyID); err != nil {
+				result.AccountFailed++
+				result.Errors = append(result.Errors, DataImportError{Kind: "account", Name: item.Name, Message: err.Error()})
+				continue
+			}
+			result.AccountCreated++
+			continue
+		}
+
 		accountInput := &service.CreateAccountInput{
 			Name:                 item.Name,
 			Notes:                item.Notes,
@@ -486,6 +507,50 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 	}
 
 	return result, nil
+}
+
+func (h *AccountHandler) importOpenAIMultiCredential(ctx context.Context, ownerID int64, item DataAccount, proxyID *int64) error {
+	accessToken, _ := item.Credentials["access_token"].(string)
+	if accessToken == "" {
+		accessToken, _ = item.Credentials["token"].(string)
+	}
+	refreshToken, _ := item.Credentials["refresh_token"].(string)
+	clientID, _ := item.Credentials["client_id"].(string)
+	if accessToken == "" {
+		return service.ErrCredentialUnverified
+	}
+	operation := uuid.NewString()
+	view, err := h.credentialImports.Import(ctx, ownerID, operation, service.CredentialSecret{AccessToken: accessToken, RefreshToken: refreshToken, ClientID: clientID})
+	if err != nil {
+		return err
+	}
+	if view.State != "VERIFIED" {
+		return service.ErrCredentialUnverified
+	}
+	max := item.Concurrency
+	if max < 0 {
+		max = 0
+	}
+	instanceName := strings.TrimSpace(item.Name)
+	if instanceName == "" {
+		instanceName = "OpenAI instance"
+	}
+	principalName := strings.TrimSpace(item.Name)
+	if principalName == "" {
+		principalName = instanceName
+	}
+	extra := map[string]any{}
+	for _, key := range []string{"openai_passthrough", "openai_oauth_passthrough", "openai_responses_flatten_namespaces", "openai_long_context_billing_enabled", "codex_cli_only", "codex_cli_only_allow_app_server", "openai_oauth_responses_websockets_v2_enabled", "codex_fingerprint_mode", "openai_compact_mode", "openai_oauth_responses_websockets_v2_mode", "upstream_request_id_header"} {
+		if value, ok := item.Extra[key]; ok {
+			extra[key] = value
+		}
+	}
+	_, err = h.credentialCreator.CreateCredentialPrincipal(ctx, ownerID, uuid.NewString(), service.CreateCredentialPrincipalInput{
+		Extra: extra, Name: principalName, TotalConcurrency: max, ProxyID: proxyID, Priority: item.Priority, RateMultiplier: item.RateMultiplier,
+		Activate:  h.cfg != nil && h.cfg.Gateway.MultiCredentialHTTPEnabled,
+		Instances: []service.CreateCredentialInstanceInput{{ImportID: view.ID, Name: instanceName, Weight: 1, HardMax: &max}},
+	})
+	return err
 }
 
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {

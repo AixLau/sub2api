@@ -66,12 +66,15 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
+	credentialImports       *service.CredentialImportService
+	credentialCreator       service.CredentialPrincipalCreator
 	cfg                     *config.Config
 }
 
 func (h *AccountHandler) SetPrincipalHandler(principals *UpstreamPrincipalHandler) {
 	h.principals = principals
 }
+
 func (h *AccountHandler) enrichAccountPrincipals(ctx context.Context, items []AccountWithConcurrency) error {
 	if h.principals == nil || len(items) == 0 {
 		return nil

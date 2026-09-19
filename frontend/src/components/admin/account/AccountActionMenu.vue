@@ -14,6 +14,9 @@
             <button class="flex w-full items-center gap-2 px-4 py-2 text-sm" @click="$emit('manage-instances', account); $emit('close')">{{ t('admin.accounts.instances.manage') }}</button>
           </template>
           <template v-else-if="account">
+            <div v-if="isLegacyOpenAIMultiCredential" class="mx-3 mb-1 rounded bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              {{ t('admin.accounts.instances.pendingLegacyHint') }}
+            </div>
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -141,6 +144,11 @@ const canQueryUpstreamUsage = computed(() => props.account?.platform === 'openai
 const isShadow = computed(() => props.account?.parent_account_id != null)
 // A "parent" OpenAI OAuth account is one that is NOT itself a shadow (parent_account_id == null)
 const isOpenAIOAuthParent = computed(() => isOpenAIOAuth.value && !isShadow.value)
+const isLegacyOpenAIMultiCredential = computed(() =>
+  (props.account?.platform === 'openai') &&
+  (props.account?.type === 'oauth' || props.account?.type === 'setup-token') &&
+  !props.account?.principal
+)
 const supportsPrivacy = computed(() => (isAntigravityOAuth.value || isOpenAIOAuth.value) && !isShadow.value)
 const hasQuotaLimit = computed(() => {
   return (props.account?.type === 'apikey' || props.account?.type === 'bedrock') && (

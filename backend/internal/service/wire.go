@@ -939,7 +939,7 @@ func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *conf
 func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
 	// Missing keys disable import; only authenticated provider claims establish ownership.
 	vault, _ := NewCredentialVaultWithFingerprintKey(cfg.Gateway.CredentialVaultKey, cfg.Gateway.CredentialFingerprintKey)
-	return NewCredentialImportService(store, vault, &openAICredentialVerifier{})
+	return NewCredentialImportService(store, vault, NewOpenAICredentialVerifier())
 }
 
 var ProviderSet = wire.NewSet(

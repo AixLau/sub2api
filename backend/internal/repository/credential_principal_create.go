@@ -21,6 +21,11 @@ func NewCredentialPrincipalCreator(db *sql.DB) service.CredentialPrincipalCreato
 	return &credentialImportRepository{db: db}
 }
 
+type credentialPrincipalImport struct {
+	input  service.CreateCredentialInstanceInput
+	record service.CredentialImportRecord
+}
+
 func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Context, owner int64, operation string, in service.CreateCredentialPrincipalInput) (int64, error) {
 	for i := range in.Instances {
 		in.Instances[i].Weight = 1
@@ -95,11 +100,7 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 	// Imports are locked in stable order; all must validate before any account exists.
 	entries := append([]service.CreateCredentialInstanceInput(nil), in.Instances...)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ImportID < entries[j].ImportID })
-	type imported struct {
-		input  service.CreateCredentialInstanceInput
-		record service.CredentialImportRecord
-	}
-	imports := make([]imported, 0, len(entries))
+	imports := make([]credentialPrincipalImport, 0, len(entries))
 	subject := ""
 	for _, entry := range entries {
 		var rec service.CredentialImportRecord
@@ -128,12 +129,21 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 		subject = rec.SubjectKey
 		rec.RefreshFingerprint = refresh.String
 		rec.Family = family.String
-		imports = append(imports, imported{entry, rec})
+		imports = append(imports, credentialPrincipalImport{entry, rec})
 	}
 	var existing service.CredentialDuplicateLocation
 	err = tx.QueryRowContext(ctx, `SELECT COALESCE(management_account_id,0),id FROM upstream_principals WHERE tenant_id=1 AND provider='openai_oauth' AND verified_subject_key=$1`, subject).Scan(&existing.AccountID, &existing.PrincipalID)
 	if err == nil {
-		return 0, &existing
+		if _, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`); err != nil {
+			return 0, err
+		}
+		if err = attachCredentialInstancesToPrincipal(ctx, tx, owner, existing.PrincipalID, imports); err != nil {
+			return 0, err
+		}
+		if err = tx.Commit(); err != nil {
+			return 0, err
+		}
+		return existing.PrincipalID, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
@@ -201,6 +211,49 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 		return 0, err
 	}
 	return id, nil
+}
+
+// attachCredentialInstancesToPrincipal merges a verified import into an
+// existing upstream identity. The existing management account remains the
+// source of account-level settings and capacity; each imported credential gets
+// its own logical account/instance with the same routing settings.
+func attachCredentialInstancesToPrincipal(ctx context.Context, tx *sql.Tx, actor, principal int64, imports []credentialPrincipalImport) error {
+	var proxyID sql.NullInt64
+	var priority int
+	var rateMultiplier float64
+	var extra []byte
+	var principalState, routingMode string
+	if err := tx.QueryRowContext(ctx, `SELECT a.proxy_id,a.priority,COALESCE(a.rate_multiplier,1),a.extra
+FROM upstream_principals p JOIN accounts a ON a.id=p.management_account_id WHERE p.id=$1`, principal).Scan(&proxyID, &priority, &rateMultiplier, &extra); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT admin_state,routing_mode FROM upstream_principals WHERE id=$1`, principal).Scan(&principalState, &routingMode); err != nil {
+		return err
+	}
+	for _, imp := range imports {
+		instanceID, err := createCredentialInstance(ctx, tx, principal, imp.input, imp.record)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE accounts SET proxy_id=$2,priority=$3,rate_multiplier=$4,extra=$5 WHERE id=(SELECT account_id FROM credential_instances WHERE id=$1)`, instanceID, nullableInt64(proxyID), priority, rateMultiplier, string(extra)); err != nil {
+			return err
+		}
+		if principalState == "ACTIVE" && routingMode == "GROUPED" {
+			if _, err = tx.ExecContext(ctx, `UPDATE credential_instances SET admin_state='ACTIVE' WHERE id=$1`, instanceID); err != nil {
+				return err
+			}
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{"payload_hash": "merged", "principal_id": principal, "instance_count": len(imports)})
+	_, err := tx.ExecContext(ctx, `INSERT INTO credential_audit_outbox(event_id,principal_id,actor_id,version,event_type,safe_payload) VALUES($1,$2,$3,1,'PRINCIPAL_INSTANCE_ATTACHED',$4)`, uuid.NewString(), principal, actor, string(payload))
+	return err
+}
+
+func nullableInt64(v sql.NullInt64) any {
+	if v.Valid {
+		return v.Int64
+	}
+	return nil
 }
 func credentialControlError(err error) error {
 	var p *pq.Error

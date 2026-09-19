@@ -95,13 +95,16 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 		return 0, err
 	}
 	var credentials, extra []byte
-	var status, platform, kind string
+	var accountName, status, platform, kind string
 	var schedulable bool
 	var concurrency int
 	var parent sql.NullInt64
-	err = tx.QueryRowContext(ctx, `SELECT credentials,extra,status,schedulable,concurrency,platform,type,parent_account_id FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, in.AccountID).Scan(&credentials, &extra, &status, &schedulable, &concurrency, &platform, &kind, &parent)
+	err = tx.QueryRowContext(ctx, `SELECT name,credentials,extra,status,schedulable,concurrency,platform,type,parent_account_id FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, in.AccountID).Scan(&accountName, &credentials, &extra, &status, &schedulable, &concurrency, &platform, &kind, &parent)
 	if err != nil {
 		return 0, err
+	}
+	if concurrency < 0 {
+		return 0, errors.New("INVALID_LEGACY_ACCOUNT")
 	}
 	// Shadows refer to one credential source; migrating the source with existing
 	// aliases needs explicit alias mapping, so default remains blocked.
@@ -166,13 +169,42 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 	if err != nil {
 		return 0, err
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO upstream_principals(name,provider,verified_subject_key,verification_state,requested_limit,admin_state,routing_mode) VALUES('migrated account','openai_oauth',$1,'VERIFIED',$2,'PAUSED','SHADOW') RETURNING id`, subject, in.RequestedLimit).Scan(&principal)
+	// A provider subject is the merge key. An already controlled principal keeps
+	// its management account (and therefore its capacity, proxy, priority and
+	// groups); this legacy source is attached as another logical instance.
+	var existingManagement sql.NullInt64
+	var principalVersion int64
+	var principalState, principalRouting string
+	err = tx.QueryRowContext(ctx, `SELECT id,management_account_id,config_version,admin_state,routing_mode FROM upstream_principals WHERE tenant_id=1 AND provider='openai_oauth' AND verified_subject_key=$1 FOR UPDATE`, subject).Scan(&principal, &existingManagement, &principalVersion, &principalState, &principalRouting)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = tx.QueryRowContext(ctx, `INSERT INTO upstream_principals(name,provider,verified_subject_key,verification_state,requested_limit,admin_state,routing_mode) VALUES($1,'openai_oauth',$2,'VERIFIED',$3,'PAUSED','SHADOW') RETURNING id`, accountName, subject, in.RequestedLimit).Scan(&principal)
+		principalVersion = 1
+		principalState, principalRouting = "PAUSED", "SHADOW"
+	}
 	if err != nil {
 		return 0, err
 	}
+	if existingManagement.Valid {
+		// Preserve the primary account's policy on an attached source. The source
+		// row itself remains named as imported so operators can audit its origin.
+		var proxyID sql.NullInt64
+		var priority int
+		var rateMultiplier float64
+		var primaryExtra []byte
+		if err = tx.QueryRowContext(ctx, `SELECT a.proxy_id,a.priority,COALESCE(a.rate_multiplier,1),a.extra FROM accounts a WHERE a.id=$1 FOR UPDATE`, existingManagement.Int64).Scan(&proxyID, &priority, &rateMultiplier, &primaryExtra); err != nil {
+			return 0, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE accounts SET proxy_id=$2,priority=$3,rate_multiplier=$4,extra=$5 WHERE id=$1`, in.AccountID, nullableInt64(proxyID), priority, rateMultiplier, string(primaryExtra)); err != nil {
+			return 0, err
+		}
+	}
 	generation := uuid.NewString()
+	instanceState := "PAUSED"
+	if existingManagement.Valid && principalState == "ACTIVE" && principalRouting == "GROUPED" {
+		instanceState = "ACTIVE"
+	}
 	var instance int64
-	err = tx.QueryRowContext(ctx, `INSERT INTO credential_instances(principal_id,account_id,name,identity_generation,credential_state,capabilities) VALUES($1,$2,'migrated instance',$3,'VALID',$4) RETURNING id`, principal, in.AccountID, generation, pq.Array(capabilities)).Scan(&instance)
+	err = tx.QueryRowContext(ctx, `INSERT INTO credential_instances(principal_id,account_id,name,identity_generation,hard_max,admin_state,credential_state,capabilities) VALUES($1,$2,$3,$4,$5,$6,'VALID',$7) RETURNING id`, principal, in.AccountID, accountName, generation, concurrency, instanceState, pq.Array(capabilities)).Scan(&instance)
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +235,7 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 	if err != nil {
 		return 0, err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE accounts SET credentials=credentials-ARRAY['access_token','refresh_token','id_token'],schedulable=false,status='inactive' WHERE id=$1`, in.AccountID)
+	_, err = tx.ExecContext(ctx, `UPDATE accounts SET credentials=credentials-ARRAY['access_token','refresh_token','id_token'],extra=extra-'multi_credential_migration',schedulable=false,status='inactive' WHERE id=$1`, in.AccountID)
 	if err != nil {
 		return 0, err
 	}
@@ -222,7 +254,7 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 	if err != nil {
 		return 0, err
 	}
-	if err = controlAudit(ctx, tx, in.ActorID, principal, instance, 1, "LEGACY_ACCOUNT_MIGRATED", map[string]any{"account_id": in.AccountID, "operation_id": in.OperationID}); err != nil {
+	if err = controlAudit(ctx, tx, in.ActorID, principal, instance, principalVersion, "LEGACY_ACCOUNT_MIGRATED", map[string]any{"account_id": in.AccountID, "operation_id": in.OperationID}); err != nil {
 		return 0, err
 	}
 	// No network I/O in the admission transaction. This is an offline control
@@ -234,6 +266,98 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 		return 0, err
 	}
 	return principal, nil
+}
+
+// ActivateMigratedBatch restores the scheduling state of migrated management
+// accounts that were active before the cutover. It runs while the same
+// deployment fence is held by the caller, so the new gateway can start with a
+// complete principal set instead of exposing accounts one at a time.
+func (r *CredentialRollout) ActivateMigratedBatch(ctx context.Context, actor int64, accountIDs []int64) ([]int64, error) {
+	if r.vault == nil || r.fence == nil || actor <= 0 || len(accountIDs) == 0 {
+		return nil, errors.New("MIGRATION_PRECONDITION_REQUIRED")
+	}
+	if err := r.requireAdmin(ctx, actor); err != nil {
+		return nil, err
+	}
+	fence, err := r.fence.Fence(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = r.fence.Verify(ctx, fence); err != nil {
+		return nil, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(9182026)`); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT p.id,p.admin_state
+FROM upstream_principals p
+JOIN credential_instances i ON i.principal_id=p.id AND NOT i.retired_to_legacy
+JOIN credential_migration_records m ON m.account_id=i.account_id
+WHERE i.account_id=ANY($1) AND p.verification_state='VERIFIED'
+  AND p.routing_mode IN ('SHADOW','GROUPED')
+  AND p.admin_state IN ('PAUSED','ACTIVE')
+	  AND EXISTS (SELECT 1 FROM credential_migration_records primary_m
+	              WHERE primary_m.account_id=p.management_account_id
+	                AND primary_m.state<>'ROLLED_BACK'
+	                AND primary_m.original_status='active'
+                AND primary_m.original_schedulable)`, pq.Array(accountIDs))
+	if err != nil {
+		return nil, err
+	}
+	type activationPrincipal struct {
+		id    int64
+		state string
+	}
+	var principals []activationPrincipal
+	for rows.Next() {
+		var principal activationPrincipal
+		if err = rows.Scan(&principal.id, &principal.state); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		principals = append(principals, principal)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	activated := make([]int64, 0, len(principals))
+	for _, principal := range principals {
+		var occupied int
+		var version int64
+		if err = tx.QueryRowContext(ctx, `SELECT occupied,config_version FROM upstream_principals WHERE id=$1 FOR UPDATE`, principal.id).Scan(&occupied, &version); err != nil {
+			return nil, err
+		}
+		if occupied != 0 {
+			return nil, errors.New("UNRESOLVED_EXECUTION")
+		}
+		if principal.state == "PAUSED" {
+			if _, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET routing_mode='GROUPED',admin_state='ACTIVE',config_version=config_version+1,admission_epoch=admission_epoch+1 WHERE id=$1`, principal.id); err != nil {
+				return nil, err
+			}
+			version++
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE credential_instances SET admin_state='ACTIVE' WHERE principal_id=$1 AND admin_state='PAUSED' AND credential_state='VALID' AND NOT retired_to_legacy`, principal.id); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE credential_migration_records SET state='CANARY',fence_evidence=$2 WHERE principal_id=$1 AND state='MIGRATED'`, principal.id, mustFenceJSON(fence)); err != nil {
+			return nil, err
+		}
+		if err = controlAudit(ctx, tx, actor, principal.id, 0, version, "PRINCIPAL_BATCH_ACTIVATED", map[string]any{"fence": fence}); err != nil {
+			return nil, err
+		}
+		activated = append(activated, principal.id)
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return activated, nil
 }
 
 // Canary activates only the requested verified principal, with every old
@@ -376,6 +500,13 @@ func (r *CredentialRollout) Rollback(ctx context.Context, actor, principal, vers
 	var schedulable bool
 	var concurrency int
 	var archived []byte
+	var migrationCount int
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM credential_migration_records WHERE principal_id=$1 AND state<>'ROLLED_BACK'`, principal).Scan(&migrationCount); err != nil {
+		return err
+	}
+	if migrationCount != 1 {
+		return errors.New("ROLLBACK_REQUIRES_SINGLE_SOURCE")
+	}
 	err = tx.QueryRowContext(ctx, `SELECT m.account_id,i.id,m.original_status,m.original_schedulable,m.original_concurrency,m.credentials_ciphertext,m.credentials_aad FROM credential_migration_records m JOIN credential_instances i ON i.account_id=m.account_id WHERE m.principal_id=$1 AND m.state<>'ROLLED_BACK' FOR UPDATE OF i,m`, principal).Scan(&account, &instance, &status, &schedulable, &concurrency, &archived, &aad)
 	if err != nil {
 		return err

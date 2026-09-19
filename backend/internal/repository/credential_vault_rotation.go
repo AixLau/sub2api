@@ -129,7 +129,9 @@ var credentialVaultCipherTables = []credentialCipherTable{
 	{"credential_imports", "id::text", "id::text", "secret_ciphertext"},
 	{"credential_secrets", "instance_id::text||':'||credential_version::text", "secret_aad", "secret_ciphertext"},
 	{"credential_refresh_ops", "id::text", "result_aad", "result_ciphertext"},
-	{"credential_migration_records", "principal_id::text", "credentials_aad", "credentials_ciphertext"},
+	// A merged principal has one migration snapshot per source account. The
+	// account is the stable row key after the batch-history migration.
+	{"credential_migration_records", "account_id::text", "credentials_aad", "credentials_ciphertext"},
 }
 
 func rotateCredentialCipherTable(ctx context.Context, tx *sql.Tx, table credentialCipherTable, old, next *service.CredentialVault) (int64, error) {

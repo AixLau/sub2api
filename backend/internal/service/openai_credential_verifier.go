@@ -18,6 +18,13 @@ type openAICredentialVerifier struct {
 	keys keyfunc.Keyfunc
 }
 
+// NewOpenAICredentialVerifier returns the provider-bound verifier used by
+// credential imports and migration tooling. The verifier never accepts a
+// caller-supplied issuer or JWKS endpoint.
+func NewOpenAICredentialVerifier() CredentialVerifier {
+	return &openAICredentialVerifier{}
+}
+
 func (v *openAICredentialVerifier) Verify(ctx context.Context, secret CredentialSecret) (VerifiedCredential, error) {
 	v.once.Do(func() {
 		tolerateUnavailable := true
