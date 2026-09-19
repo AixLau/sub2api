@@ -123,7 +123,7 @@ func TestCredentialAliasClaimsUnknownBackfillFailsClosed(t *testing.T) {
 	secret := service.CredentialSecret{AccessToken: "historical-unknown-access", RefreshToken: " historical-unknown-refresh "}
 	cipher, err := vault.Seal(operation, secret)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO credential_refresh_ops(id,instance_id,generation,family_key,expected_version,owner_nonce,state,result_ciphertext,result_aad) VALUES($1,$2,$3,$4,1,$5,'REFRESH_RESULT_UNKNOWN',$6,$1::text)`, operation, instance, generation, uuid.NewString(), uuid.NewString(), cipher)
+	_, err = db.Exec(`INSERT INTO credential_refresh_ops(id,instance_id,generation,family_key,expected_version,owner_nonce,state,result_ciphertext,result_aad) VALUES($1,$2,$3,$4,1,$5,'REFRESH_RESULT_UNKNOWN',$6,$7)`, operation, instance, generation, uuid.NewString(), uuid.NewString(), cipher, operation)
 	require.NoError(t, err)
 	registry := &accountRepository{sql: db}
 	fingerprint := vault.Fingerprint("token", secret.AccessToken)

@@ -55,8 +55,8 @@ func (s *credentialRefreshStore) BeginCredentialRefresh(ctx context.Context, ins
 	// Input aliases remain blocked for a lost owner even when there is no
 	// returned result to decrypt. The operation state, never age, ends the claim.
 	_, err = tx.ExecContext(ctx, `INSERT INTO credential_refresh_alias_claims(operation_id,fingerprint,kind)
- SELECT $1,fingerprint,kind FROM credential_fingerprints WHERE instance_id=$2 AND kind IN ('ACCESS','REFRESH')
- UNION SELECT $1,fingerprint,kind FROM credential_instance_alias_claims WHERE instance_id=$2
+ SELECT $1::uuid,fingerprint,kind FROM credential_fingerprints WHERE instance_id=$2 AND kind IN ('ACCESS','REFRESH')
+ UNION SELECT $1::uuid,fingerprint,kind FROM credential_instance_alias_claims WHERE instance_id=$2
  ON CONFLICT DO NOTHING`, op.ID, instance)
 	if err != nil {
 		return op, err
