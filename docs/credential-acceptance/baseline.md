@@ -51,3 +51,9 @@
 本轮起点实际HEAD等于用户对照 `924819c5d04a550801fb4e85441059389dc00caa`，仅原有zz_debug未跟踪文件；保留f416及migration260。产品和持续发生器冻结为 `b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8`，完整gateway重启夹具为 `35aff321ddc65457f65fe2cbf3e0d4a257dce304`（该integration测试单独重编复验；产品和非integration输入无变化）。报告版本 `release-closure-r3`，实际命令/23条结果/环境/二进制与日志SHA见 [收尾](release-closure-924819.md) 和 [验证结果](release-validation-results.json)。
 
 E5固定六组合十分钟整条退出0，容量/生命周期断言通过；20ms性能目标、全套既有失败和内部旁路竞态仍阻断生产。真实provider身份和compact分别BLOCKED。最终同机三完整gateway持久重启及rollback已经实际复验，不再将该特定窗口列为NOT_RUN；state loss、HA和跨地域仍不支持。
+
+## AT-40后续专项
+
+起点实际HEAD为a2122fcba，原有未跟踪zz_debug保持。受测产品/发生器快照 `1536849f2e714e265b584528fb51be3bf03ea094`；report_revision为at40-arbitration-r1，证据在[AT-40报告](at40-arbitration.md)。两个交错先于修复在a212真实PG动态复现，修复后定向、race、PG跨进程/barrier/丢ACK/历史claim/轮换及完整gateway通过；扩大admin包的两项Dashboard失败也已在a212逐项实跑，保持NOT_PASS。
+
+AT-40限定受管HTTP入口更新PASS；真实身份、compact及整体生产仍BLOCKED/PARTIAL。前向迁移262/263与legacy旧刷新vault配置影响、非轮换refresh token结果过期不自动再刷、安全fencing回滚限制都必须随部署评估。调度/性能门槛及E5发生器未改，本轮未重复E5。

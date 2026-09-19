@@ -36,3 +36,7 @@ GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true C
 迁移 262 只回填历史实例别名，不可能用 SQL 从密文导出 token HMAC。必须在 vault 可用且统一仲裁事务持锁时调用历史 UNKNOWN 回填，然后才允许把空查询解释为没有冲突。不可跳过损坏密文继续启用。
 
 部署期间功能保持关闭。本变更无上游网络动作，无容量配置变更。应用回滚应保留两个新表、所有历史 owner、UNKNOWN 密文和操作状态；不得 drop claims 或恢复旧 token 快照以让旧 guard 放行。旧版本 guard 不识别独立 UNKNOWN 声明，因此不能恢复其受控凭证旧入口写入/刷新能力后宣称安全。需要回滚时保持相关入口关闭，等待支持新声明的安全版本或具备证据的人工处置。
+
+## 后续统一仲裁
+
+本缺陷2的组件修复随后已接入 [AT-40统一仲裁](at40-arbitration.md)：所有凭证变更先取持久仲裁行，再保留各自domain锁序；受控导入/激活/刷新与legacy仓储写入共同检查独立UNKNOWN声明。请以该报告的最终候选测试为当前状态，本文件保留7022ca组件证据，不将其单独扩大为跨入口互斥或生产可启用。

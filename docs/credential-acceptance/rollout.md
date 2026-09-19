@@ -56,3 +56,9 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/r
 准入SQL合并没有新schema和预算变化，代码回退时保留索引/账本/审计即可；安全依赖提交应独立保留，降回旧grpc/image会恢复原五项版本风险。回退到缺少key-ID检查或凭证边界保护的旧程序不能作为安全放行方式。
 
 新完整三网关测试另覆盖正常持久数据保存后的单PG/Redis受控restart；不等于Redis全部丢失后能自动重建或备份还原验收。epoch丢失仍fail closed，未经单独恢复证据不得手工填回旧epoch。部署范围仍单主库、单Redis、同机受控进程，HA/双活/Cluster未纳入。
+
+## AT-40前向迁移262/263
+
+262保留历史fingerprint owner并添加独立instance/UNKNOWN claims；263添加凭证变更仲裁、legacy持久归属和刷新操作。升级保持开关关闭，fence全部网关/worker；正式ApplyMigrations后用稳定vault/HMAC配置启动以回填存量账号与历史UNKNOWN密文。发现双有效冲突、密文损坏或key不一致时拒绝初始化，不修改旧身份或清未知占用。只有受管新writer可恢复服务，旧a212二进制不具备新仲裁，禁止混跑。
+
+raw旧OAuth刷新即使开关关闭也要求vault；新第五类刷新结果密文已纳入离线轮换。回滚只能继续使用支持262/263协议的程序，保留所有claims/op/result密文和当前最新token；UNKNOWN没有TTL解锁，不能DROP新表或恢复旧token快照换取放行。主体Migrate仅在fence和原账号匹配后转移全部历史别名；Rollback保留最新明文，历史别名保持spent阻断，不误清其他UNKNOWN声明。实际最终回归见[专项](at40-arbitration.md)，声明拓扑未扩大。

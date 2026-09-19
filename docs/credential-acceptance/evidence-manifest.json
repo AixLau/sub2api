@@ -1,5 +1,5 @@
 {
-  "report_revision": "release-closure-r3",
+  "report_revision": "at40-arbitration-r1",
   "task_baseline_sha": "5effa833a988b57ec977a93481be2f75450f8edd",
   "feature_default": "off",
   "supported_target_topology": {
@@ -410,5 +410,25 @@
     "overall_system_acceptance": "PARTIAL",
     "provider_identity": "BLOCKED",
     "real_compact": "BLOCKED"
+  },
+  "latest_at40": {
+    "task_baseline_sha": "a2122fcba84f1defe65e51605cadefdf45f4edfd",
+    "tested_code_sha": "1536849f2e714e265b584528fb51be3bf03ea094",
+    "benchmark_code_sha": "1536849f2e714e265b584528fb51be3bf03ea094",
+    "results": "at40-test-results.json",
+    "report": "at40-arbitration.md",
+    "at40_status": "PASS",
+    "system_acceptance": "PARTIAL",
+    "feature_default": "off",
+    "migrations": [
+      262,
+      263
+    ],
+    "at_status_counts": {
+      "BLOCKED": 1,
+      "PARTIAL": 24,
+      "PASS": 15
+    },
+    "endurance_E5": "prior result retained, unchanged scheduler and generator, not rerun"
   }
 }

@@ -3,7 +3,7 @@
 本账本逐项记录 AT-01～AT-40。组件测试通过不等于整项系统验收通过。
 
 验收分支：`feat/multi-credential-http`。
-报告版本 `release-closure-r3`；最新收尾对照 `924819c5d04a550801fb4e85441059389dc00caa`，冻结候选 `b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8`（实际命令见[本轮收尾](credential-acceptance/release-closure-924819.md)）；历史本地隔离专项起点 `44f88b3d55c170205b1e6d120895f8691132bb3a`，最后验收范围为仅本机。历史完整suite受测代码 `8c1bfcbff45883c730e37f6382c4c9fd70344122`；专项起点 `5effa833a988b57ec977a93481be2f75450f8edd`。历史E2持续矩阵的 `tested_code_sha` / `benchmark_code_sha` 为 `c594d92e3d6580cb9069a7c788deec1380eb22ea`；队列推进E3为 `7ba4602131b11e51a9647f2455d650ff71e7b5e8`，与报告提交分开，见 [证据清单](credential-acceptance/evidence-manifest.json)。
+报告版本 `at40-arbitration-r1`；最新AT-40专项产品快照 `1536849f2e714e265b584528fb51be3bf03ea094`（[专项证据](credential-acceptance/at40-arbitration.md)）；此前最新收尾对照 `924819c5d04a550801fb4e85441059389dc00caa`，冻结候选 `b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8`（实际命令见[本轮收尾](credential-acceptance/release-closure-924819.md)）；历史本地隔离专项起点 `44f88b3d55c170205b1e6d120895f8691132bb3a`，最后验收范围为仅本机。历史完整suite受测代码 `8c1bfcbff45883c730e37f6382c4c9fd70344122`；专项起点 `5effa833a988b57ec977a93481be2f75450f8edd`。历史E2持续矩阵的 `tested_code_sha` / `benchmark_code_sha` 为 `c594d92e3d6580cb9069a7c788deec1380eb22ea`；队列推进E3为 `7ba4602131b11e51a9647f2455d650ff71e7b5e8`，与报告提交分开，见 [证据清单](credential-acceptance/evidence-manifest.json)。
 规格基线：`9bdb388b83f05e678e83990d9b19afbc3f088a8f`；代码对照基线：`fde7e8ec4ff9af1b2645661d6a28cec19f6b347f`。
 
 状态定义：PASS表示本项在声明拓扑和测试契约内完整通过，不能外推为全系统PASS；PARTIAL表示已有局部证据但整项仍有缺口；BLOCKED表示缺少外部契约或前置条件；NOT_RUN表示无实际执行证据。历史证据与本轮复跑用SHA/命令区分；保留历史PASS不意味着本轮重跑了全部AT。
@@ -53,7 +53,7 @@
 | AT-37 | PARTIAL | 完整gateway真实Migrate保留Account ID、profile、组、倍率/extra；最终fde7历史binary fencing通过 | 真实provider verifier缺失，正式迁移BLOCKED；旧影子alias/binding人工处置 | E/M |
 | AT-38 | PASS | 最终完整三gateway离线fence、两主体单独canary、receipt恢复及latest-token回滚通过；未知主体保持PAUSED并占用 | 声明的单机、可回滚单保留实例范围；多实例无证据时暂停，不自动旁路 | T/M |
 | AT-39 | PASS | 三端点最终 body、RawMessage 大整数/null、重复 JSON/header 拒绝通过 | 全部嵌套 map/压缩/重复 header 金样未全量 | —（限制见前列） |
-| AT-40 | PARTIAL | 最终已登记别名admin/JSON/CRS/裸及worker refresh、probe维护准入、plugin拒绝及PG普通UNKNOWN alias回归通过 | 内部阻断：跨入口Check/登记TOCTOU；UNKNOWN alias冲突retired owner可能漏阻断，详见秘密专项 | I |
+| AT-40 | PASS | a212两交错真实PG动态FAIL→最终1536849f定向PG22根9子PASS；legacy五写入入口与control共同事务、raw持久操作、三进程owner退出、ACK丢失、retired冲突/显式同op完成、history迁移回滚与key轮换均通过 | 仅受管HTTP入口、本地相同token指纹；真实provider未知关系、任意直接DB或外部执行者不在范围，默认关闭；keyless旧刷新拒绝、过期receipt不重发 | E/T |
 
 ## 历史记录与本轮证据入口
 
@@ -71,11 +71,11 @@
 
 ## 本轮最终结论
 
-**代码实现状态：** 原五项依赖漏洞升级完成，SQL往返做了实测支持的最小合并，稳定密钥指纹与离线轮换、秘密panic、已登记token入口保护及完整网关运维闭环已补齐。跨主体advisory隔离、有界offered/fresh、取消名额、发送前期限检查均保留并复验。AT-40两个内部缺陷仍阻断生产；未修改WS、session/full、UA/TLS实现、既有隐私清理或原有zz_debug未跟踪文件。
+**代码实现状态：** 原五项依赖漏洞升级完成，SQL往返做了实测支持的最小合并，稳定密钥指纹与离线轮换、秘密panic、已登记token入口保护及完整网关运维闭环已补齐。跨主体advisory隔离、有界offered/fresh、取消名额、发送前期限检查均保留并复验。AT-40两个内部缺陷已在本轮声明HTTP范围关闭，详见专项证据；未修改WS、session/full、UA/TLS实现、既有隐私清理或原有zz_debug未跟踪文件。
 
 **系统验收状态：PARTIAL。** 最终定向/race/Go1.27扫描通过；E5六组十分钟共114527次dispatch全部释放，无超限、重复、记录错误。完整default与unit suite仍退出1，逐项首跑与补证见[失败归因](credential-acceptance/release-failure-attribution.md)。真实身份和compact契约BLOCKED。C50/C200成功准入事务p95仍超过20ms，C10 WAIT事务也超过；C200利用率约27%–28%，不能宣称性能达标。可靠receipt恢复与无可靠事实的UNKNOWN人工处置分别验收。
 
-**生产启用条件：** 关闭跨入口TOCTOU及UNKNOWN/retired alias缺口，完成剩余I类验收和失败处置，满足原20ms事务目标及吞吐要求；取得可信provider account+user和compact契约；维持完整fence清单、最新schema/key、单PG与单Redis noeviction，外部插件/APM另行审计。条件完成前保持 `gateway.multi_credential_http_enabled=false`，禁止生产启用。HA/跨地域/Cluster不受本报告支持。
+**生产启用条件：** 维持本轮跨入口互斥协议及离线升级fencing、配置旧OAuth刷新所需vault key，完成剩余I类验收和失败处置，满足原20ms事务目标及吞吐要求；取得可信provider account+user和compact契约；维持完整fence清单、最新schema/key、单PG与单Redis noeviction，外部插件/APM另行审计。条件完成前保持 `gateway.multi_credential_http_enabled=false`，禁止生产启用。HA/跨地域/Cluster不受本报告支持。
 
 本轮每类提交、实际命令/退出码/二进制摘要、23条记录和迁移261回滚说明见[收尾报告](credential-acceptance/release-closure-924819.md)、[验证清单](credential-acceptance/release-validation-results.json)。产品/发生器SHA为b06789dde，之后唯一backend变化是35aff321d的独立restart测试fixture，已实际重编复验；不使用旧测试覆盖它。
 
@@ -93,3 +93,9 @@
 [固定六组合报告](credential-acceptance/release-endurance-E5.md)：命令退出0，3677.22秒，六组执行断言通过；ADMITTED事务p95依次18.17/18.61/23.29/25.57/21.59/22.25ms，C10 WAIT p95为21.16/21.25ms。C200 call p95约5.03/5.34秒，利用率28.00%/27.23%。保留E4初次失败及同binary补测，不以不同条件运行差额认定根因。E5期间无并行编译/其他压测。
 
 最终完整gateway使用b067产品及35aff测试fixture，receipt恢复11.014秒、PG/Redis持久restart续期11.131秒，8次mock调用/7条usage/1条未知占用，未重放；最新token回滚、身份绑定保持和15份进程日志扫描通过。首次restart旧host-port拒绝日志保留，后续实测端口重映射后修正fixture通过；未改产品epoch/TTL。真实provider与compact仍BLOCKED。
+
+## AT-40专项收尾（a212→1536849f）
+
+本轮只修复两个内部凭证旁路问题，AT-40更新PASS限定在受管HTTP入口及本地token相等关系。新前向迁移262/263保留历史owner与独立UNKNOWN声明；旧账号五个写入口与受控导入/激活/刷新/迁移回滚遵守短事务仲裁；raw/manual/worker刷新有持久SENDING/UNKNOWN/SUCCEEDED和加密结果，不持网络长事务、不因退出/超时重放。三独立进程和真实HTTP mock/PG barrier、提交ACK丢失、历史别名/迟到写回/删除账号/批量冲突及密钥轮换均有实际测试。最终三完整网关和handler回归通过，E5原证据保持；本轮未改调度和性能门槛、未复跑E5。
+
+真实provider account+user及compact继续BLOCKED；整体仍PARTIAL。扩大repository/admin/config包测试仍有两项Dashboard失败，已逐项在a212实际补跑同失败，不能计PASS。原全套其他失败和性能缺口保持。功能默认false，生产未操作；原未跟踪zz_debug未动。部署必须fence所有旧writer并配置稳定key；keyless生产旧OAuth刷新也failclosed，成功receipt到期不自动再次外呼。迁移影响、具体命令/退出码/日志及安全回滚见[AT-40报告](credential-acceptance/at40-arbitration.md)。

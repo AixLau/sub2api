@@ -6,6 +6,8 @@
 
 仅在本机测试，未操作生产。产品默认 `gateway.multi_credential_http_enabled=false`；真实verifier仍nil、导入UNVERIFIED，真实compact契约BLOCKED。隔离测试显式启用mock路径不能作为可信provider证据。未修改WS、session/full、UA/TLS实现或既有隐私清理。
 
+后续状态更新：本报告保留a212收尾快照的历史结论；其中两个AT-40内部阻断已由[1536849f专项](at40-arbitration.md)修复并实际验证。原性能、外部provider、全套失败等限制继续保留，不能把本报告的历史“仍有两个缺陷”误读为新专项当前状态。
+
 ## 受测快照及产物
 
 - 产品代码、非integration测试、持续发生器：`b06789dde6ddb7c25fc29ffb7ae81ed79cf6eef8`，来自仅Git追踪内容的独立快照；3503个追踪backend文件逐一核对无缺失/修改。

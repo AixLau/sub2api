@@ -26,7 +26,13 @@ This report tracks B5 / AT-36 / AT-40 separately from provider verification. It 
 | Account/group admin writes | Database `guard_controlled_credential_account/groups` trigger requires the audited control transaction | Existing integration regression retained |
 | Audit/log/APM/debug | Credential import audit body omitted. Outbox payloads are IDs/counts/codes. Panic/fmt/slog/zap canary tests exercise in-repo diagnostic boundaries | No external APM SDK was found by source search; external capture agents are not validated by these tests |
 
-### Remaining internal defect: concurrent legacy/control admission
+### Current AT-40 follow-up
+
+The two internal defects recorded at a212 were dynamically reproduced against PostgreSQL and are addressed by migrations 262/263 and the shared credential-operation arbitration. See [AT-40 arbitration](at40-arbitration.md) and its exact candidate evidence. History ownership is retained separately from active/UNKNOWN claims; legacy account writes and controlled activation share a transaction protocol; raw refresh records a durable operation before network I/O. This does not provide real provider identity or compact proof and does not permit production activation.
+
+The prior four-class vault now also re-encrypts the fifth legacy-refresh result class. Legacy OAuth refresh requires a configured vault even with the HTTP grouping flag off; an expired cached refresh result is not automatically replayed. The new report specifies these operational changes and fencing/rollback requirements. Earlier test results below remain historical and do not cover later code.
+
+### Historical a212 finding: concurrent legacy/control admission (superseded by AT-40 arbitration)
 
 Static control-flow inspection identifies an actual TOCTOU gap, not merely an unrun test: the legacy guard's SELECT and the later `accountRepo.Create/Update` (admin import/edit/bulk and CRS sync), or the raw OAuth network call, do not share a lock/transaction with `PutImport` and controlled activation. A legacy caller can observe no alias, a concurrent controlled import can then register it, and the legacy write/call can subsequently proceed. The deterministic tests prove rejection of **already committed** known aliases; they do not close concurrent cross-entry registration. AT-40 remains PARTIAL. No whole-account repository transaction redesign was included in this targeted change.
 
