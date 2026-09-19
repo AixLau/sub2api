@@ -12,7 +12,6 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,8 +42,10 @@ import (
 //   - sql: 原生 SQL 执行器，用于复杂查询和批量操作
 //   - schedulerCache: 调度器缓存，用于在账号状态变更时同步快照
 type accountRepository struct {
-	client *dbent.Client // Ent ORM 客户端
-	sql    sqlExecutor   // 原生 SQL 执行接口
+	client                *dbent.Client // Ent ORM 客户端
+	credentialVault       *service.CredentialVault
+	credentialArbitration bool
+	sql                   sqlExecutor // 原生 SQL 执行接口
 	// schedulerCache 用于在账号状态变更时主动同步快照到缓存，
 	// 确保粘性会话能及时感知账号不可用状态。
 	// Used to proactively sync account snapshot to cache when status changes,
@@ -134,18 +135,6 @@ func stripCodexFingerprintSeedFromExtraUpdate(extra map[string]any) map[string]a
 	return stripped
 }
 
-// NewAccountRepository 创建账户仓储实例。
-// 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
-func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
-	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
-}
-
-// NewAdminAccountRepository exposes the account repository's atomic duplication capability
-// as an explicit dependency of the admin service.
-func NewAdminAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AdminAccountRepository {
-	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
-}
-
 // newAccountRepositoryWithSQL 是内部构造函数，支持依赖注入 SQL 执行器。
 // 这种设计便于单元测试时注入 mock 对象。
 func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache) *accountRepository {
@@ -153,11 +142,48 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
-	if err := createAccountRecord(ctx, r.client, account); err != nil {
+	if !r.credentialArbitration {
+		if err := createAccountRecord(ctx, r.client, account); err != nil {
+			return err
+		}
+		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
+			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account create failed: account=%d err=%v", account.ID, err)
+		}
+		return nil
+	}
+	if account == nil {
+		return service.ErrAccountNilInput
+	}
+	client := r.client
+	var own *dbent.Tx
+	if current := dbent.TxFromContext(ctx); current != nil {
+		client = current.Client()
+	} else {
+		var err error
+		own, err = client.Tx(ctx)
+		if err != nil {
+			return err
+		}
+		defer own.Rollback()
+		client = own.Client()
+	}
+	if err := r.lockCredentialWrite(ctx, client); err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
-		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue account create failed: account=%d err=%v", account.ID, err)
+	if err := r.checkCredentialWrite(ctx, client, 0, account.Credentials); err != nil {
+		return err
+	}
+	if err := createAccountRecord(ctx, client, account); err != nil {
+		return err
+	}
+	if err := r.recordCredentialWrite(ctx, client, account.ID, account.Credentials); err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
+		return err
+	}
+	if own != nil {
+		return own.Commit()
 	}
 	return nil
 }
@@ -238,18 +264,31 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	if account == nil {
 		return service.ErrAccountNilInput
 	}
-	tx, err := r.client.Tx(ctx)
+	var tx *dbent.Tx
+	var err error
+	contextTx := dbent.TxFromContext(ctx)
+	if contextTx == nil {
+		tx, err = r.client.Tx(ctx)
+	}
 	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
 		return err
 	}
 
 	var txClient *dbent.Client
-	if err == nil {
+	if contextTx != nil {
+		txClient = contextTx.Client()
+	} else if err == nil {
 		defer func() { _ = tx.Rollback() }()
 		txClient = tx.Client()
 	} else {
 		// Reuse a caller-owned transaction when this repository is already transactional.
 		txClient = r.client
+	}
+	if err := r.lockCredentialWrite(ctx, txClient); err != nil {
+		return err
+	}
+	if err := r.checkCredentialWrite(ctx, txClient, 0, account.Credentials); err != nil {
+		return err
 	}
 	groupIDs := make([]int64, 0, len(groups))
 	for i := range groups {
@@ -260,6 +299,9 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 	}
 
 	if err := createAccountRecord(ctx, txClient, account); err != nil {
+		return err
+	}
+	if err := r.recordCredentialWrite(ctx, txClient, account.ID, account.Credentials); err != nil {
 		return err
 	}
 	if len(groups) > 0 {
@@ -513,6 +555,12 @@ func (r *accountRepository) updateAccount(
 		}
 	}
 
+	if err := r.lockCredentialWrite(ctx, client); err != nil {
+		return err
+	}
+	if err := r.checkCredentialWrite(ctx, client, account.ID, account.Credentials); err != nil {
+		return err
+	}
 	updated, err := r.updateLockedAccount(
 		ctx,
 		client,
@@ -523,6 +571,9 @@ func (r *accountRepository) updateAccount(
 	)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
+	}
+	if err := r.recordCredentialWrite(ctx, client, account.ID, account.Credentials); err != nil {
+		return err
 	}
 	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, buildSchedulerGroupPayload(account.GroupIDs)); err != nil {
 		return err
@@ -842,6 +893,12 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 			client = tx.Client()
 		}
 	}
+	if err := r.lockCredentialWrite(ctx, client); err != nil {
+		return err
+	}
+	if err := r.checkCredentialWrite(ctx, client, id, credentials); err != nil {
+		return err
+	}
 	result, err := client.ExecContext(ctx, `
 		UPDATE accounts
 		SET
@@ -885,6 +942,9 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 		return service.ErrAccountNotFound
 	}
 	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		return err
+	}
+	if err := r.recordCredentialWrite(ctx, client, id, credentials); err != nil {
 		return err
 	}
 	if tx != nil {
@@ -3177,6 +3237,13 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		}
 	}
 
+	if err := r.lockCredentialWrite(ctx, exec); err != nil {
+		return 0, err
+	}
+	documents, err := r.checkBulkCredentialWrite(ctx, exec, ids, updates.Credentials)
+	if err != nil {
+		return 0, err
+	}
 	result, err := exec.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -3202,6 +3269,11 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 	if rows > 0 {
 		payload := map[string]any{"account_ids": ids}
 		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+			return 0, err
+		}
+	}
+	for _, id := range sortedCredentialAccountIDs(documents) {
+		if err := r.recordCredentialWrite(ctx, exec, id, documents[id]); err != nil {
 			return 0, err
 		}
 	}

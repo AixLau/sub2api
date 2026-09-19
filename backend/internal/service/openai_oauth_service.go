@@ -213,11 +213,14 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 }
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
-func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (*OpenAITokenInfo, error) {
-	if err := s.credentialTokenGuard.Check(ctx, refreshToken); err != nil {
-		return nil, err
-	}
-	tokenResp, err := s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (info *OpenAITokenInfo, retErr error) {
+	defer func() {
+		if recover() != nil {
+			info, retErr = nil, ErrLegacyCredentialRefreshUnknown
+			slog.Error("legacy_credential_refresh_result_panic", "action", "use_durable_result_without_provider_retry")
+		}
+	}()
+	tokenResp, receivedAt, err := s.refreshLegacyCredentialToken(ctx, refreshToken, proxyURL, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +241,7 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 		RefreshToken: tokenResp.RefreshToken,
 		IDToken:      tokenResp.IDToken,
 		ExpiresIn:    int64(tokenResp.ExpiresIn),
-		ExpiresAt:    time.Now().Unix() + int64(tokenResp.ExpiresIn),
+		ExpiresAt:    receivedAt.Unix() + int64(tokenResp.ExpiresIn),
 	}
 	if trimmed := strings.TrimSpace(clientID); trimmed != "" {
 		tokenInfo.ClientID = trimmed

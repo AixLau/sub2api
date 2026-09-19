@@ -71,6 +71,9 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 		return 0, err
 	}
 	defer tx.Rollback()
+	if err = initializeCredentialArbitration(ctx, tx, r.vault); err != nil {
+		return 0, err
+	}
 	_, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(9182026)`)
 	if err != nil {
 		return 0, err
@@ -132,6 +135,32 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 	if refreshFingerprint != "" && r.vault.Fingerprint("token", account.GetCredential("refresh_token")) != refreshFingerprint {
 		return 0, errors.New("MIGRATION_CREDENTIAL_MISMATCH")
 	}
+	if err = requireNoLegacyCredentialOwner(ctx, tx, []string{accessFingerprint, refreshFingerprint}, in.AccountID); err != nil {
+		return 0, err
+	}
+
+	pending, err := credentialBool(ctx, tx, `SELECT EXISTS(SELECT 1 FROM credential_legacy_refresh_operations WHERE account_id=$1 AND state IN ('SENDING','UNKNOWN')) OR EXISTS(SELECT 1 FROM credential_legacy_account_claims WHERE account_id=$1 AND refresh_spent AND fingerprint=ANY($2))`, in.AccountID, pq.Array([]string{accessFingerprint, refreshFingerprint}))
+	if err != nil {
+		return 0, err
+	}
+	if pending {
+		return 0, service.ErrCredentialLegacyBypass
+	}
+
+	historical, err := legacyAccountClaimFingerprints(ctx, tx, in.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	if err = requireNoLegacyCredentialOwner(ctx, tx, historical, in.AccountID); err != nil {
+		return 0, err
+	}
+	conflicts, err := hasForeignCredentialAliasClaims(ctx, tx, historical, 0, "")
+	if err != nil {
+		return 0, err
+	}
+	if conflicts {
+		return 0, service.ErrCredentialLegacyBypass
+	}
 	aad := "credential-migration:" + in.OperationID
 	archived, err := r.vault.SealData(aad, credentials)
 	if err != nil {
@@ -162,12 +191,26 @@ func (r *CredentialRollout) Migrate(ctx context.Context, in CredentialMigrationI
 			}
 		}
 	}
+
+	var aliases []credentialTokenAlias
+	for _, fp := range historical {
+		aliases = append(aliases, credentialTokenAlias{fingerprint: fp, kind: "ACCESS"})
+	}
+	if err = putCredentialInstanceAliasClaims(ctx, tx, instance, aliases); err != nil {
+		return 0, err
+	}
 	_, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`)
 	if err != nil {
 		return 0, err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE accounts SET credentials=credentials-ARRAY['access_token','refresh_token','id_token'],schedulable=false,status='inactive' WHERE id=$1`, in.AccountID)
 	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE credential_legacy_account_claims SET transferred=true WHERE account_id=$1`, in.AccountID); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE credential_legacy_refresh_operations SET transferred=true WHERE account_id=$1 AND state='SUCCEEDED'`, in.AccountID); err != nil {
 		return 0, err
 	}
 	evidence, _ := json.Marshal(fence)
@@ -304,6 +347,9 @@ func (r *CredentialRollout) Rollback(ctx context.Context, actor, principal, vers
 		return err
 	}
 	defer tx.Rollback()
+	if err = initializeCredentialArbitration(ctx, tx, r.vault); err != nil {
+		return err
+	}
 	var current int64
 	var occupied int
 	err = tx.QueryRowContext(ctx, `SELECT config_version,occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE`, principal).Scan(&current, &occupied)
@@ -380,6 +426,33 @@ func (r *CredentialRollout) Rollback(ctx context.Context, actor, principal, vers
 	if err != nil {
 		return err
 	}
+
+	fps, err := credentialInstanceAliasFingerprints(ctx, tx, instance)
+	if err != nil {
+		return err
+	}
+	latestFingerprints := credentialTokenFingerprints(r.vault, credentials)
+	fps = sortedCredentialFingerprints(append(fps, latestFingerprints...))
+	if err = lockCredentialTokens(ctx, tx, fps); err != nil {
+		return err
+	}
+	conflict, err := hasForeignCredentialAliasClaims(ctx, tx, fps, instance, "")
+	if err != nil {
+		return err
+	}
+	if conflict {
+		return service.ErrCredentialLegacyBypass
+	}
+	if err = requireNoLegacyCredentialOwner(ctx, tx, fps, account); err != nil {
+		return err
+	}
+	if err = recordLegacyClaims(ctx, tx, account, fps); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE credential_legacy_account_claims SET refresh_spent=NOT(fingerprint=ANY($2)) WHERE account_id=$1`, account, pq.Array(latestFingerprints)); err != nil {
+		return err
+	}
+
 	_, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`)
 	if err != nil {
 		return err

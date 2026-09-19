@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type credentialRefreshStore struct{ db *sql.DB }
@@ -21,6 +22,9 @@ func (s *credentialRefreshStore) BeginCredentialRefresh(ctx context.Context, ins
 		return op, err
 	}
 	defer tx.Rollback()
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return op, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT principal_id FROM credential_instances WHERE id=$1`, instance).Scan(&op.PrincipalID)
 	if err != nil {
 		return op, err
@@ -73,6 +77,9 @@ func (s *credentialRefreshStore) lockRefresh(ctx context.Context, op service.Cre
 		return nil, err
 	}
 	fail := func(err error) (*sql.Tx, error) { tx.Rollback(); return nil, err }
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return fail(err)
+	}
 	var n int
 	err = tx.QueryRowContext(ctx, `SELECT occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE`, op.PrincipalID).Scan(&n)
 	if err != nil {
@@ -103,6 +110,17 @@ func (s *credentialRefreshStore) CompleteCredentialRefresh(ctx context.Context, 
 		return err
 	}
 	defer tx.Rollback()
+	if err = requireNoLegacyCredentialOwner(ctx, tx, []string{result.AccessFingerprint, result.RefreshFingerprint}, 0); err != nil {
+		return err
+	}
+	blocked, err := credentialBool(ctx, tx, `SELECT EXISTS(SELECT 1 FROM credential_import_fingerprints f JOIN credential_imports i ON i.id=f.import_id WHERE f.fingerprint=ANY($1) AND i.verification_state<>'CONSUMED')`, pq.Array([]string{result.AccessFingerprint, result.RefreshFingerprint}))
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return service.ErrCredentialDuplicate
+	}
+
 	aliases := credentialResultAliases(result)
 	fingerprints := make([]string, 0, len(aliases))
 	for _, alias := range aliases {

@@ -63,7 +63,7 @@ func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store servic
 	cfg.Default.RateMultiplier = 1
 	cfg.Gateway.MultiCredentialHTTPEnabled = true
 	cfg.Gateway.CredentialVaultKey = strings.Repeat("ab", 32)
-	accounts := NewAccountRepository(integrationEntClient, integrationDB, nil)
+	accounts := newAccountRepositoryWithSQL(integrationEntClient, integrationDB, nil)
 	users := NewUserRepository(integrationEntClient, integrationDB)
 	groups := NewGroupRepository(integrationEntClient, integrationDB)
 	keys := NewAPIKeyRepository(integrationEntClient, integrationDB)

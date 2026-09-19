@@ -46,6 +46,9 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 		return 0, err
 	}
 	defer tx.Rollback()
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return 0, err
+	}
 	// Serialize only identical admin operations. No network work while locked.
 	_, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, creationKey)
 	if err != nil {
@@ -133,6 +136,10 @@ func credentialControlError(err error) error {
 }
 
 func createCredentialInstance(ctx context.Context, tx *sql.Tx, principal int64, input service.CreateCredentialInstanceInput, record service.CredentialImportRecord) (int64, error) {
+	if err := requireNoLegacyCredentialOwner(ctx, tx, []string{record.AccessFingerprint, record.RefreshFingerprint}, 0); err != nil {
+		return 0, err
+	}
+
 	var err error
 	generation := uuid.NewString()
 	installation := uuid.NewString()

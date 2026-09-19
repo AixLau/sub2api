@@ -142,7 +142,7 @@ func TestCredentialVaultOfflineRotationAllSecretClasses(t *testing.T) {
 	require.Equal(t, operation, committedOperation)
 	counts, err := rotation.Rotate(ctx, actor, operation, old, next)
 	require.NoError(t, err)
-	require.Equal(t, map[string]int64{"credential_imports": 1, "credential_secrets": 2, "credential_refresh_ops": 1, "credential_migration_records": 1}, counts)
+	require.Equal(t, map[string]int64{"credential_legacy_refresh_operations": 0, "credential_imports": 1, "credential_secrets": 2, "credential_refresh_ops": 1, "credential_migration_records": 1}, counts)
 	require.JSONEq(t, before, snapshot())
 	legacyRegistry := newAccountRepositoryWithSQL(nil, db, nil)
 	for _, token := range []string{original.AccessToken, original.RefreshToken, latest.AccessToken, latest.RefreshToken, pendingSecret.AccessToken, pendingSecret.RefreshToken, "mock:rotation:unused"} {

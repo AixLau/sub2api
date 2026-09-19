@@ -65,9 +65,15 @@ func (r *CredentialVaultRotation) Rotate(ctx context.Context, actor int64, opera
 		return nil, errCredentialVaultRotation
 	}
 	defer tx.Rollback()
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return nil, errCredentialVaultRotation
+	}
+	if err = checkArbitrationKey(ctx, tx, old); err != nil {
+		return nil, errCredentialVaultRotation
+	}
 	// Offline lock order is parent metadata first, then child secrets. Table locks
 	// exclude maintenance writers throughout the re-encryption transaction.
-	if _, err = tx.ExecContext(ctx, `LOCK TABLE upstream_principals,credential_instances,credential_imports,credential_secrets,credential_refresh_ops,credential_migration_records,credential_vault_state IN EXCLUSIVE MODE`); err != nil {
+	if _, err = tx.ExecContext(ctx, `LOCK TABLE upstream_principals,credential_instances,credential_imports,credential_secrets,credential_refresh_ops,credential_migration_records,credential_vault_state,credential_legacy_refresh_operations IN EXCLUSIVE MODE`); err != nil {
 		return nil, errCredentialVaultRotation
 	}
 	var enc, fp, prior string
@@ -119,6 +125,7 @@ func (r *CredentialVaultRotation) Rotate(ctx context.Context, actor int64, opera
 type credentialCipherTable struct{ name, key, aad, column string }
 
 var credentialVaultCipherTables = []credentialCipherTable{
+	{"credential_legacy_refresh_operations", "id::text", "result_aad", "result_ciphertext"},
 	{"credential_imports", "id::text", "id::text", "secret_ciphertext"},
 	{"credential_secrets", "instance_id::text||':'||credential_version::text", "secret_aad", "secret_ciphertext"},
 	{"credential_refresh_ops", "id::text", "result_aad", "result_ciphertext"},

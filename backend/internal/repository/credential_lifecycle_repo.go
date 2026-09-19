@@ -35,6 +35,9 @@ func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, 
 		return 0, err
 	}
 	defer tx.Rollback()
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return 0, err
+	}
 	var current int64
 	var subject string
 	err = tx.QueryRowContext(ctx, `SELECT config_version,COALESCE(verified_subject_key,'') FROM upstream_principals WHERE id=$1 AND tenant_id=1 AND verification_state='VERIFIED' FOR NO KEY UPDATE`, principal).Scan(&current, &subject)

@@ -44,6 +44,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	if runCredentialArbitrationProcessWorker() {
+		return
+	}
 	if runCredentialAdmissionTestWorker() {
 		return
 	}

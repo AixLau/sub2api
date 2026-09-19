@@ -173,9 +173,22 @@ func (s *CredentialImportService) Import(ctx context.Context, owner int64, opera
 			slog.Error("credential_import_panic", "action", "rejected_without_secret_diagnostics")
 		}
 	}()
+
+	// Reject ambiguous token bytes instead of assuming provider whitespace rules.
+	if secret.AccessToken != strings.TrimSpace(secret.AccessToken) || secret.RefreshToken != strings.TrimSpace(secret.RefreshToken) {
+		return CredentialImportView{}, ErrCredentialUnverified
+	}
 	if s.vault == nil {
 		return CredentialImportView{}, ErrCredentialVaultUnavailable
 	}
+	if initializer, ok := s.store.(interface {
+		ConfigureCredentialArbitration(context.Context, *CredentialVault) error
+	}); ok {
+		if err := initializer.ConfigureCredentialArbitration(ctx, s.vault); err != nil {
+			return CredentialImportView{}, ErrCredentialVaultUnavailable
+		}
+	}
+
 	if len(secret.ClientID) > 256 {
 		return CredentialImportView{}, errors.New("INVALID_CLIENT_ID")
 	}

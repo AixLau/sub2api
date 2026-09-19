@@ -21,6 +21,15 @@ func (r *credentialImportRepository) PutImport(ctx context.Context, in service.C
 		return service.CredentialImportView{}, err
 	}
 	defer tx.Rollback()
+	if _, err = lockCredentialArbitration(ctx, tx); err != nil {
+		return service.CredentialImportView{}, err
+	}
+	if err = lockCredentialTokens(ctx, tx, []string{in.AccessFingerprint, in.RefreshFingerprint, in.Family}); err != nil {
+		return service.CredentialImportView{}, err
+	}
+	if err = rejectPendingLegacyRefresh(ctx, tx, []string{in.AccessFingerprint, in.RefreshFingerprint}); err != nil {
+		return service.CredentialImportView{}, err
+	}
 	// Unique owner/operation provides response-loss recovery without retaining plaintext.
 	var id, state, payload string
 	var valid bool
@@ -100,4 +109,8 @@ func nullableCredentialTime(t time.Time) any {
 		return nil
 	}
 	return t
+}
+
+func (r *credentialImportRepository) ConfigureCredentialArbitration(ctx context.Context, vault *service.CredentialVault) error {
+	return configureCredentialArbitration(ctx, r.db, vault)
 }

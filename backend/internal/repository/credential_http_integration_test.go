@@ -60,7 +60,7 @@ func TestCredentialHTTPWithPostgresLedgerAndMockUpstream(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
 			}
-			repo := NewAccountRepository(integrationEntClient, integrationDB, nil)
+			repo := newAccountRepositoryWithSQL(integrationEntClient, integrationDB, nil)
 			account, err := repo.GetByID(ctx, accountID)
 			require.NoError(t, err)
 			store := NewPrincipalAdmissionStore(integrationDB)
