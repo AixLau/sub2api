@@ -53,6 +53,14 @@ func (r *credentialImportRepository) PutImport(ctx context.Context, in service.C
 	if !errors.Is(err, sql.ErrNoRows) {
 		return view, err
 	}
+	var location service.CredentialDuplicateLocation
+	err = tx.QueryRowContext(ctx, `SELECT p.management_account_id,i.principal_id,i.id FROM credential_fingerprints f JOIN credential_instances i ON i.id=f.instance_id JOIN upstream_principals p ON p.id=i.principal_id WHERE f.fingerprint IN ($1,$2,$3) ORDER BY i.id LIMIT 1`, in.AccessFingerprint, in.RefreshFingerprint, in.Family).Scan(&location.AccountID, &location.PrincipalID, &location.InstanceID)
+	if err == nil {
+		return view, &location
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return view, err
+	}
 	blocked, err := hasForeignCredentialAliasClaims(ctx, tx, []string{in.AccessFingerprint, in.RefreshFingerprint}, 0, "")
 	if err != nil {
 		return service.CredentialImportView{}, err
@@ -121,4 +129,25 @@ func nullableCredentialTime(t time.Time) any {
 
 func (r *credentialImportRepository) ConfigureCredentialArbitration(ctx context.Context, vault *service.CredentialVault) error {
 	return configureCredentialArbitration(ctx, r.db, vault)
+}
+
+func (r *credentialImportRepository) PendingCredentialImport(ctx context.Context, owner int64, id string) (service.CredentialImportRecord, error) {
+	var rec service.CredentialImportRecord
+	err := r.db.QueryRowContext(ctx, `SELECT id,verification_state,secret_ciphertext,expires_at FROM credential_imports WHERE id=$1 AND owner_id=$2 AND tenant_id=1 AND expires_at>CURRENT_TIMESTAMP`, id, owner).Scan(&rec.ID, &rec.State, &rec.Ciphertext, &rec.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = service.ErrCredentialImportExpired
+	}
+	return rec, err
+}
+func (r *credentialImportRepository) VerifyCredentialImport(ctx context.Context, owner int64, rec service.CredentialImportRecord) (service.CredentialImportView, error) {
+	var view service.CredentialImportView
+	err := r.db.QueryRowContext(ctx, `UPDATE credential_imports SET verification_state='VERIFIED',verified_subject_key=$3,secret_ciphertext=$4,capabilities=$5,token_expires_at=$6 WHERE id=$1 AND owner_id=$2 AND tenant_id=1 AND expires_at>CURRENT_TIMESTAMP AND verification_state='UNVERIFIED' RETURNING id,verification_state,expires_at,refresh_fingerprint IS NOT NULL`, rec.ID, owner, rec.SubjectKey, rec.Ciphertext, pq.Array(rec.Capabilities), rec.TokenExpiresAt).Scan(&view.ID, &view.State, &view.ExpiresAt, &view.CanRefresh)
+	if errors.Is(err, sql.ErrNoRows) {
+		current, e := r.GetImport(ctx, 1, owner, rec.ID)
+		if e != nil {
+			return view, e
+		}
+		return *current, nil
+	}
+	return view, err
 }

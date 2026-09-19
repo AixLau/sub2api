@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"net/http"
 	"strconv"
 
@@ -12,13 +13,14 @@ import (
 )
 
 type CredentialImportHandler struct {
+	enabled bool
 	refresh *service.CredentialRefreshCoordinator
 	imports *service.CredentialImportService
 	creator service.CredentialPrincipalCreator
 }
 
-func NewCredentialImportHandler(imports *service.CredentialImportService, creator service.CredentialPrincipalCreator, refresh *service.CredentialRefreshCoordinator) *CredentialImportHandler {
-	return &CredentialImportHandler{imports: imports, creator: creator, refresh: refresh}
+func NewCredentialImportHandler(imports *service.CredentialImportService, creator service.CredentialPrincipalCreator, refresh *service.CredentialRefreshCoordinator, cfg *config.Config) *CredentialImportHandler {
+	return &CredentialImportHandler{enabled: cfg != nil && cfg.Gateway.MultiCredentialHTTPEnabled, imports: imports, creator: creator, refresh: refresh}
 }
 func (h *CredentialImportHandler) Import(c *gin.Context) {
 	owner, ok := middleware.GetAuthSubjectFromContext(c)
@@ -68,16 +70,24 @@ func (h *CredentialImportHandler) CreatePrincipal(c *gin.Context) {
 		response.BadRequest(c, "Invalid principal configuration")
 		return
 	}
+	input.Activate = h.enabled
 	id, err := h.creator.CreateCredentialPrincipal(c.Request.Context(), owner.UserID, c.GetHeader("Idempotency-Key"), input)
 	if err != nil {
 		credentialImportError(c, err)
 		return
 	}
-	response.Created(c, gin.H{"id": id, "admission_state": "PAUSED", "routing_mode": "OFF"})
+	response.Created(c, gin.H{"id": id})
 }
 func credentialImportError(c *gin.Context, err error) {
 	status, reason := 503, "CREDENTIAL_STORE_UNAVAILABLE"
+	var location *service.CredentialDuplicateLocation
+	if errors.As(err, &location) {
+		response.ErrorWithDetails(c, 409, "Authorization instance already exists", "CREDENTIAL_DUPLICATE", map[string]string{"account_id": strconv.FormatInt(location.AccountID, 10), "principal_id": strconv.FormatInt(location.PrincipalID, 10), "instance_id": strconv.FormatInt(location.InstanceID, 10)})
+		return
+	}
 	switch {
+	case errors.Is(err, service.ErrCredentialOwnershipMismatch):
+		status, reason = 409, "CREDENTIAL_OWNERSHIP_MISMATCH"
 	case errors.Is(err, service.ErrCredentialDuplicate):
 		status, reason = 409, "CREDENTIAL_DUPLICATE"
 	case errors.Is(err, service.ErrCredentialConflict):
@@ -105,4 +115,18 @@ func (h *CredentialImportHandler) Refresh(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"state": "REFRESHED"})
+}
+
+func (h *CredentialImportHandler) Verify(c *gin.Context) {
+	owner, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "Authorization required")
+		return
+	}
+	view, err := h.imports.Reverify(c.Request.Context(), owner.UserID, c.Param("id"))
+	if err != nil {
+		credentialImportError(c, err)
+		return
+	}
+	response.Success(c, view)
 }

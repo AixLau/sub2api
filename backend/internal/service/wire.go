@@ -937,10 +937,9 @@ func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *conf
 }
 
 func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
-	// Missing/invalid key disables only import. No provider verifier is configured:
-	// real imports stay UNVERIFIED until an authenticated contract is implemented.
+	// Missing keys disable import; only authenticated provider claims establish ownership.
 	vault, _ := NewCredentialVaultWithFingerprintKey(cfg.Gateway.CredentialVaultKey, cfg.Gateway.CredentialFingerprintKey)
-	return NewCredentialImportService(store, vault, nil)
+	return NewCredentialImportService(store, vault, &openAICredentialVerifier{})
 }
 
 var ProviderSet = wire.NewSet(

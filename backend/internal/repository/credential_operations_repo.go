@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/lib/pq"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -27,7 +29,26 @@ func validCredentialAdminState(state string) bool {
 	return false
 }
 func (s *credentialOperations) UpdatePrincipal(ctx context.Context, actor, id, version int64, in service.PrincipalControlUpdate) (*service.PrincipalView, error) {
-	if actor <= 0 || version <= 0 || !validCredentialAdminState(in.AdminState) || (in.RequestedLimit != nil && *in.RequestedLimit < 0) {
+	if in.Archive {
+		in.AdminState = "REVOKED"
+	}
+	if in.AccountMaxConcurrency != nil {
+		if in.RequestedLimit != nil {
+			return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+		}
+		in.RequestedLimit = in.AccountMaxConcurrency
+	}
+	if in.Name != nil && (strings.TrimSpace(*in.Name) == "" || len(*in.Name) > 100) {
+		return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+	}
+	seen := map[int64]bool{}
+	for _, instance := range in.Instances {
+		if instance.ID <= 0 || seen[instance.ID] || strings.TrimSpace(instance.Name) == "" || len(instance.Name) > 100 || instance.MaxConcurrency < 0 || instance.MaxConcurrency > 2147483647 {
+			return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+		}
+		seen[instance.ID] = true
+	}
+	if actor <= 0 || version <= 0 || !validCredentialAdminState(in.AdminState) || (in.RequestedLimit != nil && (*in.RequestedLimit < 0 || *in.RequestedLimit > 2147483647)) {
 		return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
 	}
 	if in.AdminState == "DRAINING" && (in.DrainDeadline == nil || !in.DrainDeadline.After(time.Now())) {
@@ -44,11 +65,104 @@ func (s *credentialOperations) UpdatePrincipal(ctx context.Context, actor, id, v
 		return nil, err
 	}
 	if current != version {
+		replay, err := controlReplay(ctx, tx, actor, id, 0, version+1, "PRINCIPAL_UPDATED", in)
+		if err != nil {
+			return nil, err
+		}
+		if replay {
+			tx.Rollback()
+			return NewUpstreamPrincipalReader(s.db).GetPrincipal(ctx, 1, id)
+		}
 		return nil, errCredentialConfigConflict
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET requested_limit=COALESCE($2,requested_limit),admin_state=COALESCE(NULLIF($3,''),admin_state),drain_deadline=COALESCE($4,drain_deadline),config_version=config_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=$1`, id, in.RequestedLimit, in.AdminState, in.DrainDeadline)
+	if in.GroupIDs != nil {
+		if len(*in.GroupIDs) > 100 {
+			return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+		}
+		var count int
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM groups WHERE id=ANY($1) AND deleted_at IS NULL`, pq.Array(*in.GroupIDs)).Scan(&count)
+		if err != nil {
+			return nil, err
+		}
+		if count != len(*in.GroupIDs) {
+			return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+		}
+		if _, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM account_groups WHERE account_id IN (SELECT account_id FROM credential_instances WHERE principal_id=$1)`, id); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id) SELECT i.account_id,g.id FROM credential_instances i CROSS JOIN groups g WHERE i.principal_id=$1 AND g.id=ANY($2)`, id, pq.Array(*in.GroupIDs)); err != nil {
+			return nil, err
+		}
+		var mixed bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM upstream_principals p JOIN account_groups own ON own.account_id=p.management_account_id JOIN account_groups other ON other.group_id=own.group_id JOIN accounts a ON a.id=other.account_id WHERE p.id=$1 AND p.routing_mode='GROUPED' AND a.schedulable AND a.status='active' AND a.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM credential_instances i WHERE i.account_id=a.id AND NOT i.retired_to_legacy))`, id).Scan(&mixed)
+		if err != nil {
+			return nil, err
+		}
+		if mixed {
+			return nil, errors.New("GROUPED_ROUTE_MIXED_UNSUPPORTED")
+		}
+	}
+	if in.Activate {
+		var valid, mixed bool
+		err = tx.QueryRowContext(ctx, `SELECT p.verification_state='VERIFIED' AND p.archived_at IS NULL,
+            EXISTS(SELECT 1 FROM account_groups own JOIN account_groups other ON other.group_id=own.group_id JOIN accounts a ON a.id=other.account_id WHERE own.account_id=p.management_account_id AND a.schedulable AND a.status='active' AND a.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM credential_instances i WHERE i.account_id=a.id AND NOT i.retired_to_legacy))
+            FROM upstream_principals p WHERE id=$1`, id).Scan(&valid, &mixed)
+		if err != nil {
+			return nil, err
+		}
+		if !valid {
+			return nil, service.ErrCredentialUnverified
+		}
+		if mixed {
+			return nil, errors.New("GROUPED_ROUTE_MIXED_UNSUPPORTED")
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET routing_mode='GROUPED' WHERE id=$1`, id); err != nil {
+			return nil, err
+		}
+	}
+	for _, instance := range in.Instances {
+		result, err := tx.ExecContext(ctx, `UPDATE credential_instances SET name=$3,hard_max=$4,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND principal_id=$2 AND archived_at IS NULL`, instance.ID, id, instance.Name, instance.MaxConcurrency)
+		if err != nil {
+			return nil, err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if n != 1 {
+			return nil, service.ErrCredentialNotFound
+		}
+	}
+	if in.Archive {
+		if err := archiveCredentialInstances(ctx, tx, id, 0); err != nil {
+			return nil, err
+		}
+		in.AdminState = "REVOKED"
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET name=COALESCE($5,name),archived_at=CASE WHEN $6 THEN CURRENT_TIMESTAMP ELSE archived_at END,requested_limit=COALESCE($2,requested_limit),admin_state=COALESCE(NULLIF($3,''),admin_state),drain_deadline=COALESCE($4,drain_deadline),config_version=config_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=$1`, id, in.RequestedLimit, in.AdminState, in.DrainDeadline, in.Name, in.Archive)
 	if err != nil {
 		return nil, err
+	}
+	if in.Name != nil {
+		if _, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE accounts SET name=$2 WHERE id=(SELECT management_account_id FROM upstream_principals WHERE id=$1)`, id, in.Name); err != nil {
+			return nil, err
+		}
+	}
+	if in.AdminState == "DRAINING" {
+		if _, err = tx.ExecContext(ctx, `UPDATE credential_instances SET admin_state='DRAINING',drain_deadline=$2 WHERE principal_id=$1 AND admin_state='ACTIVE' AND archived_at IS NULL`, id, in.DrainDeadline); err != nil {
+			return nil, err
+		}
+	}
+	if in.AdminState == "ACTIVE" {
+		if _, err = tx.ExecContext(ctx, `UPDATE credential_instances i SET admin_state='ACTIVE' WHERE principal_id=$1 AND admin_state='DRAINING' AND archived_at IS NULL AND credential_state='VALID' AND EXISTS(SELECT 1 FROM credential_secrets s WHERE s.instance_id=i.id AND s.credential_version=i.credential_version AND s.expires_at>CURRENT_TIMESTAMP)`, id); err != nil {
+			return nil, err
+		}
 	}
 	if err = controlAudit(ctx, tx, actor, id, 0, version+1, "PRINCIPAL_UPDATED", in); err != nil {
 		return nil, err
@@ -59,6 +173,18 @@ func (s *credentialOperations) UpdatePrincipal(ctx context.Context, actor, id, v
 	return NewUpstreamPrincipalReader(s.db).GetPrincipal(ctx, 1, id)
 }
 func (s *credentialOperations) UpdateInstance(ctx context.Context, actor, id, version int64, in service.InstanceControlUpdate) (*service.PrincipalView, error) {
+	if in.Archive {
+		in.AdminState = "REVOKED"
+	}
+	if in.MaxConcurrency != nil {
+		if in.HardMax != nil {
+			return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+		}
+		in.HardMax = in.MaxConcurrency
+	}
+	if in.ClearHardMax || (in.Weight != nil && *in.Weight != 1) || (in.Name != nil && (strings.TrimSpace(*in.Name) == "" || len(*in.Name) > 100)) {
+		return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
+	}
 	if actor <= 0 || version <= 0 || !validCredentialAdminState(in.AdminState) || (in.Weight != nil && (*in.Weight <= 0 || math.IsNaN(*in.Weight) || math.IsInf(*in.Weight, 0))) || (in.HardMax != nil && *in.HardMax < 0) || (in.HealthCapacity != nil && *in.HealthCapacity < 0) || (in.ClearHardMax && in.HardMax != nil) {
 		return nil, errors.New("INVALID_CONTROL_CONFIGURATION")
 	}
@@ -80,10 +206,34 @@ func (s *credentialOperations) UpdateInstance(ctx context.Context, actor, id, ve
 		return nil, err
 	}
 	if current != version {
+		replay, err := controlReplay(ctx, tx, actor, principal, id, version+1, "INSTANCE_UPDATED", in)
+		if err != nil {
+			return nil, err
+		}
+		if replay {
+			tx.Rollback()
+			return NewUpstreamPrincipalReader(s.db).GetPrincipal(ctx, 1, principal)
+		}
 		return nil, errCredentialConfigConflict
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE credential_instances SET weight=COALESCE($2,weight),hard_max=CASE WHEN $3 THEN NULL ELSE COALESCE($4,hard_max) END,
- health_capacity=COALESCE($5,health_capacity),admin_state=COALESCE(NULLIF($6,''),admin_state),drain_deadline=COALESCE($7,drain_deadline),updated_at=CURRENT_TIMESTAMP WHERE id=$1`, id, in.Weight, in.ClearHardMax, in.HardMax, in.HealthCapacity, in.AdminState, in.DrainDeadline)
+	if in.Archive {
+		if err := archiveCredentialInstances(ctx, tx, principal, id); err != nil {
+			return nil, err
+		}
+		in.AdminState = "REVOKED"
+	}
+	if in.AdminState == "ACTIVE" {
+		var valid bool
+		err = tx.QueryRowContext(ctx, `SELECT archived_at IS NULL AND credential_state='VALID' AND NOT retired_to_legacy AND EXISTS(SELECT 1 FROM credential_secrets s WHERE s.instance_id=i.id AND s.credential_version=i.credential_version AND s.expires_at>CURRENT_TIMESTAMP) FROM credential_instances i WHERE id=$1`, id).Scan(&valid)
+		if err != nil {
+			return nil, err
+		}
+		if !valid {
+			return nil, service.ErrCredentialUnverified
+		}
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE credential_instances SET name=COALESCE($8,name),weight=COALESCE($2,weight),hard_max=CASE WHEN $3 THEN NULL ELSE COALESCE($4,hard_max) END,
+ health_capacity=COALESCE($5,health_capacity),admin_state=COALESCE(NULLIF($6,''),admin_state),drain_deadline=COALESCE($7,drain_deadline),updated_at=CURRENT_TIMESTAMP WHERE id=$1`, id, in.Weight, in.ClearHardMax, in.HardMax, in.HealthCapacity, in.AdminState, in.DrainDeadline, in.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +255,34 @@ func (s *credentialOperations) UpdateInstance(ctx context.Context, actor, id, ve
 	}
 	return NewUpstreamPrincipalReader(s.db).GetPrincipal(ctx, 1, principal)
 }
+
+// Archival never discards unresolved execution, bindings, or refresh operations.
+func archiveCredentialInstances(ctx context.Context, tx *sql.Tx, principal, instance int64) error {
+	var unsafe bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_instances i WHERE principal_id=$1 AND ($2::bigint=0 OR id=$2) AND
+        (admin_state='ACTIVE' OR occupied>0 OR credential_state IN ('REFRESHING','REFRESH_UNKNOWN')
+         OR EXISTS(SELECT 1 FROM request_leases l WHERE l.instance_id=i.id AND l.state<>'RELEASED')
+         OR EXISTS(SELECT 1 FROM session_bindings b WHERE b.instance_id=i.id AND b.state IN ('ACTIVE','DRAINING') AND b.idle_expires_at>CURRENT_TIMESTAMP)))`, principal, instance).Scan(&unsafe)
+	if err != nil {
+		return err
+	}
+	if unsafe {
+		return errors.New("INSTANCE_EXIT_PENDING")
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE credential_instances SET archived_at=CURRENT_TIMESTAMP,admin_state='REVOKED' WHERE principal_id=$1 AND ($2::bigint=0 OR id=$2)`, principal, instance)
+	return err
+}
+
+func controlReplay(ctx context.Context, tx *sql.Tx, actor, principal, instance, version int64, event string, payload any) (bool, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	var found bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_audit_outbox WHERE actor_id=$1 AND principal_id=$2 AND COALESCE(instance_id,0)=$3 AND version=$4 AND event_type=$5 AND safe_payload=$6::jsonb)`, actor, principal, instance, version, event, string(data)).Scan(&found)
+	return found, err
+}
+
 func controlAudit(ctx context.Context, tx *sql.Tx, actor, principal, instance, version int64, event string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -116,6 +294,7 @@ func controlAudit(ctx context.Context, tx *sql.Tx, actor, principal, instance, v
 func (s *credentialOperations) CredentialRuntime(ctx context.Context, id int64) (service.CredentialRuntimeView, error) {
 	var v service.CredentialRuntimeView
 	v.PrincipalID = id
+	var leases, reasons []byte
 	err := s.db.QueryRowContext(ctx, `SELECT p.occupied,
  (SELECT count(*) FROM request_leases WHERE principal_id=p.id AND state='RESERVED'),
  (SELECT count(*) FROM request_leases WHERE principal_id=p.id AND state='DISPATCHING'),
@@ -127,7 +306,18 @@ func (s *credentialOperations) CredentialRuntime(ctx context.Context, id int64) 
  (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=p.id),
  (SELECT count(*) FROM credential_usage_events e JOIN request_leases l ON l.id=e.lease_id WHERE l.principal_id=p.id AND e.usage_state='UNKNOWN'),
  (SELECT count(*) FROM credential_refresh_ops o JOIN credential_instances i ON i.id=o.instance_id WHERE i.principal_id=p.id AND o.state='REFRESH_RESULT_UNKNOWN'),
- CURRENT_TIMESTAMP FROM upstream_principals p WHERE p.id=$1 AND p.tenant_id=1`, id).Scan(&v.Occupied, &v.Reserved, &v.Dispatching, &v.Running, &v.Cancelling, &v.Orphaned, &v.Queued, &v.LedgerOccupied, &v.InstanceOccupied, &v.UnknownUsage, &v.UnknownRefresh, &v.ObservedAt)
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'instance_id',l.instance_id,'state',l.state,'observed_at',l.heartbeat_at) ORDER BY l.created_at) FROM (SELECT id,instance_id,state,heartbeat_at,created_at FROM request_leases WHERE principal_id=p.id AND state='ORPHANED' ORDER BY created_at LIMIT 100) l),'[]'::jsonb),
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('reason',q.reason,'count',q.count)) FROM (SELECT reason,count(*) FROM admission_tickets WHERE principal_id=p.id AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP GROUP BY reason) q),'[]'::jsonb),
+ CURRENT_TIMESTAMP FROM upstream_principals p WHERE p.id=$1 AND p.tenant_id=1`, id).Scan(&v.Occupied, &v.Reserved, &v.Dispatching, &v.Running, &v.Cancelling, &v.Orphaned, &v.Queued, &v.LedgerOccupied, &v.InstanceOccupied, &v.UnknownUsage, &v.UnknownRefresh, &leases, &reasons, &v.ObservedAt)
+	if err != nil {
+		return v, err
+	}
+	if err = json.Unmarshal(leases, &v.UnresolvedLeases); err != nil {
+		return v, err
+	}
+	if err = json.Unmarshal(reasons, &v.WaitReasons); err != nil {
+		return v, err
+	}
 	v.CounterMismatch = v.Occupied != v.LedgerOccupied || v.Occupied != v.InstanceOccupied
 	return v, err
 }

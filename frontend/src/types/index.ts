@@ -1205,6 +1205,7 @@ export interface OllamaCloudUsageSettings {
 }
 
 export interface Account {
+  principal?: import('@/api/admin/credentialPrincipals').CredentialPrincipal
   id: number
   name: string
   notes?: string | null

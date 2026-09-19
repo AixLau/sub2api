@@ -9,6 +9,7 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -21,15 +22,39 @@ func NewCredentialPrincipalCreator(db *sql.DB) service.CredentialPrincipalCreato
 }
 
 func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Context, owner int64, operation string, in service.CreateCredentialPrincipalInput) (int64, error) {
-	if owner <= 0 || operation == "" || len(operation) > 128 || in.Name == "" || len(in.Name) > 100 || in.TotalConcurrency < 0 || len(in.Instances) < 1 || len(in.Instances) > 16 {
+	for i := range in.Instances {
+		in.Instances[i].Weight = 1
+		if in.Instances[i].HardMax == nil {
+			value := in.TotalConcurrency
+			in.Instances[i].HardMax = &value
+		}
+	}
+	if owner <= 0 || operation == "" || len(operation) > 128 || strings.TrimSpace(in.Name) == "" || len(in.Name) > 100 || in.TotalConcurrency < 0 || in.TotalConcurrency > 2147483647 || len(in.GroupIDs) > 100 || len(in.Instances) < 1 || len(in.Instances) > 16 {
 		return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
+	}
+	// Only account policy, never credentials or installation overrides, may be
+	// copied from this public configuration channel.
+	for key, value := range in.Extra {
+		switch key {
+		case "openai_passthrough", "openai_oauth_passthrough", "openai_responses_flatten_namespaces", "openai_long_context_billing_enabled", "codex_cli_only", "codex_cli_only_allow_app_server", "openai_oauth_responses_websockets_v2_enabled":
+			if _, ok := value.(bool); !ok {
+				return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
+			}
+		case "codex_fingerprint_mode", "openai_compact_mode", "openai_oauth_responses_websockets_v2_mode", "upstream_request_id_header":
+			v, ok := value.(string)
+			if !ok || len(v) > 100 {
+				return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
+			}
+		default:
+			return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
+		}
 	}
 	seen := map[string]bool{}
 	for _, v := range in.Instances {
 		if _, err := uuid.Parse(v.ImportID); err != nil {
 			return 0, service.ErrCredentialNotFound
 		}
-		if seen[v.ImportID] || v.Name == "" || len(v.Name) > 100 || v.Weight <= 0 || math.IsNaN(v.Weight) || math.IsInf(v.Weight, 0) || (v.HardMax != nil && *v.HardMax < 0) {
+		if seen[v.ImportID] || v.Name == "" || len(v.Name) > 100 || v.Weight <= 0 || math.IsNaN(v.Weight) || math.IsInf(v.Weight, 0) || (v.HardMax == nil || *v.HardMax < 0 || *v.HardMax > 2147483647) {
 			return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
 		}
 		seen[v.ImportID] = true
@@ -105,6 +130,22 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 		rec.Family = family.String
 		imports = append(imports, imported{entry, rec})
 	}
+	var existing service.CredentialDuplicateLocation
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(management_account_id,0),id FROM upstream_principals WHERE tenant_id=1 AND provider='openai_oauth' AND verified_subject_key=$1`, subject).Scan(&existing.AccountID, &existing.PrincipalID)
+	if err == nil {
+		return 0, &existing
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	var grants int
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM groups WHERE id=ANY($1) AND deleted_at IS NULL`, pq.Array(in.GroupIDs)).Scan(&grants)
+	if err != nil {
+		return 0, err
+	}
+	if grants != len(in.GroupIDs) {
+		return 0, errors.New("INVALID_PRINCIPAL_CONFIGURATION")
+	}
 	err = tx.QueryRowContext(ctx, `INSERT INTO upstream_principals(name,provider,verified_subject_key,verification_state,requested_limit,creation_key)
  VALUES($1,'openai_oauth',$2,'VERIFIED',$3,$4) RETURNING id`, in.Name, subject, in.TotalConcurrency, creationKey).Scan(&id)
 	if err != nil {
@@ -112,6 +153,40 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 	}
 	for _, imp := range imports {
 		if _, err = createCredentialInstance(ctx, tx, id, imp.input, imp.record); err != nil {
+			return 0, err
+		}
+	}
+
+	if _, err = tx.ExecContext(ctx, `SET LOCAL sub2api.credential_control='on'`); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id) SELECT i.account_id,g.id FROM credential_instances i CROSS JOIN groups g WHERE i.principal_id=$1 AND g.id=ANY($2) AND g.deleted_at IS NULL`, id, pq.Array(in.GroupIDs)); err != nil {
+		return 0, err
+	}
+	extra, _ := json.Marshal(in.Extra)
+	if in.Extra == nil {
+		extra = []byte("{}")
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET proxy_id=$2,priority=$3,rate_multiplier=COALESCE($4,1),extra=$5 WHERE id IN (SELECT account_id FROM credential_instances WHERE principal_id=$1)`, id, in.ProxyID, in.Priority, in.RateMultiplier, string(extra)); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET name=$2 WHERE id=(SELECT management_account_id FROM upstream_principals WHERE id=$1)`, id, in.Name); err != nil {
+		return 0, err
+	}
+
+	if in.Activate {
+		var mixed bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM account_groups g JOIN accounts a ON a.id=g.account_id WHERE g.group_id=ANY($1) AND a.schedulable AND a.status='active' AND a.deleted_at IS NULL AND NOT EXISTS(SELECT 1 FROM credential_instances i WHERE i.account_id=a.id AND NOT i.retired_to_legacy))`, pq.Array(in.GroupIDs)).Scan(&mixed)
+		if err != nil {
+			return 0, err
+		}
+		in.Activate = !mixed
+	}
+	if in.Activate {
+		if _, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET admin_state='ACTIVE',routing_mode='GROUPED' WHERE id=$1`, id); err != nil {
+			return 0, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE credential_instances SET admin_state='ACTIVE' WHERE principal_id=$1`, id); err != nil {
 			return 0, err
 		}
 	}

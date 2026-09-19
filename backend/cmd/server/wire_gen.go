@@ -210,7 +210,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	credentialPrincipalCreator := repository.NewCredentialPrincipalCreator(db)
 	credentialRefreshStore := repository.NewCredentialRefreshStore(db)
 	credentialRefreshCoordinator := service.ProvideCredentialRefreshCoordinator(credentialRefreshStore, configConfig, openAIOAuthClient, proxyRepository)
-	credentialImportHandler := admin.NewCredentialImportHandler(credentialImportService, credentialPrincipalCreator, credentialRefreshCoordinator)
+	credentialImportHandler := admin.NewCredentialImportHandler(credentialImportService, credentialPrincipalCreator, credentialRefreshCoordinator, configConfig)
 	upstreamPrincipalReader := repository.NewUpstreamPrincipalReader(db)
 	upstreamPrincipalHandler := admin.NewUpstreamPrincipalHandler(upstreamPrincipalReader, configConfig)
 	dashboardAggregationRepository := repository.NewDashboardAggregationRepository(db)

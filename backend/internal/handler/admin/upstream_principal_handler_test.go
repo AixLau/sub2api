@@ -17,6 +17,10 @@ type principalReaderStub struct {
 	err   error
 }
 
+func (r *principalReaderStub) AccountPrincipals(context.Context, []int64) ([]service.PrincipalView, error) {
+	return nil, r.err
+}
+
 func (r *principalReaderStub) ListPrincipals(_ context.Context, scope, after int64, limit int) ([]service.PrincipalView, error) {
 	r.scope = scope
 	return []service.PrincipalView{}, r.err

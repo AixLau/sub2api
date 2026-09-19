@@ -20,13 +20,19 @@ import (
 )
 
 var (
-	ErrCredentialUnverified       = errors.New("CREDENTIAL_UNVERIFIED")
-	ErrCredentialDuplicate        = errors.New("CREDENTIAL_DUPLICATE")
-	ErrCredentialConflict         = errors.New("IDEMPOTENCY_PAYLOAD_MISMATCH")
-	ErrCredentialImportExpired    = errors.New("CREDENTIAL_IMPORT_EXPIRED")
-	ErrCredentialNotFound         = errors.New("CREDENTIAL_NOT_FOUND")
-	ErrCredentialVaultUnavailable = errors.New("CREDENTIAL_VAULT_UNAVAILABLE")
+	ErrCredentialOwnershipMismatch = errors.New("CREDENTIAL_OWNERSHIP_MISMATCH")
+	ErrCredentialUnverified        = errors.New("CREDENTIAL_UNVERIFIED")
+	ErrCredentialDuplicate         = errors.New("CREDENTIAL_DUPLICATE")
+	ErrCredentialConflict          = errors.New("IDEMPOTENCY_PAYLOAD_MISMATCH")
+	ErrCredentialImportExpired     = errors.New("CREDENTIAL_IMPORT_EXPIRED")
+	ErrCredentialNotFound          = errors.New("CREDENTIAL_NOT_FOUND")
+	ErrCredentialVaultUnavailable  = errors.New("CREDENTIAL_VAULT_UNAVAILABLE")
 )
+
+type CredentialDuplicateLocation struct{ AccountID, PrincipalID, InstanceID int64 }
+
+func (e *CredentialDuplicateLocation) Error() string { return "CREDENTIAL_DUPLICATE" }
+func (e *CredentialDuplicateLocation) Unwrap() error { return ErrCredentialDuplicate }
 
 // CredentialSecret is never a public DTO or an audit payload.
 type CredentialSecret struct {
@@ -212,13 +218,14 @@ func (s *CredentialImportService) Import(ctx context.Context, owner int64, opera
 	id := uuid.NewString()
 	// Provider identity is encrypted with the versioned token; caller-supplied
 	// subject fields are ignored. This preserves the established session namespace.
+	secret.AccountSubject, secret.UserSubject = "", ""
+	payload, _ := json.Marshal(secret)
 	secret.AccountSubject = verification.AccountSubject
 	secret.UserSubject = verification.UserSubject
 	sealed, err := s.vault.Seal(id, secret)
 	if err != nil {
 		return CredentialImportView{}, err
 	}
-	payload, _ := json.Marshal(secret)
 	record := CredentialImportRecord{ID: id, Scope: DeploymentPrincipalScope, OwnerID: owner,
 		OperationHash: s.vault.Fingerprint("import-operation", operation), PayloadHash: s.vault.Fingerprint("import-payload", string(payload)),
 		Ciphertext: sealed, AccessFingerprint: s.vault.Fingerprint("token", secret.AccessToken), State: verification.State,
@@ -245,15 +252,21 @@ func (s *CredentialImportService) Get(ctx context.Context, owner int64, id strin
 }
 
 type CreateCredentialPrincipalInput struct {
+	Extra            map[string]any                  `json:"extra,omitempty"`
 	Name             string                          `json:"name"`
-	TotalConcurrency int                             `json:"total_concurrency"`
+	TotalConcurrency int                             `json:"account_max_concurrency"`
+	GroupIDs         []int64                         `json:"group_ids"`
+	ProxyID          *int64                          `json:"proxy_id"`
+	Priority         int                             `json:"priority"`
+	RateMultiplier   *float64                        `json:"rate_multiplier"`
+	Activate         bool                            `json:"-"`
 	Instances        []CreateCredentialInstanceInput `json:"instances"`
 }
 type CreateCredentialInstanceInput struct {
 	ImportID string  `json:"credential_import_id"`
 	Name     string  `json:"name"`
 	Weight   float64 `json:"weight"`
-	HardMax  *int    `json:"hard_max"`
+	HardMax  *int    `json:"max_concurrency"`
 }
 type CredentialPrincipalCreator interface {
 	CreateCredentialPrincipal(context.Context, int64, string, CreateCredentialPrincipalInput) (int64, error)
@@ -318,4 +331,57 @@ func (CredentialSecret) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 func (CredentialVault) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("vault", "[redacted]")
 	return nil
+}
+
+// Reverification uses the retained encrypted authorization. The browser carries
+// only its opaque reference; a provider outage never requires token disclosure.
+type CredentialImportRevalidator interface {
+	PendingCredentialImport(context.Context, int64, string) (CredentialImportRecord, error)
+	VerifyCredentialImport(context.Context, int64, CredentialImportRecord) (CredentialImportView, error)
+}
+
+func (s *CredentialImportService) Reverify(ctx context.Context, owner int64, id string) (view CredentialImportView, retErr error) {
+	defer func() {
+		if recover() != nil {
+			view = CredentialImportView{}
+			retErr = ErrCredentialUnverified
+			slog.Error("credential_reverification_panic", "action", "rejected_without_secret_diagnostics")
+		}
+	}()
+	if _, err := uuid.Parse(id); err != nil {
+		return CredentialImportView{}, ErrCredentialNotFound
+	}
+	store, ok := s.store.(CredentialImportRevalidator)
+	if !ok || s.vault == nil || s.verifier == nil {
+		return CredentialImportView{}, ErrCredentialVaultUnavailable
+	}
+	rec, err := store.PendingCredentialImport(ctx, owner, id)
+	if err != nil {
+		return CredentialImportView{}, err
+	}
+	if rec.State != "UNVERIFIED" {
+		view, err := s.Get(ctx, owner, id)
+		if err != nil {
+			return CredentialImportView{}, err
+		}
+		return *view, nil
+	}
+	secret, err := s.vault.Open(rec.ID, rec.Ciphertext)
+	if err != nil {
+		return CredentialImportView{}, ErrCredentialVaultUnavailable
+	}
+	verified, err := s.verifier.Verify(ctx, secret)
+	if err != nil || verified.State != "VERIFIED" || verified.Provider != "openai_oauth" || verified.AccountSubject == "" || verified.UserSubject == "" || !verified.ExpiresAt.After(time.Now()) {
+		return CredentialImportView{ID: id, State: "UNVERIFIED", ExpiresAt: rec.ExpiresAt}, nil
+	}
+	secret.AccountSubject, secret.UserSubject = verified.AccountSubject, verified.UserSubject
+	rec.Ciphertext, err = s.vault.Seal(id, secret)
+	if err != nil {
+		return CredentialImportView{}, err
+	}
+	subject, _ := json.Marshal([]string{verified.Provider, verified.AccountSubject, verified.UserSubject})
+	rec.SubjectKey = s.vault.Fingerprint("subject", string(subject))
+	rec.Capabilities = verified.Capabilities
+	rec.TokenExpiresAt = verified.ExpiresAt
+	return store.VerifyCredentialImport(ctx, owner, rec)
 }

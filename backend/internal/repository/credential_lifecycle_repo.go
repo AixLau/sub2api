@@ -17,7 +17,12 @@ func NewCredentialInstanceLifecycle(db *sql.DB) service.CredentialInstanceLifecy
 	return &credentialImportRepository{db: db}
 }
 func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, actor, principal, version int64, operation string, in service.CredentialInstanceAddInput) (int64, error) {
-	if actor <= 0 || principal <= 0 || version <= 0 || operation == "" || len(operation) > 128 || in.Name == "" || len(in.Name) > 100 || in.Weight <= 0 || math.IsNaN(in.Weight) || math.IsInf(in.Weight, 0) || (in.HardMax != nil && *in.HardMax < 0) || len(in.GroupIDs) > 100 {
+	in.Weight = 1
+	if in.HardMax == nil {
+		value := 10
+		in.HardMax = &value
+	}
+	if actor <= 0 || principal <= 0 || version <= 0 || operation == "" || len(operation) > 128 || in.Name == "" || len(in.Name) > 100 || in.Weight <= 0 || math.IsNaN(in.Weight) || math.IsInf(in.Weight, 0) || (in.HardMax == nil || *in.HardMax < 0 || *in.HardMax > 2147483647) || len(in.GroupIDs) > 100 {
 		return 0, errors.New("INVALID_INSTANCE_CONFIGURATION")
 	}
 	if _, err := uuid.Parse(in.ImportID); err != nil {
@@ -40,7 +45,7 @@ func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, 
 	}
 	var current int64
 	var subject string
-	err = tx.QueryRowContext(ctx, `SELECT config_version,COALESCE(verified_subject_key,'') FROM upstream_principals WHERE id=$1 AND tenant_id=1 AND verification_state='VERIFIED' FOR NO KEY UPDATE`, principal).Scan(&current, &subject)
+	err = tx.QueryRowContext(ctx, `SELECT config_version,COALESCE(verified_subject_key,'') FROM upstream_principals WHERE id=$1 AND tenant_id=1 AND verification_state='VERIFIED' AND archived_at IS NULL FOR NO KEY UPDATE`, principal).Scan(&current, &subject)
 	if err != nil {
 		return 0, err
 	}
@@ -82,8 +87,11 @@ func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, 
 	if err != nil {
 		return 0, service.ErrCredentialImportExpired
 	}
-	if rec.State != "VERIFIED" || rec.SubjectKey != subject {
+	if rec.State != "VERIFIED" {
 		return 0, service.ErrCredentialUnverified
+	}
+	if rec.SubjectKey != subject {
+		return 0, service.ErrCredentialOwnershipMismatch
 	}
 	if !expires.Valid || !expires.Time.After(time.Now()) {
 		return 0, service.ErrCredentialImportExpired
@@ -114,6 +122,22 @@ func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, 
 		if err != nil {
 			return 0, err
 		}
+	}
+	// Groups and routing policy belong to the management account. Adding an
+	// authorization cannot broaden grants or change the account's limit.
+	if oldAccount == 0 {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM account_groups WHERE account_id=(SELECT account_id FROM credential_instances WHERE id=$1)`, instance); err != nil {
+			return 0, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id,priority) SELECT (SELECT account_id FROM credential_instances WHERE id=$1),g.group_id,g.priority FROM account_groups g JOIN upstream_principals p ON p.management_account_id=g.account_id WHERE p.id=$2`, instance, principal); err != nil {
+			return 0, err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts a SET proxy_id=m.proxy_id,priority=m.priority,rate_multiplier=m.rate_multiplier,extra=m.extra FROM upstream_principals p JOIN accounts m ON m.id=p.management_account_id WHERE p.id=$2 AND a.id=(SELECT account_id FROM credential_instances WHERE id=$1)`, instance, principal); err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE credential_instances i SET admin_state='ACTIVE' FROM upstream_principals p WHERE i.id=$1 AND p.id=i.principal_id AND p.routing_mode='GROUPED' AND p.admin_state='ACTIVE' AND p.archived_at IS NULL`, instance); err != nil {
+		return 0, err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET config_version=config_version+1 WHERE id=$1`, principal)
 	if err != nil {

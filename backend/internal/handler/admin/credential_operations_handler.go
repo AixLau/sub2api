@@ -45,6 +45,11 @@ func credentialControlParams(c *gin.Context) (int64, int64, int64, bool) {
 	return subject.UserID, id, version, true
 }
 func credentialControlErrorResponse(c *gin.Context, err error) {
+	switch err.Error() {
+	case "CREDENTIAL_OWNERSHIP_MISMATCH", "CREDENTIAL_DUPLICATE", "CREDENTIAL_UNVERIFIED", "CREDENTIAL_IMPORT_EXPIRED", "IDEMPOTENCY_PAYLOAD_MISMATCH", "INSTANCE_EXIT_PENDING", "GROUPED_ROUTE_MIXED_UNSUPPORTED":
+		response.ErrorWithDetails(c, 409, "Instance operation requires attention", err.Error(), nil)
+		return
+	}
 	if err.Error() == "CONFIG_VERSION_CONFLICT" {
 		response.ErrorWithDetails(c, 412, "Configuration changed", "CONFIG_VERSION_CONFLICT", nil)
 		return
@@ -62,6 +67,7 @@ func (h *CredentialOperationsHandler) Principal(c *gin.Context) {
 		response.BadRequest(c, "Invalid configuration")
 		return
 	}
+	in.Activate = h.enabled && in.AdminState == "ACTIVE"
 	v, err := h.ops.UpdatePrincipal(c.Request.Context(), actor, id, version, in)
 	if err != nil {
 		credentialControlErrorResponse(c, err)
@@ -142,5 +148,5 @@ func (h *CredentialOperationsHandler) Add(c *gin.Context) {
 		credentialControlErrorResponse(c, err)
 		return
 	}
-	response.Created(c, gin.H{"instance_id": id, "admin_state": "PAUSED"})
+	response.Created(c, gin.H{"instance_id": id, "principal_id": principal})
 }

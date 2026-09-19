@@ -1006,6 +1006,9 @@ func (r *accountRepository) List(ctx context.Context, params pagination.Paginati
 
 func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
 	q := r.client.Account.Query()
+	q.Where(func(s *entsql.Selector) {
+		s.Where(entsql.ExprP(`NOT EXISTS (SELECT 1 FROM credential_instances ci JOIN upstream_principals cp ON cp.id=ci.principal_id WHERE ci.account_id=accounts.id AND NOT ci.retired_to_legacy AND (cp.management_account_id<>accounts.id OR cp.archived_at IS NOT NULL))`))
+	})
 
 	if platform != "" {
 		q = q.Where(dbaccount.PlatformEQ(platform))

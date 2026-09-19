@@ -10,7 +10,10 @@
         @click.stop
       >
         <div class="py-1">
-          <template v-if="account">
+          <template v-if="account?.principal">
+            <button class="flex w-full items-center gap-2 px-4 py-2 text-sm" @click="$emit('manage-instances', account); $emit('close')">{{ t('admin.accounts.instances.manage') }}</button>
+          </template>
+          <template v-else-if="account">
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -74,7 +77,7 @@ import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: { top: number; left: number; bottom: number; right: number; width: number; height: number } | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'query-upstream-usage', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['manage-instances', 'close', 'test', 'stats', 'query-upstream-usage', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()

@@ -48,6 +48,7 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 
 // AccountHandler handles admin account management
 type AccountHandler struct {
+	principals              *UpstreamPrincipalHandler
 	adminService            service.AdminService
 	oauthService            *service.OAuthService
 	openaiOAuthService      *service.OpenAIOAuthService
@@ -66,6 +67,42 @@ type AccountHandler struct {
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	cfg                     *config.Config
+}
+
+func (h *AccountHandler) SetPrincipalHandler(principals *UpstreamPrincipalHandler) {
+	h.principals = principals
+}
+func (h *AccountHandler) enrichAccountPrincipals(ctx context.Context, items []AccountWithConcurrency) error {
+	if h.principals == nil || len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		if item.Platform == "openai" {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	views, err := h.principals.reader.AccountPrincipals(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]*service.PrincipalView, len(views))
+	for i := range views {
+		views[i].ComputeCapacityView(h.principals.enabled)
+		byID[views[i].AccountID] = &views[i]
+	}
+	for i := range items {
+		if p := byID[items[i].ID]; p != nil {
+			items[i].Principal = p
+			items[i].Name = p.Name
+			items[i].Concurrency = p.RequestedLimit
+			items[i].CurrentConcurrency = p.Occupied
+		}
+	}
+	return nil
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -825,6 +862,10 @@ func (h *AccountHandler) List(c *gin.Context) {
 		result[i] = item
 	}
 
+	if err := h.enrichAccountPrincipals(c.Request.Context(), result); err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account capacity unavailable")
+		return
+	}
 	h.enrichShadowParents(c.Request.Context(), result)
 
 	if lite {
@@ -943,7 +984,13 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	item := h.buildAccountResponseWithRuntime(c.Request.Context(), account)
+	items := []AccountWithConcurrency{item}
+	if err := h.enrichAccountPrincipals(c.Request.Context(), items); err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account capacity unavailable")
+		return
+	}
+	response.Success(c, items[0])
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.

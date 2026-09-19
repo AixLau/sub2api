@@ -3014,9 +3014,8 @@
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
-          <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-          <input v-model.number="form.concurrency" type="number" min="1" class="input"
-            @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
+          <label class="input-label">{{ t(form.platform === 'openai' && isOAuthFlow ? 'admin.accounts.instances.accountLimit' : 'admin.accounts.concurrency') }}</label>
+          <input v-model.number="form.concurrency" type="number" :min="form.platform === 'openai' && isOAuthFlow ? 0 : 1" max="2147483647" step="1" class="input" />
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
@@ -3534,9 +3533,14 @@
 
     </form>
 
+    <div v-if="step === 1 && form.platform === 'openai' && isOAuthFlow" class="mt-4 grid gap-3 sm:grid-cols-2">
+      <label class="text-sm">{{ t('admin.accounts.instances.name') }}<input v-model="firstInstanceName" class="input mt-1 w-full" :placeholder="form.name + ' 1'" maxlength="100" /></label>
+      <label class="text-sm">{{ t('admin.accounts.instances.maxConcurrency') }}<input v-model.number="firstInstanceMax" class="input mt-1 w-full" type="number" min="0" max="2147483647" step="1" /></label>
+    </div>
     <!-- Step 2: OAuth Authorization -->
-    <div v-else class="space-y-5">
-      <OAuthAuthorizationFlow
+    <div v-if="step === 2" class="space-y-5">
+      <OpenAIInstanceForm v-if="form.platform === 'openai'" :account-name="form.name" :account-limit="form.concurrency" :initial-name="firstInstanceName" :initial-max="firstInstanceMax" :group-ids="form.group_ids" :proxy-id="form.proxy_id" :priority="form.priority" :rate-multiplier="form.rate_multiplier" :extra="withUpstreamRequestIdHeader(buildOpenAICodexImportExtra())" @agent-identity="handleOpenAIImportCodexSession" @completed="emit('created'); handleClose()" />
+      <OAuthAuthorizationFlow v-else
         ref="oauthFlowRef"
         :add-method="form.platform === 'anthropic' ? addMethod : 'oauth'"
         :auth-url="currentAuthUrl"
@@ -3544,16 +3548,16 @@
         :loading="currentOAuthLoading"
         :error="currentOAuthError"
         :show-help="form.platform === 'anthropic'"
-        :show-proxy-warning="form.platform !== 'openai' && form.platform !== 'grok' && !!form.proxy_id"
+        :show-proxy-warning="form.platform !== 'grok' && !!form.proxy_id"
         :allow-multiple="form.platform === 'anthropic'"
         :show-cookie-option="form.platform === 'anthropic'"
-        :show-refresh-token-option="form.platform === 'openai' || form.platform === 'antigravity' || form.platform === 'grok'"
-        :show-mobile-refresh-token-option="form.platform === 'openai'"
+        :show-refresh-token-option="form.platform === 'antigravity' || form.platform === 'grok'"
+        :show-mobile-refresh-token-option="false"
         :show-session-token-option="false"
         :show-access-token-option="false"
-        :show-codex-session-import-option="form.platform === 'openai'"
-        :show-agent-identity-option="form.platform === 'openai'"
-        :show-codex-pat-option="form.platform === 'openai'"
+        :show-codex-session-import-option="false"
+        :show-agent-identity-option="false"
+        :show-codex-pat-option="false"
         :show-sso-option="form.platform === 'grok'"
         :show-email-password-option="false"
         :show-manual-option="true"
@@ -3619,7 +3623,7 @@
           {{ t('common.back') }}
         </button>
         <button
-          v-if="isManualInputMethod"
+          v-if="form.platform !== 'openai' && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -3906,6 +3910,7 @@ import {
   type AddMethod,
   type AuthInputMethod
 } from '@/composables/useAccountOAuth'
+import OpenAIInstanceForm from './OpenAIInstanceForm.vue'
 import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
@@ -4708,6 +4713,8 @@ const tempUnschedPresets = computed(() => [
   }
 ])
 
+const firstInstanceName = ref('')
+const firstInstanceMax = ref(10)
 const form = reactive({
   name: '',
   notes: '',
@@ -5285,6 +5292,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
 
 // Methods
 const resetForm = () => {
+  firstInstanceName.value = ''; firstInstanceMax.value = 10
   step.value = 1
   form.name = ''
   form.notes = ''

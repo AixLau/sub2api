@@ -24,7 +24,7 @@ func TestCredentialImportHandlerDoesNotEchoSecrets(t *testing.T) {
 	vault, err := service.NewCredentialVault(strings.Repeat("ab", 32))
 	require.NoError(t, err)
 	svc := service.NewCredentialImportService(handlerCredentialImportStore{}, vault, nil)
-	h := NewCredentialImportHandler(svc, nil, nil)
+	h := NewCredentialImportHandler(svc, nil, nil, nil)
 	router := gin.New()
 	router.POST("/imports", func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1})

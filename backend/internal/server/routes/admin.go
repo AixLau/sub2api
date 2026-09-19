@@ -62,6 +62,7 @@ func RegisterAdminRoutes(
 			admin.POST("/credential-instances/:id/refresh", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialImport.Refresh)
 			admin.GET("/credential-imports/:id", h.Admin.CredentialImport.Get)
 			admin.POST("/upstream-principals", h.Admin.CredentialImport.CreatePrincipal)
+			admin.POST("/credential-imports/:id/verify", h.Admin.CredentialImport.Verify)
 		}
 		if h.Admin.UpstreamPrincipal != nil {
 			admin.GET("/upstream-principals", h.Admin.UpstreamPrincipal.List)

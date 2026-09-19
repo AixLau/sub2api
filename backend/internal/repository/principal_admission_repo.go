@@ -255,10 +255,10 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		generation, state, credentialState, transport string
 		hard, health                                  sql.NullInt64
 		occupied                                      int
-		weight                                        float64
+		capacity                                      int64
 		drain, cooldown                               sql.NullTime
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT i.id,i.account_id,i.identity_generation,i.credential_version,i.admin_state,i.credential_state,i.transport_state,i.hard_max,i.health_capacity,i.occupied,i.weight,i.drain_deadline,i.cooldown_until
+	rows, err := tx.QueryContext(ctx, `SELECT i.id,i.account_id,i.identity_generation,i.credential_version,i.admin_state,i.credential_state,i.transport_state,i.hard_max,i.health_capacity,i.occupied,i.drain_deadline,i.cooldown_until
  FROM credential_instances i JOIN accounts a ON a.id=i.account_id
  WHERE i.principal_id=$1 AND i.id=ANY($2) AND a.deleted_at IS NULL
  AND ($5 OR EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=a.id AND g.group_id=$3))
@@ -269,7 +269,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	var candidates []instance
 	for rows.Next() {
 		var v instance
-		if err = rows.Scan(&v.id, &v.account, &v.generation, &v.credential, &v.state, &v.credentialState, &v.transport, &v.hard, &v.health, &v.occupied, &v.weight, &v.drain, &v.cooldown); err != nil {
+		if err = rows.Scan(&v.id, &v.account, &v.generation, &v.credential, &v.state, &v.credentialState, &v.transport, &v.hard, &v.health, &v.occupied, &v.drain, &v.cooldown); err != nil {
 			rows.Close()
 			return rejected, err
 		}
@@ -326,8 +326,13 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			waitReason = "INSTANCE_CONCURRENCY_EXCEEDED"
 			continue
 		}
-		if selected == nil || float64(v.occupied+1)/v.weight < float64(selected.occupied+1)/selected.weight ||
-			(float64(v.occupied+1)/v.weight == float64(selected.occupied+1)/selected.weight && v.id > lastInstance && selected.id <= lastInstance) {
+		v.capacity = v.hard.Int64
+		if v.capacity <= 0 {
+			continue
+		}
+		// Cross products compare O/M exactly; the principal lock serializes round-robin.
+		if selected == nil || int64(v.occupied)*selected.capacity < int64(selected.occupied)*v.capacity ||
+			(int64(v.occupied)*selected.capacity == int64(selected.occupied)*v.capacity && v.id > lastInstance && selected.id <= lastInstance) {
 			selected = v
 		}
 	}

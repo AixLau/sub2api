@@ -27,7 +27,7 @@ func TestCredentialImportGinPanicLogSecretScan(t *testing.T) {
 	t.Cleanup(func() { gin.DefaultErrorWriter = previousGin; slog.SetDefault(previousSlog) })
 	vault, err := service.NewCredentialVault(strings.Repeat("ab", 32))
 	require.NoError(t, err)
-	h := NewCredentialImportHandler(service.NewCredentialImportService(handlerCredentialImportStore{}, vault, panickingCredentialVerifier{}), nil, nil)
+	h := NewCredentialImportHandler(service.NewCredentialImportService(handlerCredentialImportStore{}, vault, panickingCredentialVerifier{}), nil, nil, nil)
 	router := gin.New()
 	router.Use(middleware.Recovery())
 	router.POST("/api/v1/admin/credential-imports", func(c *gin.Context) {
