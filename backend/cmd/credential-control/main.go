@@ -175,6 +175,9 @@ ORDER BY a.id`)
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	if err := rows.Close(); err != nil {
+		return result, err
+	}
 	imports := service.NewCredentialImportService(repository.NewCredentialImportRepository(db), vault, service.NewOpenAICredentialVerifier())
 	type plannedMigration struct {
 		candidate legacyCandidate
