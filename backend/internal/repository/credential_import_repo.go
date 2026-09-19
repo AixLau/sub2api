@@ -30,6 +30,7 @@ func (r *credentialImportRepository) PutImport(ctx context.Context, in service.C
 	if err = rejectPendingLegacyRefresh(ctx, tx, []string{in.AccessFingerprint, in.RefreshFingerprint}); err != nil {
 		return service.CredentialImportView{}, err
 	}
+
 	// Unique owner/operation provides response-loss recovery without retaining plaintext.
 	var id, state, payload string
 	var valid bool
@@ -51,6 +52,13 @@ func (r *credentialImportRepository) PutImport(ctx context.Context, in service.C
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return view, err
+	}
+	blocked, err := hasForeignCredentialAliasClaims(ctx, tx, []string{in.AccessFingerprint, in.RefreshFingerprint}, 0, "")
+	if err != nil {
+		return service.CredentialImportView{}, err
+	}
+	if blocked {
+		return service.CredentialImportView{}, service.ErrCredentialDuplicate
 	}
 	var duplicate bool
 	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_fingerprints WHERE fingerprint IN ($1,$2,$3))`, in.AccessFingerprint, in.RefreshFingerprint, in.Family).Scan(&duplicate)

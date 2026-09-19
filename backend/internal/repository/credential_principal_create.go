@@ -136,11 +136,18 @@ func credentialControlError(err error) error {
 }
 
 func createCredentialInstance(ctx context.Context, tx *sql.Tx, principal int64, input service.CreateCredentialInstanceInput, record service.CredentialImportRecord) (int64, error) {
+	blocked, err := hasForeignCredentialAliasClaims(ctx, tx, []string{record.AccessFingerprint, record.RefreshFingerprint}, 0, "")
+	if err != nil {
+		return 0, err
+	}
+	if blocked {
+		return 0, service.ErrCredentialDuplicate
+	}
+
 	if err := requireNoLegacyCredentialOwner(ctx, tx, []string{record.AccessFingerprint, record.RefreshFingerprint}, 0); err != nil {
 		return 0, err
 	}
 
-	var err error
 	generation := uuid.NewString()
 	installation := uuid.NewString()
 	var accountID, instanceID int64

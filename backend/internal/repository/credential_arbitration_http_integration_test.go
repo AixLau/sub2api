@@ -188,3 +188,28 @@ func TestCredentialOperationArbitrationDeletedAccountRetainsResult(t *testing.T)
 	_, err = f.imports.Import(ctx, f.actor, uuid.NewString(), returned)
 	require.ErrorIs(t, err, service.ErrCredentialLegacyBypass)
 }
+
+func TestCredentialOperationArbitrationControlledUnknownRejectsImport(t *testing.T) {
+	f := newOperationArbitrationFixture(t)
+	ctx := context.Background()
+	original := arbitrationSecret()
+	imported, err := f.imports.Import(ctx, f.actor, uuid.NewString(), original)
+	require.NoError(t, err)
+	principal, err := f.createPrincipal(ctx, imported)
+	require.NoError(t, err)
+	var instance int64
+	require.NoError(t, f.db.QueryRow(`SELECT id FROM credential_instances WHERE principal_id=$1`, principal).Scan(&instance))
+	refresh := &credentialRefreshStore{db: f.db}
+	op, err := refresh.BeginCredentialRefresh(ctx, instance)
+	require.NoError(t, err)
+	returned := arbitrationSecret()
+	cipher, err := f.vault.Seal(op.ID, returned)
+	require.NoError(t, err)
+	require.NoError(t, refresh.MarkCredentialRefreshUnknown(ctx, op, &service.CredentialRefreshResult{Ciphertext: cipher, AAD: op.ID, ExpiresAt: time.Now().Add(time.Hour), AccessFingerprint: f.vault.Fingerprint("token", returned.AccessToken), RefreshFingerprint: f.vault.Fingerprint("token", returned.RefreshToken)}))
+	_, err = f.imports.Import(ctx, f.actor, uuid.NewString(), returned)
+	require.ErrorIs(t, err, service.ErrCredentialDuplicate)
+	require.ErrorIs(t, f.repo.Create(ctx, arbitrationAccount(returned)), service.ErrCredentialLegacyBypass)
+	var saved []byte
+	require.NoError(t, f.db.QueryRow(`SELECT result_ciphertext FROM credential_refresh_ops WHERE id=$1`, op.ID).Scan(&saved))
+	require.Equal(t, cipher, saved)
+}

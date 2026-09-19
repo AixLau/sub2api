@@ -29,6 +29,24 @@ func (s *credentialRefreshStore) BeginCredentialRefresh(ctx context.Context, ins
 	if err != nil {
 		return op, err
 	}
+
+	inputAliases, err := credentialInstanceAliasFingerprints(ctx, tx, instance)
+	if err != nil {
+		return op, err
+	}
+	if err = lockCredentialTokens(ctx, tx, inputAliases); err != nil {
+		return op, err
+	}
+	conflict, err := hasForeignCredentialAliasClaims(ctx, tx, inputAliases, instance, "")
+	if err != nil {
+		return op, err
+	}
+	if conflict {
+		return op, service.ErrCredentialDuplicate
+	}
+	if err = requireNoLegacyCredentialOwner(ctx, tx, inputAliases, 0); err != nil {
+		return op, err
+	}
 	var n int
 	err = tx.QueryRowContext(ctx, `SELECT occupied FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE`, op.PrincipalID).Scan(&n)
 	if err != nil {
