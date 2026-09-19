@@ -52,6 +52,15 @@ func (s *credentialRefreshStore) BeginCredentialRefresh(ctx context.Context, ins
 	if err != nil {
 		return op, err
 	}
+	// Input aliases remain blocked for a lost owner even when there is no
+	// returned result to decrypt. The operation state, never age, ends the claim.
+	_, err = tx.ExecContext(ctx, `INSERT INTO credential_refresh_alias_claims(operation_id,fingerprint,kind)
+ SELECT $1,fingerprint,kind FROM credential_fingerprints WHERE instance_id=$2 AND kind IN ('ACCESS','REFRESH')
+ UNION SELECT $1,fingerprint,kind FROM credential_instance_alias_claims WHERE instance_id=$2
+ ON CONFLICT DO NOTHING`, op.ID, instance)
+	if err != nil {
+		return op, err
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE credential_instances SET credential_state='REFRESHING' WHERE id=$1`, instance)
 	if err != nil {
 		return op, err
@@ -94,25 +103,26 @@ func (s *credentialRefreshStore) CompleteCredentialRefresh(ctx context.Context, 
 		return err
 	}
 	defer tx.Rollback()
+	aliases := credentialResultAliases(result)
+	fingerprints := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		fingerprints = append(fingerprints, alias.fingerprint)
+	}
+	conflict, err := hasForeignCredentialAliasClaims(ctx, tx, fingerprints, op.InstanceID, op.ID)
+	if err != nil {
+		return err
+	}
+	if conflict {
+		return service.ErrCredentialDuplicate
+	}
 	// Encrypted result and new version commit together. Never mutate profile/generation.
 	_, err = tx.ExecContext(ctx, `INSERT INTO credential_secrets(instance_id,credential_version,secret_ciphertext,secret_aad,expires_at,refresh_family,can_refresh)
  VALUES($1,$2,$3,$4,$5,$6,true)`, op.InstanceID, op.ExpectedVersion+1, result.Ciphertext, result.AAD, result.ExpiresAt, op.Family)
 	if err != nil {
 		return err
 	}
-	for _, fp := range []struct{ kind, value string }{{"ACCESS", result.AccessFingerprint}, {"REFRESH", result.RefreshFingerprint}} {
-		if fp.value == "" {
-			continue
-		}
-		var owner int64
-		err = tx.QueryRowContext(ctx, `INSERT INTO credential_fingerprints(fingerprint,instance_id,kind) VALUES($1,$2,$3)
- ON CONFLICT(fingerprint) DO UPDATE SET fingerprint=EXCLUDED.fingerprint RETURNING instance_id`, fp.value, op.InstanceID, fp.kind).Scan(&owner)
-		if err != nil {
-			return err
-		}
-		if owner != op.InstanceID {
-			return service.ErrCredentialDuplicate
-		}
+	if err = putCredentialInstanceAliasClaims(ctx, tx, op.InstanceID, aliases); err != nil {
+		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE credential_instances SET credential_version=credential_version+1,credential_state='VALID' WHERE id=$1`, op.InstanceID)
 	if err != nil {
@@ -138,18 +148,11 @@ func (s *credentialRefreshStore) MarkCredentialRefreshUnknown(ctx context.Contex
 		if err != nil {
 			return err
 		}
-		// A remotely rotated token is already a known controlled credential even
-		// when publishing its new version failed. Preserve its aliases with the
-		// encrypted compensation so legacy refresh/import cannot replay it. An
-		// existing alias owned elsewhere already blocks legacy use; do not steal
-		// it or discard the encrypted result on that conflict.
-		for _, fp := range []struct{ kind, value string }{{"ACCESS", result.AccessFingerprint}, {"REFRESH", result.RefreshFingerprint}} {
-			if fp.value == "" {
-				continue
-			}
-			if _, err = tx.ExecContext(ctx, `INSERT INTO credential_fingerprints(fingerprint,instance_id,kind) VALUES($1,$2,$3) ON CONFLICT(fingerprint) DO NOTHING`, fp.value, op.InstanceID, fp.kind); err != nil {
-				return err
-			}
+		// Every unresolved result has its own claim. A historical owner may have
+		// retired, or another operation may claim the same token; neither fact
+		// permits dropping this operation's compensation or rewriting ownership.
+		if err = putCredentialRefreshAliasClaims(ctx, tx, op.ID, credentialResultAliases(*result)); err != nil {
+			return err
 		}
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE credential_refresh_ops SET state='REFRESH_RESULT_UNKNOWN' WHERE id=$1`, op.ID)
