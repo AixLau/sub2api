@@ -23,6 +23,8 @@ import (
 type legacyCandidate struct {
 	ID          int64
 	Credentials []byte
+	Extra       []byte
+	Type        string
 	Concurrency int
 }
 
@@ -152,7 +154,7 @@ func migrateAll(ctx context.Context, db *sql.DB, actor int64, project, gateway s
 	if err := repository.CheckCredentialVaultKeys(ctx, db, vault.EncryptionKeyID(), vault.FingerprintKeyID()); err != nil {
 		return result, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT a.id,a.credentials,a.concurrency
+	rows, err := db.QueryContext(ctx, `SELECT a.id,a.credentials,a.extra,a.type,a.concurrency
 FROM accounts a
 WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.type IN ('oauth','setup-token')
   AND COALESCE(a.credentials->>'access_token','') <> ''
@@ -165,7 +167,7 @@ ORDER BY a.id`)
 	candidates := make([]legacyCandidate, 0)
 	for rows.Next() {
 		var candidate legacyCandidate
-		if err := rows.Scan(&candidate.ID, &candidate.Credentials, &candidate.Concurrency); err != nil {
+		if err := rows.Scan(&candidate.ID, &candidate.Credentials, &candidate.Extra, &candidate.Type, &candidate.Concurrency); err != nil {
 			return result, err
 		}
 		candidates = append(candidates, candidate)
@@ -185,6 +187,19 @@ ORDER BY a.id`)
 			result.Pending = append(result.Pending, candidate.ID)
 			result.Errors = append(result.Errors, migrateAllError{AccountID: candidate.ID, Message: "INVALID_LEGACY_ACCOUNT"})
 			appendPendingMarkError(&result, candidate.ID, markMigrationPending(ctx, db, candidate.ID, "INVALID_LEGACY_ACCOUNT"))
+			continue
+		}
+		var extra map[string]any
+		if err := json.Unmarshal(candidate.Extra, &extra); err != nil {
+			extra = map[string]any{}
+		}
+		if _, _, _, profileErr := service.ResolveCredentialMigrationProfile(&service.Account{
+			Platform: service.PlatformOpenAI, Type: candidate.Type, Credentials: credentials, Extra: extra,
+		}); profileErr != nil {
+			result.Pending = append(result.Pending, candidate.ID)
+			code := credentialMigrationErrorCode(profileErr, "")
+			result.Errors = append(result.Errors, migrateAllError{AccountID: candidate.ID, Message: code})
+			appendPendingMarkError(&result, candidate.ID, markMigrationPending(ctx, db, candidate.ID, code))
 			continue
 		}
 		accessToken, _ := credentials["access_token"].(string)
@@ -295,6 +310,12 @@ func credentialMigrationErrorCode(err error, state string) string {
 	case errors.Is(err, service.ErrCredentialImportExpired):
 		return "CREDENTIAL_IMPORT_EXPIRED"
 	default:
+		if strings.Contains(err.Error(), "LEGACY_INSTALLATION_UNVERIFIED") {
+			return "LEGACY_INSTALLATION_UNVERIFIED"
+		}
+		if strings.Contains(err.Error(), "SESSION_FULL_MIGRATION_OUT_OF_SCOPE") {
+			return "SESSION_FULL_MIGRATION_OUT_OF_SCOPE"
+		}
 		return "MIGRATION_PRECONDITION_FAILED"
 	}
 }
