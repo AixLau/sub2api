@@ -12,9 +12,7 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ account.name }}</h4>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ account.platform }} · {{ accountStatusLabel }}
-            </p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ accountStatusLabel }}</p>
           </div>
           <button class="btn btn-secondary btn-sm" :disabled="busy" :title="t('common.refresh')" @click="load">
             <Icon name="refresh" size="sm" :class="busy ? 'animate-spin' : ''" />
@@ -61,7 +59,7 @@
 
       <div class="border-b border-gray-200 dark:border-dark-600">
         <div class="flex gap-5" role="tablist">
-          <button v-for="tab in tabs" :key="tab.key" class="border-b-2 px-1 pb-2 text-sm font-medium" :class="activeTab === tab.key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'" role="tab" :aria-selected="activeTab === tab.key" @click="activeTab = tab.key">{{ tab.label }}</button>
+          <button class="border-b-2 border-primary-500 px-1 pb-2 text-sm font-medium text-primary-600" role="tab" aria-selected="true">{{ t('admin.accounts.instances.deviceList') }}</button>
         </div>
       </div>
 
@@ -79,31 +77,15 @@
                 <td class="px-3 py-3"><div class="font-medium text-gray-900 dark:text-white">{{ instance.name }}</div><div class="text-xs text-gray-500">{{ instance.identity_source || '-' }}</div></td>
                 <td class="px-3 py-3"><span :class="statusClass(instance.state)">{{ stateLabel(instance.state) }}</span></td>
                 <td class="px-3 py-3"><div class="font-medium">{{ instance.occupied }} / {{ instance.max_concurrency }}</div><div class="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full bg-primary-500" :style="{ width: `${Math.min(100, instance.max_concurrency ? instance.occupied / instance.max_concurrency * 100 : 0)}%` }" /></div><div v-if="instance.occupied > instance.max_concurrency" class="mt-1 text-xs text-amber-600">{{ t('admin.accounts.instances.shrinking', { count: instance.occupied - instance.max_concurrency }) }}</div></td>
-                <td class="px-3 py-3 text-xs text-gray-500">{{ instance.credential_state || '-' }}</td>
                 <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(instance.credential_version ? principal?.observed_at : undefined) }}</td>
                 <td class="px-3 py-3"><div class="flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="reauthorize(instance.id)">{{ t('admin.accounts.instances.reauthorize') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="toggleDrain(instance)">{{ t(instance.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="refreshInstance(instance.id)">{{ t('admin.accounts.instances.refreshCredential') }}</button><button v-if="instance.admin_state !== 'ACTIVE' && instance.occupied === 0 && instance.active_bindings === 0" class="btn btn-secondary btn-sm text-red-600" :disabled="busy" @click="archiveInstance(instance.id)">{{ t('admin.accounts.instances.remove') }}</button></div></td>
               </tr>
-              <tr v-if="!activeInstances.length"><td colspan="7" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
+              <tr v-if="!activeInstances.length"><td colspan="6" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
-      <section v-else-if="activeTab === 'runtime'" class="space-y-4">
-        <div class="grid gap-3 sm:grid-cols-4"><div v-for="item in runtimeSummary" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><div class="mt-1 text-xl font-semibold">{{ item.value }}</div></div></div>
-        <div v-if="runtime?.wait_reasons?.length" class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"><h4 class="font-medium">{{ t('admin.accounts.instances.waitReasons') }}</h4><div class="mt-3 grid gap-2 sm:grid-cols-2"><div v-for="wait in runtime.wait_reasons" :key="wait.reason" class="flex justify-between text-sm"><span>{{ waitReasonLabel(wait.reason) }}</span><span class="font-mono">{{ wait.count }}</span></div></div></div>
-        <details v-if="runtime?.unresolved_leases?.length" class="rounded-lg border border-amber-200 p-4 dark:border-amber-800"><summary class="cursor-pointer font-medium">{{ t('admin.accounts.instances.reconcile') }} ({{ runtime.unresolved_leases.length }})</summary><form class="mt-3 space-y-2" @submit.prevent="resolveLease"><select v-model="leaseId" class="input w-full" required><option value="" disabled>{{ t('admin.accounts.instances.selectLease') }}</option><option v-for="lease in runtime.unresolved_leases" :key="lease.id" :value="lease.id">#{{ lease.instance_id }} · {{ lease.id }} · {{ lease.observed_at }}</option></select><textarea v-model="evidence" class="input w-full" minlength="8" maxlength="4096" :placeholder="t('admin.accounts.instances.evidence')" required /><input v-model="resolutionReason" class="input w-full" minlength="4" maxlength="512" :placeholder="t('admin.accounts.instances.reason')" required /><label class="flex items-center gap-2 text-sm"><input v-model="confirmedTerminal" type="checkbox" required /> {{ t('admin.accounts.instances.confirmTerminal') }}</label><button class="btn btn-secondary" :disabled="busy || !confirmedTerminal">{{ t('admin.accounts.instances.releaseConfirmed') }}</button></form></details>
-      </section>
-
-      <section v-else class="grid gap-3 text-sm sm:grid-cols-2">
-        <div v-for="item in advancedInfo" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><code class="mt-1 block break-all text-xs">{{ item.value }}</code></div>
-        <div v-for="instance in activeInstances" :key="`advanced-${instance.id}`" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600 sm:col-span-2">
-          <div class="font-medium text-gray-900 dark:text-white">{{ instance.name }} · #{{ instance.id }}</div>
-          <div class="mt-2 grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-3">
-            <span>Generation: {{ instance.generation }}</span><span>Credential: {{ instance.credential_version }}</span><span>Transport: {{ instance.transport_state }}</span><span>Identity: {{ instance.identity_source }}</span><span>Bindings: {{ instance.active_bindings }}</span><span>Unknown: {{ instance.unknown_occupied }}</span>
-          </div>
-        </div>
-      </section>
     </div>
 
     <BaseDialog v-if="editTarget" :show="true" :title="t('admin.accounts.instances.editDevice')" width="narrow" :z-index="70" @close="editTarget = null">
@@ -125,14 +107,13 @@ import OpenAIInstanceForm from './OpenAIInstanceForm.vue'
 import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
 import { formatDateTime } from '@/utils/format'
 import type { Account } from '@/types'
-import { credentialErrorReason, getCredentialPrincipal, getCredentialRuntime, saveCredentialConfiguration, controlCredentialInstance, refreshCredentialInstance, resolveCredentialLease, type CredentialPrincipal, type CredentialRuntime, type CredentialInstance } from '@/api/admin/credentialPrincipals'
+import { credentialErrorReason, getCredentialPrincipal, saveCredentialConfiguration, controlCredentialInstance, refreshCredentialInstance, type CredentialPrincipal, type CredentialInstance } from '@/api/admin/credentialPrincipals'
 
 const props = defineProps<{ show: boolean; account: Account | null }>()
 const emit = defineEmits<{ close: []; 'instances-updated': []; updated: [principal: CredentialPrincipal] }>()
 const { t } = useI18n()
 const stepUp = useStepUp()
 const principal = ref<CredentialPrincipal>()
-const runtime = ref<CredentialRuntime>()
 const busy = ref(false)
 const error = ref('')
 const activeTab = ref<'devices' | 'runtime' | 'advanced'>('devices')
@@ -142,29 +123,21 @@ const showAdd = ref(false)
 const editTarget = ref<CredentialInstance | null>(null)
 const archiveTarget = ref<CredentialInstance | null>(null)
 const editDraft = ref({ name: '', max_concurrency: 0 })
-const leaseId = ref('')
-const evidence = ref('')
-const resolutionReason = ref('')
-const confirmedTerminal = ref(false)
-const tabs = computed(() => [{ key: 'devices' as const, label: t('admin.accounts.instances.deviceList') }, { key: 'runtime' as const, label: t('admin.accounts.instances.runtimeTab') }, { key: 'advanced' as const, label: t('admin.accounts.instances.advancedInfo') }])
-const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.authorization'), t('admin.accounts.instances.lastRefresh'), t('common.actions')])
+const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.lastRefresh'), t('common.actions')])
 const activeInstances = computed(() => (principal.value?.instances || []).filter(instance => !instance.archived_at))
 const effectiveCapacity = computed(() => Math.min(principal.value?.account_max_concurrency || 0, principal.value?.effective_configured_capacity || principal.value?.configured_capacity || 0))
 const usagePercent = computed(() => effectiveCapacity.value > 0 ? Math.min(100, (principal.value?.occupied || 0) / effectiveCapacity.value * 100) : 0)
 const accountStatusLabel = computed(() => props.account?.principal ? stateLabel(props.account.principal.health_state || props.account.principal.admin_state) : props.account?.status || '-')
-const runtimeSummary = computed(() => runtime.value ? [{ label: t('admin.accounts.instances.running'), value: runtime.value.running + runtime.value.dispatching }, { label: t('admin.accounts.instances.reserved'), value: runtime.value.reserved }, { label: t('admin.accounts.instances.queued'), value: runtime.value.queued }, { label: t('admin.accounts.instances.orphaned'), value: runtime.value.orphaned }] : [])
-const advancedInfo = computed(() => principal.value ? [{ label: 'Principal ID', value: principal.value.id }, { label: 'Account ID', value: principal.value.account_id }, { label: 'Config Version', value: principal.value.config_version }, { label: 'Routing Mode', value: principal.value.routing_mode }, { label: 'Admission State', value: principal.value.admission_state }, { label: 'Verification State', value: principal.value.verification_state }, { label: 'Health State', value: principal.value.health_state }, { label: 'Unknown Occupied', value: principal.value.unknown_occupied }, { label: 'Observed At', value: principal.value.observed_at }] : [])
 const formatDate = (value?: string | number | null) => {
   if (!value) return '-'
   return formatDateTime(typeof value === 'number' ? new Date(value * 1000) : value)
 }
 const stateLabel = (state: string) => t(`admin.accounts.instances.states.${state}`, state)
 const statusClass = (state: string) => ['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', ['ACTIVE', 'AVAILABLE'].includes(state) ? 'bg-emerald-100 text-emerald-700' : ['NEEDS_REAUTH', 'UNKNOWN', 'REVOKED'].includes(state) ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700']
-const waitReasonLabel = (reason: string) => t(`admin.accounts.instances.wait.${reason}`, reason)
 async function load() {
   if (!props.account?.principal?.id) return
   busy.value = true; error.value = ''
-  try { const [nextPrincipal, nextRuntime] = await Promise.all([getCredentialPrincipal(props.account.principal.id), getCredentialRuntime(props.account.principal.id)]); principal.value = nextPrincipal; runtime.value = nextRuntime; limitDraft.value = nextPrincipal.account_max_concurrency; emit('updated', nextPrincipal) } catch { error.value = t('admin.accounts.instances.stale') } finally { busy.value = false }
+  try { const nextPrincipal = await getCredentialPrincipal(props.account.principal.id); principal.value = nextPrincipal; limitDraft.value = nextPrincipal.account_max_concurrency; emit('updated', nextPrincipal) } catch { error.value = t('admin.accounts.instances.stale') } finally { busy.value = false }
 }
 async function mutate(action: () => Promise<CredentialPrincipal | void>) {
   if (!principal.value || busy.value) return
@@ -184,6 +157,5 @@ function reauthorize(id: number) { editTarget.value = null; reauthorizeId.value 
 const reauthorizeId = ref<number>()
 function openAdd() { reauthorizeId.value = undefined; showAdd.value = true }
 async function handleAdded() { showAdd.value = false; reauthorizeId.value = undefined; await load() }
-async function resolveLease() { if (!leaseId.value || !confirmedTerminal.value) return; await mutate(async () => { await resolveCredentialLease(leaseId.value, evidence.value, resolutionReason.value); runtime.value = await getCredentialRuntime(principal.value!.id); return getCredentialPrincipal(principal.value!.id) }); confirmedTerminal.value = false }
 watch(() => [props.show, props.account?.principal?.id], ([visible]) => { if (visible) { activeTab.value = 'devices'; void load() } }, { immediate: true })
 </script>
