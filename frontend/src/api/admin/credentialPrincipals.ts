@@ -35,6 +35,7 @@ export interface CredentialPrincipal {
   archived_at?: string
   id: number
   name: string
+  provider?: string
   requested_limit: number
   occupied: number
   overhang: number

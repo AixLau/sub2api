@@ -11,7 +11,7 @@
       >
         <div class="py-1">
           <template v-if="account?.principal">
-            <button class="flex w-full items-center gap-2 px-4 py-2 text-sm" @click="$emit('manage-instances', account); $emit('close')">{{ t('admin.accounts.instances.manage') }}</button>
+            <button class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700" @click="$emit('manage-instances', account); $emit('close')">{{ t('admin.accounts.instances.deviceManagement') }}</button>
           </template>
           <template v-else-if="account">
             <div v-if="isLegacyOpenAIMultiCredential" class="mx-3 mb-1 rounded bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">

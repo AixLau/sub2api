@@ -106,6 +106,8 @@ async function resolveLease() {
   await mutate(async () => { await resolveCredentialLease(leaseId.value, evidence.value, resolutionReason.value); runtime.value = await getCredentialRuntime(props.principalId); confirmedTerminal.value = false; return getCredentialPrincipal(props.principalId) })
 }
 async function added() { adding.value = false; await load(); if (principal.value) emit('updated', principal.value) }
+function openAdd() { replaceId.value = undefined; adding.value = true }
+defineExpose({ openAdd, load })
 watch([busy, adding], ([working, authorizing]) => emit('busy', working || authorizing), { immediate: true, flush: 'sync' })
 watch(() => props.principalId, () => { adding.value = false; principal.value = undefined; runtime.value = undefined; error.value = ''; void load() }, { immediate: true })
 </script>
