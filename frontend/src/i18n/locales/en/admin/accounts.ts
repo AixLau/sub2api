@@ -709,7 +709,7 @@ export default {
         codexCLIOnlyAppServerDesc:
           "Effective only when the switch above is on. When enabled, this account also allows third-party clients that embed the Codex engine over the app-server protocol (e.g. Claude Code's codex plugin); they still pass the global engine-fingerprint gate. OR-combined with the global app-server toggle.",
         codexFingerprintMode: 'Codex fingerprint convergence',
-        codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. New OpenAI OAuth accounts default to Device only; you can turn convergence off or choose another mode. Some accounts reported quota shrinkage after enabling convergence, so choose based on your own measurements.',
+        codexFingerprintModeDesc: 'When multiple users share an OAuth account, Device only uses one stable device. For ordinary HTTP Responses and HTTP passthrough, Device + Session gives each downstream user one session per fixed 5–7 day period, each task its own thread, and each request a new turn. New OpenAI OAuth accounts default to Device only; other modes require an explicit choice. Some accounts reported quota shrinkage after enabling convergence, so choose based on your own measurements.',
         codexFingerprintOff: 'Off (passthrough)',
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',

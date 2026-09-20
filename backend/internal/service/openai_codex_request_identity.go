@@ -21,6 +21,11 @@ const codexSessionIdentityInputContextKey = "codex_session_identity_input"
 // for UUIDv4, UUIDv7 and opaque inputs alike. Independent keys keep their scope.
 type codexSessionIdentityInput struct {
 	sessionID                       string
+	originalSessionID               string
+	threadID                        string
+	parentThreadID                  string
+	clientRequestID                 string
+	promptCacheKey                  string
 	promptCacheKeyReferencesSession bool
 	parentReferencePresent          bool
 }
@@ -32,8 +37,25 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 	cacheKey := codexIdentityString(body["prompt_cache_key"])
 	clientMetadata := codexIdentityMetadataMap(body["client_metadata"])
 	identity := resolveCodexRequestIdentity(c.Request.Header, clientMetadata, cacheKey)
+	// x-client-request-id is only a last resort task identity, after the
+	// explicit thread and session. Do not let the general carrier resolver's
+	// thread fallback outrank the original session here.
+	taskHeaders := c.Request.Header.Clone()
+	taskHeaders.Del("x-client-request-id")
+	taskIdentity := resolveCodexRequestIdentity(taskHeaders, clientMetadata, "")
 	c.Set(codexSessionIdentityInputContextKey, &codexSessionIdentityInput{
-		sessionID:                       identity.sessionID,
+		sessionID:         identity.sessionID,
+		originalSessionID: taskIdentity.sessionID,
+		threadID:          taskIdentity.threadID,
+		parentThreadID: codexFirstIdentityValue(
+			c.Request.Header.Get("x-codex-parent-thread-id"),
+			codexIdentityString(clientMetadata["x-codex-parent-thread-id"]),
+			codexIdentityString(clientMetadata["parent_thread_id"]),
+			codexIdentityString(taskIdentity.bodyTurnMetadata["parent_thread_id"]),
+			codexIdentityString(taskIdentity.headerTurnMetadata["parent_thread_id"]),
+		),
+		clientRequestID:                 strings.TrimSpace(c.Request.Header.Get("x-client-request-id")),
+		promptCacheKey:                  cacheKey,
 		promptCacheKeyReferencesSession: cacheKey != "" && cacheKey == identity.sessionID,
 		parentReferencePresent:          identity.parentThreadID != "" || codexFingerprintParentReferencePresent(clientMetadata),
 	})
@@ -42,7 +64,7 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 func stageCodexSessionIdentityInputRaw(c *gin.Context, body []byte) {
 	metadata := map[string]any{}
 	if raw := gjson.GetBytes(body, "client_metadata"); raw.IsObject() {
-		_ = json.Unmarshal([]byte(raw.Raw), &metadata)
+		_ = decodeOpenAIJSONUseNumber([]byte(raw.Raw), &metadata)
 	}
 	stageCodexSessionIdentityInputMap(c, map[string]any{
 		"client_metadata":  metadata,
@@ -377,6 +399,11 @@ func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, bod
 }
 
 func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityMap(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body map[string]any, fallbackSession string) (codexRequestIdentitySnapshot, bool, error) {
+	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.userPeriodSession {
+		applyCodexFingerprintHeaders(headers, ids)
+		applyCodexFingerprintClientMetadata(body, ids)
+		return normalizeCodexOutboundIdentityMapFromInput(headers, body, fallbackSession, nil, nil)
+	}
 	return normalizeCodexOutboundIdentityMapFromInput(headers, body, fallbackSession, stagedCodexSessionIdentityInput(c), func(raw string) (string, error) {
 		return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
 	})
@@ -435,6 +462,14 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 }
 
 func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityRaw(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body []byte, fallbackSession string) ([]byte, codexRequestIdentitySnapshot, bool, error) {
+	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.userPeriodSession {
+		applyCodexFingerprintHeaders(headers, ids)
+		next, _, err := applyCodexFingerprintClientMetadataRaw(body, ids)
+		if err != nil {
+			return body, codexRequestIdentitySnapshot{}, false, err
+		}
+		return normalizeCodexOutboundIdentityRawFromInput(headers, next, fallbackSession, nil, nil)
+	}
 	return normalizeCodexOutboundIdentityRawFromInput(headers, body, fallbackSession, stagedCodexSessionIdentityInput(c), func(raw string) (string, error) {
 		return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
 	})

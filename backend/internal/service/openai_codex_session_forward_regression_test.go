@@ -222,7 +222,7 @@ func TestCodexSessionConflictingLowerPriorityBodyCacheKeyKeepsIndependentScope(t
 	}
 }
 
-func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *testing.T) {
+func TestCodexSessionParentReferenceRetainsCacheOwnershipAcrossModes(t *testing.T) {
 	for _, transport := range []string{"http", "passthrough"} {
 		for _, mode := range []codexFingerprintMode{codexFingerprintSession, codexFingerprintFull} {
 			for _, bodySession := range []string{
@@ -231,6 +231,7 @@ func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *test
 				"body-session-b",
 			} {
 				t.Run(transport+"/"+string(mode)+"/"+bodySession, func(t *testing.T) {
+					store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
 					run := func(withBodySession bool) (string, string) {
 						cfg := &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: CodexSessionIdentityMappingV2}}
 						upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -238,7 +239,7 @@ func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *test
 							Header:     http.Header{"Content-Type": {"text/event-stream"}},
 							Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_parent\",\"model\":\"gpt-5.2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")),
 						}}
-						svc := &OpenAIGatewayService{cfg: cfg, cache: &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+						svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 						account := newTestOAuthAccount(9531, map[string]any{codexFingerprintModeExtraKey: string(mode), "openai_passthrough": transport == "passthrough"})
 						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "parent-downgrade-account"}
 						c := newCodexSessionIdentityTestContext(t, 95, 953)
@@ -253,6 +254,7 @@ func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *test
 						require.NoError(t, err)
 						_, err = svc.Forward(context.Background(), c, account, encoded)
 						require.NoError(t, err)
+						require.Equal(t, mode == codexFingerprintSession, stagedCodexFingerprintIDs(c, account).userPeriodSession, "session parents retain the authoritative v3 snapshot")
 						if transport == "passthrough" {
 							require.NotNil(t, upstream.lastReq)
 						}
@@ -261,9 +263,15 @@ func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *test
 					withoutBody, withoutBodyCache := run(false)
 					withBody, withBodyCache := run(true)
 					require.NotEmpty(t, withoutBody)
-					require.Equal(t, withoutBody, withBody, "parent-triggered device downgrade must retain the explicit header session")
-					require.Equal(t, withoutBodyCache, withBodyCache, "device downgrade must use captured cache ownership")
-					require.Equal(t, scopeCodexAccountIdentityValue(codexSessionIdentityV2Account("parent-downgrade-account"), 953, "prompt-cache", bodySession), withoutBodyCache)
+					require.Equal(t, withoutBody, withBody, "the lower-priority body session must not change the selected session")
+					require.Equal(t, withoutBodyCache, withBodyCache, "cache ownership must use the original explicit session")
+					if mode == codexFingerprintFull {
+						require.Equal(t, scopeCodexAccountIdentityValue(codexSessionIdentityV2Account("parent-downgrade-account"), 953, "prompt-cache", bodySession), withoutBodyCache)
+					} else {
+						require.True(t, isCodexUUIDv7(withoutBody))
+						require.NotEqual(t, withoutBody, withoutBodyCache, "session cache belongs to the task")
+						require.NotEqual(t, bodySession, withoutBodyCache)
+					}
 				})
 			}
 		}

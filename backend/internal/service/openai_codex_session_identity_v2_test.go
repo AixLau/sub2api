@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/alicebob/miniredis/v2"
@@ -55,8 +56,8 @@ func (s *codexSessionIdentityRedisStore) GetCodexSessionIdentity(ctx context.Con
 	return value, err
 }
 
-func (s *codexSessionIdentityRedisStore) SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string) (bool, error) {
-	return s.client.SetNX(ctx, "openai_codex_session_identity:"+key, value, 0).Result()
+func (s *codexSessionIdentityRedisStore) SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, "openai_codex_session_identity:"+key, value, ttl).Result()
 }
 
 func (s *codexSessionIdentitySharedStore) GetCodexSessionIdentity(_ context.Context, key string) (string, error) {
@@ -69,7 +70,7 @@ func (s *codexSessionIdentitySharedStore) GetCodexSessionIdentity(_ context.Cont
 	return value, nil
 }
 
-func (s *codexSessionIdentitySharedStore) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string) (bool, error) {
+func (s *codexSessionIdentitySharedStore) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string, ttl time.Duration) (bool, error) {
 	s.backend.mu.Lock()
 	defer s.backend.mu.Unlock()
 	if _, ok := s.backend.values[key]; ok {
@@ -94,7 +95,7 @@ func (s *codexSessionIdentityV2Store) GetCodexSessionIdentity(_ context.Context,
 	return value, nil
 }
 
-func (s *codexSessionIdentityV2Store) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string) (bool, error) {
+func (s *codexSessionIdentityV2Store) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string, ttl time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.values[key]; ok {

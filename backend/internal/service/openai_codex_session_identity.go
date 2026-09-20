@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
@@ -41,7 +42,7 @@ var (
 // before enabling the v2 session mapping path.
 type codexSessionIdentityStore interface {
 	GetCodexSessionIdentity(ctx context.Context, key string) (string, error)
-	SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string) (bool, error)
+	SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error)
 }
 
 func isCodexUUIDv7(value string) bool {
@@ -54,7 +55,7 @@ func isCodexUUID(value string) bool {
 	return err == nil && parsed.Variant() == uuid.RFC4122
 }
 
-func codexSessionIdentityDownstreamScope(c *gin.Context, apiKeyID int64) string {
+func codexSessionIdentityUserID(c *gin.Context) int64 {
 	userID := int64(0)
 	if c != nil && c.Request != nil {
 		userID, _ = c.Request.Context().Value(ctxkey.UserID).(int64)
@@ -66,7 +67,17 @@ func codexSessionIdentityDownstreamScope(c *gin.Context, apiKeyID int64) string 
 			}
 		}
 	}
-	return fmt.Sprintf("user:%d:api-key:%d", userID, apiKeyID)
+	return userID
+}
+
+func codexSessionIdentityDownstreamScope(c *gin.Context, apiKeyID int64) string {
+	if userID := codexSessionIdentityUserID(c); userID > 0 {
+		return fmt.Sprintf("user:%d", userID)
+	}
+	if apiKeyID > 0 {
+		return fmt.Sprintf("api-key:%d", apiKeyID)
+	}
+	return ""
 }
 
 func codexSessionIdentityUpstreamScope(account *Account) string {
@@ -85,7 +96,9 @@ func codexSessionIdentityUpstreamScope(account *Account) string {
 func codexSessionIdentityMappingKey(c *gin.Context, account *Account, apiKeyID int64, raw string) string {
 	canonical := strings.Join([]string{
 		codexSessionIdentityMappingVersion,
-		codexSessionIdentityDownstreamScope(c, apiKeyID),
+		// v2 remains the per-client isolation strategy for modes that do not
+		// own sessions, WS and compact. Keep its existing key namespace intact.
+		fmt.Sprintf("user:%d:api-key:%d", codexSessionIdentityUserID(c), apiKeyID),
 		codexSessionIdentityUpstreamScope(account),
 		strings.TrimSpace(raw),
 	}, "\x00")
@@ -144,6 +157,16 @@ func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Con
 		return isolateOpenAIUpstreamSessionID(apiKeyID, account, raw), nil
 	}
 	key := codexSessionIdentityMappingKey(c, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), raw)
+	mapped, err := s.resolveCodexSessionIdentityMapping(ctx, c, key, 0)
+	if err == nil {
+		stageCodexSessionIdentity(c, codexSessionIdentityMappingKey(c, account, apiKeyID, mapped), mapped)
+	}
+	return mapped, err
+}
+
+// resolveCodexSessionIdentityMapping uses one durable SetNX winner across
+// processes. Reads and losing writers never extend the mapping's lifetime.
+func (s *OpenAIGatewayService) resolveCodexSessionIdentityMapping(ctx context.Context, c *gin.Context, key string, ttl time.Duration) (string, error) {
 	if mapped := stagedCodexSessionIdentity(c, key); mapped != "" {
 		return mapped, nil
 	}
@@ -160,8 +183,6 @@ func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Con
 			return "", fmt.Errorf("invalid Codex session identity mapping value")
 		}
 		stageCodexSessionIdentity(c, key, value)
-		mappedKey := codexSessionIdentityMappingKey(c, account, getAPIKeyIDFromContext(c), value)
-		stageCodexSessionIdentity(c, mappedKey, value)
 		return value, nil
 	} else if !errors.Is(err, ErrCodexSessionIdentityNotFound) {
 		return "", fmt.Errorf("read Codex session identity mapping: %w", err)
@@ -170,14 +191,12 @@ func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Con
 	if err != nil {
 		return "", fmt.Errorf("generate Codex UUIDv7 session identity: %w", err)
 	}
-	created, err := store.SetCodexSessionIdentityIfAbsent(ctx, key, candidate.String())
+	created, err := store.SetCodexSessionIdentityIfAbsent(ctx, key, candidate.String(), ttl)
 	if err != nil {
 		return "", fmt.Errorf("create Codex session identity mapping: %w", err)
 	}
 	if created {
 		stageCodexSessionIdentity(c, key, candidate.String())
-		mappedKey := codexSessionIdentityMappingKey(c, account, getAPIKeyIDFromContext(c), candidate.String())
-		stageCodexSessionIdentity(c, mappedKey, candidate.String())
 		return candidate.String(), nil
 	}
 	value, err := store.GetCodexSessionIdentity(ctx, key)
@@ -189,8 +208,6 @@ func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Con
 		return "", fmt.Errorf("invalid Codex session identity mapping value")
 	}
 	stageCodexSessionIdentity(c, key, value)
-	mappedKey := codexSessionIdentityMappingKey(c, account, getAPIKeyIDFromContext(c), value)
-	stageCodexSessionIdentity(c, mappedKey, value)
 	return value, nil
 }
 

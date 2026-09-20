@@ -144,6 +144,7 @@ func TestOpenAIGatewayService_CodexFingerprintSandboxUsesFinalUserAgent(t *testi
 					account.Credentials = map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc", "user_agent": tt.accountUA}
 					c, _ := gin.CreateTestContext(httptest.NewRecorder())
 					c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+					c.Set("api_key", &APIKey{ID: 51, UserID: 41})
 					c.Request.Header.Set("User-Agent", tt.clientUA)
 					c.Request.Header.Set("originator", "codex-tui")
 					c.Request.Header.Set("session-id", "client-session")
@@ -154,6 +155,7 @@ func TestOpenAIGatewayService_CodexFingerprintSandboxUsesFinalUserAgent(t *testi
 						Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
 					}}
 					svc := &OpenAIGatewayService{
+						cache:        &codexSessionIdentityTestStore{values: make(map[string]string)},
 						cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: tt.forceCanonical}},
 						httpUpstream: upstream, toolCorrector: NewCodexToolCorrector(),
 						settingService: NewSettingService(&codexVersionSettingRepoStub{values: map[string]string{
@@ -175,6 +177,11 @@ func TestOpenAIGatewayService_CodexFingerprintSandboxUsesFinalUserAgent(t *testi
 					return upstream
 				}
 
+				session := forward(codexFingerprintSession)
+				for _, raw := range []string{session.lastReq.Header.Get("x-codex-turn-metadata"), gjson.GetBytes(session.lastBody, "client_metadata.x-codex-turn-metadata").String()} {
+					require.Equal(t, tt.wantSandbox, gjson.Get(raw, "sandbox").String())
+					require.Equal(t, "workspace-write", gjson.Get(raw, "sandbox_mode").String())
+				}
 				baseline := forward(codexFingerprintOff)
 				converged := forward(codexFingerprintDevice)
 				for _, carrier := range []struct{ name, baseline, converged string }{

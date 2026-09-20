@@ -1,0 +1,108 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+const (
+	codexSessionPeriodMappingVersion = "v3"
+	codexSessionPeriodMin            = 5 * 24 * time.Hour
+	codexSessionPeriodMax            = 7 * 24 * time.Hour
+	codexSessionPeriodGrace          = time.Hour
+)
+
+type codexSessionPeriod struct {
+	key       string
+	epoch     int64
+	duration  time.Duration
+	expiresAt time.Time
+}
+
+// Each account/user pair has its own fixed schedule. Activity cannot slide the
+// boundary. The v3 namespace is independent of v2's per-client session mapping.
+func resolveCodexSessionPeriod(seed, userScope, accountScope string, now time.Time) codexSessionPeriod {
+	namespace := strings.Join([]string{codexSessionPeriodMappingVersion, seed, userScope, accountScope}, "\x00")
+	digest := sha256.Sum256([]byte(namespace))
+	minSeconds := int64(codexSessionPeriodMin / time.Second)
+	spanSeconds := uint64((codexSessionPeriodMax-codexSessionPeriodMin)/time.Second) + 1
+	seconds := minSeconds + int64(binary.BigEndian.Uint64(digest[:8])%spanSeconds)
+	offset := int64(binary.BigEndian.Uint64(digest[8:16]) % uint64(seconds))
+	epoch := (now.Unix() + offset) / seconds
+	key := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d", namespace, epoch)))
+	return codexSessionPeriod{
+		key:       fmt.Sprintf("%x", key[:]),
+		epoch:     epoch,
+		duration:  time.Duration(seconds) * time.Second,
+		expiresAt: time.Unix((epoch+1)*seconds-offset, 0).Add(codexSessionPeriodGrace),
+	}
+}
+
+func (p codexSessionPeriod) threadID(task string) string {
+	if task == "" {
+		return ""
+	}
+	return deriveStableUUIDv4("sub2api:codex-thread:v3:" + p.key + "\x00" + task)
+}
+
+// resolveCodexHTTPFingerprintIDs is called once per HTTP attempt, before either
+// carrier is projected. Only session mode needs authenticated scope and a store.
+// Missing task/user identity conservatively retains device convergence.
+func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Context, c *gin.Context, account *Account, now time.Time) (*codexFingerprintIDs, error) {
+	if account == nil {
+		return nil, nil
+	}
+	mode := account.GetCodexFingerprintMode()
+	if mode != codexFingerprintSession {
+		var headers http.Header
+		if c != nil && c.Request != nil {
+			headers = c.Request.Header
+		}
+		return resolveCodexFingerprintIDsFromRequest(account, headers), nil
+	}
+	ids := resolveCodexFingerprintIDs(account, "", codexFingerprintDevice)
+	if ids == nil {
+		return nil, nil
+	}
+	input := stagedCodexSessionIdentityInput(c)
+	userScope := codexSessionIdentityDownstreamScope(c, getAPIKeyIDFromContext(c))
+	if input == nil || userScope == "" {
+		return ids, nil
+	}
+	task := codexFirstIdentityValue(input.threadID, input.originalSessionID, input.clientRequestID)
+	if task == "" || (input.parentReferencePresent && input.parentThreadID == "") {
+		return ids, nil
+	}
+	period := resolveCodexSessionPeriod(ids.seed, userScope, codexSessionIdentityUpstreamScope(account), now)
+	sessionID, err := s.resolveCodexSessionIdentityMapping(ctx, c, period.key, period.expiresAt.Sub(now))
+	if err != nil {
+		return nil, err
+	}
+	turnID, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("generate Codex UUIDv7 turn identity: %w", err)
+	}
+	ids.mode = codexFingerprintSession
+	ids.userPeriodSession = true
+	ids.sessionID = sessionID
+	ids.threadID = period.threadID(task)
+	ids.parentThreadID = period.threadID(input.parentThreadID)
+	ids.windowID = ids.threadID + ":0"
+	ids.turnID = turnID.String()
+	ids.turnStartedAtUnixMs = now.UnixMilli()
+	// Default cache affinity follows the task, not the shared user session.
+	// Explicit cache partitions remain distinct within that task and epoch.
+	ids.promptCacheKey = ids.threadID
+	if input.promptCacheKey != "" && !input.promptCacheKeyReferencesSession && input.promptCacheKey != task {
+		ids.promptCacheKey = deriveStableUUIDv4("sub2api:codex-cache:v3:" + ids.threadID + "\x00" + input.promptCacheKey)
+	}
+	return ids, nil
+}

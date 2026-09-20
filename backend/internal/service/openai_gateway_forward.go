@@ -570,11 +570,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
 		// fingerprintIDs 在此处解析，后续 buildUpstreamRequest 中使用同一份。
 		if !isCompactRequest {
-			var clientHeaders http.Header
-			if c != nil && c.Request != nil {
-				clientHeaders = c.Request.Header
+			var fpIDs *codexFingerprintIDs
+			if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 || compatMessagesBridge {
+				// This change is scoped to ordinary HTTP Responses. Keep WS and
+				// the compatibility bridge on their existing projection.
+				fpIDs = resolveCodexFingerprintIDsFromRequest(account, c.Request.Header)
+			} else {
+				var fpResolveErr error
+				fpIDs, fpResolveErr = s.resolveCodexHTTPFingerprintIDs(ctx, c, account, time.Now())
+				if fpResolveErr != nil {
+					return nil, fmt.Errorf("resolve Codex HTTP fingerprint: %w", fpResolveErr)
+				}
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()

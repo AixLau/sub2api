@@ -103,10 +103,10 @@ func (c *gatewayCache) GetCodexSessionIdentity(ctx context.Context, key string) 
 	return strings.TrimSpace(value), nil
 }
 
-// SetCodexSessionIdentityIfAbsent atomically creates a durable mapping. No
-// expiry is attached: an active Codex session must never silently receive a
-// different upstream identity after a cache TTL elapses.
-func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string) (bool, error) {
+// SetCodexSessionIdentityIfAbsent atomically creates a mapping and its expiry.
+// v3 expires after the fixed epoch plus grace; v2 passes zero for durability.
+// Existing mappings are never refreshed.
+func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
 	if c == nil || c.rdb == nil {
 		return false, errors.New("gateway cache unavailable")
 	}
@@ -115,7 +115,10 @@ func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key,
 	if key == "" || value == "" {
 		return false, errors.New("invalid Codex session identity mapping")
 	}
-	return c.rdb.SetNX(ctx, openAICodexSessionIdentityPrefix+key, value, 0).Result()
+	if ttl < 0 {
+		return false, errors.New("invalid Codex session identity TTL")
+	}
+	return c.rdb.SetNX(ctx, openAICodexSessionIdentityPrefix+key, value, ttl).Result()
 }
 
 func (c *gatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {

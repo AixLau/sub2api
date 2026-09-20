@@ -34,7 +34,7 @@ func (s *codexSessionIdentityTestStore) GetCodexSessionIdentity(_ context.Contex
 	return value, nil
 }
 
-func (s *codexSessionIdentityTestStore) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string) (bool, error) {
+func (s *codexSessionIdentityTestStore) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string, ttl time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.values[key]; ok {

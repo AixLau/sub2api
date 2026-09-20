@@ -56,7 +56,7 @@ func resolveCodexSandboxForUserAgent(userAgent string) string {
 // User-Agent once for both carriers. Only existing sandbox fields are changed;
 // execution policy and all session identities stay outside this projection.
 func applyCodexFingerprintSandboxMetadataRaw(headers http.Header, body []byte, ids *codexFingerprintIDs) ([]byte, bool, error) {
-	if ids == nil || ids.mode != codexFingerprintDevice {
+	if ids == nil || (ids.mode != codexFingerprintDevice && !ids.userPeriodSession) {
 		return body, false, nil
 	}
 	sandbox := resolveCodexSandboxForUserAgent(headers.Get("User-Agent"))
