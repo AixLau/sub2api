@@ -466,7 +466,7 @@
     </TablePageLayout>
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" @instances-updated="reload" />
-    <DeviceManagementModal :show="showDeviceManagement" :account="deviceAccount" @close="closeDeviceManagement" @instances-updated="reload" />
+    <DeviceManagementModal :show="showDeviceManagement" :account="deviceAccount" @close="closeDeviceManagement" @instances-updated="reload" @test-account="handleTestFromDeviceManagement" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
@@ -1932,6 +1932,11 @@ const handleDeviceManagement = async (a: AccountListItem) => {
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
   }
+}
+const handleTestFromDeviceManagement = async (account: Account | null) => {
+  if (!account) return
+  closeDeviceManagement()
+  await handleTest(account)
 }
 const closeDeviceManagement = () => {
   showDeviceManagement.value = false

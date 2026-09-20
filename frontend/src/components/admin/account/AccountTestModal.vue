@@ -415,6 +415,15 @@ const selectedModelId = ref('')
 const testPrompt = ref('')
 const loadingModels = ref(false)
 let abortController: AbortController | null = null
+
+const formatTestError = (value?: string) => {
+  const code = value?.trim()
+  if (!code) return t('admin.accounts.testFailed')
+  if (code === 'INSTANCE_UNAVAILABLE') return t('admin.accounts.instances.states.UNAVAILABLE')
+  if (code === 'INSTANCE_CONCURRENCY_EXCEEDED') return t('admin.accounts.instances.wait.INSTANCE_CONCURRENCY_EXCEEDED')
+  if (code === 'PRINCIPAL_CONCURRENCY_EXCEEDED') return t('admin.accounts.instances.wait.PRINCIPAL_CONCURRENCY_EXCEEDED')
+  return value || t('admin.accounts.testFailed')
+}
 const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
@@ -1056,13 +1065,13 @@ const handleEvent = (event: {
         status.value = 'success'
       } else {
         status.value = 'error'
-        errorMessage.value = event.error || t('admin.accounts.testFailed')
+        errorMessage.value = formatTestError(event.error)
       }
       break
 
     case 'error':
       status.value = 'error'
-      errorMessage.value = event.error || t('common.unknownError')
+      errorMessage.value = formatTestError(event.error)
       if (streamingContent.value) {
         addLine(streamingContent.value, 'text-green-300')
         streamingContent.value = ''

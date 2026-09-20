@@ -1,7 +1,7 @@
 export default {
     accounts: {
       instances: {
- deviceManagement: '设备管理', deviceList: '设备列表', runtimeStatus: '运行状态', runtimeTab: '运行状态', advancedInfo: '高级信息', addDevice: '添加设备', editDevice: '编辑设备', archiveDevice: '归档设备', archiveConfirm: '确定归档设备“{name}”？归档后该设备不再参与账号调度。', configuredCapacity: '设备配置总容量', currentUsage: '当前使用', availableBalance: '可用余额', effectiveCapacity: '有效容量', createdAt: '创建时间', updatedAt: '最近更新', number: '序号', deviceName: '设备', status: '状态', authorization: '授权方式', lastRefresh: '最近刷新', empty: '暂无可用设备', running: '执行中', reserved: '预留', queued: '排队', unresolved: '待核对', orphaned: '待核对', waitReasons: '等待原因', reconcileHint: '存在未确认执行时，请核对终结证据后释放占用。', noRuntimeIssues: '当前没有待处理的运行状态。',
+ deviceManagement: '设备管理', deviceList: '设备列表', runtimeStatus: '运行状态', runtimeTab: '运行状态', advancedInfo: '高级信息', addDevice: '添加设备', editDevice: '编辑设备', archiveDevice: '归档设备', archiveConfirm: '确定归档设备“{name}”？归档后该设备不再参与账号调度。', configuredCapacity: '设备配置总容量', currentUsage: '当前使用', availableBalance: '可用余额', effectiveCapacity: '有效容量', createdAt: '创建时间', updatedAt: '最近更新', number: '序号', deviceName: '设备', status: '状态', authorization: '授权方式', credentialExpiry: '凭证到期', lastRefresh: '最近刷新', empty: '暂无可用设备', running: '执行中', reserved: '预留', queued: '排队', unresolved: '待核对', orphaned: '待核对', waitReasons: '等待原因', reconcileHint: '存在未确认执行时，请核对终结证据后释放占用。', noRuntimeIssues: '当前没有待处理的运行状态。',
 "mixedGroup": "当前分组包含使用其他调度方式的账号，请先选择独立分组，再恢复账号。", "routingPending": "实例调度尚待启用。请确认已启用多实例调度且所选分组符合条件，再恢复账号。",
  attachExisting: '加入已有账号',
  openExisting: '定位已有实例',

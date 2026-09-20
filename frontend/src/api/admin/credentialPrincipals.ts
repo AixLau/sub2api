@@ -20,6 +20,7 @@ export interface CredentialInstance {
   admin_state: string
   credential_state: string
   identity_source: string
+  expires_at?: string
 }
 export interface CredentialPrincipal {
   group_ids: number[]

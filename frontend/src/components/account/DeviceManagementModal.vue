@@ -74,11 +74,11 @@
             <tbody class="divide-y divide-gray-200 dark:divide-dark-600">
               <tr v-for="instance in activeInstances" :key="instance.id" class="align-top">
                 <td class="px-3 py-3 text-gray-500">#{{ instance.id }}</td>
-                <td class="px-3 py-3"><div class="font-medium text-gray-900 dark:text-white">{{ instance.name }}</div><div class="text-xs text-gray-500">{{ instance.identity_source || '-' }}</div></td>
+                <td class="px-3 py-3"><div class="font-medium text-gray-900 dark:text-white">{{ instance.name }}</div></td>
                 <td class="px-3 py-3"><span :class="statusClass(instance.state)">{{ stateLabel(instance.state) }}</span></td>
                 <td class="px-3 py-3"><div class="font-medium">{{ instance.occupied }} / {{ instance.max_concurrency }}</div><div class="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full bg-primary-500" :style="{ width: `${Math.min(100, instance.max_concurrency ? instance.occupied / instance.max_concurrency * 100 : 0)}%` }" /></div><div v-if="instance.occupied > instance.max_concurrency" class="mt-1 text-xs text-amber-600">{{ t('admin.accounts.instances.shrinking', { count: instance.occupied - instance.max_concurrency }) }}</div></td>
-                <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(instance.credential_version ? principal?.observed_at : undefined) }}</td>
-                <td class="px-3 py-3"><div class="flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="reauthorize(instance.id)">{{ t('admin.accounts.instances.reauthorize') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="toggleDrain(instance)">{{ t(instance.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="refreshInstance(instance.id)">{{ t('admin.accounts.instances.refreshCredential') }}</button><button v-if="instance.admin_state !== 'ACTIVE' && instance.occupied === 0 && instance.active_bindings === 0" class="btn btn-secondary btn-sm text-red-600" :disabled="busy" @click="archiveInstance(instance.id)">{{ t('admin.accounts.instances.remove') }}</button></div></td>
+                <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(instance.expires_at) }}</td>
+                <td class="px-3 py-3"><div class="relative flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button v-if="instance.admin_state !== 'ACTIVE' && instance.occupied === 0 && instance.active_bindings === 0" class="btn btn-secondary btn-sm text-red-600" :disabled="busy" @click="archiveInstance(instance.id)">{{ t('common.delete') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="activeActionMenu = activeActionMenu === instance.id ? null : instance.id" :aria-expanded="activeActionMenu === instance.id">{{ t('common.more') }}</button><div v-if="activeActionMenu === instance.id" class="absolute right-0 top-full z-10 mt-1 min-w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"><button class="device-action-menu-item" @click="emit('test-account', account); activeActionMenu = null">{{ t('admin.accounts.testConnection') }}</button><button class="device-action-menu-item" @click="reauthorize(instance.id); activeActionMenu = null">{{ t('admin.accounts.instances.reauthorize') }}</button><button class="device-action-menu-item" @click="refreshInstance(instance.id); activeActionMenu = null">{{ t('admin.accounts.instances.refreshCredential') }}</button><button class="device-action-menu-item" @click="toggleDrain(instance); activeActionMenu = null">{{ t(instance.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button></div></div></td>
               </tr>
               <tr v-if="!activeInstances.length"><td colspan="6" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
             </tbody>
@@ -110,7 +110,7 @@ import type { Account } from '@/types'
 import { credentialErrorReason, getCredentialPrincipal, saveCredentialConfiguration, controlCredentialInstance, refreshCredentialInstance, type CredentialPrincipal, type CredentialInstance } from '@/api/admin/credentialPrincipals'
 
 const props = defineProps<{ show: boolean; account: Account | null }>()
-const emit = defineEmits<{ close: []; 'instances-updated': []; updated: [principal: CredentialPrincipal] }>()
+const emit = defineEmits<{ close: []; 'instances-updated': []; updated: [principal: CredentialPrincipal]; 'test-account': [account: Account | null] }>()
 const { t } = useI18n()
 const stepUp = useStepUp()
 const principal = ref<CredentialPrincipal>()
@@ -122,8 +122,9 @@ const limitDraft = ref(0)
 const showAdd = ref(false)
 const editTarget = ref<CredentialInstance | null>(null)
 const archiveTarget = ref<CredentialInstance | null>(null)
+const activeActionMenu = ref<number | null>(null)
 const editDraft = ref({ name: '', max_concurrency: 0 })
-const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.lastRefresh'), t('common.actions')])
+const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.credentialExpiry'), t('common.actions')])
 const activeInstances = computed(() => (principal.value?.instances || []).filter(instance => !instance.archived_at))
 const effectiveCapacity = computed(() => Math.min(principal.value?.account_max_concurrency || 0, principal.value?.effective_configured_capacity || principal.value?.configured_capacity || 0))
 const usagePercent = computed(() => effectiveCapacity.value > 0 ? Math.min(100, (principal.value?.occupied || 0) / effectiveCapacity.value * 100) : 0)
@@ -159,3 +160,9 @@ function openAdd() { reauthorizeId.value = undefined; showAdd.value = true }
 async function handleAdded() { showAdd.value = false; reauthorizeId.value = undefined; await load() }
 watch(() => [props.show, props.account?.principal?.id], ([visible]) => { if (visible) { activeTab.value = 'devices'; void load() } }, { immediate: true })
 </script>
+
+<style scoped>
+.device-action-menu-item {
+  @apply block w-full rounded px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700;
+}
+</style>
