@@ -468,9 +468,8 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <AccountInstancesDialog v-if="instancePrincipalId" :show="showInstances" :principal-id="instancePrincipalId" :groups="groups" @close="showInstances = false" @updated="reload" />
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
-    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
+    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" @instances-updated="reload" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
@@ -538,7 +537,7 @@ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
-import AccountInstancesDialog from '@/components/account/AccountInstancesDialog.vue'
+import { getCredentialPrincipal } from '@/api/admin/credentialPrincipals'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
@@ -608,10 +607,7 @@ const selTypes = computed<AccountType[]>(() => {
   )
   return [...types]
 })
-const showInstances = ref(false)
-const instancePrincipalId = ref(0)
 const requestedPrincipal = Number(new URLSearchParams(window.location.search).get('principal_id'))
-if (Number.isSafeInteger(requestedPrincipal) && requestedPrincipal > 0) { instancePrincipalId.value = requestedPrincipal; showInstances.value = true }
 const showCreate = ref(false)
 const showEdit = ref(false)
 const showSync = ref(false)
@@ -1920,7 +1916,6 @@ const loadAccountDetails = async (account: Pick<AccountListItem, 'id'>): Promise
 }
 
 const handleEdit = async (a: AccountListItem) => {
-  if (a.principal) { instancePrincipalId.value = a.principal.id; showInstances.value = true; return }
   const account = await loadAccountDetails(a)
   if (!account) return
   edAcc.value = account
@@ -2649,6 +2644,15 @@ onMounted(async () => {
 
   load()
   loadUpstreamBillingProbeGlobalState()
+  if (Number.isSafeInteger(requestedPrincipal) && requestedPrincipal > 0) {
+    try {
+      const principal = await getCredentialPrincipal(requestedPrincipal)
+      const account = await loadAccountDetails({ id: principal.account_id })
+      if (account) { account.principal = principal; edAcc.value = account; showEdit.value = true }
+    } catch (error) {
+      appStore.showError(extractApiErrorMessage(error, t('common.error')))
+    }
+  }
   const [proxiesResult, groupsResult] = await Promise.allSettled([
     adminAPI.proxies.getAll(),
     adminAPI.groups.getAll()

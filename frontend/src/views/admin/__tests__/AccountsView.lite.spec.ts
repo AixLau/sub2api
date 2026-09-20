@@ -247,4 +247,26 @@ describe('admin AccountsView lite account list', () => {
     consoleError.mockRestore()
     wrapper.unmount()
   })
+
+  it('opens the original editor for a multi-instance account from edit and instance actions', async () => {
+    const principal = { id: 9, account_id: 42, name: 'controlled account', config_version: 3 }
+    const controlledRow = { ...listRow, principal }
+    listAccounts.mockResolvedValue({ items: [controlledRow], total: 1, page: 1, page_size: 20, pages: 1 })
+    getById.mockResolvedValue({ ...fullAccount, name: principal.name, principal })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text().includes('common.edit'))!.trigger('click')
+    await flushPromises()
+    expect(getById).toHaveBeenCalledWith(42)
+    expect(wrapper.get('[data-test="edit-account"]').text()).toBe(principal.name)
+    expect(wrapper.findComponent(EditAccountModalStub).props('account').principal).toEqual(principal)
+
+    wrapper.findComponent(AccountActionMenu).vm.$emit('manage-instances', controlledRow)
+    await flushPromises()
+    expect(getById).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAllComponents(EditAccountModalStub)).toHaveLength(1)
+    expect(wrapper.find('account-instances-dialog-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

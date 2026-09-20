@@ -578,6 +578,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	if err := prepareCredentialAccountEdit(account, input); err != nil {
+		return nil, err
+	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -642,7 +645,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if account.IsCredentialShadow() && input.Credentials != nil {
 		account.Credentials = sanitizeSparkShadowCredentials(input.Credentials)
-	} else if len(input.Credentials) > 0 {
+	} else if len(input.Credentials) > 0 || (input.CredentialEdit != nil && input.Credentials != nil) {
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
 		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
@@ -844,6 +847,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				return nil, err
 			}
 		}
+	}
+
+	if input.CredentialEdit != nil {
+		updater, ok := s.accountRepo.(CredentialAccountSettingsRepository)
+		if !ok {
+			return nil, infraerrors.ServiceUnavailable("CREDENTIAL_SETTINGS_UNAVAILABLE", "Account settings unavailable")
+		}
+		if err := updater.UpdateCredentialAccountSettings(ctx, account, input); err != nil {
+			return nil, err
+		}
+		return s.accountRepo.GetByID(ctx, id)
 	}
 
 	billingSettingsAppliedAtomically := false

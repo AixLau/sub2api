@@ -1,4 +1,5 @@
 <template>
+  <TotpStepUpDialog :controller="accountStepUp" />
   <BaseDialog
     :show="show"
     :title="t('admin.accounts.editAccount')"
@@ -1667,8 +1668,8 @@
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
-          <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-          <input v-model.number="form.concurrency" type="number" min="1" class="input" />
+          <label class="input-label">{{ t(account.principal ? 'admin.accounts.instances.accountLimit' : 'admin.accounts.concurrency') }}</label>
+          <input v-model.number="form.concurrency" type="number" :min="account.principal ? 0 : 1" class="input" />
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
@@ -2974,6 +2975,17 @@
 
     </form>
 
+    <AccountInstancesEditor
+      v-if="show && principal && account?.platform === 'openai'"
+      :key="principal.id"
+      :principal-id="principal.id"
+      :disabled="submitting"
+      @loaded="principal = $event"
+      @updated="handleInstancesUpdated"
+      @busy="instancesBusy = $event"
+      @archived="emit('instances-updated'); handleClose()"
+    />
+
     <template #footer>
       <div v-if="account" class="flex justify-end gap-3">
         <button @click="handleClose" type="button" class="btn btn-secondary">
@@ -2982,7 +2994,7 @@
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting"
+          :disabled="submitting || instancesBusy"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3046,6 +3058,10 @@ import type {
   GrokMediaEligibilityState
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import AccountInstancesEditor from './AccountInstancesEditor.vue'
+import { credentialErrorReason, getCredentialPrincipal, type CredentialPrincipal } from '@/api/admin/credentialPrincipals'
+import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
@@ -3131,11 +3147,20 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
   updated: [account: Account]
+  'instances-updated': []
 }>()
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const browserTimeZone = getBrowserTimeZone()
+const principal = ref<CredentialPrincipal>()
+const instancesBusy = ref(false)
+const accountStepUp = useStepUp()
+const initialPrincipalStatus = ref('')
+const handleInstancesUpdated = (value: CredentialPrincipal) => {
+  principal.value = value
+  emit('instances-updated')
+}
 
 const selectableGroups = computed(() => {
   const groups = new Map<number, Group>(props.groups.map(group => [group.id, group]))
@@ -3966,17 +3991,21 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedChannelWarningDetails.value = null
   mixedChannelWarningRawMessage.value = ''
   mixedChannelWarningAction.value = null
-  form.name = newAccount.name
+  principal.value = newAccount.principal
+  instancesBusy.value = false
+  form.name = newAccount.principal?.name ?? newAccount.name
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
-  form.concurrency = newAccount.concurrency
+  form.concurrency = newAccount.principal?.account_max_concurrency ?? newAccount.concurrency
   form.load_factor = newAccount.load_factor ?? null
   form.priority = newAccount.priority
   form.rate_multiplier = newAccount.rate_multiplier ?? 1
   form.status = (newAccount.status === 'active' || newAccount.status === 'inactive' || newAccount.status === 'error')
     ? newAccount.status
     : 'active'
-  form.group_ids = newAccount.group_ids || []
+  if (newAccount.principal) form.status = newAccount.principal.admin_state === 'ACTIVE' ? 'active' : 'inactive'
+  initialPrincipalStatus.value = newAccount.principal ? form.status : ''
+  form.group_ids = [...(newAccount.principal?.group_ids ?? newAccount.group_ids ?? [])]
   form.expires_at = newAccount.expires_at ?? null
 
   // Load intercept warmup requests setting (applies to all account types)
@@ -4944,12 +4973,22 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
-    let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    const payload = withAntigravityConfirmFlag(updatePayload)
+    let updatedAccount = principal.value
+      ? await accountStepUp.run(() => adminAPI.accounts.update(accountID, payload, principal.value!.config_version))
+      : await adminAPI.accounts.update(accountID, payload)
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
     handleClose()
   } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (principal.value && credentialErrorReason(error) === 'CONFIG_VERSION_CONFLICT') {
+      appStore.showError(t('admin.accounts.instances.errors.CONFIG_VERSION_CONFLICT'))
+      // Keep the user's account edits while acquiring the version for a deliberate retry.
+      try { principal.value = await getCredentialPrincipal(principal.value.id) } catch { /* Retry remains explicit. */ }
+      return
+    }
     if (error.status === 409 && error.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
       openMixedChannelDialog({
         message: error.message,
@@ -4967,7 +5006,7 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
 }
 
 const handleSubmit = async () => {
-  if (!props.account) return
+  if (!props.account || instancesBusy.value || submitting.value) return
   const accountID = props.account.id
 
   if (form.status !== 'active' && form.status !== 'inactive' && form.status !== 'error') {
@@ -4985,7 +5024,13 @@ const handleSubmit = async () => {
   const updatePayload: Record<string, unknown> = { ...form }
   try {
     const concurrency = Number(form.concurrency)
-    updatePayload.concurrency = Number.isFinite(concurrency) && concurrency >= 1 ? concurrency : 1
+    if (principal.value) {
+      if (!Number.isInteger(concurrency) || concurrency < 0 || concurrency > 2147483647) return
+      updatePayload.concurrency = concurrency
+      if (form.status === initialPrincipalStatus.value) delete updatePayload.status
+    } else {
+      updatePayload.concurrency = Number.isFinite(concurrency) && concurrency >= 1 ? concurrency : 1
+    }
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {
       updatePayload.proxy_id = 0

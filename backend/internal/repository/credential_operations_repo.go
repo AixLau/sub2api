@@ -283,7 +283,7 @@ func controlReplay(ctx context.Context, tx *sql.Tx, actor, principal, instance, 
 	return found, err
 }
 
-func controlAudit(ctx context.Context, tx *sql.Tx, actor, principal, instance, version int64, event string, payload any) error {
+func controlAudit(ctx context.Context, tx sqlExecutor, actor, principal, instance, version int64, event string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err

@@ -218,16 +218,8 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 // source of account-level settings and capacity; each imported credential gets
 // its own logical account/instance with the same routing settings.
 func attachCredentialInstancesToPrincipal(ctx context.Context, tx *sql.Tx, actor, principal int64, imports []credentialPrincipalImport) error {
-	var proxyID sql.NullInt64
-	var priority int
-	var rateMultiplier float64
-	var extra []byte
 	var principalState, routingMode string
-	if err := tx.QueryRowContext(ctx, `SELECT a.proxy_id,a.priority,COALESCE(a.rate_multiplier,1),a.extra
-FROM upstream_principals p JOIN accounts a ON a.id=p.management_account_id WHERE p.id=$1`, principal).Scan(&proxyID, &priority, &rateMultiplier, &extra); err != nil {
-		return err
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT admin_state,routing_mode FROM upstream_principals WHERE id=$1`, principal).Scan(&principalState, &routingMode); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT admin_state,routing_mode FROM upstream_principals WHERE id=$1 FOR NO KEY UPDATE`, principal).Scan(&principalState, &routingMode); err != nil {
 		return err
 	}
 	for _, imp := range imports {
@@ -235,7 +227,12 @@ FROM upstream_principals p JOIN accounts a ON a.id=p.management_account_id WHERE
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE accounts SET proxy_id=$2,priority=$3,rate_multiplier=$4,extra=$5 WHERE id=(SELECT account_id FROM credential_instances WHERE id=$1)`, instanceID, nullableInt64(proxyID), priority, rateMultiplier, string(extra)); err != nil {
+		if err = inheritCredentialAccountSettings(ctx, tx, principal, instanceID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id,priority)
+ SELECT (SELECT account_id FROM credential_instances WHERE id=$1),g.group_id,g.priority
+ FROM account_groups g JOIN upstream_principals p ON p.management_account_id=g.account_id WHERE p.id=$2`, instanceID, principal); err != nil {
 			return err
 		}
 		if principalState == "ACTIVE" && routingMode == "GROUPED" {
@@ -244,8 +241,12 @@ FROM upstream_principals p JOIN accounts a ON a.id=p.management_account_id WHERE
 			}
 		}
 	}
+	var version int64
+	if err := tx.QueryRowContext(ctx, `UPDATE upstream_principals SET config_version=config_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING config_version`, principal).Scan(&version); err != nil {
+		return err
+	}
 	payload, _ := json.Marshal(map[string]any{"payload_hash": "merged", "principal_id": principal, "instance_count": len(imports)})
-	_, err := tx.ExecContext(ctx, `INSERT INTO credential_audit_outbox(event_id,principal_id,actor_id,version,event_type,safe_payload) VALUES($1,$2,$3,1,'PRINCIPAL_INSTANCE_ATTACHED',$4)`, uuid.NewString(), principal, actor, string(payload))
+	_, err := tx.ExecContext(ctx, `INSERT INTO credential_audit_outbox(event_id,principal_id,actor_id,version,event_type,safe_payload) VALUES($1,$2,$3,$4,'PRINCIPAL_INSTANCE_ATTACHED',$5)`, uuid.NewString(), principal, actor, version, string(payload))
 	return err
 }
 

@@ -133,7 +133,7 @@ func (r *credentialImportRepository) AddCredentialInstance(ctx context.Context, 
 			return 0, err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE accounts a SET proxy_id=m.proxy_id,priority=m.priority,rate_multiplier=m.rate_multiplier,extra=m.extra FROM upstream_principals p JOIN accounts m ON m.id=p.management_account_id WHERE p.id=$2 AND a.id=(SELECT account_id FROM credential_instances WHERE id=$1)`, instance, principal); err != nil {
+	if err = inheritCredentialAccountSettings(ctx, tx, principal, instance); err != nil {
 		return 0, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE credential_instances i SET admin_state='ACTIVE' FROM upstream_principals p WHERE i.id=$1 AND p.id=i.principal_id AND p.routing_mode='GROUPED' AND p.admin_state='ACTIVE' AND p.archived_at IS NULL`, instance); err != nil {

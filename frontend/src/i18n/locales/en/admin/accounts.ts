@@ -6,6 +6,7 @@ export default {
  openExisting: 'Open existing instance',
 "reconcile": "Reconcile unresolved executions (up to 100 shown)", "selectLease": "Select unresolved execution", "evidence": "Reliable termination evidence", "reason": "Resolution reason", "confirmTerminal": "I checked the upstream and confirmed that this execution has reliably terminated.", "releaseConfirmed": "Release confirmed occupancy", "wait": {"PRINCIPAL_CONCURRENCY_EXCEEDED": "Account full", "INSTANCE_CONCURRENCY_EXCEEDED": "Instance full", "USER_CONCURRENCY_EXCEEDED": "User capacity", "REFRESH_WAIT": "Credential refresh", "COOLDOWN": "Instance cooling down", "INSTANCE_UNAVAILABLE": "Instance lifecycle pending", "FAIRNESS_WAIT": "Fair queue"},
  manage: 'Manage instances',
+ saveInstances: 'Save instance settings',
  pendingLegacy: 'Pending multi-instance',
  pendingLegacyHint: 'This OpenAI OAuth account still uses the legacy credential path. Instance management appears after deployment migration.',
  restart: 'Start authorization again',

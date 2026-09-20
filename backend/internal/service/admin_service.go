@@ -424,6 +424,7 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
+	CredentialEdit        *CredentialAccountEdit
 	Name                  string
 	Notes                 *string
 	Type                  string // Account type: oauth, setup-token, apikey

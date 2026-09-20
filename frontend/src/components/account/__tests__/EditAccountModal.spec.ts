@@ -55,6 +55,7 @@ vi.mock('vue-i18n', async () => {
 })
 
 import EditAccountModal from '../EditAccountModal.vue'
+import AccountInstancesEditor from '../AccountInstancesEditor.vue'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -315,6 +316,8 @@ function mountModal(account = buildAccount(), renderGroupSelector = false) {
         BaseDialog: BaseDialogStub,
         Select: SelectStub,
         Icon: true,
+        AccountInstancesEditor: true,
+        TotpStepUpDialog: true,
         ProxySelector: true,
         GroupSelector: renderGroupSelector ? false : GroupSelectorStub,
         ModelWhitelistSelector: ModelWhitelistSelectorStub
@@ -329,6 +332,47 @@ describe('EditAccountModal', () => {
   })
 
   afterEach(() => vi.useRealTimers())
+
+  it('retains the account form and saves policy with the latest inline instance version', async () => {
+    const account = buildOpenAIOAuthParentAccount()
+    account.status = 'inactive' // The carrier stays outside legacy scheduling.
+    account.concurrency = 0
+    account.credentials = { model_mapping: { 'gpt-5.4': 'gpt-5.4' } }
+    account.principal = { id: 9, name: account.name, account_max_concurrency: 0, config_version: 2, admin_state: 'ACTIVE', group_ids: [7] }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const form = wrapper.get('form#edit-account-form')
+    expect(form.text()).toContain('admin.accounts.notes')
+    expect(form.text()).toContain('admin.accounts.priority')
+    expect(form.text()).toContain('admin.accounts.instances.accountLimit')
+    const editor = wrapper.getComponent(AccountInstancesEditor)
+    expect(form.findComponent(AccountInstancesEditor).exists()).toBe(false)
+    await form.get('textarea').setValue('unsaved account notes')
+    editor.vm.$emit('updated', { ...account.principal, config_version: 3 })
+    await wrapper.vm.$nextTick()
+    expect(form.get<HTMLTextAreaElement>('textarea').element.value).toBe('unsaved account notes')
+    await form.trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledWith(account.id, expect.objectContaining({
+      notes: 'unsaved account notes', concurrency: 0, group_ids: [7],
+      credentials: expect.objectContaining({ model_mapping: { 'gpt-5.4': 'gpt-5.4' } })
+    }), 3)
+    expect(updateAccountMock.mock.calls[0][1]).not.toHaveProperty('status')
+    wrapper.unmount()
+  })
+
+  it('blocks the account save while an inline instance operation is pending', async () => {
+    const account = buildOpenAIOAuthParentAccount()
+    account.principal = { id: 9, name: account.name, account_max_concurrency: 10, config_version: 2, admin_state: 'ACTIVE', group_ids: [] }
+    updateAccountMock.mockReset()
+    const wrapper = mountModal(account)
+    wrapper.getComponent(AccountInstancesEditor).vm.$emit('busy', true)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
   it('sets expiry presets from now instead of extending the saved expiry', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })

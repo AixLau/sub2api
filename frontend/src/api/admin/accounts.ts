@@ -241,8 +241,9 @@ export async function duplicate(id: number): Promise<Account> {
  * @param updates - Fields to update
  * @returns Updated account
  */
-export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
-  const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
+export async function update(id: number, updates: UpdateAccountRequest, principalVersion?: number): Promise<Account> {
+  const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates,
+    principalVersion === undefined ? undefined : { headers: { 'If-Match': `"v${principalVersion}"` } })
   return data
 }
 

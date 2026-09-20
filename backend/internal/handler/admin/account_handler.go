@@ -103,6 +103,10 @@ func (h *AccountHandler) enrichAccountPrincipals(ctx context.Context, items []Ac
 			items[i].Name = p.Name
 			items[i].Concurrency = p.RequestedLimit
 			items[i].CurrentConcurrency = p.Occupied
+			items[i].Status = "inactive"
+			if p.AdminState == "ACTIVE" {
+				items[i].Status = service.StatusActive
+			}
 		}
 	}
 	return nil
@@ -1176,6 +1180,16 @@ func (h *AccountHandler) Duplicate(c *gin.Context) {
 // Update handles updating an account
 // PUT /api/v1/admin/accounts/:id
 func (h *AccountHandler) Update(c *gin.Context) {
+	h.updateAccount(c, nil)
+}
+
+// UpdateWithCredentialStepUp preserves the existing legacy edit boundary while
+// requiring the principal control API's step-up check for controlled accounts.
+func (h *AccountHandler) UpdateWithCredentialStepUp(stepUp gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) { h.updateAccount(c, stepUp) }
+}
+
+func (h *AccountHandler) updateAccount(c *gin.Context, stepUp gin.HandlerFunc) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid account ID")
@@ -1201,7 +1215,35 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 确定是否跳过混合渠道检查
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
+	var credentialEdit *service.CredentialAccountEdit
+	if h.principals != nil {
+		principals, lookupErr := h.principals.reader.AccountPrincipals(c.Request.Context(), []int64{accountID})
+		if lookupErr != nil {
+			response.Error(c, http.StatusServiceUnavailable, "Account settings unavailable")
+			return
+		}
+		if len(principals) > 0 {
+			if stepUp == nil {
+				response.Error(c, http.StatusServiceUnavailable, "Account authorization unavailable")
+				return
+			}
+			stepUp(c)
+			if c.IsAborted() {
+				return
+			}
+			actor, _, version, ok := credentialControlParams(c)
+			if !ok {
+				return
+			}
+			credentialEdit = &service.CredentialAccountEdit{
+				PrincipalID: principals[0].ID, ActorID: actor, ConfigVersion: version,
+				Activate: h.principals.enabled && req.Status == service.StatusActive,
+			}
+		}
+	}
+
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+		CredentialEdit:        credentialEdit,
 		Name:                  req.Name,
 		Notes:                 req.Notes,
 		Type:                  req.Type,
@@ -1221,6 +1263,13 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		SkipMixedChannelCheck: skipCheck,
 	})
 	if err != nil {
+		if credentialEdit != nil {
+			switch err.Error() {
+			case "CONFIG_VERSION_CONFLICT", "GROUPED_ROUTE_MIXED_UNSUPPORTED", "CREDENTIAL_UNVERIFIED", "CREDENTIAL_NOT_FOUND":
+				credentialControlErrorResponse(c, err)
+				return
+			}
+		}
 		// 检查是否为混合渠道错误
 		var mixedErr *service.MixedChannelError
 		if errors.As(err, &mixedErr) {
@@ -1242,7 +1291,15 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	items := []AccountWithConcurrency{h.buildAccountResponseWithRuntime(c.Request.Context(), account)}
+	if err := h.enrichAccountPrincipals(c.Request.Context(), items); err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account capacity unavailable")
+		return
+	}
+	if items[0].Principal != nil {
+		c.Header("ETag", `"v`+strconv.FormatInt(items[0].Principal.ConfigVersion, 10)+`"`)
+	}
+	response.Success(c, items[0])
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。

@@ -6,6 +6,7 @@ export default {
  openExisting: '定位已有实例',
 "reconcile": "核对未知执行（最多显示 100 条）", "selectLease": "选择待核对执行", "evidence": "可信终结证据", "reason": "处置原因", "confirmTerminal": "我已核对上游，确认该执行已可靠终结。", "releaseConfirmed": "按终结证据释放占用", "wait": {"PRINCIPAL_CONCURRENCY_EXCEEDED": "账号满载", "INSTANCE_CONCURRENCY_EXCEEDED": "实例满载", "USER_CONCURRENCY_EXCEEDED": "用户容量不足", "REFRESH_WAIT": "等待凭证刷新", "COOLDOWN": "实例冷却", "INSTANCE_UNAVAILABLE": "实例生命周期处理中", "FAIRNESS_WAIT": "等待公平队列"},
  manage: '管理实例',
+ saveInstances: '保存实例设置',
  pendingLegacy: '待接入多实例',
  pendingLegacyHint: '该 OpenAI OAuth 账号仍使用旧凭据路径，将在部署迁移后显示实例管理。',
  restart: '重新开始授权',
