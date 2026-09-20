@@ -1,6 +1,7 @@
 export default {
     accounts: {
       instances: {
+ deviceManagement: '设备管理', deviceList: '设备列表', runtimeStatus: '运行状态', advancedInfo: '高级信息', addDevice: '添加设备', configuredCapacity: '设备配置总容量', currentUsage: '当前使用', availableBalance: '可用余额', effectiveCapacity: '有效容量', createdAt: '创建时间', updatedAt: '最近更新', running: '执行中', reserved: '预留', queued: '排队', unresolved: '待核对', waitReasons: '等待原因', reconcileHint: '存在未确认执行时，请核对终结证据后释放占用。', noRuntimeIssues: '当前没有待处理的运行状态。',
 "mixedGroup": "当前分组包含使用其他调度方式的账号，请先选择独立分组，再恢复账号。", "routingPending": "实例调度尚待启用。请确认已启用多实例调度且所选分组符合条件，再恢复账号。",
  attachExisting: '加入已有账号',
  openExisting: '定位已有实例',
