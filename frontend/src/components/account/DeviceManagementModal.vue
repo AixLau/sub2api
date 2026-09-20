@@ -78,15 +78,25 @@
                 <td class="px-3 py-3"><span :class="statusClass(instance.state)">{{ stateLabel(instance.state) }}</span></td>
                 <td class="px-3 py-3"><div class="font-medium">{{ instance.occupied }} / {{ instance.max_concurrency }}</div><div class="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full bg-primary-500" :style="{ width: `${Math.min(100, instance.max_concurrency ? instance.occupied / instance.max_concurrency * 100 : 0)}%` }" /></div><div v-if="instance.occupied > instance.max_concurrency" class="mt-1 text-xs text-amber-600">{{ t('admin.accounts.instances.shrinking', { count: instance.occupied - instance.max_concurrency }) }}</div></td>
                 <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(instance.expires_at) }}</td>
-                <td class="px-3 py-3"><div class="relative flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button v-if="instance.admin_state !== 'ACTIVE' && instance.occupied === 0 && instance.active_bindings === 0" class="btn btn-secondary btn-sm text-red-600" :disabled="busy" @click="archiveInstance(instance.id)">{{ t('common.delete') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="activeActionMenu = activeActionMenu === instance.id ? null : instance.id" :aria-expanded="activeActionMenu === instance.id">{{ t('common.more') }}</button><div v-if="activeActionMenu === instance.id" class="absolute right-0 top-full z-10 mt-1 min-w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"><button class="device-action-menu-item" @click="emit('test-account', account); activeActionMenu = null">{{ t('admin.accounts.testConnection') }}</button><button class="device-action-menu-item" @click="reauthorize(instance.id); activeActionMenu = null">{{ t('admin.accounts.instances.reauthorize') }}</button><button class="device-action-menu-item" @click="refreshInstance(instance.id); activeActionMenu = null">{{ t('admin.accounts.instances.refreshCredential') }}</button><button class="device-action-menu-item" @click="toggleDrain(instance); activeActionMenu = null">{{ t(instance.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button></div></div></td>
+                <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(principal?.observed_at) }}</td>
+                <td class="px-3 py-3"><div class="flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button class="btn btn-secondary btn-sm text-red-600" :disabled="busy || instance.admin_state === 'ACTIVE' || instance.occupied > 0 || instance.active_bindings > 0" @click="archiveInstance(instance.id)">{{ t('common.delete') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="openActionMenu(instance.id, $event)" :aria-expanded="activeActionMenu === instance.id">{{ t('common.more') }}</button></div></td>
               </tr>
-              <tr v-if="!activeInstances.length"><td colspan="6" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
+              <tr v-if="!activeInstances.length"><td colspan="7" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
     </div>
+
+    <Teleport to="body">
+      <div v-if="activeActionMenu !== null" class="fixed z-[100] min-w-44 rounded-lg border border-gray-200 bg-white p-1 shadow-lg dark:border-dark-600 dark:bg-dark-800" :style="actionMenuStyle">
+        <button class="device-action-menu-item" @click="emit('test-account', account); closeActionMenu()">{{ t('admin.accounts.testConnection') }}</button>
+        <button class="device-action-menu-item" @click="reauthorize(activeActionMenu); closeActionMenu()">{{ t('admin.accounts.instances.reauthorize') }}</button>
+        <button class="device-action-menu-item" @click="refreshInstance(activeActionMenu); closeActionMenu()">{{ t('admin.accounts.instances.refreshCredential') }}</button>
+        <button class="device-action-menu-item" @click="toggleDrain(activeInstance!); closeActionMenu()">{{ t(activeInstance?.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button>
+      </div>
+    </Teleport>
 
     <BaseDialog v-if="editTarget" :show="true" :title="t('admin.accounts.instances.editDevice')" width="narrow" :z-index="70" @close="editTarget = null">
       <form class="space-y-4" @submit.prevent="saveInstance"><label class="block text-sm">{{ t('admin.accounts.instances.name') }}<input v-model="editDraft.name" class="input mt-1 w-full" maxlength="100" required /></label><label class="block text-sm">{{ t('admin.accounts.instances.maxConcurrency') }}<input v-model.number="editDraft.max_concurrency" class="input mt-1 w-full" type="number" min="0" max="2147483647" step="1" required /></label><div class="flex justify-end gap-2"><button type="button" class="btn btn-secondary" @click="editTarget = null">{{ t('common.cancel') }}</button><button class="btn btn-primary" :disabled="busy">{{ t('common.save') }}</button></div></form>
@@ -123,8 +133,11 @@ const showAdd = ref(false)
 const editTarget = ref<CredentialInstance | null>(null)
 const archiveTarget = ref<CredentialInstance | null>(null)
 const activeActionMenu = ref<number | null>(null)
+const actionMenuPosition = ref({ top: 0, left: 0 })
+const actionMenuStyle = computed(() => ({ top: `${actionMenuPosition.value.top}px`, left: `${actionMenuPosition.value.left}px` }))
+const activeInstance = computed(() => activeInstances.value.find(instance => instance.id === activeActionMenu.value))
 const editDraft = ref({ name: '', max_concurrency: 0 })
-const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.credentialExpiry'), t('common.actions')])
+const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.credentialExpiry'), t('admin.accounts.instances.lastRefresh'), t('common.actions')])
 const activeInstances = computed(() => (principal.value?.instances || []).filter(instance => !instance.archived_at))
 const effectiveCapacity = computed(() => Math.min(principal.value?.account_max_concurrency || 0, principal.value?.effective_configured_capacity || principal.value?.configured_capacity || 0))
 const usagePercent = computed(() => effectiveCapacity.value > 0 ? Math.min(100, (principal.value?.occupied || 0) / effectiveCapacity.value * 100) : 0)
@@ -157,6 +170,8 @@ async function refreshInstance(id: number) { await mutate(async () => { await re
 function reauthorize(id: number) { editTarget.value = null; reauthorizeId.value = id; showAdd.value = true }
 const reauthorizeId = ref<number>()
 function openAdd() { reauthorizeId.value = undefined; showAdd.value = true }
+function openActionMenu(id: number, event: MouseEvent) { const rect = (event.currentTarget as HTMLElement).getBoundingClientRect(); activeActionMenu.value = id; actionMenuPosition.value = { top: rect.bottom + 4, left: Math.max(8, rect.right - 176) } }
+function closeActionMenu() { activeActionMenu.value = null }
 async function handleAdded() { showAdd.value = false; reauthorizeId.value = undefined; await load() }
 watch(() => [props.show, props.account?.principal?.id], ([visible]) => { if (visible) { activeTab.value = 'devices'; void load() } }, { immediate: true })
 </script>
