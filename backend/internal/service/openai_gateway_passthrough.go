@@ -732,7 +732,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 	// compact 已按自身 schema 裁剪，不能根据会话头重新注入 client_metadata。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
+		normalizedBody, _, changed, normalizeErr := s.normalizeCodexHTTPOutboundIdentityRaw(
 			ctx, c, account,
 			req.Header,
 			body,

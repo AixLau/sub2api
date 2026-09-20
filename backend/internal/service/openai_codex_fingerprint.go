@@ -83,9 +83,6 @@ const (
 const (
 	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
 	codexFingerprintSeedExtraKey = "codex_fingerprint_seed"
-	// Matches the canonical Linux/Ubuntu User-Agent. This is outbound metadata,
-	// independent of the client's sandbox_mode and actual execution permissions.
-	codexFingerprintDeviceSandbox = "seccomp"
 )
 
 func canonicalCodexFingerprintSeed(value any) (string, bool) {
@@ -417,7 +414,6 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	if ids.mode == codexFingerprintDevice {
 		rewriteCodexTurnMetadataFields(h, map[string]any{
 			"installation_id": ids.installationID,
-			"sandbox":         codexFingerprintDeviceSandbox,
 		})
 		return
 	}
@@ -570,7 +566,6 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	if ids.mode == codexFingerprintDevice {
 		if rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
 			"installation_id": ids.installationID,
-			"sandbox":         codexFingerprintDeviceSandbox,
 		}) {
 			modified = true
 		}

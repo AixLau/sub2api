@@ -211,7 +211,7 @@ func TestApplyCodexFingerprintHeaders_DeviceMode(t *testing.T) {
 	assert.Equal(t, "user-session", meta["session_id"], "device 模式不改写 session_id")
 	assert.Equal(t, "user-thread", meta["thread_id"])
 	assert.Equal(t, "user-turn", meta["turn_id"])
-	assert.Equal(t, "seccomp", meta["sandbox"], "sandbox 与规范 Linux UA 一致")
+	assert.Equal(t, "seatbelt", meta["sandbox"], "最终出站 UA 确定前保留原 sandbox")
 	assert.Equal(t, "workspace-write", meta["sandbox_mode"])
 	assert.Equal(t, map[string]any{"cwd": "/workspace/client"}, meta["workspace"])
 }
@@ -456,7 +456,7 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	assert.Equal(t, "user-session", meta["session_id"])
 	assert.Equal(t, "user-thread", meta["thread_id"])
 	assert.Equal(t, "user-turn", meta["turn_id"])
-	assert.Equal(t, "seccomp", meta["sandbox"], "sandbox 与规范 Linux UA 一致")
+	assert.Equal(t, "windows_sandbox", meta["sandbox"], "最终出站 UA 确定前保留原 sandbox")
 	assert.Equal(t, "danger-full-access", meta["sandbox_mode"])
 	assert.Equal(t, map[string]any{"cwd": "C:/workspace/client"}, meta["workspace"])
 }
@@ -473,7 +473,6 @@ func TestCodexFingerprintMetadataRewrite_PreservesUnrelatedValues(t *testing.T) 
 			var want map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(original), &want))
 			want["installation_id"] = json.RawMessage(`"test-installation"`)
-			want["sandbox"] = json.RawMessage(`"seccomp"`)
 
 			for _, path := range []string{"header", "map", "raw"} {
 				t.Run(path, func(t *testing.T) {
@@ -546,6 +545,7 @@ func TestApplyCodexFingerprintClientMetadata_NoOpReportsUnmodified(t *testing.T)
 		`{ "installation_id" : "\u0074est-installation", "session_id" : "S", "extra" : 9007199254740993 }`,
 		`{ "installation_id" : "test-installation", "sandbox" : "seccomp", "sandbox_mode" : "workspace-write" }`,
 		`{ "installation_id" : "test-installation", "sandbox" : "\u0073eccomp", "sandbox_mode" : "read-only" }`,
+		`{"installation_id":"test-installation","sandbox":"seatbelt","sandbox_mode":"read-only"}`,
 	} {
 		t.Run(embedded, func(t *testing.T) {
 			metadata := map[string]string{"installation_id": "test-installation", "x-codex-installation-id": "test-installation", "session_id": "S"}
@@ -590,7 +590,6 @@ func TestApplyCodexFingerprintClientMetadata_EmbeddedOnlyChange(t *testing.T) {
 	for _, embedded := range []string{
 		`{ "installation_id": "old", "session_id": "S" }`,
 		`{"session_id":"S"}`,
-		`{"installation_id":"test-installation","sandbox":"seatbelt","sandbox_mode":"read-only"}`,
 		`{malformed`,
 		`[]`,
 		`null`,

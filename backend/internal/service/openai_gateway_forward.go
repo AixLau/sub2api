@@ -1573,7 +1573,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 	// compact 保留上方的头部规范化，但不能向其 body 注入 Responses 元数据。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, identity, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
+		normalizedBody, identity, changed, normalizeErr := s.normalizeCodexHTTPOutboundIdentityRaw(
 			ctx, c, account,
 			req.Header,
 			body,
