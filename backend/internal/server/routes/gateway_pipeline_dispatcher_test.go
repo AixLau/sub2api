@@ -320,6 +320,12 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			wantPipeline: moderationcoverage.PipelineOpenAIWebSocket,
 		},
 		{
+			name:     "Seedance retains dedicated media moderation",
+			platform: service.PlatformOpenAI,
+			metas: []ModeratedRouteMeta{openAITextBranch("/api/v3/contents/generations/tasks", "OpenAIGatewayHandler.SeedanceTasks",
+				service.ContentModerationProtocolOpenAIImages)},
+		},
+		{
 			name:     "Grok images retain dedicated moderation",
 			platform: service.PlatformGrok,
 			metas: []ModeratedRouteMeta{openAITextBranch("/v1/images/generations", "OpenAIGatewayHandler.Images",

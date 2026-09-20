@@ -11,6 +11,202 @@
     {
       "route": {
         "method": "POST",
+        "path": "/api/v3/contents/generations/tasks",
+        "handler": "OpenAIGatewayHandler.SeedanceTasks",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/api/v3/contents/generations/tasks",
+      "handler": "OpenAIGatewayHandler.SeedanceTasks",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Seedance text and image inputs use shared media moderation before scheduling and forwarding; covered by TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v3/contents/generations/tasks",
+        "handler": "OpenAIGatewayHandler.SeedanceTasks",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/v3/contents/generations/tasks",
+      "handler": "OpenAIGatewayHandler.SeedanceTasks",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Seedance text and image inputs use shared media moderation before scheduling and forwarding; covered by TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/contents/generations/tasks",
+        "handler": "OpenAIGatewayHandler.SeedanceTasks",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/v1/contents/generations/tasks",
+      "handler": "OpenAIGatewayHandler.SeedanceTasks",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Seedance text and image inputs use shared media moderation before scheduling and forwarding; covered by TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/contents/generations/tasks",
+        "handler": "OpenAIGatewayHandler.SeedanceTasks",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/contents/generations/tasks",
+      "handler": "OpenAIGatewayHandler.SeedanceTasks",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Seedance text and image inputs use shared media moderation before scheduling and forwarding; covered by TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream."
+    },
+    {
+      "route": {
+        "method": "POST",
         "path": "/v1/alpha/search",
         "handler": "OpenAIGatewayHandler.AlphaSearch",
         "protocol": "openai_responses"

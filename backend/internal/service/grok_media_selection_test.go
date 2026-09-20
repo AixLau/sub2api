@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSelectGrokMediaVideoRequestAccountPreservesOwner(t *testing.T) {
+func TestSelectMediaVideoRequestAccountPreservesOwner(t *testing.T) {
 	for _, state := range []string{"available", "full", "unavailable", "wrong group", "missing", "invalid id"} {
 		t.Run(state, func(t *testing.T) {
 			groupID := int64(24)
@@ -49,7 +49,7 @@ func TestSelectGrokMediaVideoRequestAccountPreservesOwner(t *testing.T) {
 			require.NoError(t, svc.BindGrokMediaVideoRequestAccount(ctx, &groupID, "task", 10, 20, 1))
 			sessionHash := GrokMediaVideoRequestSessionHash("task", 10, 20)
 			for range 20 {
-				selection, decision, err := svc.SelectGrokMediaVideoRequestAccount(ctx, &groupID, sessionHash, ownerID, "")
+				selection, decision, err := svc.SelectMediaVideoRequestAccount(ctx, &groupID, sessionHash, ownerID, "", PlatformGrok)
 				switch state {
 				case "available":
 					require.NoError(t, err)

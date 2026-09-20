@@ -11,8 +11,12 @@ const {
   pushMock,
   registerMock,
   routeState,
+  verifyActionMock,
+  appSettings,
 } = vi.hoisted(() => ({
   getPublicSettingsMock: vi.fn(),
+  verifyActionMock: vi.fn(),
+  appSettings: { cachedPublicSettings: null as { promo_code_enabled?: boolean } | null },
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -79,6 +83,7 @@ vi.mock('@/stores', () => ({
     register: (...args: any[]) => registerMock(...args),
   }),
   useAppStore: () => ({
+    cachedPublicSettings: appSettings.cachedPublicSettings,
     showError: (...args: any[]) => showErrorMock(...args),
     showWarning: (...args: any[]) => showWarningMock(...args),
     showSuccess: (...args: any[]) => showSuccessMock(...args),
@@ -89,6 +94,8 @@ beforeEach(() => {
   pushMock.mockReset()
   registerMock.mockReset()
   routeState.query = {}
+  appSettings.cachedPublicSettings = null
+  verifyActionMock.mockReset()
   sessionStorage.clear()
 })
 
@@ -373,6 +380,7 @@ describe('RegisterView post-registration redirect', () => {
     await flushPromises()
     await wrapper.get('#email').setValue('new-user@example.com')
     await wrapper.get('#password').setValue('Password123!')
+    await wrapper.get('#confirmPassword').setValue('Password123!')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
     return wrapper
@@ -405,3 +413,11 @@ describe('RegisterView post-registration redirect', () => {
     expect(pushMock).toHaveBeenCalledWith('/email-verify')
   })
 })
+
+ it('shows a promo code field immediately when injected settings enable it', () => {
+   appSettings.cachedPublicSettings = { promo_code_enabled: true }
+   getPublicSettingsMock.mockReturnValueOnce(new Promise(() => {}))
+   const wrapper = mountRegister()
+   expect(wrapper.find('#promo_code').exists()).toBe(true)
+   wrapper.unmount()
+ })

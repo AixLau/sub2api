@@ -1004,7 +1004,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.SeedanceTasks", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -1031,10 +1031,12 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 
 	require.Equal(t, []string{
 		"POST /alpha/search",
+		"POST /api/v3/contents/generations/tasks",
 		"POST /backend-api/codex/alpha/search",
 		"POST /backend-api/codex/responses",
 		"POST /backend-api/codex/responses/*subpath",
 		"POST /chat/completions",
+		"POST /contents/generations/tasks",
 		"POST /embeddings",
 		"POST /images/edits",
 		"POST /images/edits/async",
@@ -1045,6 +1047,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /tts",
 		"POST /v1/alpha/search",
 		"POST /v1/chat/completions",
+		"POST /v1/contents/generations/tasks",
 		"POST /v1/embeddings",
 		"POST /v1/images/edits",
 		"POST /v1/images/edits/async",
@@ -1060,6 +1063,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /v1/videos/generations",
 		"POST /v1/web_search",
 		"POST /v1/x_search",
+		"POST /v3/contents/generations/tasks",
 		"POST /videos",
 		"POST /videos/edits",
 		"POST /videos/extensions",
@@ -1088,7 +1092,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		case "OpenAIGatewayHandler.Images":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
-		case "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension":
+		case "OpenAIGatewayHandler.SeedanceTasks", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
@@ -1539,6 +1543,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 		filepath.Join(handlerDir, "openai_images.go"),
 		filepath.Join(handlerDir, "openai_x_search.go"),
 		filepath.Join(handlerDir, "grok_media.go"),
+		filepath.Join(handlerDir, "seedance.go"),
 	}
 	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
 	coverageByHandler := make(map[string]openAIHTTPHandlerStageCoverage)
@@ -1709,7 +1714,7 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverage.HasImageStage = true
 			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.Images"] = coverage
-			for _, handlerName := range []string{"OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension"} {
+			for _, handlerName := range []string{"OpenAIGatewayHandler.SeedanceTasks", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension"} {
 				videoCoverage := coverageByHandler[handlerName]
 				videoCoverage.Protocol = protocol
 				videoCoverage.HasHTTPPreForwardPipeline = true
@@ -1751,7 +1756,7 @@ func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) 
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "GrokVideoEdit", "GrokVideoExtension", "GrokVoice", "Embeddings", "Messages", "WebSearch", "XSearch":
+	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "SeedanceTasks", "GrokVideoGeneration", "GrokVideoEdit", "GrokVideoExtension", "GrokVoice", "Embeddings", "Messages", "WebSearch", "XSearch":
 	default:
 		return "", false
 	}
@@ -1767,7 +1772,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.GrokVoice", "OpenAIGatewayHandler.Embeddings", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.SeedanceTasks", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.GrokVoice", "OpenAIGatewayHandler.Embeddings", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
 		return true
 	default:
 		return false

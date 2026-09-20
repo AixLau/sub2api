@@ -1029,7 +1029,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
 	NewModelPlazaService,
-	NewPluginManager,
+	ProvidePluginManager,
 	ProvideContentModerationService,
 	wire.Bind(new(BatchImageModerationGate), new(*ContentModerationService)),
 	NewAffiliateService,
@@ -1137,4 +1137,12 @@ func ProvideChannelMonitorV2Aggregator(repo ChannelMonitorV2Repository, db *sql.
 	}
 	aggregator.Start()
 	return aggregator
+}
+
+// ProvidePluginManager connects both directions before any plugin runtime starts.
+func ProvidePluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kvStore PluginKVStore, gateway *OpenAIGatewayService) *PluginManager {
+	manager := NewPluginManager(repo, encryptor, cfg, hostInfo, kvStore)
+	manager.SetAccountDirectory(gateway)
+	gateway.SetPluginManager(manager)
+	return manager
 }

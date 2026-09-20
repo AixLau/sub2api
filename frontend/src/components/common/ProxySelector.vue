@@ -339,18 +339,7 @@ const handleBatchTest = async () => {
     while (queue.length > 0) {
       const proxy = queue.shift()
       if (!proxy) return
-      testingProxyIds.add(proxy.id)
-      try {
-        const result = await adminAPI.proxies.testProxy(proxy.id)
-        testResults[proxy.id] = result
-      } catch (error: any) {
-        testResults[proxy.id] = {
-          success: false,
-          message: error.response?.data?.detail || 'Test failed'
-        }
-      } finally {
-        testingProxyIds.delete(proxy.id)
-      }
+      await handleTestProxy(proxy)
     }
   })
 

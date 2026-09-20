@@ -88,6 +88,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const emit = defineEmits<{
   close: []
@@ -121,7 +122,7 @@ const loadVerificationMethod = async () => {
     const method = await totpAPI.getVerificationMethod()
     verificationMethod.value = method.method
   } catch (err: any) {
-    appStore.showError(err.response?.data?.message || t('common.error'))
+    appStore.showError(extractApiErrorMessage(err, t('common.error')))
     emit('close')
   } finally {
     methodLoading.value = false
@@ -149,7 +150,7 @@ const handleSendCode = async () => {
       }
     }, 1000)
   } catch (err: any) {
-    appStore.showError(err.response?.data?.message || t('profile.totp.sendCodeFailed'))
+    appStore.showError(extractApiErrorMessage(err, t('profile.totp.sendCodeFailed')))
   } finally {
     sendingCode.value = false
   }
@@ -169,7 +170,7 @@ const handleDisable = async () => {
     appStore.showSuccess(t('profile.totp.disableSuccess'))
     emit('success')
   } catch (err: any) {
-    appStore.showError(err.response?.data?.message || t('profile.totp.disableFailed'))
+    appStore.showError(extractApiErrorMessage(err, t('profile.totp.disableFailed')))
   } finally {
     loading.value = false
   }

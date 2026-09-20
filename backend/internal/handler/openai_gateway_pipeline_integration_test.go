@@ -234,10 +234,13 @@ func TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream(t *testing
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name   string
-		path   string
-		handle func(*OpenAIGatewayHandler, *gin.Context)
+		name     string
+		body     string
+		platform string
+		path     string
+		handle   func(*OpenAIGatewayHandler, *gin.Context)
 	}{
+		{name: "seedance", path: "/api/v3/contents/generations/tasks", body: `{"model":"seedance","content":[{"type":"text","text":"grok-media-risk"}]}`, platform: service.PlatformOpenAI, handle: func(h *OpenAIGatewayHandler, c *gin.Context) { h.SeedanceTasks(c) }},
 		{name: "images", path: "/v1/images/generations", handle: func(h *OpenAIGatewayHandler, c *gin.Context) { h.GrokImages(c) }},
 		{name: "video", path: "/v1/videos/generations", handle: func(h *OpenAIGatewayHandler, c *gin.Context) { h.GrokVideoGeneration(c) }},
 	}
@@ -255,12 +258,19 @@ func TestGrokMediaModerationRemainsDedicatedAndBlocksBeforeDownstream(t *testing
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"model":"grok-imagine","prompt":"grok-media-risk"}`))
+			body := tt.body
+			if body == "" {
+				body = `{"model":"grok-imagine","prompt":"grok-media-risk"}`
+			}
+			c.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(body))
 			c.Request.Header.Set("Content-Type", "application/json")
 			setGatewayAuthContextForModerationTest(c)
 			apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 			require.True(t, ok)
 			apiKey.Group.Platform = service.PlatformGrok
+			if tt.platform != "" {
+				apiKey.Group.Platform = tt.platform
+			}
 			apiKey.Group.AllowImageGeneration = true
 
 			h := &OpenAIGatewayHandler{

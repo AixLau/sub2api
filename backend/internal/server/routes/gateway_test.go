@@ -539,7 +539,8 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/messages/count_tokens",
+	case "/api/v3/contents/generations/tasks", "/v3/contents/generations/tasks", "/contents/generations/tasks",
+		"/messages/count_tokens",
 		"/responses", "/responses/*subpath", "/alpha/search",
 		"/x_search",
 		"/chat/completions",
@@ -575,6 +576,10 @@ func gatewayModerationCoveredRoutesFromManifest(t *testing.T) []string {
 
 func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 	routeSet := map[string]struct{}{
+		"POST /api/v3/contents/generations/tasks":      {},
+		"POST /v3/contents/generations/tasks":          {},
+		"POST /v1/contents/generations/tasks":          {},
+		"POST /contents/generations/tasks":             {},
 		"POST /v1/messages":                            {},
 		"POST /antigravity/v1/messages":                {},
 		"POST /v1/messages/count_tokens":               {},

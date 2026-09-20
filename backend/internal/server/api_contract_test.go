@@ -479,7 +479,7 @@ func TestAPIContracts(t *testing.T) {
 			wantJSON: `{
 				"code": 0,
 				"message": "success",
-				"data": [
+				"data": {"total": 1, "page": 1, "page_size": 20, "pages": 1, "items": [
 					{
 						"id": 900,
 						"code": "CODE-123",
@@ -492,7 +492,7 @@ func TestAPIContracts(t *testing.T) {
 						"group_id": null,
 						"validity_days": 0
 					}
-				]
+				]}
 			}`,
 		},
 		{
@@ -2210,8 +2210,12 @@ func (r *stubRedeemCodeRepo) ListByUser(ctx context.Context, userID int64, limit
 	return append([]service.RedeemCode(nil), codes...), nil
 }
 
-func (stubRedeemCodeRepo) ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	return nil, nil, errors.New("not implemented")
+func (r *stubRedeemCodeRepo) ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+	codes := r.byUser[userID]
+	total := len(codes)
+	start := min((params.Page-1)*params.PageSize, total)
+	end := min(start+params.PageSize, total)
+	return append([]service.RedeemCode(nil), codes[start:end]...), &pagination.PaginationResult{Total: int64(total)}, nil
 }
 
 func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error) {

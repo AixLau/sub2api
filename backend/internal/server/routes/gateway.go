@@ -661,6 +661,16 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.Responses(c)
 	}
+	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
+		path := prefix + "/contents/generations/tasks"
+		chain := []gin.HandlerFunc{bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.SeedanceTasks}
+		moderatedRoot.POST(path, coveredOpenAIHTTPRoute(path, "OpenAIGatewayHandler.SeedanceTasks", service.ContentModerationProtocolOpenAIImages,
+			"Seedance text and image inputs use the shared media audit before scheduling and forwarding."), chain...)
+		moderatedRoot.GETNoAudit(path+"/:task_id", intentionalNoAuditRoute(path+"/:task_id", "OpenAIGatewayHandler.SeedanceTasks",
+			"Seedance status reads an existing owned task without submitting new model input."), chain...)
+		moderatedRoot.DELETENoAudit(path+"/:task_id", intentionalNoAuditRoute(path+"/:task_id", "OpenAIGatewayHandler.SeedanceTasks",
+			"Seedance deletion cancels an existing owned task without submitting new model input."), chain...)
+	}
 	moderatedRoot.POST("/responses/*subpath", coveredModeratedRoute(
 		"/responses/*subpath",
 		"GatewayHandler.Responses",
