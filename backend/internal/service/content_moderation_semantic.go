@@ -2472,10 +2472,6 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	}
 	requestCtx := ctx
 	targetURL := chatgptCodexURL
-	userAgent := DefaultOpenAICodexUserAgent
-	if s.settingService != nil {
-		userAgent = s.settingService.GetOpenAICodexUserAgent(requestCtx)
-	}
 	if !oauth {
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
@@ -2495,7 +2491,6 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", userAgent)
 	if oauth {
 		req.Host = "chatgpt.com"
 		req.Header.Set("Accept", "text/event-stream")
@@ -2513,12 +2508,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 		req.Header.Set("Accept", "application/json")
 	}
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	// Content moderation is a system request: its identity follows the global
-	// User-Agent setting and cannot be replaced by account-level overrides.
-	req.Header.Set("User-Agent", userAgent)
-	if oauth {
-		enforceCodexIdentityHeaders(req.Header)
-	}
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	proxyURL := ""
 	if credentialAccount.Proxy != nil {
 		proxyURL = credentialAccount.Proxy.URL()
@@ -2599,7 +2589,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 		result.InboundEndpoint = "/internal/content-moderation/prompt-injection-review"
 	}
 	result.UpstreamEndpoint = semanticReviewUpstreamEndpoint(oauth)
-	result.UserAgent = userAgent
+	result.UserAgent = req.UserAgent()
 	return result, nil
 }
 

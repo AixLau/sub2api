@@ -2,55 +2,37 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"strings"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
-// resolveOpenAICodexUpstreamUserAgent returns the User-Agent used for Codex
-// upstream requests. Account-level configuration has the highest priority,
-// followed by the global system setting and the built-in default.
-func resolveOpenAICodexUpstreamUserAgent(ctx context.Context, account *Account, settingService *SettingService) string {
-	if account != nil {
-		if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
-			return customUA
-		}
-	}
-	if settingService != nil {
-		if systemUA := strings.TrimSpace(settingService.GetOpenAICodexUserAgent(ctx)); systemUA != "" {
-			return systemUA
-		}
-	}
-	return DefaultOpenAICodexUserAgent
-}
-
-// resolveOpenAICodexCanonicalUserAgent returns the fully normalized system
-// identity, including the currently effective client version.
+// resolveOpenAICodexCanonicalUserAgent resolves the single global OpenAI identity.
+// Account and inbound client identities never override the system setting.
 func resolveOpenAICodexCanonicalUserAgent(ctx context.Context, settingService *SettingService) string {
+	var canonicalUA string
 	if settingService != nil {
-		if canonicalUA := strings.TrimSpace(settingService.GetOpenAICodexCanonicalUserAgent(ctx)); canonicalUA != "" {
-			return canonicalUA
-		}
+		canonicalUA = settingService.GetOpenAICodexCanonicalUserAgent(ctx)
+	} else {
+		canonicalUA = codexCanonicalUserAgent()
 	}
-	return codexCLIUserAgent
+	return resolveCodexOutboundIdentityWithCanonicalUA("", canonicalUA).userAgent
 }
 
-// Messages bridge requests preserve a valid official client identity when no
-// account or system override is configured. Explicit local configuration keeps
-// priority over the inbound client identity.
-func resolveOpenAIMessagesBridgeUserAgent(ctx context.Context, account *Account, settingService *SettingService, clientUserAgent string) string {
-	if account != nil {
-		if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
-			return customUA
+// applyOpenAIUpstreamIdentity runs after account header overrides and before body
+// identity projection. Other providers using the OpenAI protocol keep their identity.
+func applyOpenAIUpstreamIdentity(ctx context.Context, account *Account, settings *SettingService, h http.Header) {
+	if account == nil || !account.IsOpenAI() || h == nil {
+		return
+	}
+	identity := resolveCodexOutboundIdentityWithCanonicalUA("", resolveOpenAICodexCanonicalUserAgent(ctx, settings))
+	for name := range h {
+		if strings.EqualFold(name, "User-Agent") {
+			delete(h, name)
 		}
 	}
-	if settingService != nil {
-		if systemUA := strings.TrimSpace(settingService.GetOpenAICodexUserAgent(ctx)); systemUA != "" {
-			return systemUA
-		}
+	h.Set("User-Agent", identity.userAgent)
+	if h.Get("originator") != "" {
+		h.Set("originator", identity.originator)
+		h.Set("version", identity.version)
 	}
-	if _, pairedUA, ok := openai.PairCodexClientIdentity(clientUserAgent); ok {
-		return pairedUA
-	}
-	return DefaultOpenAICodexUserAgent
 }

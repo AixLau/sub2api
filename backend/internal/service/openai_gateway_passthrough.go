@@ -693,31 +693,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		req.Header.Set("accept", "application/json")
 	}
 
-	// 透传模式也支持账户自定义 User-Agent。
-	customUA := account.GetOpenAIUserAgent()
-	if customUA != "" {
-		req.Header.Set("user-agent", customUA)
-	}
-	// OAuth Codex requests never forward the client User-Agent. ForceCodexCLI
-	// applies the same policy to other OpenAI account types.
-	if account.Type == AccountTypeOAuth || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI) {
-		req.Header.Set("user-agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
-	}
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	// 指纹收敛：使用 forwardOpenAIPassthrough 中预计算的收敛 ID 改写出站头，
 	// 与请求体 client_metadata 共享同一份 IDs（与非透传路径相同的相对位置：
 	// 会话隔离之后、终态身份收口之前）。
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
-	// 终态收口：透传路径的 OAuth 与非透传一致。originator 必须与最终
-	// User-Agent 首段配套且为官方身份，否则整体回退为默认 Codex CLI 身份。
-	// compact 仍使用相同的请求头策略；它的 body 限制在下方单独处理。
-	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersWithCanonicalUA(
-			req.Header,
-			s.codexIdentityOverrideUA(account),
-			resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService),
-		)
-	}
 
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
@@ -725,6 +705,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	if account.UsesOpenAICodexProtocol() && isOpenAIResponsesCompactPath(c) {
 		if err := s.normalizeCodexSessionHeaders(ctx, c, account, req.Header); err != nil {
 			return nil, fmt.Errorf("normalize compact Codex session identity: %w", err)

@@ -1529,36 +1529,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("accept", "application/json")
 	}
 
-	// Apply account-level User-Agent if configured.
-	customUA := account.GetOpenAIUserAgent()
-	if customUA != "" {
-		req.Header.Set("user-agent", customUA)
-	}
-
-	// OAuth Codex requests never forward the client User-Agent. ForceCodexCLI
-	// applies the same policy to other OpenAI account types. Account-level
-	// configuration remains higher priority than the global system setting.
-	if account.Type == AccountTypeOAuth || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI) {
-		userAgent := resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService)
-		if compatMessagesBridge {
-			userAgent = resolveOpenAIMessagesBridgeUserAgent(ctx, account, s.settingService, c.GetHeader("User-Agent"))
-		}
-		req.Header.Set("user-agent", userAgent)
-	}
-
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 
-	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，否则上游 404（issue #3901）。
-	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游。
-	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersWithCanonicalUA(
-			req.Header,
-			s.codexIdentityOverrideUA(account),
-			resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService),
-		)
-	}
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
@@ -1566,6 +1540,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	if account.UsesOpenAICodexProtocol() && isOpenAIResponsesCompactPath(c) {
 		if err := s.normalizeCodexSessionHeaders(ctx, c, account, req.Header); err != nil {
 			return nil, fmt.Errorf("normalize compact Codex session identity: %w", err)
@@ -1602,34 +1577,4 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
 
 	return req, nil
-}
-
-// codexIdentityOverrideUA returns the account-level identity override while
-// retaining ForceCodexCLI as the highest-priority gateway policy.
-func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string {
-	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
-		return ""
-	}
-	if account == nil {
-		return ""
-	}
-	return account.GetOpenAIUserAgent()
-}
-
-// overrideBrowserUserAgent replaces browser-like user agents on OAuth requests
-// with the configured Codex identity to avoid upstream browser challenges.
-func (s *OpenAIGatewayService) overrideBrowserUserAgent(ctx context.Context, account *Account, req *http.Request) {
-	if req == nil || account == nil || account.Type != AccountTypeOAuth {
-		return
-	}
-	if !openai.IsBrowserUserAgent(req.Header.Get("user-agent")) {
-		return
-	}
-	userAgent := DefaultOpenAICodexUserAgent
-	if s != nil && s.settingService != nil {
-		if configured := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); configured != "" {
-			userAgent = configured
-		}
-	}
-	req.Header.Set("user-agent", userAgent)
 }

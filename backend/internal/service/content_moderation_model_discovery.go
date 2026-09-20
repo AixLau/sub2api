@@ -41,7 +41,7 @@ func fetchContentModerationModels(ctx context.Context, baseURL, apiKey string) (
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
-	setConfiguredCodexIdentityHeaders(req, DefaultOpenAICodexUserAgent)
+	setConfiguredCodexIdentityHeaders(req, CodexCanonicalUserAgent())
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -101,12 +101,11 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 	if maxAttempts <= 0 {
 		maxAttempts = 1
 	}
-	userAgent := DefaultOpenAICodexUserAgent
-	if r != nil && r.settingService != nil {
-		if configured := strings.TrimSpace(r.settingService.GetOpenAICodexUserAgent(reviewCtx)); configured != "" {
-			userAgent = configured
-		}
+	var settings *SettingService
+	if r != nil {
+		settings = r.settingService
 	}
+	userAgent := resolveOpenAICodexCanonicalUserAgent(reviewCtx, settings)
 	for modelIndex, model := range models {
 		model = strings.TrimSpace(model)
 		if model == "" || seen[strings.ToLower(model)] {

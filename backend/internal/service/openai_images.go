@@ -38,7 +38,6 @@ const (
 
 	openAIChatGPTStartURL                  = "https://chatgpt.com/"
 	openAIChatGPTFilesURL                  = "https://chatgpt.com/backend-api/files"
-	openAIImageBackendUserAgent            = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 	openAIImageMaxDownloadBytes            = 20 << 20 // 20MB per image download
 	openAIImageMaxUploadPartSize           = 20 << 20 // 20MB per multipart upload part
 	openAIImagesResponsesMainModel         = "gpt-5.6-luna"
@@ -805,15 +804,12 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 			req.Header.Add(key, value)
 		}
 	}
-	customUA := account.GetOpenAIUserAgent()
-	if customUA != "" {
-		req.Header.Set("User-Agent", customUA)
-	}
 	if strings.TrimSpace(contentType) != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	return req, nil
 }
 
@@ -1601,7 +1597,7 @@ func downloadOpenAIImageBytes(ctx context.Context, client *req.Client, headers h
 	} else {
 		userAgent := strings.TrimSpace(headers.Get("User-Agent"))
 		if userAgent == "" {
-			userAgent = openAIImageBackendUserAgent
+			userAgent = CodexCanonicalUserAgent()
 		}
 		request.SetHeader("User-Agent", userAgent)
 	}

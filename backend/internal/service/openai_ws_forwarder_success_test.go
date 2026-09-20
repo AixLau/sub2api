@@ -883,14 +883,14 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 		wantOriginator    string
 		wantUA            string
 	}{
-		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/" + codexCLIVersion},
+		{name: "global identity overrides account ua", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "codex-tui", wantUA: codexCLIUserAgent},
 		{
-			name:              "request identity cannot override account ua",
+			name:              "account and request identities cannot override global ua",
 			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
 			requestUserAgent:  "codex_cli_rs/0.144.1",
 			requestOriginator: "codex_cli_rs",
 			wantOriginator:    "codex-tui",
-			wantUA:            "codex-tui/" + codexCLIVersion + " (Mac OS X 14.0; arm64) iTerm (codex-tui; " + codexCLIVersion + ")",
+			wantUA:            codexCLIUserAgent,
 		},
 		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
 	}
@@ -966,9 +966,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 	}
 }
 
-// 账号级自定义 UA 是管理员的显式配置，WS 握手与 HTTP 出站必须一视同仁地生效——
-// 否则同一个账号在两种传输上以不同身份出站。指纹保留、版本段重建、originator 配套。
-func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testing.T) {
+// WS 与 HTTP 统一使用全局身份，账号级 UA 不得改变客户端名或设备指纹。
+func TestOpenAIGatewayService_Forward_WSv2_OAuthIgnoresAccountUserAgent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -1029,7 +1028,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testin
 	require.NotNil(t, result)
 	require.Equal(t, "codex-tui", captureDialer.lastHeaders.Get("originator"))
 	require.Equal(t,
-		"codex-tui/"+codexCLIVersion+" (Mac OS X 15.1.0; arm64) iTerm.app",
+		codexCLIUserAgent,
 		captureDialer.lastHeaders.Get("user-agent"),
 	)
 	require.Equal(t, codexCLIVersion, captureDialer.lastHeaders.Get("version"))

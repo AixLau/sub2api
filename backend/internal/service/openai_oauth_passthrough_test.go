@@ -2083,9 +2083,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 }
 
-// 回归（issue #3901）：账号级官方 UA 在透传模式下必须保留客户端与指纹，且 originator
-// 由最终账号 UA 推导配套；仅版本段跟随当前生效版本重建。
-func TestOpenAIGatewayService_OAuthPassthrough_AccountIdentityPreservedAndPaired(t *testing.T) {
+// 透传模式统一使用全局 UA，并由它推导配套的 originator 与 version。
+func TestOpenAIGatewayService_OAuthPassthrough_GlobalIdentityOverridesAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	const accountUA = "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)"
@@ -2128,10 +2127,10 @@ func TestOpenAIGatewayService_OAuthPassthrough_AccountIdentityPreservedAndPaired
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t,
-		"codex_vscode/"+codexCLIVersion+" (Mac OS X 14.0; arm64) vscode (codex_vscode; "+codexCLIVersion+")",
+		codexCLIUserAgent,
 		upstream.lastReq.Header.Get("User-Agent"),
 	)
-	require.Equal(t, "codex_vscode", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 
@@ -2749,7 +2748,7 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
-	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "remote_compaction_v2", upstream.lastReq.Header.Get("x-codex-beta-features"))
 	require.Equal(t, "window-passthrough", upstream.lastReq.Header.Get("X-Codex-Window-ID"))
 	require.Equal(t, "installation-passthrough", upstream.lastReq.Header.Get("X-Codex-Installation-ID"))

@@ -29,7 +29,6 @@ const (
 	chatGPTRateLimitResetURL    = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
 	openaiQuotaUpstreamTimeout  = 20 * time.Second
 	openaiQuotaCodexBeta        = "codex-1"
-	openaiQuotaCodexOriginator  = "Codex Desktop"
 	openaiQuotaCodexLanguageTag = "zh-CN"
 	openaiQuotaSecFetchSite     = "none"
 	openaiQuotaSecFetchMode     = "no-cors"
@@ -79,14 +78,14 @@ type OpenAIRateLimitResetCredits struct {
 // Fields not relevant to the quota card are intentionally omitted to keep the
 // surface narrow; full upstream payload preservation is unnecessary.
 type OpenAIQuotaUsage struct {
-	UserID                string                       `json:"user_id,omitempty"`
-	AccountID             string                       `json:"account_id,omitempty"`
-	Email                 string                       `json:"email,omitempty"`
-	PlanType              string                       `json:"plan_type,omitempty"`
-	RateLimit             *OpenAIRateLimit             `json:"rate_limit,omitempty"`
-	AdditionalRateLimits  []OpenAIAdditionalRateLimit  `json:"additional_rate_limits,omitempty"`
-	RateLimitResetCredits *OpenAIRateLimitResetCredits `json:"rate_limit_reset_credits,omitempty"`
-	FetchedAt             int64                        `json:"fetched_at"`
+	UserID                string                           `json:"user_id,omitempty"`
+	AccountID             string                           `json:"account_id,omitempty"`
+	Email                 string                           `json:"email,omitempty"`
+	PlanType              string                           `json:"plan_type,omitempty"`
+	RateLimit             *OpenAIRateLimit                 `json:"rate_limit,omitempty"`
+	AdditionalRateLimits  []OpenAIAdditionalRateLimit      `json:"additional_rate_limits,omitempty"`
+	RateLimitResetCredits *OpenAIRateLimitResetCredits     `json:"rate_limit_reset_credits,omitempty"`
+	FetchedAt             int64                            `json:"fetched_at"`
 	autoResetCandidates   []openAIAutoResetCreditCandidate `json:"-"`
 }
 
@@ -559,12 +558,14 @@ func (s *OpenAIQuotaService) redactQuotaErrorBody(ctx context.Context, accountID
 // buildCodexCommonHeaders sets the request headers expected by the chatgpt.com
 // backend so calls succeed past Cloudflare/WASM checks.
 func buildCodexCommonHeaders(accessToken, chatGPTAccountID string, fedRAMP bool) map[string]string {
+	userAgent, originator := CodexCanonicalAuthIdentity()
 	headers := map[string]string{
+		"user-agent":         userAgent,
 		"authorization":      "Bearer " + accessToken,
 		"chatgpt-account-id": chatGPTAccountID,
 		"openai-beta":        openaiQuotaCodexBeta,
 		"oai-language":       openaiQuotaCodexLanguageTag,
-		"originator":         openaiQuotaCodexOriginator,
+		"originator":         originator,
 		"accept":             "application/json",
 		"sec-fetch-site":     openaiQuotaSecFetchSite,
 		"sec-fetch-mode":     openaiQuotaSecFetchMode,

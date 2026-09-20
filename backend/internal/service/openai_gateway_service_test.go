@@ -3392,14 +3392,14 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 		wantOriginator    string
 		wantUA            string
 	}{
-		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/" + codexCLIVersion},
+		{name: "global identity overrides account ua", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "codex-tui", wantUA: codexCLIUserAgent},
 		{
-			name:              "request identity cannot override account ua",
+			name:              "account and request identities cannot override global ua",
 			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
 			requestUserAgent:  "codex_cli_rs/0.144.1",
 			requestOriginator: "codex_cli_rs",
 			wantOriginator:    "codex-tui",
-			wantUA:            "codex-tui/" + codexCLIVersion + " (Mac OS X 14.0; arm64) iTerm (codex-tui; " + codexCLIVersion + ")",
+			wantUA:            codexCLIUserAgent,
 		},
 		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
 		{name: "third-party account ua masked to default identity", accountUserAgent: "luna/1.2.0", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},

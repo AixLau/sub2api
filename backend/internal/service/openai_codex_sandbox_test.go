@@ -113,7 +113,7 @@ func TestOpenAIGatewayService_CodexFingerprintSandboxUsesFinalUserAgent(t *testi
 			{"darwin", darwinUA, "", windowsUA, "windows_sandbox", darwinUA, "seatbelt", false},
 			{"windows", windowsUA, "", macUA, "seatbelt", windowsUA, "windows_sandbox", false},
 			{"unknown", unknownUA, "", linuxUA, "seatbelt", unknownUA, "seatbelt", false},
-			{"account_override", linuxUA, macUA, windowsUA, "seccomp", macUA, "seatbelt", false},
+			{"global_overrides_account", linuxUA, macUA, windowsUA, "seatbelt", linuxUA, "seccomp", false},
 			{"enforcement_overrides_account", windowsUA, macUA, linuxUA, "seatbelt", windowsUA, "windows_sandbox", true},
 			{"absent_sandbox", macUA, "", windowsUA, "", macUA, "", false},
 		} {

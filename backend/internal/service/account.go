@@ -1762,13 +1762,6 @@ func (a *Account) GetOpenAIProtocolAPIKey() string {
 	return a.GetOpenAIApiKey()
 }
 
-func (a *Account) GetOpenAIUserAgent() string {
-	if !a.IsOpenAI() {
-		return ""
-	}
-	return a.GetCredential("user_agent")
-}
-
 func (a *Account) GetChatGPTAccountID() string {
 	if !a.IsOpenAIOAuthLike() {
 		return ""

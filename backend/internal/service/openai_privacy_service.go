@@ -44,6 +44,7 @@ func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFacto
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").
+		SetHeader("User-Agent", CodexCanonicalUserAgent()).
 		SetHeader("sec-fetch-mode", "cors").
 		SetHeader("sec-fetch-site", "same-origin").
 		SetHeader("sec-fetch-dest", "empty").
@@ -123,6 +124,7 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").
+		SetHeader("User-Agent", CodexCanonicalUserAgent()).
 		SetSuccessResult(&result).
 		Get(chatGPTAccountsCheckURL)
 
@@ -239,6 +241,7 @@ func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory Privac
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").
+		SetHeader("User-Agent", CodexCanonicalUserAgent()).
 		SetSuccessResult(&result).
 		SetQueryParam("account_id", accountID).
 		Get(chatGPTSubscriptionsURL)

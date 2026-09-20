@@ -305,6 +305,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set("Accept", "application/sdp")
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
 	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, upstreamReq.Header)
 
 	resp, err := s.doOpenAIUpstream(upstreamReq, resolveAccountProxyURL(account), account)
 	if err != nil {
@@ -437,6 +438,7 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 	}
 	headers.Set(liveAttestationHeader, attestation)
 	applyLiveUpstreamIdentityHeaders(headers)
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, headers)
 	return headers, nil
 }
 

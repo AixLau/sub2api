@@ -721,8 +721,8 @@ func TestAccountTestService_OpenAIAPIKeyAccountTestUserAgent(t *testing.T) {
 				override      bool
 				wantUserAgent string
 			}{
-				{name: "account user_agent", wantUserAgent: "account-test-agent/1.0"},
-				{name: "enabled header override wins", override: true, wantUserAgent: "override-agent/2.0"},
+				{name: "account user_agent is ignored", wantUserAgent: codexCLIUserAgent},
+				{name: "enabled header override is ignored", override: true, wantUserAgent: codexCLIUserAgent},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					ctx, _ := newTestContext()

@@ -100,7 +100,7 @@ func TestAccountTestService_OpenAISuccessForcesSystemIdentityAndRecordsModelCost
 	require.Contains(t, recorder.Body.String(), `"success":true`)
 }
 
-func TestAccountTestService_OpenAIChatCompletionsPreservesAPIKeyUAOverrideAndRecordsUsage(t *testing.T) {
+func TestAccountTestService_OpenAIChatCompletionsForcesGlobalUAAndRecordsUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := newOpenAIAccountTestContext()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -128,7 +128,7 @@ func TestAccountTestService_OpenAIChatCompletionsPreservesAPIKeyUAOverrideAndRec
 
 	err := svc.testOpenAIChatCompletionsConnection(c, account, "gpt-5.4", "hi", "https://api.openai.com", "key-44")
 	require.NoError(t, err)
-	require.Equal(t, "account-override/9.9", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode/"+codexCLIVersion, upstream.lastReq.Header.Get("User-Agent"))
 	require.NotNil(t, writer.log)
 	require.Equal(t, 9, writer.log.InputTokens)
 	require.Equal(t, 3, writer.log.OutputTokens)
@@ -162,14 +162,14 @@ func TestAccountTestService_OpenAICompactForcesSystemUAAndRecordsZeroUsage(t *te
 
 	err := svc.testOpenAICompactConnection(c, account, "gpt-5.4")
 	require.NoError(t, err)
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode/"+codexCLIVersion, upstream.lastReq.Header.Get("User-Agent"))
 	require.NotNil(t, writer.log)
 	require.Equal(t, "compact_45", writer.log.RequestID)
 	require.Zero(t, writer.log.TotalTokens())
 	require.Equal(t, RequestTypeStream, writer.log.RequestType)
 }
 
-func TestAccountTestService_OpenAIImageAPIKeyPreservesUAOverrideAndRecordsUsage(t *testing.T) {
+func TestAccountTestService_OpenAIImageAPIKeyForcesGlobalUAAndRecordsUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := newOpenAIAccountTestContext()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -196,7 +196,7 @@ func TestAccountTestService_OpenAIImageAPIKeyPreservesUAOverrideAndRecordsUsage(
 
 	err := svc.testOpenAIImageAPIKey(c, context.Background(), account, "gpt-5.4", "draw")
 	require.NoError(t, err)
-	require.Equal(t, "account-override/9.9", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode/"+codexCLIVersion, upstream.lastReq.Header.Get("User-Agent"))
 	require.NotNil(t, writer.log)
 	require.Equal(t, 1, writer.log.ImageCount)
 	require.Equal(t, 11, writer.log.InputTokens)

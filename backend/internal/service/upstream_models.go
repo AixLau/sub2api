@@ -1032,6 +1032,7 @@ func buildOpenAIAPIKeyModelsRequest(ctx context.Context, account *Account, valid
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	// 账号级请求头覆写：模型列表探测与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	applyOpenAIUpstreamIdentity(ctx, account, nil, req.Header)
 	return req, nil
 }
 
@@ -1086,14 +1087,14 @@ func (s *AccountTestService) buildOpenAIOAuthUpstreamModelsRequest(ctx context.C
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	identity := resolveCodexOutboundIdentity(credentialAccount.GetOpenAIUserAgent())
+	identity := resolveCodexOutboundIdentityWithCanonicalUA("", resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService))
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Originator", identity.originator)
 	req.Header.Set("User-Agent", identity.userAgent)
 	req.Header.Set("Version", identity.version)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	enforceCodexIdentityHeadersWithUA(req.Header, credentialAccount.GetOpenAIUserAgent())
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	return req, nil
 }
 
