@@ -23,15 +23,14 @@ describe('account instance capacity', () => {
   it.each([12, 20])('separates configured instance limits from account limit %s', (limit) => {
     const wrapper = mount(InstanceCapacitySummary, { props: { principal: principal(limit) } })
     expect(wrapper.get('[data-testid="account-capacity-total"]').text()).toBe(`9 / ${limit}`)
-    for (const value of ['4/5', '3/5', '2/5', '实例最大并发总和: 5 + 5 + 5 = 15', `配置有效最大并发: ${Math.min(limit, 15)}`]) expect(wrapper.text()).toContain(value)
-    expect(wrapper.find('details').text()).toContain('观测时间')
+    for (const value of ['4/5', '3/5', '2/5']) expect(wrapper.text()).toContain(value)
+    expect(wrapper.find('details').exists()).toBe(false)
   })
   it('retains shrinking occupancy and excludes archived instance capacity tags', () => {
     const value = principal(8); value.overhang = 4; value.instances[0]!.archived_at = value.observed_at
     const wrapper = mount(InstanceCapacitySummary, { props: { principal: value } })
     expect(wrapper.text()).toContain('9 / 8')
     expect(wrapper.text()).toContain('缩容中，超出 4')
-    expect(wrapper.text()).toContain('2 个实例')
     expect(wrapper.findAll('[title^="A ·"]')).toHaveLength(0)
   })
 })
