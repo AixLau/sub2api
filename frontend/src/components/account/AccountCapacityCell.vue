@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col gap-0.5">
     <!-- Principal-backed accounts use the same compact capacity badge as legacy accounts. -->
-    <CapacityBadge v-if="account.principal" :color-class="principalConcurrencyClass" :current="account.principal.occupied" :max="account.principal.account_max_concurrency">
+    <CapacityBadge v-if="account.principal" :color-class="principalConcurrencyClass" :current="account.principal.occupied" :max="principalCapacityMax">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25A2.25 2.25 0 018.25 10.5H6a2.25 2.25 0 01-2.25-2.25V6Zm9.75 0A2.25 2.25 0 0115.75 3.75H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 018.25 20.25H6A2.25 2.25 0 013.75 18v-2.25Zm9.75 0a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25Z" /></svg>
     </CapacityBadge>
     <!-- 并发槽位 -->
@@ -65,10 +65,16 @@ const concurrencyClass = computed(() => {
 
 const principalConcurrencyClass = computed(() => {
   const current = props.account.principal?.occupied ?? 0
-  const max = props.account.principal?.account_max_concurrency ?? 0
+  const max = principalCapacityMax.value
   if (max > 0 && current >= max) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
   if (current > 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+})
+
+const principalCapacityMax = computed(() => {
+  const principal = props.account.principal
+  if (!principal) return 0
+  return Math.min(principal.account_max_concurrency, principal.effective_configured_capacity)
 })
 
 // ====== 窗口费用 ======
