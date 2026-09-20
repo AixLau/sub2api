@@ -16,6 +16,39 @@ func requireValidCodexFingerprintSeed(t *testing.T, extra map[string]any) string
 	return seed
 }
 
+func TestAdminCreateAccountCodexFingerprintDefaults(t *testing.T) {
+	for _, tt := range []struct {
+		name, platform, accountType string
+		extra                       map[string]any
+		wantMode                    codexFingerprintMode
+	}{
+		{"oauth", PlatformOpenAI, AccountTypeOAuth, nil, codexFingerprintDevice},
+		{"empty_extra", PlatformOpenAI, AccountTypeOAuth, map[string]any{}, codexFingerprintDevice},
+		{"setup_token", PlatformOpenAI, AccountTypeSetupToken, nil, codexFingerprintDevice},
+		{"explicit_off", PlatformOpenAI, AccountTypeOAuth, map[string]any{codexFingerprintModeExtraKey: "off"}, codexFingerprintOff},
+		{"explicit_session", PlatformOpenAI, AccountTypeOAuth, map[string]any{codexFingerprintModeExtraKey: "session"}, codexFingerprintSession},
+		{"explicit_full", PlatformOpenAI, AccountTypeOAuth, map[string]any{codexFingerprintModeExtraKey: "full"}, codexFingerprintFull},
+		{"api_key", PlatformOpenAI, AccountTypeAPIKey, nil, codexFingerprintOff},
+		{"other_platform", PlatformAnthropic, AccountTypeOAuth, nil, codexFingerprintOff},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &upstreamBillingProbeAccountRepo{}
+			created, err := (&adminServiceImpl{accountRepo: repo}).CreateAccount(context.Background(), &CreateAccountInput{
+				Name: "new-account", Platform: tt.platform, Type: tt.accountType,
+				SkipDefaultGroupBind: true, Extra: tt.extra,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tt.wantMode, created.GetCodexFingerprintMode())
+			if tt.wantMode != codexFingerprintOff {
+				require.Equal(t, string(tt.wantMode), created.Extra[codexFingerprintModeExtraKey])
+				requireValidCodexFingerprintSeed(t, created.Extra)
+			} else {
+				require.NotContains(t, created.Extra, codexFingerprintSeedExtraKey)
+			}
+		})
+	}
+}
+
 func TestAdminCreateAccountStripsUserSeedAndCreatesFreshSeedWhenEnabled(t *testing.T) {
 	repo := &upstreamBillingProbeAccountRepo{}
 	svc := &adminServiceImpl{accountRepo: repo}
@@ -224,11 +257,11 @@ func TestAccountServiceCreateAndUpdateCodexSeedLifecycle(t *testing.T) {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Extra: map[string]any{
-			codexFingerprintModeExtraKey: "session",
 			codexFingerprintSeedExtraKey: userSuppliedCodexFingerprintSeed,
 		},
 	})
 	require.NoError(t, err)
+	require.Equal(t, codexFingerprintDevice, created.GetCodexFingerprintMode())
 	createdSeed := requireValidCodexFingerprintSeed(t, created.Extra)
 	require.NotEqual(t, userSuppliedCodexFingerprintSeed, createdSeed)
 

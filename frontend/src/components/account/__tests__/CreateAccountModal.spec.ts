@@ -269,20 +269,40 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.get('[data-testid="selected-proxy-id"]').text()).toBe('17')
   })
 
-  it('defaults Codex fingerprint convergence to off and persists explicit session opt-in', async () => {
+  it.each(['device', 'off', 'session', 'full'])('defaults to device convergence and persists the selected %s mode', async (mode) => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
 
     const modeSelect = wrapper.get<HTMLSelectElement>('[data-testid="create-codex-fingerprint-mode-select"]')
-    expect(modeSelect.element.value).toBe('off')
+    expect(modeSelect.element.value).toBe('device')
 
-    await modeSelect.setValue('session')
+    if (mode !== 'device') {
+      await modeSelect.setValue(mode)
+    }
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
     await flushPromises()
 
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('session')
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe(mode)
+  })
+
+  it('resets device convergence when opening a new account form', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-testid="create-codex-fingerprint-mode-select"]').setValue('off')
+
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    await selectButtonByText(wrapper, 'OpenAI')
+
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="create-codex-fingerprint-mode-select"]').element.value).toBe('device')
+  })
+
+  it('does not add Codex fingerprint convergence to API key accounts', async () => {
+    await submitApiKeyAccount('openai')
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('codex_fingerprint_mode')
   })
 
   it('sends false explicitly for normal OpenAI account creation by default', async () => {
