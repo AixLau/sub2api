@@ -552,6 +552,7 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		}
 	}
 	if ids.installationID != "" {
+		modified = setCodexFingerprintMetadataField(existing, "installation_id", ids.installationID) || modified
 		modified = setCodexFingerprintMetadataField(existing, "x-codex-installation-id", ids.installationID) || modified
 	}
 

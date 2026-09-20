@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2176,6 +2177,75 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testin
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
+}
+
+func TestOpenAIGatewayService_CodexFingerprintHTTPInstallationConvergence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, transport := range []string{"http", "passthrough"} {
+		for _, mode := range []codexFingerprintMode{codexFingerprintDevice, codexFingerprintSession, codexFingerprintFull} {
+			t.Run(transport+"/"+string(mode), func(t *testing.T) {
+				account := newTestOAuthAccount(4405, map[string]any{
+					codexFingerprintModeExtraKey: string(mode),
+					"openai_passthrough":         transport == "passthrough",
+				})
+				account.Concurrency = 1
+				account.Credentials = map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"}
+				ids := resolveCodexFingerprintIDs(account, "", mode)
+				require.NotNil(t, ids)
+
+				for _, client := range []string{"client-a", "client-b"} {
+					t.Run(client, func(t *testing.T) {
+						bodyTurnMetadata := fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"sandbox":"seatbelt"}`, client+"-body-turn-install", client+"-session")
+						body, err := json.Marshal(map[string]any{
+							"model":  "gpt-5.2",
+							"stream": false,
+							"input":  []any{map[string]any{"type": "message", "role": "user", "content": "hi"}},
+							"client_metadata": map[string]any{
+								"installation_id":         client + "-flat-install",
+								"x-codex-installation-id": client + "-prefixed-install",
+								"session_id":              client + "-session",
+								"x-codex-turn-metadata":   bodyTurnMetadata,
+							},
+						})
+						require.NoError(t, err)
+
+						c, _ := gin.CreateTestContext(httptest.NewRecorder())
+						c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
+						c.Request.Header.Set("originator", "codex_cli_rs")
+						c.Request.Header.Set("session-id", client+"-session")
+						c.Request.Header.Set("x-codex-installation-id", client+"-header-install")
+						c.Request.Header.Set("x-codex-turn-metadata", fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"sandbox":"seatbelt"}`, client+"-header-turn-install", client+"-session"))
+
+						upstream := &httpUpstreamRecorder{resp: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": {"text/event-stream"}},
+							Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+						}}
+						svc := &OpenAIGatewayService{
+							cfg:           &config.Config{},
+							httpUpstream:  upstream,
+							toolCorrector: NewCodexToolCorrector(),
+						}
+
+						_, err = svc.Forward(context.Background(), c, account, body)
+						require.NoError(t, err)
+						require.NotNil(t, upstream.lastReq)
+						require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"), "exercise the intended HTTP forwarding path")
+
+						headerTurnMetadata := upstream.lastReq.Header.Get("x-codex-turn-metadata")
+						bodyTurnMetadata = gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
+						require.Equal(t, ids.installationID, upstream.lastReq.Header.Get("x-codex-installation-id"))
+						require.Equal(t, ids.installationID, gjson.Get(headerTurnMetadata, "installation_id").String())
+						require.Equal(t, ids.installationID, gjson.Get(bodyTurnMetadata, "installation_id").String())
+						require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
+						require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.installation_id").String())
+					})
+				}
+			})
+		}
+	}
 }
 
 func TestOpenAIGatewayService_CodexFingerprintHTTPTransformedHeaderBodyParityAndDefaultCacheKey(t *testing.T) {

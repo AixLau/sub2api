@@ -422,6 +422,7 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	embeddedMeta := `{"installation_id":"x","session_id":"user-session","sandbox":"seccomp"}`
 	reqBody := map[string]any{
 		"client_metadata": map[string]any{
+			"installation_id":         "original-flat-install",
 			"x-codex-installation-id": "original-install",
 			"session_id":              "user-session",
 			"x-codex-turn-metadata":   embeddedMeta,
@@ -433,6 +434,7 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
+	assert.Equal(t, "converged-device", cm["installation_id"])
 	assert.Equal(t, "converged-device", cm["x-codex-installation-id"])
 	assert.Equal(t, "user-session", cm["session_id"], "device 模式不改 session_id")
 
@@ -528,7 +530,7 @@ func TestApplyCodexFingerprintClientMetadata_NoOpReportsUnmodified(t *testing.T)
 		`{ "installation_id" : "\u0074est-installation", "session_id" : "S", "extra" : 9007199254740993 }`,
 	} {
 		t.Run(embedded, func(t *testing.T) {
-			metadata := map[string]string{"x-codex-installation-id": "test-installation", "session_id": "S"}
+			metadata := map[string]string{"installation_id": "test-installation", "x-codex-installation-id": "test-installation", "session_id": "S"}
 			if embedded != "" {
 				metadata["x-codex-turn-metadata"] = embedded
 			}
@@ -576,6 +578,7 @@ func TestApplyCodexFingerprintClientMetadata_EmbeddedOnlyChange(t *testing.T) {
 	} {
 		t.Run(embedded, func(t *testing.T) {
 			body := map[string]any{"client_metadata": map[string]any{
+				"installation_id":         "test-installation",
 				"x-codex-installation-id": "test-installation",
 				"session_id":              "S",
 				"x-codex-turn-metadata":   embedded,
@@ -981,6 +984,8 @@ func TestApplyCodexFingerprintClientMetadataRaw_MatchesMapVariant(t *testing.T) 
 			t.Run(string(mode)+"/"+name, func(t *testing.T) {
 				mapCM, rawCM := rawVsMapClientMetadata(t, []byte(body), ids)
 				assert.Equal(t, mapCM, rawCM, "raw 字节版与 map 版的 client_metadata 结果必须逐点一致")
+				assert.Equal(t, ids.installationID, mapCM["installation_id"])
+				assert.Equal(t, ids.installationID, rawCM["installation_id"])
 			})
 		}
 	}
