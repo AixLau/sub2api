@@ -1667,7 +1667,7 @@
       />
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div v-if="!account.principal || account.platform !== 'openai'">
+        <div>
           <label class="input-label">{{ t(account.principal ? 'admin.accounts.instances.accountLimit' : 'admin.accounts.concurrency') }}</label>
           <input v-model.number="form.concurrency" type="number" :min="account.principal ? 0 : 1" class="input" />
         </div>
@@ -5008,6 +5008,7 @@ const handleSubmit = async () => {
     const concurrency = Number(form.concurrency)
     if (principal.value) {
       if (!Number.isInteger(concurrency) || concurrency < 0 || concurrency > 2147483647) return
+      updatePayload.concurrency = concurrency
       if (form.status === initialPrincipalStatus.value) delete updatePayload.status
     } else {
       updatePayload.concurrency = Number.isFinite(concurrency) && concurrency >= 1 ? concurrency : 1

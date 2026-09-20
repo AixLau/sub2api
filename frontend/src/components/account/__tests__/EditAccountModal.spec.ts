@@ -343,11 +343,12 @@ describe('EditAccountModal', () => {
     const form = wrapper.get('form#edit-account-form')
     expect(form.text()).toContain('admin.accounts.notes')
     expect(form.text()).toContain('admin.accounts.priority')
+    expect(form.text()).toContain('admin.accounts.instances.accountLimit')
     await form.get('textarea').setValue('unsaved account notes')
     expect(form.get<HTMLTextAreaElement>('textarea').element.value).toBe('unsaved account notes')
     await form.trigger('submit.prevent')
     expect(updateAccountMock).toHaveBeenCalledWith(account.id, expect.objectContaining({
-      notes: 'unsaved account notes', group_ids: [7],
+      notes: 'unsaved account notes', concurrency: 0, group_ids: [7],
       credentials: expect.objectContaining({ model_mapping: { 'gpt-5.4': 'gpt-5.4' } })
     }), 2)
     expect(updateAccountMock.mock.calls[0][1]).not.toHaveProperty('status')
