@@ -176,11 +176,14 @@ func TestApplyCodexFingerprintHeaders_OffMode(t *testing.T) {
 	h := http.Header{}
 	h.Set("x-codex-installation-id", "original-install-id")
 	h.Set("x-codex-window-id", "original-window-id")
+	turnMetadata := `{"sandbox":"seatbelt","sandbox_mode":"workspace-write"}`
+	h.Set("x-codex-turn-metadata", turnMetadata)
 
 	applyCodexFingerprintHeaders(h, nil)
 
 	assert.Equal(t, "original-install-id", h.Get("x-codex-installation-id"), "nil ids 不改写")
 	assert.Equal(t, "original-window-id", h.Get("x-codex-window-id"), "nil ids 不改写")
+	assert.Equal(t, turnMetadata, h.Get("x-codex-turn-metadata"))
 }
 
 // --- applyCodexFingerprintHeaders: device 模式 ---
@@ -190,7 +193,7 @@ func TestApplyCodexFingerprintHeaders_DeviceMode(t *testing.T) {
 		codexFingerprintModeExtraKey: "device",
 		"openai_device_id":           "converged-device",
 	})
-	turnMetadata := `{"installation_id":"user-install","session_id":"user-session","sandbox":"seccomp"}`
+	turnMetadata := `{"installation_id":"user-install","session_id":"user-session","thread_id":"user-thread","turn_id":"user-turn","sandbox":"seatbelt","sandbox_mode":"workspace-write","workspace":{"cwd":"/workspace/client"}}`
 	h := http.Header{}
 	h.Set("x-codex-installation-id", "user-install")
 	h.Set("x-codex-window-id", "user-window:0")
@@ -206,7 +209,11 @@ func TestApplyCodexFingerprintHeaders_DeviceMode(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &meta))
 	assert.Equal(t, "converged-device", meta["installation_id"])
 	assert.Equal(t, "user-session", meta["session_id"], "device 模式不改写 session_id")
-	assert.Equal(t, "seccomp", meta["sandbox"], "非指纹字段保留原样")
+	assert.Equal(t, "user-thread", meta["thread_id"])
+	assert.Equal(t, "user-turn", meta["turn_id"])
+	assert.Equal(t, "seccomp", meta["sandbox"], "sandbox 与规范 Linux UA 一致")
+	assert.Equal(t, "workspace-write", meta["sandbox_mode"])
+	assert.Equal(t, map[string]any{"cwd": "/workspace/client"}, meta["workspace"])
 }
 
 // --- applyCodexFingerprintHeaders: session 模式 ---
@@ -402,13 +409,16 @@ func TestFingerprintIDs_MalformedEmbeddedMetadataRebuiltConsistently(t *testing.
 // --- applyCodexFingerprintClientMetadata ---
 
 func TestApplyCodexFingerprintClientMetadata_OffMode(t *testing.T) {
+	turnMetadata := `{"sandbox":"windows_sandbox","sandbox_mode":"danger-full-access"}`
 	reqBody := map[string]any{
 		"client_metadata": map[string]any{
 			"x-codex-installation-id": "original",
+			"x-codex-turn-metadata":   turnMetadata,
 		},
 	}
 	modified := applyCodexFingerprintClientMetadata(reqBody, nil)
 	assert.False(t, modified, "nil ids 不改写")
+	assert.Equal(t, turnMetadata, reqBody["client_metadata"].(map[string]any)["x-codex-turn-metadata"])
 }
 
 func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
@@ -419,7 +429,7 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
 	require.NotNil(t, ids)
 
-	embeddedMeta := `{"installation_id":"x","session_id":"user-session","sandbox":"seccomp"}`
+	embeddedMeta := `{"installation_id":"x","session_id":"user-session","thread_id":"user-thread","turn_id":"user-turn","sandbox":"windows_sandbox","sandbox_mode":"danger-full-access","workspace":{"cwd":"C:/workspace/client"}}`
 	reqBody := map[string]any{
 		"client_metadata": map[string]any{
 			"installation_id":         "original-flat-install",
@@ -443,7 +453,12 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	var meta map[string]any
 	require.NoError(t, json.Unmarshal([]byte(turnMetaStr), &meta))
 	assert.Equal(t, "converged-device", meta["installation_id"])
-	assert.Equal(t, "seccomp", meta["sandbox"], "非指纹字段保留原样")
+	assert.Equal(t, "user-session", meta["session_id"])
+	assert.Equal(t, "user-thread", meta["thread_id"])
+	assert.Equal(t, "user-turn", meta["turn_id"])
+	assert.Equal(t, "seccomp", meta["sandbox"], "sandbox 与规范 Linux UA 一致")
+	assert.Equal(t, "danger-full-access", meta["sandbox_mode"])
+	assert.Equal(t, map[string]any{"cwd": "C:/workspace/client"}, meta["workspace"])
 }
 
 func TestCodexFingerprintMetadataRewrite_PreservesUnrelatedValues(t *testing.T) {
@@ -454,10 +469,11 @@ func TestCodexFingerprintMetadataRewrite_PreservesUnrelatedValues(t *testing.T) 
 		"nested":         `{"counter":9007199254740993,"values":[1e400,1e-400,null,true,"keep"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			original := `{"installation_id":"old","session_id":"S","thread_id":"T","window_id":"W","extra":` + extension + `}`
+			original := `{"installation_id":"old","session_id":"S","thread_id":"T","window_id":"W","sandbox":"seatbelt","sandbox_mode":"read-only","extra":` + extension + `}`
 			var want map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(original), &want))
 			want["installation_id"] = json.RawMessage(`"test-installation"`)
+			want["sandbox"] = json.RawMessage(`"seccomp"`)
 
 			for _, path := range []string{"header", "map", "raw"} {
 				t.Run(path, func(t *testing.T) {
@@ -528,6 +544,8 @@ func TestApplyCodexFingerprintClientMetadata_NoOpReportsUnmodified(t *testing.T)
 		"",
 		`{ "installation_id" : "test-installation", "session_id" : "S", "extra" : 1e400 }`,
 		`{ "installation_id" : "\u0074est-installation", "session_id" : "S", "extra" : 9007199254740993 }`,
+		`{ "installation_id" : "test-installation", "sandbox" : "seccomp", "sandbox_mode" : "workspace-write" }`,
+		`{ "installation_id" : "test-installation", "sandbox" : "\u0073eccomp", "sandbox_mode" : "read-only" }`,
 	} {
 		t.Run(embedded, func(t *testing.T) {
 			metadata := map[string]string{"installation_id": "test-installation", "x-codex-installation-id": "test-installation", "session_id": "S"}
@@ -572,6 +590,7 @@ func TestApplyCodexFingerprintClientMetadata_EmbeddedOnlyChange(t *testing.T) {
 	for _, embedded := range []string{
 		`{ "installation_id": "old", "session_id": "S" }`,
 		`{"session_id":"S"}`,
+		`{"installation_id":"test-installation","sandbox":"seatbelt","sandbox_mode":"read-only"}`,
 		`{malformed`,
 		`[]`,
 		`null`,

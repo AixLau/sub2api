@@ -68,7 +68,7 @@ const (
 	// codexFingerprintOff 不做任何收敛，原样透传客户端标识。
 	// 这是默认值：收敛是显式 opt-in 的（见 GetCodexFingerprintMode）。
 	codexFingerprintOff codexFingerprintMode = "off"
-	// codexFingerprintDevice 仅收敛 installation_id 为账号级恒定值。
+	// codexFingerprintDevice 收敛 installation_id 为账号级恒定值，并统一已有的 sandbox 平台标识。
 	// 上游看到 1 台设备 + 多会话（每用户各自的 session）。
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 收敛 installation_id + session_id，
@@ -83,6 +83,9 @@ const (
 const (
 	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
 	codexFingerprintSeedExtraKey = "codex_fingerprint_seed"
+	// Matches the canonical Linux/Ubuntu User-Agent. This is outbound metadata,
+	// independent of the client's sandbox_mode and actual execution permissions.
+	codexFingerprintDeviceSandbox = "seccomp"
 )
 
 func canonicalCodexFingerprintSeed(value any) (string, bool) {
@@ -414,6 +417,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	if ids.mode == codexFingerprintDevice {
 		rewriteCodexTurnMetadataFields(h, map[string]any{
 			"installation_id": ids.installationID,
+			"sandbox":         codexFingerprintDeviceSandbox,
 		})
 		return
 	}
@@ -448,7 +452,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 }
 
 // rewriteCodexTurnMetadataFields 解析 x-codex-turn-metadata 头中的 JSON，
-// 替换指定字段后回写。合法对象保留未指定字段（如 sandbox、thread_source）；
+// 替换指定字段后回写。合法对象保留未指定字段（如 sandbox_mode、thread_source）；
 // 非法/非对象值重建为最小合法 metadata，避免 flat 与 embedded identity 分裂。
 func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	raw := strings.TrimSpace(h.Get("x-codex-turn-metadata"))
@@ -470,6 +474,13 @@ func rewriteCodexMetadataJSONFields(raw string, fields map[string]any) (string, 
 
 	changed := false
 	for key, value := range fields {
+		// Sandbox describes an optional client platform capability. Only replace
+		// it when supplied; rebuilding missing/invalid metadata must not add it.
+		if key == "sandbox" {
+			if _, exists := metadata[key]; !exists {
+				continue
+			}
+		}
 		if desired, ok := value.(string); ok {
 			var current *string
 			if err := json.Unmarshal(metadata[key], &current); err == nil && current != nil && *current == desired {
@@ -559,6 +570,7 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	if ids.mode == codexFingerprintDevice {
 		if rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
 			"installation_id": ids.installationID,
+			"sandbox":         codexFingerprintDeviceSandbox,
 		}) {
 			modified = true
 		}

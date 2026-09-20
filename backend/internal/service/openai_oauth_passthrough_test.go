@@ -2179,7 +2179,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testin
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 
-func TestOpenAIGatewayService_CodexFingerprintHTTPInstallationConvergence(t *testing.T) {
+func TestOpenAIGatewayService_CodexFingerprintHTTPDeviceMetadataConvergence(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	for _, transport := range []string{"http", "passthrough"} {
@@ -2194,54 +2194,94 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPInstallationConvergence(t *tes
 				ids := resolveCodexFingerprintIDs(account, "", mode)
 				require.NotNil(t, ids)
 
-				for _, client := range []string{"client-a", "client-b"} {
-					t.Run(client, func(t *testing.T) {
-						bodyTurnMetadata := fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"sandbox":"seatbelt"}`, client+"-body-turn-install", client+"-session")
-						body, err := json.Marshal(map[string]any{
-							"model":  "gpt-5.2",
-							"stream": false,
-							"input":  []any{map[string]any{"type": "message", "role": "user", "content": "hi"}},
-							"client_metadata": map[string]any{
-								"installation_id":         client + "-flat-install",
-								"x-codex-installation-id": client + "-prefixed-install",
-								"session_id":              client + "-session",
-								"x-codex-turn-metadata":   bodyTurnMetadata,
-							},
+				for _, client := range []struct {
+					name, sandbox, sandboxMode string
+				}{
+					{"macos", "seatbelt", "workspace-write"},
+					{"linux", "seccomp", "read-only"},
+					{"windows", "windows_sandbox", "danger-full-access"},
+					{"no-sandbox", "", "workspace-write"},
+				} {
+					for _, source := range []string{"header", "body", "both"} {
+						t.Run(client.name+"/"+source, func(t *testing.T) {
+							turnMetadata := map[string]any{
+								"installation_id": client.name + "-turn-install",
+								"session_id":      client.name + "-session",
+								"thread_id":       client.name + "-thread",
+								"turn_id":         client.name + "-turn",
+								"sandbox_mode":    client.sandboxMode,
+								"workspace":       map[string]any{"cwd": "/workspace/" + client.name},
+							}
+							if client.sandbox != "" {
+								turnMetadata["sandbox"] = client.sandbox
+							}
+							rawTurnMetadata, err := json.Marshal(turnMetadata)
+							require.NoError(t, err)
+							clientMetadata := map[string]any{
+								"installation_id":         client.name + "-flat-install",
+								"x-codex-installation-id": client.name + "-prefixed-install",
+								"session_id":              client.name + "-session",
+							}
+							if source == "body" || source == "both" {
+								clientMetadata["x-codex-turn-metadata"] = string(rawTurnMetadata)
+							}
+							body, err := json.Marshal(map[string]any{
+								"model":           "gpt-5.2",
+								"stream":          false,
+								"input":           []any{map[string]any{"type": "message", "role": "user", "content": "hi"}},
+								"client_metadata": clientMetadata,
+							})
+							require.NoError(t, err)
+
+							c, _ := gin.CreateTestContext(httptest.NewRecorder())
+							c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+							c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
+							c.Request.Header.Set("originator", "codex_cli_rs")
+							c.Request.Header.Set("session-id", client.name+"-session")
+							c.Request.Header.Set("x-codex-installation-id", client.name+"-header-install")
+							if source == "header" || source == "both" {
+								c.Request.Header.Set("x-codex-turn-metadata", string(rawTurnMetadata))
+							}
+
+							upstream := &httpUpstreamRecorder{resp: &http.Response{
+								StatusCode: http.StatusOK,
+								Header:     http.Header{"Content-Type": {"text/event-stream"}},
+								Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+							}}
+							svc := &OpenAIGatewayService{
+								cfg:           &config.Config{},
+								httpUpstream:  upstream,
+								toolCorrector: NewCodexToolCorrector(),
+							}
+
+							_, err = svc.Forward(context.Background(), c, account, body)
+							require.NoError(t, err)
+							require.NotNil(t, upstream.lastReq)
+							require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"), "exercise the intended HTTP forwarding path")
+							require.Contains(t, upstream.lastReq.UserAgent(), "Ubuntu")
+
+							headerTurnMetadata := upstream.lastReq.Header.Get("x-codex-turn-metadata")
+							bodyTurnMetadata := gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
+							require.Equal(t, ids.installationID, upstream.lastReq.Header.Get("x-codex-installation-id"))
+							require.Equal(t, ids.installationID, gjson.Get(headerTurnMetadata, "installation_id").String())
+							require.Equal(t, ids.installationID, gjson.Get(bodyTurnMetadata, "installation_id").String())
+							require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
+							require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.installation_id").String())
+							for _, metadata := range []string{headerTurnMetadata, bodyTurnMetadata} {
+								require.Equal(t, client.sandboxMode, gjson.Get(metadata, "sandbox_mode").String())
+								require.Equal(t, "/workspace/"+client.name, gjson.Get(metadata, "workspace.cwd").String())
+								if client.sandbox == "" {
+									require.False(t, gjson.Get(metadata, "sandbox").Exists(), "absent sandbox must not be synthesized")
+									continue
+								}
+								wantSandbox := client.sandbox
+								if mode == codexFingerprintDevice {
+									wantSandbox = "seccomp"
+								}
+								require.Equal(t, wantSandbox, gjson.Get(metadata, "sandbox").String())
+							}
 						})
-						require.NoError(t, err)
-
-						c, _ := gin.CreateTestContext(httptest.NewRecorder())
-						c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
-						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
-						c.Request.Header.Set("originator", "codex_cli_rs")
-						c.Request.Header.Set("session-id", client+"-session")
-						c.Request.Header.Set("x-codex-installation-id", client+"-header-install")
-						c.Request.Header.Set("x-codex-turn-metadata", fmt.Sprintf(`{"installation_id":%q,"session_id":%q,"sandbox":"seatbelt"}`, client+"-header-turn-install", client+"-session"))
-
-						upstream := &httpUpstreamRecorder{resp: &http.Response{
-							StatusCode: http.StatusOK,
-							Header:     http.Header{"Content-Type": {"text/event-stream"}},
-							Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
-						}}
-						svc := &OpenAIGatewayService{
-							cfg:           &config.Config{},
-							httpUpstream:  upstream,
-							toolCorrector: NewCodexToolCorrector(),
-						}
-
-						_, err = svc.Forward(context.Background(), c, account, body)
-						require.NoError(t, err)
-						require.NotNil(t, upstream.lastReq)
-						require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"), "exercise the intended HTTP forwarding path")
-
-						headerTurnMetadata := upstream.lastReq.Header.Get("x-codex-turn-metadata")
-						bodyTurnMetadata = gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
-						require.Equal(t, ids.installationID, upstream.lastReq.Header.Get("x-codex-installation-id"))
-						require.Equal(t, ids.installationID, gjson.Get(headerTurnMetadata, "installation_id").String())
-						require.Equal(t, ids.installationID, gjson.Get(bodyTurnMetadata, "installation_id").String())
-						require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
-						require.Equal(t, ids.installationID, gjson.GetBytes(upstream.lastBody, "client_metadata.installation_id").String())
-					})
+					}
 				}
 			})
 		}
