@@ -13,7 +13,20 @@ export default {
     disable: '停用',
     test: '测试',
     uninstall: '卸载',
-    rollout: 'OAuth 流量比例',
+    accountScope: '插件账号范围',
+    accountScopeSummary: '只有选中的 OpenAI OAuth 账号进入插件，其他账号继续使用原生链路。',
+    selectAccountsTitle: '为 {name} 选择账号',
+    accountScopeHint: '插件只会收到所选账号的请求和凭据。未选账号保留 Sub2API 原生 HTTP、代理和 WebSocket 行为。',
+    searchAccounts: '搜索 OpenAI OAuth 账号',
+    accountsLoadFailed: '加载 OpenAI OAuth 账号失败',
+    selectedAccountCount: '已选 {count} 个账号',
+    noOAuthAccounts: '没有符合条件的 OpenAI OAuth 账号',
+    selectPageAccounts: '选择本页账号',
+    selectAccount: '选择账号 {name}',
+    accountName: '账号',
+    accountIdentity: '身份',
+    accountStatus: '状态',
+    enableSelectedAccounts: '为 {count} 个账号启用',
     compatibility: '版本兼容性',
     currentVersion: '当前 Sub2API',
     requiredVersion: '要求范围',
@@ -45,6 +58,6 @@ export default {
     fileRequired: '请选择 .s2plugin 文件',
     bridgeRejected: '插件 UI 消息校验失败',
     onlyOpenAI: '初期能力：仅 OpenAI OAuth 出站传输',
-    noAccountCoupling: '作用域为平台与账号类型，不修改账号数据，也不需要在账号页逐个开启。'
+    accountScoped: '精确账号白名单路由'
   }
 }

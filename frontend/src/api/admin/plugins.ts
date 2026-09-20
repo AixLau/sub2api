@@ -47,7 +47,7 @@ export interface PluginBinding {
   platform: string
   account_type: string
   enabled: boolean
-  rollout_percent: number
+  account_ids: number[]
 }
 
 export interface PluginInstallation {
@@ -101,11 +101,11 @@ export async function upload(file: File): Promise<PluginInstallation> {
 
 export async function enable(
   id: number,
-  rolloutPercent: number,
+  accountIds: number[],
   acceptUntested: boolean
 ): Promise<PluginInstallation> {
   const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${id}/enable`, {
-    rollout_percent: rolloutPercent,
+    account_ids: accountIds,
     accept_untested: acceptUntested
   })
   return data

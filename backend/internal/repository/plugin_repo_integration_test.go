@@ -20,6 +20,19 @@ func TestPluginRepositoryLifecycleIsAtomicAndOptimistic(t *testing.T) {
 	defer func() {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_installations WHERE plugin_key = $1`, pluginKey)
 	}()
+	var accountID int64
+	err := integrationDB.QueryRowContext(ctx, `
+		INSERT INTO accounts (name, platform, type, credentials, extra, status)
+		VALUES ($1, $2, $3, '{}'::jsonb, '{}'::jsonb, 'active')
+		RETURNING id
+	`, "plugin-scope-"+pluginKey, service.PlatformOpenAI, service.AccountTypeOAuth).Scan(&accountID)
+	require.NoError(t, err)
+	defer func() {
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM accounts WHERE id = $1`, accountID)
+	}()
+	require.NoError(t, repo.ValidateOpenAIOAuthAccounts(ctx, []int64{accountID}))
+	err = repo.ValidateOpenAIOAuthAccounts(ctx, []int64{accountID + 9000000000})
+	require.ErrorContains(t, err, "不存在或不是 OpenAI OAuth")
 
 	manifest := service.PluginManifest{SchemaVersion: 1, ID: pluginKey, Name: "测试插件", Version: "1.0.0"}
 	first := &service.PluginInstallation{
@@ -32,10 +45,11 @@ func TestPluginRepositoryLifecycleIsAtomicAndOptimistic(t *testing.T) {
 	bindings := []service.PluginBinding{{
 		Capability: service.PluginCapabilityOpenAIOAuthOutbound,
 		Platform:   service.PlatformOpenAI, AccountType: service.AccountTypeOAuth,
-		RolloutPercent: 100,
+		AccountIDs: []int64{accountID},
 	}}
 	installed, err := repo.Install(ctx, first, bindings)
 	require.NoError(t, err)
+	require.Equal(t, []int64{accountID}, installed.Bindings[0].AccountIDs)
 	artifact, err := repo.GetArtifact(ctx, installed.ID)
 	require.NoError(t, err)
 	require.Equal(t, first.ArtifactData, artifact)
@@ -47,6 +61,9 @@ func TestPluginRepositoryLifecycleIsAtomicAndOptimistic(t *testing.T) {
 		ctx, installed.ID, bindings, service.PluginStateEnabled, "", &now,
 		service.PluginStateStarting, first.BinarySHA256,
 	))
+	enabled, err := repo.GetByID(ctx, installed.ID)
+	require.NoError(t, err)
+	require.Equal(t, []int64{accountID}, enabled.Bindings[0].AccountIDs)
 
 	second := *first
 	second.Version = "1.1.0"

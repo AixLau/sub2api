@@ -197,7 +197,7 @@ SUB2API_TEST_PLUGIN_PACKAGE=plugins/my-openai-plugin/dist/my-openai-plugin.s2plu
 
 最低测试集应覆盖配置默认值和边界值、插件身份、请求和响应分块、流式响应、上下文取消、插件退出、代理开关、包哈希、签名、路径安全、目标平台运行时以及 UI Bridge 的加载、保存、测试、错误和超时。
 
-安装后先保持停用，确认清单兼容性、签名和诊断结果，再按账号灰度启用。API Key 账号和未命中灰度的 OAuth 账号继续走 Sub2API 原有路径。
+安装后先保持停用，确认清单兼容性、签名和诊断结果，再选择允许进入插件的 OpenAI OAuth 账号并启用。API Key 账号和未进入白名单的 OAuth 账号继续走 Sub2API 原有路径。
 
 ## 9. 发布前检查清单
 

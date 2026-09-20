@@ -33,3 +33,17 @@ func TestPluginArtifactMigrationSupportsExistingInstallations(t *testing.T) {
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS artifact_data BYTEA")
 	require.NotContains(t, strings.ToUpper(sql), "ALTER TABLE ACCOUNTS")
 }
+
+func TestPluginAccountScopeMigrationReplacesPercentageRollout(t *testing.T) {
+	content, err := FS.ReadFile("231_plugin_account_scopes.sql")
+	require.NoError(t, err)
+
+	sql := strings.Join(strings.Fields(string(content)), " ")
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS sub2api_plugin_binding_accounts")
+	require.Contains(t, sql, "binding_id BIGINT NOT NULL REFERENCES sub2api_plugin_bindings(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "PRIMARY KEY (binding_id, account_id)")
+	require.Contains(t, sql, "SET state = 'disabled'")
+	require.Contains(t, sql, "DROP COLUMN IF EXISTS rollout_percent")
+	require.NotContains(t, strings.ToUpper(sql), "ALTER TABLE ACCOUNTS")
+}

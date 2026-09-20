@@ -115,15 +115,15 @@ type PluginInstallation struct {
 }
 
 type PluginBinding struct {
-	ID             int64     `json:"id"`
-	PluginID       int64     `json:"plugin_id"`
-	Capability     string    `json:"capability"`
-	Platform       string    `json:"platform"`
-	AccountType    string    `json:"account_type"`
-	Enabled        bool      `json:"enabled"`
-	RolloutPercent int       `json:"rollout_percent"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	PluginID    int64     `json:"plugin_id"`
+	Capability  string    `json:"capability"`
+	Platform    string    `json:"platform"`
+	AccountType string    `json:"account_type"`
+	Enabled     bool      `json:"enabled"`
+	AccountIDs  []int64   `json:"account_ids"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type PluginRepository interface {
@@ -137,6 +137,7 @@ type PluginRepository interface {
 	MarkRuntimeHealthy(ctx context.Context, id int64, binarySHA256, configEncrypted string) error
 	UpdateState(ctx context.Context, id int64, state, lastError string, enabledAt *time.Time, expectedBinarySHA256, expectedState string) error
 	UpdateConfig(ctx context.Context, id int64, encrypted, expectedBinarySHA256 string) error
+	ValidateOpenAIOAuthAccounts(ctx context.Context, accountIDs []int64) error
 	UpdateBindingsAndState(ctx context.Context, pluginID int64, bindings []PluginBinding, state, lastError string, enabledAt *time.Time, expectedState, expectedBinarySHA256 string) error
 }
 

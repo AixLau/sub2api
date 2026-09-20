@@ -18,7 +18,7 @@
               t("admin.plugins.onlyOpenAI")
             }}</span>
             <span class="rounded bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
-              t("admin.plugins.noAccountCoupling")
+              t("admin.plugins.accountScoped")
             }}</span>
           </div>
         </div>
@@ -211,27 +211,24 @@
               </p>
             </div>
 
-            <div class="md:col-span-2">
-              <label
-                class="flex items-center justify-between gap-4 text-xs font-medium text-gray-600 dark:text-gray-300"
+            <div class="flex items-center justify-between gap-4 md:col-span-2">
+              <div>
+                <p class="text-xs font-medium uppercase text-gray-500">
+                  {{ t("admin.plugins.accountScope") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.plugins.accountScopeSummary") }}
+                </p>
+              </div>
+              <span
+                class="shrink-0 rounded bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200"
               >
-                <span>{{ t("admin.plugins.rollout") }}</span>
-                <span class="w-11 text-right font-mono"
-                  >{{
-                    rolloutValues[plugin.id] ?? currentRollout(plugin)
-                  }}%</span
-                >
-              </label>
-              <input
-                :value="rolloutValues[plugin.id] ?? currentRollout(plugin)"
-                type="range"
-                min="1"
-                max="100"
-                step="1"
-                class="mt-2 w-full accent-primary-600"
-                :disabled="hasEnabledBinding(plugin)"
-                @input="setRollout(plugin.id, $event)"
-              />
+                {{
+                  t("admin.plugins.selectedAccountCount", {
+                    count: selectedAccountIDs(plugin).length,
+                  })
+                }}
+              </span>
             </div>
           </div>
 
@@ -266,7 +263,7 @@
                 plugin.state === 'starting' ||
                 !plugin.compatibility.compatible
               "
-              @click="enablePlugin(plugin)"
+              @click="openEnablePlugin(plugin)"
             >
               <Icon name="play" size="sm" />
               {{ t("admin.plugins.enable") }}
@@ -327,6 +324,15 @@
         </div>
       </BaseDialog>
 
+      <PluginAccountScopeDialog
+        :show="accountScopePlugin !== null"
+        :plugin-name="accountScopePlugin?.name || ''"
+        :initial-account-ids="selectedAccountIDs(accountScopePlugin)"
+        :submitting="busyID === accountScopePlugin?.id"
+        @close="closeAccountScope"
+        @confirm="enableSelectedAccounts"
+      />
+
       <TotpStepUpDialog :controller="pluginStepUp" />
     </div>
   </AppLayout>
@@ -343,6 +349,7 @@ import {
 import { useAppStore } from "@/stores";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
+import PluginAccountScopeDialog from "@/components/admin/plugin/PluginAccountScopeDialog.vue";
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import {
@@ -371,8 +378,9 @@ const loading = ref(false);
 const uploading = ref(false);
 const busyID = ref<number | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const rolloutValues = ref<Record<number, number>>({});
 const configPlugin = ref<PluginInstallation | null>(null);
+const accountScopePlugin = ref<PluginInstallation | null>(null);
+const acceptUntestedSelection = ref(false);
 const uiSession = ref<PluginUISession | null>(null);
 const pluginFrame = ref<HTMLIFrameElement | null>(null);
 const uiLoading = ref(false);
@@ -407,9 +415,6 @@ async function loadPlugins(): Promise<void> {
   loading.value = true;
   try {
     plugins.value = await adminAPI.plugins.list();
-    for (const plugin of plugins.value) {
-      rolloutValues.value[plugin.id] = currentRollout(plugin);
-    }
   } catch (error: unknown) {
     appStore.showError(errorMessage(error));
   } finally {
@@ -437,11 +442,12 @@ async function handleFileSelected(event: Event): Promise<void> {
   }
 }
 
-function currentRollout(plugin: PluginInstallation): number {
+function selectedAccountIDs(plugin: PluginInstallation | null): number[] {
+  if (!plugin) return [];
   return (
     plugin.bindings.find(
       (binding) => binding.capability === "openai.oauth.outbound_transport.v1",
-    )?.rollout_percent || 100
+    )?.account_ids || []
   );
 }
 
@@ -449,27 +455,37 @@ function hasEnabledBinding(plugin: PluginInstallation): boolean {
   return plugin.bindings.some((binding) => binding.enabled);
 }
 
-function setRollout(id: number, event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value);
-  rolloutValues.value[id] = Math.min(100, Math.max(1, value));
-}
-
-async function enablePlugin(plugin: PluginInstallation): Promise<void> {
+function openEnablePlugin(plugin: PluginInstallation): void {
   let acceptUntested = false;
   if (!plugin.compatibility.tested) {
     acceptUntested = window.confirm(t("admin.plugins.confirmUntested"));
     if (!acceptUntested) return;
   }
+  acceptUntestedSelection.value = acceptUntested;
+  accountScopePlugin.value = plugin;
+}
+
+function closeAccountScope(): void {
+  if (busyID.value !== null) return;
+  accountScopePlugin.value = null;
+  acceptUntestedSelection.value = false;
+}
+
+async function enableSelectedAccounts(accountIDs: number[]): Promise<void> {
+  const plugin = accountScopePlugin.value;
+  if (!plugin || accountIDs.length === 0) return;
   busyID.value = plugin.id;
   try {
     await pluginStepUp.run(() =>
       adminAPI.plugins.enable(
         plugin.id,
-        rolloutValues.value[plugin.id] || 100,
-        acceptUntested,
+        accountIDs,
+        acceptUntestedSelection.value,
       ),
     );
     appStore.showSuccess(t("admin.plugins.enableSuccess"));
+    accountScopePlugin.value = null;
+    acceptUntestedSelection.value = false;
     await loadPlugins();
   } catch (error: unknown) {
     reportSensitiveActionError(error);

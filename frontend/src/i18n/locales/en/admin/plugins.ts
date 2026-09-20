@@ -13,7 +13,20 @@ export default {
     disable: 'Disable',
     test: 'Test',
     uninstall: 'Uninstall',
-    rollout: 'OAuth traffic percentage',
+    accountScope: 'Plugin account scope',
+    accountScopeSummary: 'Only selected OpenAI OAuth accounts enter the plugin; all others keep the built-in path.',
+    selectAccountsTitle: 'Select accounts for {name}',
+    accountScopeHint: 'The plugin receives requests and credentials only for selected accounts. Unselected accounts keep the built-in Sub2API HTTP, proxy, and WebSocket behavior.',
+    searchAccounts: 'Search OpenAI OAuth accounts',
+    accountsLoadFailed: 'Failed to load OpenAI OAuth accounts',
+    selectedAccountCount: '{count} accounts selected',
+    noOAuthAccounts: 'No matching OpenAI OAuth accounts',
+    selectPageAccounts: 'Select accounts on this page',
+    selectAccount: 'Select account {name}',
+    accountName: 'Account',
+    accountIdentity: 'Identity',
+    accountStatus: 'Status',
+    enableSelectedAccounts: 'Enable for {count} accounts',
     compatibility: 'Version compatibility',
     currentVersion: 'Current Sub2API',
     requiredVersion: 'Required range',
@@ -45,6 +58,6 @@ export default {
     fileRequired: 'Select a .s2plugin file',
     bridgeRejected: 'Plugin UI message validation failed',
     onlyOpenAI: 'Initial capability: OpenAI OAuth outbound transport only',
-    noAccountCoupling: 'The scope is platform and account type. Account records are not changed and no per-account toggle is required.'
+    accountScoped: 'Explicit account allowlist routing'
   }
 }

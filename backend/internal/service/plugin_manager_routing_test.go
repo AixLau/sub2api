@@ -74,9 +74,13 @@ func TestPluginManagerRoutingKeepsOAuthOnLegacyPathWithoutEnabledBinding(t *test
 
 func TestPluginManagerRoutingSelectsOnlyEligibleOpenAIOAuthAccounts(t *testing.T) {
 	manager := &PluginManager{}
-	manager.route.Store(&pluginRoute{pluginID: 1, rolloutPercent: 100, unavailable: "测试不可用"})
+	manager.route.Store(&pluginRoute{
+		pluginID: 1, accountIDs: pluginAccountIDSet([]int64{10, 12}), unavailable: "测试不可用",
+	})
 
 	assert.True(t, manager.ShouldRouteOpenAIOAuth(&Account{ID: 10, Platform: PlatformOpenAI, Type: AccountTypeOAuth}))
+	assert.True(t, manager.ShouldRouteOpenAIOAuth(&Account{ID: 12, Platform: PlatformOpenAI, Type: AccountTypeOAuth}))
+	assert.False(t, manager.ShouldRouteOpenAIOAuth(&Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}))
 	assert.False(t, manager.ShouldRouteOpenAIOAuth(&Account{ID: 10, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}))
 	assert.False(t, manager.ShouldRouteOpenAIOAuth(&Account{ID: 10, Platform: PlatformGrok, Type: AccountTypeOAuth}))
 	assert.False(t, manager.ShouldRouteOpenAIOAuth(nil))
@@ -84,7 +88,9 @@ func TestPluginManagerRoutingSelectsOnlyEligibleOpenAIOAuthAccounts(t *testing.T
 
 func TestOpenAIGatewayPluginRoutingPreservesAPIKeyAndFailsClosedForOAuth(t *testing.T) {
 	manager := &PluginManager{}
-	manager.route.Store(&pluginRoute{pluginID: 1, rolloutPercent: 100, unavailable: "测试不可用"})
+	manager.route.Store(&pluginRoute{
+		pluginID: 1, accountIDs: pluginAccountIDSet([]int64{2}), unavailable: "测试不可用",
+	})
 	upstream := &pluginRoutingHTTPUpstream{}
 	service := &OpenAIGatewayService{pluginManager: manager, httpUpstream: upstream}
 
@@ -107,14 +113,28 @@ func TestOpenAIGatewayPluginRoutingPreservesAPIKeyAndFailsClosedForOAuth(t *test
 	assert.Nil(t, oauthResponse)
 	assert.Contains(t, err.Error(), "插件不可用")
 	assert.Equal(t, 1, upstream.doCalls)
+
+	nativeOAuthRequest, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://example.com/v1/responses", nil)
+	require.NoError(t, err)
+	nativeOAuthResponse, err := service.doOpenAIUpstream(nativeOAuthRequest, "", &Account{
+		ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, nativeOAuthResponse)
+	_ = nativeOAuthResponse.Body.Close()
+	assert.Equal(t, 2, upstream.doCalls, "未选中的 OAuth 账号必须使用原生传输")
 }
 
-func TestStablePluginBucketIsDeterministicAndBounded(t *testing.T) {
-	for id := int64(1); id <= 1000; id++ {
-		first := stablePluginBucket(id)
-		assert.Equal(t, first, stablePluginBucket(id))
-		assert.Less(t, first, uint64(100))
-	}
+func TestNormalizePluginAccountIDsRequiresSelectionAndCanonicalizes(t *testing.T) {
+	_, err := normalizePluginAccountIDs(nil)
+	require.ErrorContains(t, err, "至少选择一个")
+
+	accountIDs, err := normalizePluginAccountIDs([]int64{9, 2, 9, 5})
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 5, 9}, accountIDs)
+
+	_, err = normalizePluginAccountIDs([]int64{1, 0})
+	require.ErrorContains(t, err, "无效账号 ID")
 }
 
 func TestOpenAIGatewayForwardPathsRespectPluginBinding(t *testing.T) {
@@ -122,7 +142,9 @@ func TestOpenAIGatewayForwardPathsRespectPluginBinding(t *testing.T) {
 	for _, mode := range []string{"native", "passthrough", "ws-http-bridge", "messages", "chat"} {
 		t.Run(mode, func(t *testing.T) {
 			manager := &PluginManager{}
-			manager.route.Store(&pluginRoute{pluginID: 1, rolloutPercent: 100, unavailable: "plugin-review-unavailable"})
+			manager.route.Store(&pluginRoute{
+				pluginID: 1, accountIDs: pluginAccountIDSet([]int64{71}), unavailable: "plugin-review-unavailable",
+			})
 			upstream := &pluginRoutingHTTPUpstream{}
 			svc := &OpenAIGatewayService{cfg: &config.Config{}, pluginManager: manager, httpUpstream: upstream}
 			account := &Account{

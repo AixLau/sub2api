@@ -224,6 +224,36 @@ func (r *pluginRepository) UpdateConfig(ctx context.Context, id int64, encrypted
 	return nil
 }
 
+func (r *pluginRepository) ValidateOpenAIOAuthAccounts(ctx context.Context, accountIDs []int64) error {
+	rawIDs, err := json.Marshal(accountIDs)
+	if err != nil {
+		return fmt.Errorf("序列化插件绑定账号: %w", err)
+	}
+	var invalidID int64
+	err = r.db.QueryRowContext(ctx, `
+		WITH requested AS (
+			SELECT DISTINCT value::BIGINT AS id
+			FROM jsonb_array_elements_text($1::jsonb)
+		)
+		SELECT requested.id
+		FROM requested
+		LEFT JOIN accounts ON accounts.id = requested.id
+		WHERE accounts.id IS NULL
+		   OR accounts.deleted_at IS NOT NULL
+		   OR accounts.platform <> $2
+		   OR accounts.type <> $3
+		ORDER BY requested.id
+		LIMIT 1
+	`, string(rawIDs), service.PlatformOpenAI, service.AccountTypeOAuth).Scan(&invalidID)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("校验插件绑定账号: %w", err)
+	}
+	return fmt.Errorf("账号 %d 不存在或不是 OpenAI OAuth 账号", invalidID)
+}
+
 func (r *pluginRepository) UpdateBindingsAndState(
 	ctx context.Context,
 	pluginID int64,
@@ -262,6 +292,7 @@ func (r *pluginRepository) UpdateBindingsAndState(
 
 type pluginBindingExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func replacePluginBindings(ctx context.Context, executor pluginBindingExecutor, pluginID int64, bindings []service.PluginBinding) error {
@@ -269,12 +300,34 @@ func replacePluginBindings(ctx context.Context, executor pluginBindingExecutor, 
 		return err
 	}
 	for _, binding := range bindings {
-		if _, err := executor.ExecContext(ctx, `
+		var bindingID int64
+		if err := executor.QueryRowContext(ctx, `
 			INSERT INTO sub2api_plugin_bindings (
-				plugin_id, capability, platform, account_type, enabled, rollout_percent, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-		`, pluginID, binding.Capability, binding.Platform, binding.AccountType, binding.Enabled, binding.RolloutPercent); err != nil {
+				plugin_id, capability, platform, account_type, enabled, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+			RETURNING id
+		`, pluginID, binding.Capability, binding.Platform, binding.AccountType, binding.Enabled).Scan(&bindingID); err != nil {
 			return err
+		}
+		for _, accountID := range binding.AccountIDs {
+			result, err := executor.ExecContext(ctx, `
+				INSERT INTO sub2api_plugin_binding_accounts (binding_id, account_id, created_at)
+				SELECT $1, accounts.id, NOW()
+				FROM accounts
+				WHERE accounts.id = $2 AND accounts.platform = $3 AND accounts.type = $4
+				  AND accounts.deleted_at IS NULL
+				ON CONFLICT (binding_id, account_id) DO NOTHING
+			`, bindingID, accountID, service.PlatformOpenAI, service.AccountTypeOAuth)
+			if err != nil {
+				return err
+			}
+			inserted, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if inserted != 1 {
+				return fmt.Errorf("账号 %d 不存在、类型不匹配或重复", accountID)
+			}
 		}
 	}
 	return nil
@@ -311,8 +364,7 @@ func scanPlugin(scanner pluginScanner) (*service.PluginInstallation, error) {
 
 func (r *pluginRepository) listBindings(ctx context.Context, pluginID int64) ([]service.PluginBinding, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, plugin_id, capability, platform, account_type, enabled,
-		       rollout_percent, created_at, updated_at
+		SELECT id, plugin_id, capability, platform, account_type, enabled, created_at, updated_at
 		FROM sub2api_plugin_bindings WHERE plugin_id = $1 ORDER BY id
 	`, pluginID)
 	if err != nil {
@@ -323,13 +375,45 @@ func (r *pluginRepository) listBindings(ctx context.Context, pluginID int64) ([]
 	for rows.Next() {
 		var binding service.PluginBinding
 		if err := rows.Scan(&binding.ID, &binding.PluginID, &binding.Capability, &binding.Platform,
-			&binding.AccountType, &binding.Enabled, &binding.RolloutPercent,
-			&binding.CreatedAt, &binding.UpdatedAt); err != nil {
+			&binding.AccountType, &binding.Enabled, &binding.CreatedAt, &binding.UpdatedAt); err != nil {
 			return nil, err
 		}
 		bindings = append(bindings, binding)
 	}
-	return bindings, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for index := range bindings {
+		accountRows, err := r.db.QueryContext(ctx, `
+			SELECT account_id
+			FROM sub2api_plugin_binding_accounts
+			WHERE binding_id = $1
+			ORDER BY account_id
+		`, bindings[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		bindings[index].AccountIDs = make([]int64, 0)
+		for accountRows.Next() {
+			var accountID int64
+			if err := accountRows.Scan(&accountID); err != nil {
+				_ = accountRows.Close()
+				return nil, err
+			}
+			bindings[index].AccountIDs = append(bindings[index].AccountIDs, accountID)
+		}
+		if err := accountRows.Err(); err != nil {
+			_ = accountRows.Close()
+			return nil, err
+		}
+		if err := accountRows.Close(); err != nil {
+			return nil, err
+		}
+	}
+	return bindings, nil
 }
 
 var _ service.PluginRepository = (*pluginRepository)(nil)

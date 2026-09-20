@@ -90,7 +90,7 @@ const plugin = {
       platform: 'openai',
       account_type: 'oauth',
       enabled: false,
-      rollout_percent: 100,
+      account_ids: [],
     },
   ],
   compatibility: {
@@ -115,6 +115,12 @@ function mountView() {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         BaseDialog: { template: '<div><slot /></div>' },
+        PluginAccountScopeDialog: {
+          props: ['show'],
+          emits: ['confirm', 'close'],
+          template:
+            '<button v-if="show" data-test="confirm-account-scope" @click="$emit(\'confirm\', [11, 17])">confirm</button>',
+        },
         Icon: true,
         TotpStepUpDialog: true,
       },
@@ -147,8 +153,11 @@ describe('管理员插件页二次验证', () => {
     await button!.trigger('click')
     await flushPromises()
 
+    await wrapper.get('[data-test="confirm-account-scope"]').trigger('click')
+    await flushPromises()
+
     expect(stepUpRun).toHaveBeenCalledTimes(1)
-    expect(enablePlugin).toHaveBeenCalledWith(7, 100, false)
+    expect(enablePlugin).toHaveBeenCalledWith(7, [11, 17], false)
   })
 
   it('上传插件通过 step-up 控制器执行', async () => {
