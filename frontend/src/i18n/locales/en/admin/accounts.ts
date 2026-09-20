@@ -15,7 +15,7 @@ export default {
   "maxConcurrency": "Instance concurrency limit",
   "add": "Add instance",
   "count": "{count} instances · Capacity details",
-  "configured": "Total configured instance capacity",
+  "configured": "Sum of instance concurrency limits",
   "effective": "Effective configured capacity",
   "available": "Available capacity (estimate)",
   "observed": "Observed at",

@@ -15,7 +15,7 @@ export default {
   "maxConcurrency": "实例最大并发",
   "add": "添加实例",
   "count": "{count} 个实例 · 查看容量摘要",
-  "configured": "实例配置容量合计",
+  "configured": "实例最大并发总和",
   "effective": "配置有效最大并发",
   "available": "当前可接入余量（估算）",
   "observed": "观测时间",

@@ -305,12 +305,8 @@
             </div>
           </template>
           <template #cell-schedulable="{ row }">
-            <button v-if="row.principal" class="btn btn-secondary btn-sm" @click="handleEdit(row)">{{ t('admin.accounts.instances.manage') }}</button>
-            <span v-else-if="isOpenAIMultiCredentialPending(row)" class="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300" :title="t('admin.accounts.instances.pendingLegacyHint')">
-              {{ t('admin.accounts.instances.pendingLegacy') }}
-            </span>
-            <button v-else data-testid="account-schedulable-toggle" @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
-              <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
+            <button data-testid="account-schedulable-toggle" @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[isAccountSchedulable(row) ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="isAccountSchedulable(row) ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
+              <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[isAccountSchedulable(row) ? 'translate-x-4' : 'translate-x-0']" />
             </button>
           </template>
           <template #cell-today_stats="{ row }">
@@ -500,6 +496,7 @@
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
     <TotpStepUpDialog :controller="accountExportStepUp" />
+    <TotpStepUpDialog :controller="accountSchedulingStepUp" />
   </AppLayout>
 </template>
 
@@ -537,7 +534,7 @@ import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
-import { getCredentialPrincipal } from '@/api/admin/credentialPrincipals'
+import { getCredentialPrincipal, saveCredentialConfiguration } from '@/api/admin/credentialPrincipals'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
@@ -1921,8 +1918,6 @@ const handleEdit = async (a: AccountListItem) => {
   edAcc.value = account
   showEdit.value = true
 }
-const isOpenAIMultiCredentialPending = (a: Pick<AccountListItem, 'platform' | 'type' | 'principal'>) =>
-  a.platform === 'openai' && (a.type === 'oauth' || a.type === 'setup-token') && !a.principal
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
   const target = e.currentTarget as HTMLElement
@@ -2390,6 +2385,7 @@ const handleExportData = async () => {
   }
 }
 const accountExportStepUp = useStepUp()
+const accountSchedulingStepUp = useStepUp()
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
@@ -2559,20 +2555,42 @@ const confirmCreateSparkShadow = async () => {
 const handleDelete = (a: Account) => { if (a.principal) { void handleEdit(a); return } deletingAcc.value = a; showDeleteDialog.value = true }
 const confirmDelete = async () => { if(!deletingAcc.value) return; try { await adminAPI.accounts.delete(deletingAcc.value.id); showDeleteDialog.value = false; deletingAcc.value = null; reload() } catch (error) { console.error('Failed to delete account:', error) } }
 const handleToggleSchedulable = async (a: Account) => {
-  const nextSchedulable = !a.schedulable
+  const nextSchedulable = !isAccountSchedulable(a)
   togglingSchedulable.value = a.id
   try {
+    if (a.principal) {
+      const updatedPrincipal = await accountSchedulingStepUp.run(() => saveCredentialConfiguration(a.principal!, nextSchedulable
+        ? { admin_state: 'ACTIVE' }
+        : { admin_state: 'DRAINING', drain_deadline: new Date(Date.now() + 86400000).toISOString() }))
+      accounts.value = accounts.value.map(account => account.id === a.id
+        ? { ...account, principal: updatedPrincipal, schedulable: nextSchedulable, status: nextSchedulable ? 'active' : 'inactive' }
+        : account)
+      enterAutoRefreshSilentWindow()
+      scheduleOpenAIUsageSummaryRefresh()
+      return
+    }
     const updated = await adminAPI.accounts.setSchedulable(a.id, nextSchedulable)
     updateSchedulableInList([a.id], updated?.schedulable ?? nextSchedulable)
     enterAutoRefreshSilentWindow()
     scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
+    if (isStepUpCancelled(error)) return
     console.error('Failed to toggle schedulable:', error)
-    appStore.showError(t('admin.accounts.failedToToggleSchedulable'))
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+    } else {
+      appStore.showError(t('admin.accounts.failedToToggleSchedulable'))
+    }
   } finally {
     togglingSchedulable.value = null
   }
 }
+const isAccountSchedulable = (a: Pick<Account, 'schedulable' | 'principal'>) =>
+  a.principal ? a.principal.admin_state === 'ACTIVE' && a.principal.routing_mode === 'GROUPED' : a.schedulable
 const handleShowTempUnsched = (a: Account) => { tempUnschedAcc.value = a; showTempUnsched.value = true }
 const handleTempUnschedReset = async (updated: Account) => {
   showTempUnsched.value = false

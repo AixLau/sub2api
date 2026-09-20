@@ -13,6 +13,8 @@ const {
   getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
+  setSchedulable,
+  saveCredentialConfiguration,
   showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
@@ -22,6 +24,8 @@ const {
   getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
+  setSchedulable: vi.fn(),
+  saveCredentialConfiguration: vi.fn(),
   showError: vi.fn()
 }))
 
@@ -36,11 +40,16 @@ vi.mock('@/api/admin', () => ({
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
-      toggleSchedulable: vi.fn()
+      setSchedulable
     },
     proxies: { getAll: getAllProxies },
     groups: { getAll: getAllGroups }
   }
+}))
+
+vi.mock('@/api/admin/credentialPrincipals', () => ({
+  getCredentialPrincipal: vi.fn(),
+  saveCredentialConfiguration
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -62,6 +71,7 @@ const DataTableStub = defineComponent({
     <div>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-groups" :row="row" />
+        <slot name="cell-schedulable" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -122,7 +132,8 @@ function mountView() {
         UpstreamBillingRateCell: true,
         HelpTooltip: true,
         Icon: true,
-        Teleport: true
+        Teleport: true,
+        TotpStepUpDialog: true
       }
     }
   })
@@ -160,6 +171,8 @@ describe('admin AccountsView lite account list', () => {
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true })
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([{ id: 7, name: 'codex', platform: 'openai' }])
+    setSchedulable.mockReset()
+    saveCredentialConfiguration.mockReset()
     showError.mockReset()
   })
 
@@ -267,6 +280,31 @@ describe('admin AccountsView lite account list', () => {
     expect(getById).toHaveBeenCalledTimes(2)
     expect(wrapper.findAllComponents(EditAccountModalStub)).toHaveLength(1)
     expect(wrapper.find('account-instances-dialog-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('uses the scheduling toggle for a multi-instance account', async () => {
+    const principal = {
+      id: 9, account_id: 42, name: 'controlled account', config_version: 3,
+      admin_state: 'ACTIVE', routing_mode: 'GROUPED'
+    }
+    const controlledRow = { ...listRow, principal }
+    const draining = { ...principal, config_version: 4, admin_state: 'DRAINING' }
+    listAccounts.mockResolvedValue({ items: [controlledRow], total: 1, page: 1, page_size: 20, pages: 1 })
+    saveCredentialConfiguration.mockResolvedValue(draining)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const toggle = wrapper.get('[data-testid="account-schedulable-toggle"]')
+    expect(toggle.classes()).toContain('bg-primary-500')
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(saveCredentialConfiguration).toHaveBeenCalledWith(principal, expect.objectContaining({
+      admin_state: 'DRAINING', drain_deadline: expect.any(String)
+    }))
+    expect(setSchedulable).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="account-schedulable-toggle"]').classes()).toContain('bg-gray-200')
     wrapper.unmount()
   })
 })
