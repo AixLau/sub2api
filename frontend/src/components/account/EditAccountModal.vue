@@ -1667,7 +1667,7 @@
       />
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div>
+        <div v-if="!account.principal || account.platform !== 'openai'">
           <label class="input-label">{{ t(account.principal ? 'admin.accounts.instances.accountLimit' : 'admin.accounts.concurrency') }}</label>
           <input v-model.number="form.concurrency" type="number" :min="account.principal ? 0 : 1" class="input" />
         </div>
@@ -2975,17 +2975,6 @@
 
     </form>
 
-    <AccountInstancesEditor
-      v-if="show && principal && account?.platform === 'openai'"
-      :key="principal.id"
-      :principal-id="principal.id"
-      :disabled="submitting"
-      @loaded="principal = $event"
-      @updated="handleInstancesUpdated"
-      @busy="instancesBusy = $event"
-      @archived="emit('instances-updated'); handleClose()"
-    />
-
     <template #footer>
       <div v-if="account" class="flex justify-end gap-3">
         <button @click="handleClose" type="button" class="btn btn-secondary">
@@ -2994,7 +2983,7 @@
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || instancesBusy"
+          :disabled="submitting"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3058,7 +3047,6 @@ import type {
   GrokMediaEligibilityState
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import AccountInstancesEditor from './AccountInstancesEditor.vue'
 import { credentialErrorReason, getCredentialPrincipal, type CredentialPrincipal } from '@/api/admin/credentialPrincipals'
 import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
@@ -3154,13 +3142,8 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const browserTimeZone = getBrowserTimeZone()
 const principal = ref<CredentialPrincipal>()
-const instancesBusy = ref(false)
 const accountStepUp = useStepUp()
 const initialPrincipalStatus = ref('')
-const handleInstancesUpdated = (value: CredentialPrincipal) => {
-  principal.value = value
-  emit('instances-updated')
-}
 
 const selectableGroups = computed(() => {
   const groups = new Map<number, Group>(props.groups.map(group => [group.id, group]))
@@ -3992,7 +3975,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedChannelWarningRawMessage.value = ''
   mixedChannelWarningAction.value = null
   principal.value = newAccount.principal
-  instancesBusy.value = false
   form.name = newAccount.principal?.name ?? newAccount.name
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
@@ -5006,7 +4988,7 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
 }
 
 const handleSubmit = async () => {
-  if (!props.account || instancesBusy.value || submitting.value) return
+  if (!props.account || submitting.value) return
   const accountID = props.account.id
 
   if (form.status !== 'active' && form.status !== 'inactive' && form.status !== 'error') {
@@ -5026,7 +5008,6 @@ const handleSubmit = async () => {
     const concurrency = Number(form.concurrency)
     if (principal.value) {
       if (!Number.isInteger(concurrency) || concurrency < 0 || concurrency > 2147483647) return
-      updatePayload.concurrency = concurrency
       if (form.status === initialPrincipalStatus.value) delete updatePayload.status
     } else {
       updatePayload.concurrency = Number.isFinite(concurrency) && concurrency >= 1 ? concurrency : 1

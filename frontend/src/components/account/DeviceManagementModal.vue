@@ -1,101 +1,116 @@
 <template>
-  <BaseDialog :show="show" :title="t('admin.accounts.instances.deviceManagement')" width="wide" @close="emit('close')">
-    <div v-if="loading && !principal" class="flex min-h-48 items-center justify-center text-sm text-gray-500">
-      {{ t('common.loading') }}
-    </div>
-    <div v-else-if="error && !principal" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-      {{ error }}
-      <button class="btn btn-secondary btn-sm ml-3" @click="load">{{ t('common.retry') }}</button>
-    </div>
-    <template v-else-if="principal">
-      <div class="space-y-5">
-        <section class="rounded-lg border border-gray-200 bg-gray-50/70 p-4 dark:border-dark-600 dark:bg-dark-800/60">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ account?.name || principal.name }}</h4>
-              <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span>{{ account?.platform || 'openai' }}</span>
-                <span aria-hidden="true">·</span>
-                <span :class="principal.admin_state === 'ACTIVE' ? 'text-emerald-600' : 'text-amber-600'">
-                  {{ t(`admin.accounts.instances.states.${principal.health_state || principal.admin_state}`) }}
-                </span>
-              </div>
-            </div>
-            <button class="btn btn-secondary btn-sm" :disabled="loading" :title="t('common.refresh')" @click="load">
-              <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-              <span>{{ t('common.refresh') }}</span>
+  <TotpStepUpDialog :controller="stepUp" />
+  <BaseDialog
+    :show="show"
+    :title="t('admin.accounts.instances.deviceManagement')"
+    width="extra-wide"
+    :auto-focus="false"
+    @close="emit('close')"
+  >
+    <div v-if="account" class="space-y-5" data-testid="device-management-modal">
+      <section class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 class="text-base font-semibold text-gray-900 dark:text-white">{{ account.name }}</h4>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ account.platform }} · {{ accountStatusLabel }}
+            </p>
+          </div>
+          <button class="btn btn-secondary btn-sm" :disabled="busy" :title="t('common.refresh')" @click="load">
+            <Icon name="refresh" size="sm" :class="busy ? 'animate-spin' : ''" />
+            <span>{{ t('common.refresh') }}</span>
+          </button>
+        </div>
+        <div class="mt-3 grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+          <span>{{ t('admin.accounts.instances.createdAt') }}: {{ formatDate(account.created_at) }}</span>
+          <span>{{ t('admin.accounts.instances.updatedAt') }}: {{ formatDate(account.updated_at) }}</span>
+        </div>
+      </section>
+
+      <section v-if="principal" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <div class="flex items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span>{{ t('admin.accounts.instances.accountLimit') }}</span>
+            <button class="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-700" :title="t('common.edit')" @click="editingLimit = !editingLimit">
+              <Icon name="edit" size="xs" />
             </button>
           </div>
-          <dl class="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-300 sm:grid-cols-2">
-            <div><dt class="text-gray-400">{{ t('admin.accounts.instances.createdAt') }}</dt><dd class="mt-0.5">{{ formatDate(account?.created_at) }}</dd></div>
-            <div><dt class="text-gray-400">{{ t('admin.accounts.instances.updatedAt') }}</dt><dd class="mt-0.5">{{ formatDate(principal.observed_at || account?.updated_at) }}</dd></div>
-          </dl>
-        </section>
-
-        <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.accountLimit') }}</div>
-            <div v-if="!editingLimit" class="mt-1 flex items-center gap-2 text-xl font-semibold text-gray-900 dark:text-white">
-              {{ principal.account_max_concurrency }}
-              <button class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700" :aria-label="t('common.edit')" @click="editingLimit = true"><Icon name="edit" size="xs" /></button>
-            </div>
-            <div v-else class="mt-1 flex items-center gap-2">
-              <input v-model.number="limitDraft" class="input h-8 w-24" type="number" min="0" max="2147483647" />
-              <button class="btn btn-primary btn-sm" :disabled="savingLimit" @click="saveLimit">{{ t('common.save') }}</button>
-              <button class="btn btn-secondary btn-sm" :disabled="savingLimit" @click="cancelLimit">{{ t('common.cancel') }}</button>
-            </div>
-            <p v-if="principal.occupied > principal.account_max_concurrency" class="mt-1 text-xs text-amber-600">{{ t('admin.accounts.instances.shrinking', { count: principal.occupied - principal.account_max_concurrency }) }}</p>
+          <div v-if="editingLimit" class="mt-2 flex gap-2">
+            <input v-model.number="limitDraft" class="input h-8 min-w-0" type="number" min="0" max="2147483647" step="1" />
+            <button class="btn btn-primary btn-sm" :disabled="busy" @click="saveLimit">{{ t('common.save') }}</button>
           </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.configuredCapacity') }}</div>
-            <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ configuredCapacity }}</div>
-            <div class="mt-1 text-xs text-gray-500">{{ capacityBreakdown }}</div>
-          </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.currentUsage') }}</div>
-            <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ principal.occupied }} / {{ effectiveCapacity }}</div>
-            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full rounded-full bg-primary-500 transition-all" :style="{ width: `${usagePercent}%` }"></div></div>
-          </div>
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.availableBalance') }}</div>
-            <div class="mt-1 text-xl font-semibold text-emerald-600">{{ availableCapacity }}</div>
-            <div class="mt-1 text-xs text-gray-500">{{ t('admin.accounts.instances.effectiveCapacity') }}: {{ effectiveCapacity }}</div>
-          </div>
-        </section>
-
-        <div class="border-b border-gray-200 dark:border-dark-600">
-          <nav class="-mb-px flex gap-5" role="tablist">
-            <button v-for="tab in tabs" :key="tab.id" class="border-b-2 px-1 py-2 text-sm" :class="activeTab === tab.id ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'" role="tab" :aria-selected="activeTab === tab.id" @click="activeTab = tab.id">{{ tab.label }}</button>
-          </nav>
+          <div v-else class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ principal.account_max_concurrency }}</div>
         </div>
+        <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.configuredCapacity') }}</div>
+          <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ principal.configured_capacity }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ activeInstances.map(i => i.max_concurrency).join(' + ') || '-' }}</div>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.currentUsage') }}</div>
+          <div class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ principal.occupied }} / {{ effectiveCapacity }}</div>
+          <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full rounded-full bg-primary-500" :style="{ width: `${usagePercent}%` }" /></div>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+          <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.instances.availableBalance') }}</div>
+          <div class="mt-1 text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{{ Math.max(0, principal.available_capacity) }}</div>
+        </div>
+      </section>
 
-        <section v-if="activeTab === 'devices'" role="tabpanel">
-          <div class="mb-3 flex items-center justify-between gap-2">
-            <h4 class="font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.instances.deviceList') }}</h4>
-            <button class="btn btn-primary btn-sm" :disabled="loading" @click="adding = true"><Icon name="plus" size="sm" />{{ t('admin.accounts.instances.addDevice') }}</button>
-          </div>
-          <AccountInstancesEditor :principal-id="principal.id" :disabled="loading" @loaded="onEditorLoaded" @updated="onEditorUpdated" @busy="loading = $event" />
-          <div v-if="adding" class="mt-4 rounded-lg border border-primary-200 bg-primary-50/40 p-4 dark:border-primary-900 dark:bg-primary-950/20">
-            <div class="mb-3 flex items-center justify-between"><h5 class="font-medium">{{ t('admin.accounts.instances.addDevice') }}</h5><button class="text-gray-500" :aria-label="t('common.close')" @click="adding = false"><Icon name="x" size="sm" /></button></div>
-            <OpenAIInstanceForm :principal="principal" :account-name="principal.name" :account-limit="principal.account_max_concurrency" :initial-max="5" :proxy-id="principal.proxy_id" @completed="onAdded" />
-          </div>
-        </section>
+      <p v-if="error" role="alert" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
 
-        <section v-else-if="activeTab === 'runtime'" role="tabpanel" class="space-y-4">
-          <div class="grid gap-3 sm:grid-cols-4">
-            <div v-for="item in runtimeSummary" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><div class="mt-1 text-xl font-semibold">{{ item.value }}</div></div>
-          </div>
-          <div v-if="runtime?.wait_reasons?.length" class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"><h5 class="mb-2 font-medium">{{ t('admin.accounts.instances.waitReasons') }}</h5><div class="grid gap-2 sm:grid-cols-2"><div v-for="wait in runtime.wait_reasons" :key="wait.reason" class="flex justify-between text-sm"><span>{{ t(`admin.accounts.instances.wait.${wait.reason}`) }}</span><span class="font-medium">{{ wait.count }}</span></div></div></div>
-          <details v-if="runtime?.unresolved_leases?.length" class="rounded-lg border border-amber-200 p-4 dark:border-amber-900"><summary class="cursor-pointer font-medium text-amber-700">{{ t('admin.accounts.instances.reconcile') }} ({{ runtime.unresolved_leases.length }})</summary><div class="mt-2 text-sm text-gray-600">{{ t('admin.accounts.instances.reconcileHint') }}</div></details>
-          <p v-else class="rounded-lg border border-gray-200 p-4 text-sm text-gray-500 dark:border-dark-600">{{ t('admin.accounts.instances.noRuntimeIssues') }}</p>
-        </section>
-
-        <section v-else role="tabpanel" class="grid gap-3 sm:grid-cols-2">
-          <div v-for="item in advancedPrincipal" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><div class="mt-1 break-all text-sm text-gray-900 dark:text-white">{{ item.value }}</div></div>
-          <div v-for="instance in activeInstances" :key="instance.id" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600 sm:col-span-2"><div class="mb-2 font-medium">{{ instance.name }} · #{{ instance.id }}</div><div class="grid gap-2 text-xs text-gray-500 sm:grid-cols-3"><span>Generation: {{ instance.generation }}</span><span>Credential: {{ instance.credential_version }}</span><span>Transport: {{ instance.transport_state }}</span><span>Identity: {{ instance.identity_source }}</span><span>Bindings: {{ instance.active_bindings }}</span><span>Unknown: {{ instance.unknown_occupied }}</span></div></div>
-        </section>
+      <div class="border-b border-gray-200 dark:border-dark-600">
+        <div class="flex gap-5" role="tablist">
+          <button v-for="tab in tabs" :key="tab.key" class="border-b-2 px-1 pb-2 text-sm font-medium" :class="activeTab === tab.key ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'" role="tab" :aria-selected="activeTab === tab.key" @click="activeTab = tab.key">{{ tab.label }}</button>
+        </div>
       </div>
-    </template>
+
+      <section v-if="activeTab === 'devices'" class="space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h4 class="font-semibold text-gray-900 dark:text-white">{{ t('admin.accounts.instances.deviceList') }}</h4>
+          <button class="btn btn-primary btn-sm" :disabled="busy" @click="openAdd"><Icon name="plus" size="sm" /> {{ t('admin.accounts.instances.addDevice') }}</button>
+        </div>
+        <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-600">
+          <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-600">
+            <thead class="bg-gray-50 dark:bg-dark-800"><tr><th v-for="heading in headings" :key="heading" class="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-gray-500 dark:text-gray-400">{{ heading }}</th></tr></thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-dark-600">
+              <tr v-for="instance in activeInstances" :key="instance.id" class="align-top">
+                <td class="px-3 py-3 text-gray-500">#{{ instance.id }}</td>
+                <td class="px-3 py-3"><div class="font-medium text-gray-900 dark:text-white">{{ instance.name }}</div><div class="text-xs text-gray-500">{{ instance.identity_source || '-' }}</div></td>
+                <td class="px-3 py-3"><span :class="statusClass(instance.state)">{{ stateLabel(instance.state) }}</span></td>
+                <td class="px-3 py-3"><div class="font-medium">{{ instance.occupied }} / {{ instance.max_concurrency }}</div><div class="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full bg-primary-500" :style="{ width: `${Math.min(100, instance.max_concurrency ? instance.occupied / instance.max_concurrency * 100 : 0)}%` }" /></div><div v-if="instance.occupied > instance.max_concurrency" class="mt-1 text-xs text-amber-600">{{ t('admin.accounts.instances.shrinking', { count: instance.occupied - instance.max_concurrency }) }}</div></td>
+                <td class="px-3 py-3 text-xs text-gray-500">{{ instance.credential_state || '-' }}</td>
+                <td class="px-3 py-3 text-xs text-gray-500">{{ formatDate(instance.credential_version ? principal?.observed_at : undefined) }}</td>
+                <td class="px-3 py-3"><div class="flex flex-wrap gap-1"><button class="btn btn-secondary btn-sm" :disabled="busy" @click="editInstance(instance)">{{ t('common.edit') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="reauthorize(instance.id)">{{ t('admin.accounts.instances.reauthorize') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="toggleDrain(instance)">{{ t(instance.admin_state === 'ACTIVE' ? 'admin.accounts.instances.drain' : 'admin.accounts.instances.resume') }}</button><button class="btn btn-secondary btn-sm" :disabled="busy" @click="refreshInstance(instance.id)">{{ t('admin.accounts.instances.refreshCredential') }}</button><button v-if="instance.admin_state !== 'ACTIVE' && instance.occupied === 0 && instance.active_bindings === 0" class="btn btn-secondary btn-sm text-red-600" :disabled="busy" @click="archiveInstance(instance.id)">{{ t('admin.accounts.instances.remove') }}</button></div></td>
+              </tr>
+              <tr v-if="!activeInstances.length"><td colspan="7" class="px-3 py-8 text-center text-sm text-gray-500">{{ t('admin.accounts.instances.empty') }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section v-else-if="activeTab === 'runtime'" class="space-y-4">
+        <div class="grid gap-3 sm:grid-cols-4"><div v-for="item in runtimeSummary" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><div class="mt-1 text-xl font-semibold">{{ item.value }}</div></div></div>
+        <div v-if="runtime?.wait_reasons?.length" class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"><h4 class="font-medium">{{ t('admin.accounts.instances.waitReasons') }}</h4><div class="mt-3 grid gap-2 sm:grid-cols-2"><div v-for="wait in runtime.wait_reasons" :key="wait.reason" class="flex justify-between text-sm"><span>{{ waitReasonLabel(wait.reason) }}</span><span class="font-mono">{{ wait.count }}</span></div></div></div>
+        <details v-if="runtime?.unresolved_leases?.length" class="rounded-lg border border-amber-200 p-4 dark:border-amber-800"><summary class="cursor-pointer font-medium">{{ t('admin.accounts.instances.reconcile') }} ({{ runtime.unresolved_leases.length }})</summary><form class="mt-3 space-y-2" @submit.prevent="resolveLease"><select v-model="leaseId" class="input w-full" required><option value="" disabled>{{ t('admin.accounts.instances.selectLease') }}</option><option v-for="lease in runtime.unresolved_leases" :key="lease.id" :value="lease.id">#{{ lease.instance_id }} · {{ lease.id }} · {{ lease.observed_at }}</option></select><textarea v-model="evidence" class="input w-full" minlength="8" maxlength="4096" :placeholder="t('admin.accounts.instances.evidence')" required /><input v-model="resolutionReason" class="input w-full" minlength="4" maxlength="512" :placeholder="t('admin.accounts.instances.reason')" required /><label class="flex items-center gap-2 text-sm"><input v-model="confirmedTerminal" type="checkbox" required /> {{ t('admin.accounts.instances.confirmTerminal') }}</label><button class="btn btn-secondary" :disabled="busy || !confirmedTerminal">{{ t('admin.accounts.instances.releaseConfirmed') }}</button></form></details>
+      </section>
+
+      <section v-else class="grid gap-3 text-sm sm:grid-cols-2">
+        <div v-for="item in advancedInfo" :key="item.label" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"><div class="text-xs text-gray-500">{{ item.label }}</div><code class="mt-1 block break-all text-xs">{{ item.value }}</code></div>
+        <div v-for="instance in activeInstances" :key="`advanced-${instance.id}`" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600 sm:col-span-2">
+          <div class="font-medium text-gray-900 dark:text-white">{{ instance.name }} · #{{ instance.id }}</div>
+          <div class="mt-2 grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-3">
+            <span>Generation: {{ instance.generation }}</span><span>Credential: {{ instance.credential_version }}</span><span>Transport: {{ instance.transport_state }}</span><span>Identity: {{ instance.identity_source }}</span><span>Bindings: {{ instance.active_bindings }}</span><span>Unknown: {{ instance.unknown_occupied }}</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <BaseDialog v-if="editTarget" :show="true" :title="t('admin.accounts.instances.editDevice')" width="narrow" :z-index="70" @close="editTarget = null">
+      <form class="space-y-4" @submit.prevent="saveInstance"><label class="block text-sm">{{ t('admin.accounts.instances.name') }}<input v-model="editDraft.name" class="input mt-1 w-full" maxlength="100" required /></label><label class="block text-sm">{{ t('admin.accounts.instances.maxConcurrency') }}<input v-model.number="editDraft.max_concurrency" class="input mt-1 w-full" type="number" min="0" max="2147483647" step="1" required /></label><div class="flex justify-end gap-2"><button type="button" class="btn btn-secondary" @click="editTarget = null">{{ t('common.cancel') }}</button><button class="btn btn-primary" :disabled="busy">{{ t('common.save') }}</button></div></form>
+    </BaseDialog>
+    <BaseDialog v-if="showAdd && principal" :show="true" :title="t(reauthorizeId ? 'admin.accounts.instances.reauthorize' : 'admin.accounts.instances.addDevice')" width="wide" :z-index="65" @close="showAdd = false"><OpenAIInstanceForm :principal="principal" :account-name="account?.name || principal.name" :account-limit="principal.account_max_concurrency" :initial-max="Math.max(1, principal.account_max_concurrency)" :proxy-id="principal.proxy_id" :replace-instance-id="reauthorizeId" @completed="handleAdded" /></BaseDialog>
+    <ConfirmDialog v-if="archiveTarget" :show="true" :title="t('admin.accounts.instances.archiveDevice')" :message="t('admin.accounts.instances.archiveConfirm', { name: archiveTarget.name })" :confirm-text="t('admin.accounts.instances.remove')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmArchive" @cancel="archiveTarget = null" />
   </BaseDialog>
 </template>
 
@@ -103,40 +118,72 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import AccountInstancesEditor from './AccountInstancesEditor.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import OpenAIInstanceForm from './OpenAIInstanceForm.vue'
-import { getCredentialPrincipal, getCredentialRuntime, saveCredentialConfiguration, type CredentialPrincipal, type CredentialRuntime } from '@/api/admin/credentialPrincipals'
+import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
+import { formatDateTime } from '@/utils/format'
 import type { Account } from '@/types'
+import { credentialErrorReason, getCredentialPrincipal, getCredentialRuntime, saveCredentialConfiguration, controlCredentialInstance, refreshCredentialInstance, resolveCredentialLease, type CredentialPrincipal, type CredentialRuntime, type CredentialInstance } from '@/api/admin/credentialPrincipals'
 
-const props = defineProps<{ show: boolean; principalId: number | null; account?: Account | null }>()
-const emit = defineEmits<{ close: []; 'instances-updated': [principal: CredentialPrincipal] }>()
+const props = defineProps<{ show: boolean; account: Account | null }>()
+const emit = defineEmits<{ close: []; 'instances-updated': []; updated: [principal: CredentialPrincipal] }>()
 const { t } = useI18n()
+const stepUp = useStepUp()
 const principal = ref<CredentialPrincipal>()
 const runtime = ref<CredentialRuntime>()
-const loading = ref(false)
-const savingLimit = ref(false)
+const busy = ref(false)
 const error = ref('')
-const adding = ref(false)
+const activeTab = ref<'devices' | 'runtime' | 'advanced'>('devices')
 const editingLimit = ref(false)
 const limitDraft = ref(0)
-const activeTab = ref<'devices' | 'runtime' | 'advanced'>('devices')
-const tabs = computed(() => [{ id: 'devices' as const, label: t('admin.accounts.instances.deviceList') }, { id: 'runtime' as const, label: t('admin.accounts.instances.runtimeStatus') }, { id: 'advanced' as const, label: t('admin.accounts.instances.advancedInfo') }])
+const showAdd = ref(false)
+const editTarget = ref<CredentialInstance | null>(null)
+const archiveTarget = ref<CredentialInstance | null>(null)
+const editDraft = ref({ name: '', max_concurrency: 0 })
+const leaseId = ref('')
+const evidence = ref('')
+const resolutionReason = ref('')
+const confirmedTerminal = ref(false)
+const tabs = computed(() => [{ key: 'devices' as const, label: t('admin.accounts.instances.deviceList') }, { key: 'runtime' as const, label: t('admin.accounts.instances.runtimeTab') }, { key: 'advanced' as const, label: t('admin.accounts.instances.advancedInfo') }])
+const headings = computed(() => [t('admin.accounts.instances.number'), t('admin.accounts.instances.deviceName'), t('admin.accounts.instances.status'), t('admin.accounts.instances.maxConcurrency'), t('admin.accounts.instances.authorization'), t('admin.accounts.instances.lastRefresh'), t('common.actions')])
 const activeInstances = computed(() => (principal.value?.instances || []).filter(instance => !instance.archived_at))
-const configuredCapacity = computed(() => activeInstances.value.reduce((sum, instance) => sum + Math.max(0, instance.max_concurrency), 0))
-const capacityBreakdown = computed(() => activeInstances.value.map(instance => instance.max_concurrency).join(' + ') || '0')
-const effectiveCapacity = computed(() => Math.min(principal.value?.account_max_concurrency || 0, configuredCapacity.value))
-const availableCapacity = computed(() => Math.max(0, effectiveCapacity.value - (principal.value?.occupied || 0)))
-const usagePercent = computed(() => effectiveCapacity.value ? Math.min(100, Math.round((principal.value?.occupied || 0) / effectiveCapacity.value * 100)) : 0)
-const runtimeSummary = computed(() => [{ label: t('admin.accounts.instances.running'), value: (runtime.value?.running || 0) + (runtime.value?.dispatching || 0) }, { label: t('admin.accounts.instances.reserved'), value: runtime.value?.reserved || 0 }, { label: t('admin.accounts.instances.queued'), value: runtime.value?.queued || 0 }, { label: t('admin.accounts.instances.unresolved'), value: runtime.value?.orphaned || 0 }])
-const advancedPrincipal = computed(() => principal.value ? [{ label: 'Principal ID', value: principal.value.id }, { label: 'Account ID', value: principal.value.account_id }, { label: 'Config Version', value: principal.value.config_version }, { label: 'Routing Mode', value: principal.value.routing_mode }, { label: 'Admission State', value: principal.value.admission_state }, { label: 'Verification State', value: principal.value.verification_state }, { label: 'Health State', value: principal.value.health_state }, { label: 'Unknown Occupied', value: principal.value.unknown_occupied }, { label: 'Observed At', value: formatDate(principal.value.observed_at) }] : [])
-function formatDate(value?: string | number | null) { if (!value) return '-'; const date = new Date(typeof value === 'number' ? value * 1000 : value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString() }
-function apply(value: CredentialPrincipal) { principal.value = value; limitDraft.value = value.account_max_concurrency }
-async function load() { if (!props.principalId) return; loading.value = true; error.value = ''; try { const [value, state] = await Promise.all([getCredentialPrincipal(props.principalId), getCredentialRuntime(props.principalId)]); apply(value); runtime.value = state } catch { error.value = t('admin.accounts.instances.stale') } finally { loading.value = false } }
-async function saveLimit() { if (!principal.value || !Number.isInteger(limitDraft.value) || limitDraft.value < 0) return; savingLimit.value = true; try { const value = await saveCredentialConfiguration(principal.value, { account_max_concurrency: limitDraft.value }); apply(value); editingLimit.value = false; emit('instances-updated', value) } catch (err) { error.value = t('admin.accounts.instances.errors.UNAVAILABLE') } finally { savingLimit.value = false } }
-function cancelLimit() { limitDraft.value = principal.value?.account_max_concurrency || 0; editingLimit.value = false }
-function onEditorLoaded(value: CredentialPrincipal) { apply(value); void getCredentialRuntime(value.id).then(state => { runtime.value = state }) }
-function onEditorUpdated(value: CredentialPrincipal) { apply(value); emit('instances-updated', value) }
-function onAdded() { adding.value = false; void load(); }
-watch(() => [props.show, props.principalId] as const, ([show]) => { if (show) { activeTab.value = 'devices'; adding.value = false; void load() } }, { immediate: true })
+const effectiveCapacity = computed(() => Math.min(principal.value?.account_max_concurrency || 0, principal.value?.effective_configured_capacity || principal.value?.configured_capacity || 0))
+const usagePercent = computed(() => effectiveCapacity.value > 0 ? Math.min(100, (principal.value?.occupied || 0) / effectiveCapacity.value * 100) : 0)
+const accountStatusLabel = computed(() => props.account?.principal ? stateLabel(props.account.principal.health_state || props.account.principal.admin_state) : props.account?.status || '-')
+const runtimeSummary = computed(() => runtime.value ? [{ label: t('admin.accounts.instances.running'), value: runtime.value.running + runtime.value.dispatching }, { label: t('admin.accounts.instances.reserved'), value: runtime.value.reserved }, { label: t('admin.accounts.instances.queued'), value: runtime.value.queued }, { label: t('admin.accounts.instances.orphaned'), value: runtime.value.orphaned }] : [])
+const advancedInfo = computed(() => principal.value ? [{ label: 'Principal ID', value: principal.value.id }, { label: 'Account ID', value: principal.value.account_id }, { label: 'Config Version', value: principal.value.config_version }, { label: 'Routing Mode', value: principal.value.routing_mode }, { label: 'Admission State', value: principal.value.admission_state }, { label: 'Verification State', value: principal.value.verification_state }, { label: 'Health State', value: principal.value.health_state }, { label: 'Unknown Occupied', value: principal.value.unknown_occupied }, { label: 'Observed At', value: principal.value.observed_at }] : [])
+const formatDate = (value?: string | number | null) => {
+  if (!value) return '-'
+  return formatDateTime(typeof value === 'number' ? new Date(value * 1000) : value)
+}
+const stateLabel = (state: string) => t(`admin.accounts.instances.states.${state}`, state)
+const statusClass = (state: string) => ['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', ['ACTIVE', 'AVAILABLE'].includes(state) ? 'bg-emerald-100 text-emerald-700' : ['NEEDS_REAUTH', 'UNKNOWN', 'REVOKED'].includes(state) ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700']
+const waitReasonLabel = (reason: string) => t(`admin.accounts.instances.wait.${reason}`, reason)
+async function load() {
+  if (!props.account?.principal?.id) return
+  busy.value = true; error.value = ''
+  try { const [nextPrincipal, nextRuntime] = await Promise.all([getCredentialPrincipal(props.account.principal.id), getCredentialRuntime(props.account.principal.id)]); principal.value = nextPrincipal; runtime.value = nextRuntime; limitDraft.value = nextPrincipal.account_max_concurrency; emit('updated', nextPrincipal) } catch { error.value = t('admin.accounts.instances.stale') } finally { busy.value = false }
+}
+async function mutate(action: () => Promise<CredentialPrincipal | void>) {
+  if (!principal.value || busy.value) return
+  busy.value = true; error.value = ''
+  try { const result = await stepUp.run(action); if (result) { principal.value = result; limitDraft.value = result.account_max_concurrency; emit('updated', result) } emit('instances-updated') }
+  catch (err) { if (!isStepUpCancelled(err)) { if (credentialErrorReason(err) === 'CONFIG_VERSION_CONFLICT') { await load(); error.value = t('admin.accounts.instances.errors.CONFIG_VERSION_CONFLICT') } else error.value = t('admin.accounts.instances.errors.UNAVAILABLE') } }
+  finally { busy.value = false }
+}
+async function saveLimit() { if (!principal.value || !Number.isInteger(limitDraft.value) || limitDraft.value < 0) return; await mutate(() => saveCredentialConfiguration(principal.value!, { account_max_concurrency: limitDraft.value })); editingLimit.value = false }
+async function saveInstance() { if (!editTarget.value || !principal.value || !editDraft.value.name.trim()) return; await mutate(() => saveCredentialConfiguration(principal.value!, { instances: activeInstances.value.map(item => ({ id: item.id, name: item.id === editTarget.value!.id ? editDraft.value.name.trim() : item.name, max_concurrency: item.id === editTarget.value!.id ? editDraft.value.max_concurrency : item.max_concurrency })) })); editTarget.value = null }
+function editInstance(instance: CredentialInstance) { editTarget.value = instance; editDraft.value = { name: instance.name, max_concurrency: instance.max_concurrency } }
+async function toggleDrain(instance: CredentialInstance) { await mutate(() => controlCredentialInstance(principal.value!, instance.id, { admin_state: instance.admin_state === 'ACTIVE' ? 'DRAINING' : 'ACTIVE', ...(instance.admin_state === 'ACTIVE' ? { drain_deadline: new Date(Date.now() + 86400000).toISOString() } : {}) })) }
+function archiveInstance(id: number) { archiveTarget.value = activeInstances.value.find(instance => instance.id === id) || null }
+async function confirmArchive() { if (!archiveTarget.value) return; const id = archiveTarget.value.id; archiveTarget.value = null; await mutate(() => controlCredentialInstance(principal.value!, id, { archive: true })) }
+async function refreshInstance(id: number) { await mutate(async () => { await refreshCredentialInstance(id); return getCredentialPrincipal(principal.value!.id) }) }
+function reauthorize(id: number) { editTarget.value = null; reauthorizeId.value = id; showAdd.value = true }
+const reauthorizeId = ref<number>()
+function openAdd() { reauthorizeId.value = undefined; showAdd.value = true }
+async function handleAdded() { showAdd.value = false; reauthorizeId.value = undefined; await load() }
+async function resolveLease() { if (!leaseId.value || !confirmedTerminal.value) return; await mutate(async () => { await resolveCredentialLease(leaseId.value, evidence.value, resolutionReason.value); runtime.value = await getCredentialRuntime(principal.value!.id); return getCredentialPrincipal(principal.value!.id) }); confirmedTerminal.value = false }
+watch(() => [props.show, props.account?.principal?.id], ([visible]) => { if (visible) { activeTab.value = 'devices'; void load() } }, { immediate: true })
 </script>
