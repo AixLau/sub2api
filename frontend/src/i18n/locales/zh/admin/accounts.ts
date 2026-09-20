@@ -41,7 +41,7 @@ export default {
     "ACTIVE": "正常",
     "FULL": "已满载",
     "PAUSED": "暂停",
-    "DRAINING": "排空中",
+    "DRAINING": "暂停",
     "DRAINING_TO_LIMIT": "缩容中",
     "REFRESHING": "刷新中",
     "COOLDOWN": "冷却",

@@ -41,7 +41,7 @@ export default {
     "ACTIVE": "Healthy",
     "FULL": "Full",
     "PAUSED": "Paused",
-    "DRAINING": "Draining",
+    "DRAINING": "Paused",
     "DRAINING_TO_LIMIT": "Reducing capacity",
     "REFRESHING": "Refreshing",
     "COOLDOWN": "Cooling down",
