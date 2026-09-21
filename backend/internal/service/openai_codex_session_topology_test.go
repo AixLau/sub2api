@@ -54,6 +54,27 @@ const (
 		"installation_id":"client-install", "sandbox":"seatbelt",
 		"sandbox_mode":"workspace-write", "workspace":{"cwd":"/workspace/project"}
 	}`
+	codexSideContinuationTopology = `{
+		"session_id":"01950000-0000-7000-8000-000000000003",
+		"thread_id":"01950000-0000-7000-8000-000000000003",
+		"turn_id":"01950000-0000-7000-8000-000000000015",
+		"root_turn_id":"01950000-0000-7000-8000-000000000015",
+		"turn_started_at_unix_ms":1740000000015,
+		"thread_source":"user", "request_kind":"regular",
+		"sandbox_mode":"workspace-write", "workspace":{"cwd":"/workspace/project"}
+	}`
+	codexSideChildTopology = `{
+		"session_id":"01950000-0000-7000-8000-000000000003",
+		"thread_id":"01950000-0000-7000-8000-000000000004",
+		"parent_thread_id":"01950000-0000-7000-8000-000000000003",
+		"turn_id":"01950000-0000-7000-8000-000000000014",
+		"parent_turn_id":"01950000-0000-7000-8000-000000000013",
+		"root_turn_id":"01950000-0000-7000-8000-000000000013",
+		"turn_started_at_unix_ms":1740000000014,
+		"thread_source":"subagent", "subagent_kind":"thread_spawn", "agent_name":"side-test-writer",
+		"request_kind":"regular", "installation_id":"client-install", "sandbox":"seatbelt",
+		"sandbox_mode":"workspace-write", "workspace":{"cwd":"/workspace/project"}
+	}`
 )
 
 type codexTopologyOutbound struct {
@@ -74,7 +95,8 @@ func TestCodexSessionPeriodHTTPRootChildSideTopology(t *testing.T) {
 	for _, passthrough := range []bool{false, true} {
 		for _, source := range []string{"body", "header", "both", "flat", "split"} {
 			t.Run(fmt.Sprintf("passthrough=%v/%s", passthrough, source), func(t *testing.T) {
-				svc := newCodexPeriodRedisService(t, miniredis.RunT(t))
+				server := miniredis.RunT(t)
+				svc := newCodexPeriodRedisService(t, server)
 				account := newTestOAuthAccount(7610, map[string]any{codexFingerprintModeExtraKey: "session", "openai_passthrough": passthrough})
 				account.Credentials = map[string]any{"access_token": "test", "chatgpt_account_id": "topology-account"}
 				forward := func(fixture, explicitCache string, user, apiKey int64) codexTopologyOutbound {
@@ -144,7 +166,7 @@ func TestCodexSessionPeriodHTTPRootChildSideTopology(t *testing.T) {
 				child := forward(codexChildTopology, "", 1, 12)
 				side := forward(codexSideTopology, "", 1, 13)
 				require.Equal(t, root.session(), child.session())
-				require.Equal(t, root.session(), side.session())
+				require.NotEqual(t, root.session(), side.session())
 				require.NotEqual(t, root.thread(), child.thread())
 				require.NotEqual(t, root.thread(), side.thread())
 				require.NotEqual(t, child.thread(), side.thread())
@@ -157,6 +179,25 @@ func TestCodexSessionPeriodHTTPRootChildSideTopology(t *testing.T) {
 				}
 				for _, carrier := range side.carriers() {
 					require.Equal(t, root.thread(), carrier.Get("forked_from_thread_id").String())
+				}
+				// A fresh gateway instance must remember the side without its
+				// fork marker, including children spawned inside the side.
+				svc = newCodexPeriodRedisService(t, server)
+				continuation := forward(codexSideContinuationTopology, "", 1, 99)
+				require.Equal(t, side.session(), continuation.session())
+				require.Equal(t, side.thread(), continuation.thread())
+				require.Equal(t, side.cache(), continuation.cache())
+				for _, fixture := range []string{codexSideChildTopology, strings.ReplaceAll(codexSideChildTopology, "000000000004", "000000000005")} {
+					sideChild := forward(fixture, "", 1, 99)
+					require.Equal(t, side.session(), sideChild.session())
+					require.NotEqual(t, side.thread(), sideChild.thread())
+					require.Equal(t, side.thread(), sideChild.headers.Get("x-codex-parent-thread-id"))
+					require.Equal(t, side.cache(), sideChild.cache())
+					for _, carrier := range sideChild.carriers() {
+						require.Equal(t, side.thread(), carrier.Get("parent_thread_id").String())
+						require.Equal(t, side.carriers()[0].Get("turn_id").String(), carrier.Get("parent_turn_id").String())
+						require.Equal(t, side.carriers()[0].Get("turn_id").String(), carrier.Get("root_turn_id").String())
+					}
 				}
 				rootTurn := root.carriers()[0].Get("turn_id").String()
 				require.Equal(t, rootTurn, child.carriers()[0].Get("parent_turn_id").String())
@@ -175,7 +216,15 @@ func TestCodexSessionPeriodHTTPRootChildSideTopology(t *testing.T) {
 				require.NotEqual(t, root.cache(), explicitRoot.cache())
 				require.NotEqual(t, explicitRoot.cache(), forward(codexSideTopology, "partition-1", 1, 11).cache())
 				require.NotEqual(t, explicitRoot.cache(), forward(codexRootTopology, "partition-2", 1, 11).cache())
+				explicitSide := forward(codexSideTopology, "partition-1", 1, 11)
+				require.Equal(t, explicitSide.cache(), forward(codexSideChildTopology, "partition-1", 1, 99).cache())
+				require.NotEqual(t, side.cache(), explicitSide.cache())
 				otherUser := forward(codexRootTopology, "partition-1", 2, 22)
+				otherSide := forward(codexSideTopology, "", 2, 22)
+				require.NotEqual(t, side.session(), otherSide.session())
+				require.NotEqual(t, side.thread(), otherSide.thread())
+				require.NotEqual(t, side.cache(), otherSide.cache())
+				require.Equal(t, otherSide.session(), forward(codexSideContinuationTopology, "", 2, 23).session())
 				require.NotEqual(t, root.session(), otherUser.session())
 				require.NotEqual(t, root.thread(), otherUser.thread())
 				require.NotEqual(t, explicitRoot.cache(), otherUser.cache())
@@ -270,14 +319,19 @@ func TestCodexSessionPeriodTopologyAcrossEpoch(t *testing.T) {
 						}
 					}
 					if epoch > 0 {
-						require.NotEqual(t, previous[i].session(), current[i].session())
-						require.NotEqual(t, previous[i].thread(), current[i].thread())
-						require.NotEqual(t, previous[i].cache(), current[i].cache())
+						require.Equal(t, previous[i].thread(), current[i].thread())
+						if i == 2 {
+							require.Equal(t, previous[i].session(), current[i].session())
+							require.Equal(t, previous[i].cache(), current[i].cache())
+						} else {
+							require.NotEqual(t, previous[i].session(), current[i].session())
+							require.NotEqual(t, previous[i].cache(), current[i].cache())
+						}
 					}
 				}
 				root, child, side := current[0], current[1], current[2]
 				require.Equal(t, root.session(), child.session())
-				require.Equal(t, root.session(), side.session())
+				require.NotEqual(t, root.session(), side.session())
 				require.Equal(t, root.cache(), child.cache())
 				require.NotEqual(t, root.cache(), side.cache())
 				require.Equal(t, root.thread(), child.headers.Get("x-codex-parent-thread-id"))

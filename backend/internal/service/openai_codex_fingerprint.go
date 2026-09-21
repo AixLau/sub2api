@@ -171,8 +171,8 @@ const (
 	// codexFingerprintDevice 收敛 installation_id 为账号级恒定值，并统一已有的 sandbox 平台标识。
 	// 上游看到 1 台设备 + 多会话（每用户各自的 session）。
 	codexFingerprintDevice codexFingerprintMode = "device"
-	// codexFingerprintSession 保持账号级 device，每用户每 5～7 天一个 session，
-	// 每任务一个 thread，保留客户端 turn graph；仅普通 HTTP Responses 启用。
+	// codexFingerprintSession 保持账号级 device，每用户普通任务每 5～7 天一个
+	// session，side 使用独立持久 session；保留 thread/turn graph，仅普通 HTTP 启用。
 	codexFingerprintSession codexFingerprintMode = "session"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
 	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
@@ -382,7 +382,7 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 type codexFingerprintIDs struct {
 	accountID                     int64
 	mode                          codexFingerprintMode
-	userPeriodSession             bool
+	httpSessionIdentity           bool
 	seed                          string
 	installationID                string
 	sessionID                     string
@@ -496,7 +496,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 		return
 	}
 
-	if ids.userPeriodSession {
+	if ids.httpSessionIdentity {
 		applyCodexSessionFingerprintHeaders(h, ids)
 		return
 	}
@@ -644,7 +644,7 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		return false
 	}
 
-	if ids.userPeriodSession {
+	if ids.httpSessionIdentity {
 		return applyCodexSessionFingerprintMetadata(existing, ids)
 	}
 
@@ -781,7 +781,7 @@ func applyCodexFingerprintPromptCacheKey(reqBody map[string]any, ids *codexFinge
 	if reqBody == nil {
 		return false
 	}
-	if ids != nil && ids.userPeriodSession {
+	if ids != nil && ids.httpSessionIdentity {
 		return setCodexFingerprintMetadataField(reqBody, "prompt_cache_key", ids.promptCacheKey)
 	}
 	promptCacheKey, ok := reqBody["prompt_cache_key"].(string)
@@ -838,7 +838,7 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 		}
 		modified = true
 	}
-	if ids.userPeriodSession {
+	if ids.httpSessionIdentity {
 		rewritten, err := sjson.SetBytes(next, "prompt_cache_key", ids.promptCacheKey)
 		if err != nil {
 			return body, false, fmt.Errorf("splice task prompt_cache_key: %w", err)

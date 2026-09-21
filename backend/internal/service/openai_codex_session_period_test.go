@@ -243,7 +243,7 @@ func TestCodexSessionPeriodRedisConcurrentCreationAndHardExpiry(t *testing.T) {
 		turns[ids.turnID] = true
 	}
 	require.Len(t, turns, 16)
-	require.Len(t, server.Keys(), 1)
+	require.Len(t, server.Keys(), 2, "one period session and one durable thread")
 	key := "openai_codex_session_identity:" + period.key
 	ttl := server.TTL(key)
 	require.InDelta(t, period.expiresAt.Sub(now).Milliseconds(), ttl.Milliseconds(), 1)
@@ -269,8 +269,8 @@ func TestCodexSessionPeriodHTTPBoundaryAndAuthoritativeNormalization(t *testing.
 			period := resolveCodexSessionPeriod(seed, "user:1", codexSessionIdentityUpstreamScope(account), time.Now())
 			boundary := period.expiresAt.Add(-codexSessionPeriodGrace)
 			rawSession := uuid.Must(uuid.NewV7()).String()
-			build := func(now time.Time) codexPeriodOutbound {
-				c, body := codexPeriodInput(t, 1, 11, rawSession, "same-task", "parent-task", "")
+			build := func(now time.Time, task, parent string) codexPeriodOutbound {
+				c, body := codexPeriodInput(t, 1, 11, rawSession, task, parent, "")
 				stageCodexSessionIdentityInputRaw(c, body)
 				ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(), c, account, now)
 				require.NoError(t, err)
@@ -297,14 +297,15 @@ func TestCodexSessionPeriodHTTPBoundaryAndAuthoritativeNormalization(t *testing.
 				require.Equal(t, result, checkCodexPeriodOutbound(t, staleHeaders, mustJSONForSessionIdentityTest(t, decoded)))
 				return result
 			}
-			before := build(boundary.Add(-time.Millisecond))
-			after := build(boundary)
+			build(boundary.Add(-time.Millisecond), "parent-task", "")
+			before := build(boundary.Add(-time.Millisecond), "same-task", "parent-task")
+			after := build(boundary, "same-task", "parent-task")
 			require.NotEqual(t, before.session, after.session)
-			require.NotEqual(t, before.thread, after.thread, "tasks move to a new thread namespace at the epoch boundary")
-			require.NotEqual(t, before.parent, after.parent, "parent references follow the same new namespace")
+			require.Equal(t, before.thread, after.thread, "a previously used thread survives the session epoch boundary")
+			require.Equal(t, before.parent, after.parent, "parent references retain their durable thread mapping")
 			require.NotEqual(t, before.cache, after.cache)
 			require.Equal(t, before.installation, after.installation)
-			require.Len(t, server.Keys(), 2, "only v3 epochs are written; no second UUIDv7 isolation mapping")
+			require.Len(t, server.Keys(), 4, "two period sessions and two durable threads; no second UUIDv7 isolation mapping")
 		})
 	}
 }

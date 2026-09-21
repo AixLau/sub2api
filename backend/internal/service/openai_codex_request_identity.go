@@ -437,7 +437,7 @@ func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, bod
 }
 
 func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityMap(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body map[string]any, fallbackSession string) (codexRequestIdentitySnapshot, bool, error) {
-	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.userPeriodSession {
+	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.httpSessionIdentity {
 		applyCodexFingerprintHeaders(headers, ids)
 		applyCodexFingerprintClientMetadata(body, ids)
 		return normalizeCodexOutboundIdentityMapFromInput(headers, body, fallbackSession, nil, nil)
@@ -500,7 +500,7 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 }
 
 func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityRaw(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body []byte, fallbackSession string) ([]byte, codexRequestIdentitySnapshot, bool, error) {
-	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.userPeriodSession {
+	if ids := stagedCodexFingerprintIDs(c, account); ids != nil && ids.httpSessionIdentity {
 		applyCodexFingerprintHeaders(headers, ids)
 		next, _, err := applyCodexFingerprintClientMetadataRaw(body, ids)
 		if err != nil {

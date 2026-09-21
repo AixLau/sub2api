@@ -242,6 +242,11 @@ func TestCodexSessionParentReferenceRetainsCacheOwnershipAcrossModes(t *testing.
 						svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 						account := newTestOAuthAccount(9531, map[string]any{codexFingerprintModeExtraKey: string(mode), "openai_passthrough": transport == "passthrough"})
 						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "parent-downgrade-account"}
+						// This cache-binding test starts with a parent already selected
+						// by a previous request. Full graph forwarding is tested separately.
+						if mode == codexFingerprintSession {
+							store.values[codexHTTPIdentityMappingKey("thread", "user:95", codexSessionIdentityUpstreamScope(account), "parent-thread")] = deriveStableUUIDv4("previous-parent")
+						}
 						c := newCodexSessionIdentityTestContext(t, 95, 953)
 						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
 						c.Request.Header.Set("originator", "codex_cli_rs")
@@ -254,7 +259,7 @@ func TestCodexSessionParentReferenceRetainsCacheOwnershipAcrossModes(t *testing.
 						require.NoError(t, err)
 						_, err = svc.Forward(context.Background(), c, account, encoded)
 						require.NoError(t, err)
-						require.Equal(t, mode == codexFingerprintSession, stagedCodexFingerprintIDs(c, account).userPeriodSession, "session parents retain the authoritative v3 snapshot")
+						require.Equal(t, mode == codexFingerprintSession, stagedCodexFingerprintIDs(c, account).httpSessionIdentity, "session parents retain the authoritative v3 snapshot")
 						if transport == "passthrough" {
 							require.NotNil(t, upstream.lastReq)
 						}
