@@ -787,7 +787,7 @@ export default {
         codexCLIOnlyAppServer: '允许 Codex app-server 客户端',
         codexCLIOnlyAppServerDesc: '仅在上方开关开启时生效。开启后本账号额外放行内嵌 Codex 引擎、经 app-server 协议接入的第三方客户端（如 Claude Code 的 codex 插件），仍需通过全局引擎指纹门；与全局 app-server 开关取 OR（任一开即放行）。',
         codexFingerprintMode: 'Codex 指纹收敛',
-        codexFingerprintModeDesc: '多人共享同一 OAuth 账号时，「仅设备」统一为一个稳定设备。普通 HTTP Responses 和 HTTP 透传的「设备+会话」模式下，每个下游用户在固定 5～7 天周期内共用一个会话，每个任务使用独立线程，每次请求使用新的 turn。新建 OpenAI OAuth 账号默认选择「仅设备」，其他模式需手动选择。部分账号开启收敛后出现过额度缩水，请按自己的实测结果选择。',
+        codexFingerprintModeDesc: '多人共享同一 OAuth 账号时，「仅设备」统一为一个稳定设备。普通 HTTP Responses 和 HTTP 透传的「设备+会话」模式下，每个下游用户在固定 5～7 天周期内共用一个会话，每个任务使用独立线程，并保留客户端 turn 关系。子 Agent 共享 root cache，side 线程使用独立 cache root。新建 OpenAI OAuth 账号默认选择「仅设备」，其他模式需手动选择。部分账号开启收敛后出现过额度缩水，请按自己的实测结果选择。',
         codexFingerprintOff: '关闭（透传）',
         codexFingerprintDevice: '仅设备',
         codexFingerprintSession: '设备+会话',

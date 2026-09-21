@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -53,6 +54,18 @@ func (p codexSessionPeriod) threadID(task string) string {
 	return deriveStableUUIDv4("sub2api:codex-thread:v3:" + p.key + "\x00" + task)
 }
 
+func (p codexSessionPeriod) cacheKey(input *codexSessionIdentityInput, task string) string {
+	// spawn_agent keeps the original session/cache root even though its thread
+	// changes. /side supplies a new session/cache root. Neither may use the
+	// compressed period session or the current child thread as cache affinity.
+	root := codexFirstIdentityValue(input.originalSessionID, input.promptCacheKey, task)
+	partition := codexFirstIdentityValue(input.promptCacheKey, root)
+	// Both root and partition are client strings; encode their boundaries
+	// explicitly so embedded delimiters cannot merge distinct cache roots.
+	namespace, _ := json.Marshal([]string{p.key, root, partition})
+	return deriveStableUUIDv4("sub2api:codex-cache:v3:" + string(namespace))
+}
+
 // resolveCodexHTTPFingerprintIDs is called once per HTTP attempt, before either
 // carrier is projected. Only session mode needs authenticated scope and a store.
 // Missing task/user identity conservatively retains device convergence.
@@ -86,23 +99,28 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	turnID, err := uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("generate Codex UUIDv7 turn identity: %w", err)
+	turnID := input.turnID
+	if turnID == "" {
+		generated, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("generate Codex UUIDv7 turn identity: %w", err)
+		}
+		turnID = generated.String()
 	}
 	ids.mode = codexFingerprintSession
 	ids.userPeriodSession = true
 	ids.sessionID = sessionID
 	ids.threadID = period.threadID(task)
 	ids.parentThreadID = period.threadID(input.parentThreadID)
+	ids.forkedFromThreadID = period.threadID(input.forkedFromThreadID)
 	ids.windowID = ids.threadID + ":0"
-	ids.turnID = turnID.String()
+	ids.turnID = turnID
+	ids.parentTurnID = input.parentTurnID
+	ids.rootTurnID = input.rootTurnID
 	ids.turnStartedAtUnixMs = now.UnixMilli()
-	// Default cache affinity follows the task, not the shared user session.
-	// Explicit cache partitions remain distinct within that task and epoch.
-	ids.promptCacheKey = ids.threadID
-	if input.promptCacheKey != "" && !input.promptCacheKeyReferencesSession && input.promptCacheKey != task {
-		ids.promptCacheKey = deriveStableUUIDv4("sub2api:codex-cache:v3:" + ids.threadID + "\x00" + input.promptCacheKey)
+	if input.turnStartedAtUnixMs != nil {
+		ids.turnStartedAtUnixMs = *input.turnStartedAtUnixMs
 	}
+	ids.promptCacheKey = period.cacheKey(input, task)
 	return ids, nil
 }

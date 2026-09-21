@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,16 +15,22 @@ import (
 
 const codexSessionIdentityInputContextKey = "codex_session_identity_input"
 
-// codexSessionIdentityInput records the client's session/cache relationship
+// codexSessionIdentityInput records the client's original task/turn graph and
+// session/cache relationship
 // before any account or fingerprint rewrite. It is replaced for every attempt
 // and every incoming WS frame; mapped values never become the next turn's input.
-// A cache key that referenced this session follows its final isolated identity
-// for UUIDv4, UUIDv7 and opaque inputs alike. Independent keys keep their scope.
+// HTTP session v3 preserves the turn graph and maps cache by the original root.
+// Modes that do not own sessions retain their existing session/cache binding.
 type codexSessionIdentityInput struct {
 	sessionID                       string
 	originalSessionID               string
 	threadID                        string
 	parentThreadID                  string
+	forkedFromThreadID              string
+	turnID                          string
+	parentTurnID                    string
+	rootTurnID                      string
+	turnStartedAtUnixMs             *int64
 	clientRequestID                 string
 	promptCacheKey                  string
 	promptCacheKeyReferencesSession bool
@@ -43,6 +50,15 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 	taskHeaders := c.Request.Header.Clone()
 	taskHeaders.Del("x-client-request-id")
 	taskIdentity := resolveCodexRequestIdentity(taskHeaders, clientMetadata, "")
+	// Preserve the client's complete turn graph before account scoping can
+	// rewrite turn_id. This capture is only projected by HTTP session v3.
+	metadataField := func(name string) string {
+		return codexFirstIdentityValue(
+			codexIdentityString(clientMetadata[name]),
+			codexIdentityString(taskIdentity.bodyTurnMetadata[name]),
+			codexIdentityString(taskIdentity.headerTurnMetadata[name]),
+		)
+	}
 	c.Set(codexSessionIdentityInputContextKey, &codexSessionIdentityInput{
 		sessionID:         identity.sessionID,
 		originalSessionID: taskIdentity.sessionID,
@@ -54,11 +70,33 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 			codexIdentityString(taskIdentity.bodyTurnMetadata["parent_thread_id"]),
 			codexIdentityString(taskIdentity.headerTurnMetadata["parent_thread_id"]),
 		),
+		forkedFromThreadID: metadataField("forked_from_thread_id"),
+		turnID: codexFirstIdentityValue(metadataField("turn_id"),
+			metadataField("turn-id"), c.Request.Header.Get("turn-id"), c.Request.Header.Get("turn_id")),
+		parentTurnID:                    metadataField("parent_turn_id"),
+		rootTurnID:                      metadataField("root_turn_id"),
+		turnStartedAtUnixMs:             codexOriginalTurnStartedAt(clientMetadata, taskIdentity),
 		clientRequestID:                 strings.TrimSpace(c.Request.Header.Get("x-client-request-id")),
 		promptCacheKey:                  cacheKey,
 		promptCacheKeyReferencesSession: cacheKey != "" && cacheKey == identity.sessionID,
 		parentReferencePresent:          identity.parentThreadID != "" || codexFingerprintParentReferencePresent(clientMetadata),
 	})
+}
+
+func codexOriginalTurnStartedAt(metadata map[string]any, identity codexRequestIdentitySnapshot) *int64 {
+	// Read nested JSON directly so capturing the timestamp does not round an
+	// integer through the general metadata resolver's float64 representation.
+	flat, _ := json.Marshal(metadata["turn_started_at_unix_ms"])
+	for _, raw := range []string{
+		string(flat),
+		gjson.Get(identity.bodyTurnMetadataRaw, "turn_started_at_unix_ms").Raw,
+		gjson.Get(identity.headerTurnMetadataRaw, "turn_started_at_unix_ms").Raw,
+	} {
+		if value, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			return &value
+		}
+	}
+	return nil
 }
 
 func stageCodexSessionIdentityInputRaw(c *gin.Context, body []byte) {

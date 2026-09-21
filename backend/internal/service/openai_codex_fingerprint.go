@@ -72,6 +72,15 @@ func codexSessionFingerprintFields(ids *codexFingerprintIDs, hasField func(strin
 	if ids.parentThreadID != "" {
 		fields["parent_thread_id"] = ids.parentThreadID
 	}
+	for name, value := range map[string]string{
+		"forked_from_thread_id": ids.forkedFromThreadID,
+		"parent_turn_id":        ids.parentTurnID,
+		"root_turn_id":          ids.rootTurnID,
+	} {
+		if value != "" {
+			fields[name] = value
+		}
+	}
 	if hasField != nil {
 		values := map[string]string{
 			"installation": ids.installationID, "session": ids.sessionID,
@@ -163,7 +172,7 @@ const (
 	// 上游看到 1 台设备 + 多会话（每用户各自的 session）。
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 保持账号级 device，每用户每 5～7 天一个 session，
-	// 每任务一个 thread，每请求一个新的 turn；仅普通 HTTP Responses 启用。
+	// 每任务一个 thread，保留客户端 turn graph；仅普通 HTTP Responses 启用。
 	codexFingerprintSession codexFingerprintMode = "session"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
 	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
@@ -379,6 +388,9 @@ type codexFingerprintIDs struct {
 	sessionID                     string
 	threadID                      string
 	parentThreadID                string
+	forkedFromThreadID            string
+	parentTurnID                  string
+	rootTurnID                    string
 	promptCacheKey                string
 	turnID                        string
 	windowID                      string

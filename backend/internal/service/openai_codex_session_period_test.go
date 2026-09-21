@@ -64,12 +64,13 @@ func codexPeriodInput(t *testing.T, userID, apiKeyID int64, session, task, paren
 	c.Request.Header.Set("session-id", session)
 	c.Request.Header.Set("thread-id", task)
 	c.Request.Header.Set("x-client-request-id", "request-id-must-not-outrank-task")
+	turn := uuid.Must(uuid.NewV7()).String()
 	metadata := map[string]any{
-		"session_id": session, "thread_id": task, "turn_id": "old-turn",
+		"session_id": session, "thread_id": task, "turn_id": turn,
 		"turn-id": "old-turn-alias", "session-id": "old-session-alias", "thread-id": "old-thread-alias",
 		"window_id": "old-window", "installation_id": "client-device",
 	}
-	nested := map[string]any{"session_id": session, "thread_id": task, "turn_id": "old-turn", "turn-id": "old-turn-alias", "sandbox": "seatbelt", "sandbox_mode": "workspace-write"}
+	nested := map[string]any{"session_id": session, "thread_id": task, "turn_id": turn, "turn-id": "old-turn-alias", "sandbox": "seatbelt", "sandbox_mode": "workspace-write"}
 	if parent != "" {
 		// Exercise the unprefixed flat parent carrier, not just the header.
 		metadata["parent_thread_id"] = parent
@@ -146,7 +147,7 @@ func TestCodexSessionPeriodHTTPUserTaskIsolation(t *testing.T) {
 			b := forward(1, 11, rawV7, "refactor", "", rawV7)
 			require.Equal(t, a.session, b.session)
 			require.NotEqual(t, a.thread, b.thread)
-			require.NotEqual(t, a.cache, b.cache)
+			require.Equal(t, a.cache, b.cache, "threads sharing the original session/cache root share cache affinity")
 			require.NotEqual(t, a.turn, b.turn)
 			require.NotEqual(t, rawV7, a.session, "UUIDv7 cannot bypass user-period convergence")
 			other := forward(2, 22, rawV7, "fix-bug", "", rawV7)
@@ -166,17 +167,18 @@ func TestCodexSessionPeriodHTTPUserTaskIsolation(t *testing.T) {
 				again := forward(1, 11, raw, "fix-bug", "", raw)
 				require.Equal(t, a.session, again.session)
 				require.Equal(t, a.thread, again.thread)
-				require.Equal(t, a.cache, again.cache)
+				require.NotEqual(t, a.cache, again.cache, "a new original session/cache root receives its own cache")
 			}
 			child := forward(1, 11, rawV7, "write-tests", "fix-bug", rawV7)
 			require.Equal(t, a.session, child.session)
 			require.NotEqual(t, a.thread, child.thread)
 			require.Equal(t, a.thread, child.parent)
+			require.Equal(t, a.cache, child.cache)
 			explicit := forward(1, 11, rawV7, "fix-bug", "", "explicit-cache")
 			explicitAgain := forward(1, 51, rawV7, "fix-bug", "", "explicit-cache")
 			require.Equal(t, explicit.cache, explicitAgain.cache)
 			require.NotEqual(t, a.cache, explicit.cache)
-			require.NotEqual(t, explicit.cache, forward(1, 11, rawV7, "refactor", "", "explicit-cache").cache)
+			require.Equal(t, explicit.cache, forward(1, 11, rawV7, "refactor", "", "explicit-cache").cache)
 			account.Credentials["chatgpt_account_id"] = "another-oauth-account"
 			failover := forward(1, 11, rawV7, "fix-bug", "", rawV7)
 			require.NotEqual(t, a.session, failover.session)
@@ -266,8 +268,9 @@ func TestCodexSessionPeriodHTTPBoundaryAndAuthoritativeNormalization(t *testing.
 			seed, _ := codexFingerprintSeed(account.Extra)
 			period := resolveCodexSessionPeriod(seed, "user:1", codexSessionIdentityUpstreamScope(account), time.Now())
 			boundary := period.expiresAt.Add(-codexSessionPeriodGrace)
+			rawSession := uuid.Must(uuid.NewV7()).String()
 			build := func(now time.Time) codexPeriodOutbound {
-				c, body := codexPeriodInput(t, 1, 11, uuid.Must(uuid.NewV7()).String(), "same-task", "parent-task", "")
+				c, body := codexPeriodInput(t, 1, 11, rawSession, "same-task", "parent-task", "")
 				stageCodexSessionIdentityInputRaw(c, body)
 				ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(), c, account, now)
 				require.NoError(t, err)
