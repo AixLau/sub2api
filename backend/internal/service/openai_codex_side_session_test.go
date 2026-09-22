@@ -46,7 +46,11 @@ func buildCodexTopologyAt(t *testing.T, svc *OpenAIGatewayService, account *Acco
 		require.Equal(t, result.session(), carrier.Get("session_id").String())
 		require.Equal(t, result.thread(), carrier.Get("thread_id").String())
 		for _, field := range []string{"turn_id", "parent_turn_id", "root_turn_id", "turn_started_at_unix_ms"} {
-			require.Equal(t, gjson.Get(fixture, field).Value(), carrier.Get(field).Value(), field)
+			if field == "turn_started_at_unix_ms" {
+				require.Equal(t, gjson.Get(fixture, field).String(), carrier.Get(field).String(), field)
+			} else {
+				require.Equal(t, gjson.Get(fixture, field).Value(), carrier.Get(field).Value(), field)
+			}
 		}
 	}
 	return result

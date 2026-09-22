@@ -22,19 +22,20 @@ const codexSessionIdentityInputContextKey = "codex_session_identity_input"
 // HTTP session v3 preserves the turn graph and maps cache by the original root.
 // Modes that do not own sessions retain their existing session/cache binding.
 type codexSessionIdentityInput struct {
-	sessionID                       string
-	originalSessionID               string
-	threadID                        string
-	parentThreadID                  string
-	forkedFromThreadID              string
-	turnID                          string
-	parentTurnID                    string
-	rootTurnID                      string
-	turnStartedAtUnixMs             *int64
-	clientRequestID                 string
-	promptCacheKey                  string
-	promptCacheKeyReferencesSession bool
-	parentReferencePresent          bool
+	sessionID                         string
+	originalSessionID                 string
+	threadID                          string
+	parentThreadID                    string
+	forkedFromThreadID                string
+	forkedFromOrdinalExclusivePresent bool
+	turnID                            string
+	parentTurnID                      string
+	rootTurnID                        string
+	turnStartedAtUnixMs               *int64
+	clientRequestID                   string
+	promptCacheKey                    string
+	promptCacheKeyReferencesSession   bool
+	parentReferencePresent            bool
 }
 
 func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
@@ -59,6 +60,18 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 			codexIdentityString(taskIdentity.headerTurnMetadata[name]),
 		)
 	}
+	metadataFieldPresent := func(name string) bool {
+		if _, ok := clientMetadata[name]; ok {
+			return true
+		}
+		if _, ok := taskIdentity.bodyTurnMetadata[name]; ok {
+			return true
+		}
+		if _, ok := taskIdentity.headerTurnMetadata[name]; ok {
+			return true
+		}
+		return false
+	}
 	c.Set(codexSessionIdentityInputContextKey, &codexSessionIdentityInput{
 		sessionID:         identity.sessionID,
 		originalSessionID: taskIdentity.sessionID,
@@ -70,7 +83,8 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 			codexIdentityString(taskIdentity.bodyTurnMetadata["parent_thread_id"]),
 			codexIdentityString(taskIdentity.headerTurnMetadata["parent_thread_id"]),
 		),
-		forkedFromThreadID: metadataField("forked_from_thread_id"),
+		forkedFromThreadID:                metadataField("forked_from_thread_id"),
+		forkedFromOrdinalExclusivePresent: metadataFieldPresent("forked_from_ordinal_exclusive"),
 		turnID: codexFirstIdentityValue(metadataField("turn_id"),
 			metadataField("turn-id"), c.Request.Header.Get("turn-id"), c.Request.Header.Get("turn_id")),
 		parentTurnID:                    metadataField("parent_turn_id"),

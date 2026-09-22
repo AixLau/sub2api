@@ -61,13 +61,22 @@ func codexHTTPPromptCacheKey(namespace string, input *codexSessionIdentityInput,
 }
 
 type codexHTTPSessionSelection struct {
-	id                string
-	cacheNamespace    string
-	preserveV3Threads bool
-	forkThreadID      string
-	threadTTL         time.Duration
-	threadExpiresAt   time.Time
-	sideKey           string
+	id                   string
+	cacheNamespace       string
+	preserveV3Threads    bool
+	forkThreadID         string
+	threadTTL            time.Duration
+	threadExpiresAt      time.Time
+	sideKey              string
+	allowParentBootstrap bool
+}
+
+// A fork marker by itself is not enough to identify a new /side root. Older
+// ordinary sessions can carry the marker after switching from device mode,
+// while a native side root also carries its fork ordinal. Existing side
+// registrations remain authoritative regardless of the incoming metadata.
+func codexHTTPInputHasSideRootEvidence(input *codexSessionIdentityInput) bool {
+	return input != nil && input.forkedFromThreadID != "" && input.forkedFromOrdinalExclusivePresent
 }
 
 func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *gin.Context, input *codexSessionIdentityInput, userScope, accountScope string, period codexSessionPeriod, now time.Time) (codexHTTPSessionSelection, error) {
@@ -78,7 +87,7 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 		if lookupErr != nil && !errors.Is(lookupErr, ErrCodexSessionIdentityNotFound) {
 			return selection, lookupErr
 		}
-		if lookupErr == nil || input.forkedFromThreadID != "" {
+		if lookupErr == nil || codexHTTPInputHasSideRootEvidence(input) {
 			if lookupErr == nil {
 				RecordCodexIdentityEvent("side_session", "reused")
 			}
@@ -116,7 +125,7 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 			selection.threadExpiresAt, selection.sideKey = time.Time{}, sideKey
 			return selection, nil
 		}
-	} else if input.forkedFromThreadID != "" {
+	} else if codexHTTPInputHasSideRootEvidence(input) {
 		return selection, fmt.Errorf("Codex side session requires an original session_id")
 	}
 	var err error
@@ -127,7 +136,13 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 		if err == nil {
 			RecordCodexIdentityEvent("period_session", "reused")
 		} else if errors.Is(err, ErrCodexSessionIdentityNotFound) {
-			RecordCodexIdentityEvent("current_parent", "missing")
+			if input.forkedFromThreadID != "" && !codexHTTPInputHasSideRootEvidence(input) {
+				selection.id, err = s.resolveCodexSessionIdentityMapping(codexIdentityDeadlineContext(ctx, period.expiresAt), c, period.key, selection.threadTTL)
+				selection.allowParentBootstrap = err == nil
+			}
+			if err != nil {
+				RecordCodexIdentityEvent("current_parent", "missing")
+			}
 		}
 	} else {
 		selection.id, err = s.resolveCodexSessionIdentityMapping(codexIdentityDeadlineContext(ctx, period.expiresAt), c, period.key, selection.threadTTL)
@@ -215,7 +230,16 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 		return nil, err
 	}
 	if input.parentThreadID != "" {
-		ids.parentThreadID, err = s.resolveCodexHTTPCurrentThread(ctx, c, selection, userScope, accountScope, input.parentThreadID, true)
+		ids.parentThreadID, err = s.resolveCodexHTTPCurrentThread(ctx, c, selection, userScope, accountScope, input.parentThreadID, !selection.allowParentBootstrap)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if input.forkedFromThreadID != "" && selection.sideKey == "" {
+		// A fork marker without native side evidence belongs to the ordinary
+		// period namespace. This migration path keeps device-era sessions from
+		// failing when first observed after session mode is enabled.
+		ids.forkedFromThreadID, err = s.resolveCodexHTTPCurrentThread(ctx, c, selection, userScope, accountScope, input.forkedFromThreadID, false)
 		if err != nil {
 			return nil, err
 		}
@@ -231,7 +255,9 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 	ids.mode = codexFingerprintSession
 	ids.httpSessionIdentity = true
 	ids.sessionID = selection.id
-	ids.forkedFromThreadID = selection.forkThreadID
+	if selection.forkThreadID != "" {
+		ids.forkedFromThreadID = selection.forkThreadID
+	}
 	ids.threadID, err = s.resolveCodexHTTPCurrentThread(ctx, c, selection, userScope, accountScope, task, false)
 	if err != nil {
 		return nil, err

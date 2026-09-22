@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ func codexSessionFingerprintFields(ids *codexFingerprintIDs, hasField func(strin
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
-		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
+		"turn_started_at_unix_ms": strconv.FormatInt(ids.turnStartedAtUnixMs, 10),
 	}
 	if ids.parentThreadID != "" {
 		fields["parent_thread_id"] = ids.parentThreadID
@@ -132,9 +133,13 @@ func applyCodexSessionFingerprintMetadata(metadata map[string]any, ids *codexFin
 	changed := false
 	for key, value := range fields {
 		if key == "turn_started_at_unix_ms" {
-			// Both map and raw decoders may have already materialized this
-			// JSON integer. Reapplying a snapshot must be a no-op in either form.
+			// Map and raw decoders may have materialized the client value as an
+			// integer, while the session wire format is a decimal string.
 			switch current := metadata[key].(type) {
+			case string:
+				if current == strconv.FormatInt(ids.turnStartedAtUnixMs, 10) {
+					continue
+				}
 			case json.Number:
 				if number, err := current.Int64(); err == nil && number == ids.turnStartedAtUnixMs {
 					continue

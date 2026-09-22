@@ -188,6 +188,50 @@ func TestCodexSessionPeriodHTTPUserTaskIsolation(t *testing.T) {
 	}
 }
 
+func TestCodexSessionPeriodMigratesOrdinaryForkMarkerWithoutSideEvidence(t *testing.T) {
+	for _, passthrough := range []bool{false, true} {
+		t.Run(fmt.Sprintf("passthrough=%v", passthrough), func(t *testing.T) {
+			server := miniredis.RunT(t)
+			svc := newCodexPeriodRedisService(t, server)
+			account := newTestOAuthAccount(7606, map[string]any{codexFingerprintModeExtraKey: "session", "openai_passthrough": passthrough})
+			account.Credentials = map[string]any{"access_token": "test", "chatgpt_account_id": "ordinary-fork-migration"}
+
+			c, body := codexPeriodInput(t, 1, 11, "legacy-device-session", "legacy-task", "", "legacy-device-session")
+			var requestBody map[string]any
+			require.NoError(t, json.Unmarshal(body, &requestBody))
+			metadata, ok := requestBody["client_metadata"].(map[string]any)
+			require.True(t, ok)
+			metadata["forked_from_thread_id"] = "legacy-parent-thread"
+			// No forked_from_ordinal_exclusive: this is an ordinary device-era
+			// request, not a native /side root.
+			body, err := json.Marshal(requestBody)
+			require.NoError(t, err)
+			c.Request.Body = io.NopCloser(bytes.NewReader(body))
+			stageCodexSessionIdentityInputRaw(c, body)
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{"Content-Type": {"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+			}}
+			svc.httpUpstream = upstream
+			_, err = svc.Forward(context.Background(), c, account, body)
+			require.NoError(t, err)
+
+			out := checkCodexPeriodOutbound(t, upstream.lastReq.Header, upstream.lastBody)
+			fork := gjson.GetBytes(upstream.lastBody, "client_metadata.forked_from_thread_id")
+			require.True(t, isCodexUUID(fork.String()))
+			require.NotEqual(t, "legacy-parent-thread", fork.String())
+			require.Equal(t, gjson.String, fork.Type)
+			require.Equal(t, gjson.String, gjson.GetBytes(upstream.lastBody, "client_metadata.turn_started_at_unix_ms").Type)
+			require.Equal(t, gjson.String, gjson.Get(gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String(), "turn_started_at_unix_ms").Type)
+			require.Equal(t, gjson.String, gjson.Get(upstream.lastReq.Header.Get(openAIWSTurnMetadataHeader), "turn_started_at_unix_ms").Type)
+			require.NotContains(t, server.Keys(), "openai_codex_session_identity:"+codexHTTPIdentityMappingKey("side-session", "user:1", codexSessionIdentityUpstreamScope(account), "legacy-device-session"))
+			require.NotEmpty(t, out.session)
+		})
+	}
+}
+
 func TestCodexSessionPeriodFixedScheduleAndScope(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	boundaries := map[time.Time]bool{}
