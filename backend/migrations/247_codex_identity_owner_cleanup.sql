@@ -41,22 +41,22 @@ BEGIN
     IF account_platform <> 'openai' OR account_type NOT IN ('oauth', 'setup-token') THEN
         RETURN NULL;
     END IF;
-    upstream_account := codex_identity_credential_text(credentials -> 'chatgpt_account_id');
+    upstream_account := public.codex_identity_credential_text(credentials -> 'chatgpt_account_id');
     IF COALESCE(upstream_account, '') <> '' THEN
         namespace := 'chatgpt:' || upstream_account;
-        upstream_user := codex_identity_credential_text(credentials -> 'chatgpt_user_id');
+        upstream_user := public.codex_identity_credential_text(credentials -> 'chatgpt_user_id');
         IF COALESCE(upstream_user, '') <> '' THEN
             namespace := namespace || ':user:' || upstream_user;
         END IF;
     ELSE
         IF jsonb_typeof(extra -> 'codex_fingerprint_seed') = 'string' THEN
-            seed := codex_identity_credential_text(extra -> 'codex_fingerprint_seed');
+            seed := public.codex_identity_credential_text(extra -> 'codex_fingerprint_seed');
         END IF;
         IF seed ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            AND seed <> '00000000-0000-0000-0000-000000000000' THEN
             namespace := 'seed:' || seed;
         ELSIF account_type = 'setup-token' THEN
-            token := codex_identity_credential_text(credentials -> 'access_token');
+            token := public.codex_identity_credential_text(credentials -> 'access_token');
             IF COALESCE(token, '') <> '' THEN
                 namespace := 'setup-token:' || substr(encode(sha256(convert_to('openai-setup-token:' || token, 'UTF8')), 'hex'), 1, 32);
             END IF;
@@ -70,7 +70,7 @@ END;
 $$;
 
 CREATE INDEX idx_accounts_codex_identity_owner
-    ON accounts (codex_identity_account_owner(id, platform, type, credentials, extra))
+    ON accounts (public.codex_identity_account_owner(id, platform, type, credentials, extra))
     WHERE deleted_at IS NULL;
 
 CREATE FUNCTION enqueue_codex_account_identity_cleanup()
@@ -83,10 +83,10 @@ DECLARE
     lock_owner TEXT;
 BEGIN
     IF TG_OP <> 'INSERT' AND OLD.deleted_at IS NULL THEN
-        old_owner := codex_identity_account_owner(OLD.id, OLD.platform, OLD.type, OLD.credentials, OLD.extra);
+        old_owner := public.codex_identity_account_owner(OLD.id, OLD.platform, OLD.type, OLD.credentials, OLD.extra);
     END IF;
     IF TG_OP <> 'DELETE' AND NEW.deleted_at IS NULL THEN
-        new_owner := codex_identity_account_owner(NEW.id, NEW.platform, NEW.type, NEW.credentials, NEW.extra);
+        new_owner := public.codex_identity_account_owner(NEW.id, NEW.platform, NEW.type, NEW.credentials, NEW.extra);
     END IF;
     IF old_owner IS DISTINCT FROM new_owner THEN
         -- Cleanup holds the same lock until Redis batches complete. A new
