@@ -55,6 +55,8 @@ Side 使用独立的 `v3:side-session` 命名空间，复用现有 durable store
 
 Side lifecycle 保存 `session_id`、`created_at_ms` 和 `last_observed_at_ms`。创建时间取上游映射 UUIDv7 自带的生成时间，旧 side 首次接管时也能恢复该时间；活跃时间取请求进入 forwarding 时的服务端 observation，仅 side 本身或其 child 的真实请求推进。CAS 防止旧请求回退活跃时间；后台查询、metrics 和 owner 清理不推进它。这个元数据先用于生命周期管理，不自动触发按闲置天数的 side 删除。
 
+服务端 observation 使用应用进程时间，owner fence 使用 Redis `TIME`，数据库 owner 状态使用 PostgreSQL 事务时间。上线前必须保证 App、Redis、PostgreSQL 的主机时钟通过 NTP 正常同步；严重时钟漂移可能使跨进程的 stale 判断过早或过晚。本阶段不引入额外的 generation 协议。
+
 身份 key 的 ownership 是存储元数据，不参与 session/thread/cache ID 的计算。account owner 使用 OAuth credential namespace 的 SHA-256，user owner 优先为 `user:<authenticated ID>`，只有无法识别用户时才是 API Key scope。相同凭据 namespace 的多个账号行共享 account owner；普通 access/refresh token 更新若未改变 namespace，不代表身份被永久替换。
 
 Redis 为 account/user 各保留一个 `openai_codex_identity_owner:<owner>` 有序集合，并用 `openai_codex_identity_kind:<kind>` 集合记录按种类统计的索引。每个成员保存包含 physical identity key、account index、user index、kind index 的 JSON tuple，分数为数据绝对过期时间或永久标记。每个 identity 的 `:ownership` hash TTL 仍跟随数据 key；即使数据和 reverse hash 已到期，tuple 中完整的归属信息仍能用于从所有对应索引移除成员。
