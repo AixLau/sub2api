@@ -84,6 +84,11 @@ func applyCodexFingerprintSandboxMetadataRaw(headers http.Header, body []byte, i
 // and identity enforcement. Resolve sandbox before merging header/body metadata
 // so both the final request and its identity snapshot share the same platform.
 func (s *OpenAIGatewayService) normalizeCodexHTTPOutboundIdentityRaw(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body []byte, fallbackSession string) ([]byte, codexRequestIdentitySnapshot, bool, error) {
+	// Adopt existing HTTP isolation keys into owner indexes without changing
+	// their mapping or lifetime. WS and compact do not enter this function.
+	if !isOpenAICompatMessagesBridgeContext(c) && !isOpenAICompatMessagesBridgeBody(body) {
+		ctx = codexHTTPIdentityOwnershipContext(ctx, c, account, CaptureCodexIdentityObservedAt(c), true)
+	}
 	next, sandboxChanged, err := applyCodexFingerprintSandboxMetadataRaw(headers, body, stagedCodexFingerprintIDs(c, account))
 	if err != nil {
 		return body, codexRequestIdentitySnapshot{}, false, err

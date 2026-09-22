@@ -27,7 +27,9 @@ type gatewayCache struct {
 }
 
 func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
-	return &gatewayCache{rdb: rdb}
+	cache := &gatewayCache{rdb: rdb}
+	service.SetCodexIdentityKeyCountProvider(cache.CountCodexIdentityKeys)
+	return cache
 }
 
 // buildSessionKey 构建 session key，包含 groupID 实现分组隔离
@@ -93,6 +95,10 @@ func (c *gatewayCache) GetCodexSessionIdentity(ctx context.Context, key string) 
 	if key == "" {
 		return "", errors.New("invalid Codex session identity key")
 	}
+	if owner, ok := service.CodexIdentityOwnershipFromContext(ctx); ok {
+		_, value, err := c.codexOwnedIdentityOperation(ctx, owner, "get", key, "", "", 0)
+		return strings.TrimSpace(value), err
+	}
 	value, err := c.rdb.Get(ctx, openAICodexSessionIdentityPrefix+key).Result()
 	if errors.Is(err, redis.Nil) {
 		return "", service.ErrCodexSessionIdentityNotFound
@@ -117,6 +123,10 @@ func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key,
 	}
 	if ttl < 0 {
 		return false, errors.New("invalid Codex session identity TTL")
+	}
+	if owner, ok := service.CodexIdentityOwnershipFromContext(ctx); ok {
+		changed, _, err := c.codexOwnedIdentityOperation(ctx, owner, "setnx", key, "", value, ttl)
+		return changed, err
 	}
 	return c.rdb.SetNX(ctx, openAICodexSessionIdentityPrefix+key, value, ttl).Result()
 }
@@ -151,6 +161,10 @@ func (c *gatewayCache) CompareAndSwapCodexSessionIdentity(ctx context.Context, k
 	}
 	if ttl < 0 {
 		return false, errors.New("invalid Codex session identity TTL")
+	}
+	if owner, ok := service.CodexIdentityOwnershipFromContext(ctx); ok {
+		changed, _, err := c.codexOwnedIdentityOperation(ctx, owner, "cas", key, expected, value, ttl)
+		return changed, err
 	}
 	ttlMilliseconds := ttl.Milliseconds()
 	if ttl > 0 && ttlMilliseconds == 0 {

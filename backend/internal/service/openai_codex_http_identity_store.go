@@ -80,9 +80,11 @@ func (s *OpenAIGatewayService) registerCodexHTTPThread(ctx context.Context, c *g
 		return "", fmt.Errorf("register Codex HTTP thread: %w", err)
 	}
 	if created {
+		RecordCodexIdentityEvent("thread_current", "created")
 		stageCodexSessionIdentity(c, key, candidate)
 		return candidate, nil
 	}
+	RecordCodexIdentityEvent("thread_current", "reused")
 	return s.lookupCodexHTTPIdentityMapping(ctx, c, key)
 }
 
@@ -112,30 +114,47 @@ func (s *OpenAIGatewayService) recordCodexHTTPThreadHistory(ctx context.Context,
 	if !ok {
 		return ErrCodexSessionIdentityStoreUnavailable
 	}
+	retention := s.codexIdentityHistoryRetention()
+	expiresAt := time.UnixMilli(record.ObservedAtMs).Add(retention)
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		RecordCodexIdentityEvent("thread_history", "stale_rejected")
+		return nil
+	}
+	ctx = codexIdentityDeadlineContext(ctx, expiresAt)
 	encoded, _ := json.Marshal(record)
 	for attempt := 0; attempt < 16; attempt++ {
 		previous, err := store.GetCodexSessionIdentity(ctx, key)
 		if err != nil && !errors.Is(err, ErrCodexSessionIdentityNotFound) {
 			return fmt.Errorf("read Codex thread history: %w", err)
 		}
+		result := "created"
 		if err == nil {
+			result = "advanced"
 			current, err := decodeCodexHTTPThreadHistory(previous)
 			if err != nil {
 				return err
 			}
-			if current.ObservedAtMs >= record.ObservedAtMs || (current.SessionID == record.SessionID && current.ThreadID == record.ThreadID) {
+			if current.ObservedAtMs >= record.ObservedAtMs {
+				outcome := "stale_rejected"
+				if current.ObservedAtMs == record.ObservedAtMs {
+					outcome = "reused"
+				}
+				RecordCodexIdentityEvent("thread_history", outcome)
 				return nil
 			}
 		} else {
 			previous = ""
 		}
-		updated, err := cas.CompareAndSwapCodexSessionIdentity(ctx, key, previous, string(encoded), 0)
+		updated, err := cas.CompareAndSwapCodexSessionIdentity(ctx, key, previous, string(encoded), ttl)
 		if err != nil {
 			return fmt.Errorf("update Codex thread history: %w", err)
 		}
 		if updated {
+			RecordCodexIdentityEvent("thread_history", result)
 			return nil
 		}
+		RecordCodexIdentityEvent("thread_history", "contention")
 	}
 	return fmt.Errorf("Codex thread history update contention")
 }
@@ -156,7 +175,11 @@ func (s *OpenAIGatewayService) lookupCodexHTTPForkSource(ctx context.Context, c 
 	}
 	// These immutable records are historical evidence, never candidates for a
 	// normal request's current thread. No record means no guessed fork target.
-	return s.lookupCodexHTTPIdentityMapping(ctx, c, codexHTTPIdentityMappingKey("thread", userScope, accountScope, raw))
+	mapped, err := s.lookupCodexHTTPIdentityMapping(ctx, c, codexHTTPIdentityMappingKey("thread", userScope, accountScope, raw))
+	if errors.Is(err, ErrCodexSessionIdentityNotFound) {
+		RecordCodexIdentityEvent("fork_history", "missing")
+	}
+	return mapped, err
 }
 
 type codexHTTPSideFork struct {
@@ -164,6 +187,8 @@ type codexHTTPSideFork struct {
 	ThreadID          string `json:"thread_id"`
 	PreserveV3Threads bool   `json:"preserve_v3_threads,omitempty"`
 }
+
+var errCodexSideForkConflict = errors.New("conflicting Codex side fork source")
 
 func readCodexHTTPSideFork(ctx context.Context, store codexSessionIdentityStore, key string) (codexHTTPSideFork, error) {
 	value, err := store.GetCodexSessionIdentity(ctx, key)
@@ -187,11 +212,15 @@ func (s *OpenAIGatewayService) pinCodexHTTPSideFork(ctx context.Context, c *gin.
 	read := func() (codexHTTPSideFork, error) {
 		fork, err := readCodexHTTPSideFork(ctx, store, key)
 		if err == nil && fork.SourceKey != sourceKey {
-			return fork, fmt.Errorf("conflicting Codex side fork source")
+			RecordCodexIdentityEvent("side_fork", "conflict")
+			return fork, errCodexSideForkConflict
 		}
 		return fork, err
 	}
 	if value, err := read(); err == nil || !errors.Is(err, ErrCodexSessionIdentityNotFound) {
+		if err == nil {
+			RecordCodexIdentityEvent("side_fork", "reused")
+		}
 		return value, err
 	}
 	var target string
@@ -199,6 +228,9 @@ func (s *OpenAIGatewayService) pinCodexHTTPSideFork(ctx context.Context, c *gin.
 		// A side created before fork pinning used the immutable v3 target.
 		// Newer ordinary history must not retarget that already existing side.
 		target, err = s.lookupCodexHTTPIdentityMapping(ctx, c, sourceKey)
+		if errors.Is(err, ErrCodexSessionIdentityNotFound) {
+			RecordCodexIdentityEvent("fork_history", "missing")
+		}
 	} else {
 		target, err = s.lookupCodexHTTPForkSource(ctx, c, userScope, accountScope, rawFork)
 	}
@@ -212,7 +244,9 @@ func (s *OpenAIGatewayService) pinCodexHTTPSideFork(ctx context.Context, c *gin.
 		return codexHTTPSideFork{}, fmt.Errorf("pin Codex side fork: %w", err)
 	}
 	if created {
+		RecordCodexIdentityEvent("side_fork", "pinned")
 		return fork, nil
 	}
+	RecordCodexIdentityEvent("side_fork", "reused")
 	return read()
 }

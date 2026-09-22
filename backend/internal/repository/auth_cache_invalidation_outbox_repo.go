@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,7 +46,7 @@ func (r *authCacheInvalidationOutboxRepository) Claim(ctx context.Context, worke
 		SET claimed_at = NOW(), claimed_by = $1
 		FROM candidates AS c
 		WHERE o.id = c.id
-		RETURNING o.id, o.cache_key, o.attempts, o.delivery_stage, o.created_at
+		RETURNING o.id, o.cache_key, o.attempts, o.delivery_stage, o.created_at, o.event_type, COALESCE(o.owner_token, '')
 	`, workerID, limit, leaseSeconds)
 	if err != nil {
 		return nil, err
@@ -54,7 +56,7 @@ func (r *authCacheInvalidationOutboxRepository) Claim(ctx context.Context, worke
 	events := make([]service.AuthCacheInvalidationEvent, 0, limit)
 	for rows.Next() {
 		var event service.AuthCacheInvalidationEvent
-		if err := rows.Scan(&event.ID, &event.CacheKey, &event.Attempts, &event.Stage, &event.CreatedAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.CacheKey, &event.Attempts, &event.Stage, &event.CreatedAt, &event.EventType, &event.OwnerToken); err != nil {
 			return nil, err
 		}
 		event.CacheKey = strings.TrimSpace(event.CacheKey)
@@ -64,6 +66,52 @@ func (r *authCacheInvalidationOutboxRepository) Claim(ctx context.Context, worke
 		return nil, err
 	}
 	return events, nil
+}
+
+var codexIdentityAccountOwnerPattern = regexp.MustCompile(`^account:[0-9a-f]{64}$`)
+
+// The matching mutation triggers take this same transaction advisory lock.
+// Reimport and shared OAuth rows therefore cannot race an orphan cleanup. Redis
+// batches are idempotent; a timeout keeps the outbox event for another attempt.
+func (r *authCacheInvalidationOutboxRepository) WithCodexIdentityOwnerCleanup(ctx context.Context, owner string, cleanup func(context.Context, bool) error) error {
+	var userID int64
+	isAccount := codexIdentityAccountOwnerPattern.MatchString(owner)
+	if !isAccount {
+		if !strings.HasPrefix(owner, "user:") {
+			return errors.New("invalid Codex identity cleanup owner")
+		}
+		var err error
+		userID, err = strconv.ParseInt(strings.TrimPrefix(owner, "user:"), 10, 64)
+		if err != nil || userID <= 0 || owner != fmt.Sprintf("user:%d", userID) {
+			return errors.New("invalid Codex identity cleanup user")
+		}
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('codex-identity-owner:' || $1, 0))`, owner); err != nil {
+		return err
+	}
+	var live bool
+	if isAccount {
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM accounts WHERE deleted_at IS NULL
+			AND codex_identity_account_owner(id, platform, type, credentials, extra) = $1
+		)`, owner).Scan(&live)
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL
+		)`, userID).Scan(&live)
+	}
+	if err != nil {
+		return err
+	}
+	if err := cleanup(ctx, live); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *authCacheInvalidationOutboxRepository) ScheduleSecondPass(ctx context.Context, id int64, workerID string, availableAt time.Time) error {

@@ -243,6 +243,7 @@ func registerAdminAPIKeyRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	ops := admin.Group("/ops")
 	{
+		ops.GET("/codex-identity/metrics", gin.WrapH(service.CodexIdentityMetricsHandler()))
 		// Realtime ops signals
 		ops.GET("/concurrency", h.Admin.Ops.GetConcurrencyStats)
 		ops.GET("/user-concurrency", h.Admin.Ops.GetUserConcurrencyStats)

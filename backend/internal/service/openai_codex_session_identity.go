@@ -167,7 +167,17 @@ func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Con
 // resolveCodexSessionIdentityMapping uses one durable SetNX winner across
 // processes. Reads and losing writers never extend the mapping's lifetime.
 func (s *OpenAIGatewayService) resolveCodexSessionIdentityMapping(ctx context.Context, c *gin.Context, key string, ttl time.Duration) (string, error) {
+	record := func(result string) {
+		if owner, ok := CodexIdentityOwnershipFromContext(ctx); ok && !owner.Legacy {
+			operation := "period_session"
+			if strings.HasPrefix(key, "v3:side-session:") {
+				operation = "side_session"
+			}
+			RecordCodexIdentityEvent(operation, result)
+		}
+	}
 	if mapped := stagedCodexSessionIdentity(c, key); mapped != "" {
+		record("reused")
 		return mapped, nil
 	}
 	if s == nil || s.cache == nil {
@@ -183,6 +193,7 @@ func (s *OpenAIGatewayService) resolveCodexSessionIdentityMapping(ctx context.Co
 			return "", fmt.Errorf("invalid Codex session identity mapping value")
 		}
 		stageCodexSessionIdentity(c, key, value)
+		record("reused")
 		return value, nil
 	} else if !errors.Is(err, ErrCodexSessionIdentityNotFound) {
 		return "", fmt.Errorf("read Codex session identity mapping: %w", err)
@@ -197,6 +208,7 @@ func (s *OpenAIGatewayService) resolveCodexSessionIdentityMapping(ctx context.Co
 	}
 	if created {
 		stageCodexSessionIdentity(c, key, candidate.String())
+		record("created")
 		return candidate.String(), nil
 	}
 	value, err := store.GetCodexSessionIdentity(ctx, key)
@@ -208,6 +220,7 @@ func (s *OpenAIGatewayService) resolveCodexSessionIdentityMapping(ctx context.Co
 		return "", fmt.Errorf("invalid Codex session identity mapping value")
 	}
 	stageCodexSessionIdentity(c, key, value)
+	record("reused")
 	return value, nil
 }
 

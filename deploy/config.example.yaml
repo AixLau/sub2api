@@ -285,6 +285,14 @@ gateway:
   # Switching modes changes upstream identity. Keep the v2 Redis mappings
   # when rolling back so re-enabling v2 can recover the saved identities.
   codex_session_identity_mapping: "v2"
+  codex_identity:
+    # Keep the latest HTTP session-mode thread projection for this many days
+    # after that thread is actually observed. Fork lookups do not renew it.
+    # Expired history cannot serve a new /side fork until its source is used again.
+    # Does not change period session expiry or expire an existing side graph.
+    # HTTP session 模式的历史 thread 索引保留天数，默认 180，允许 1～36500。
+    # 仅真实 thread 请求更新活跃时间；查询不续期。过期后需源线程再次请求才能新建 fork。
+    history_retention_days: 180
   # Enable Codex image-generation bridge injection for /openai/v1/responses.
   # 是否为 Codex /responses 请求自动注入 image_generation 工具与桥接指令。
   #

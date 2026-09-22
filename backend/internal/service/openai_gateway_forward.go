@@ -19,6 +19,7 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	codexIdentityObservedAt := CaptureCodexIdentityObservedAt(c)
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -577,7 +578,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				fpIDs = resolveCodexFingerprintIDsFromRequest(account, c.Request.Header)
 			} else {
 				var fpResolveErr error
-				fpIDs, fpResolveErr = s.resolveCodexHTTPFingerprintIDs(ctx, c, account, time.Now())
+				fpIDs, fpResolveErr = s.resolveCodexHTTPFingerprintIDs(ctx, c, account, codexIdentityObservedAt)
 				if fpResolveErr != nil {
 					return nil, fmt.Errorf("resolve Codex HTTP fingerprint: %w", fpResolveErr)
 				}

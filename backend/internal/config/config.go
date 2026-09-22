@@ -993,6 +993,26 @@ const (
 	ImageConcurrencyOverflowModeWait   = "wait"
 )
 
+const DefaultCodexIdentityHistoryRetentionDays = 180
+
+// CodexIdentityConfig only governs historical HTTP identity lookup. Side
+// graphs are reclaimed as a whole when their account or user owner is removed.
+type CodexIdentityConfig struct {
+	// HistoryRetentionDays starts at the latest actual client observation of a
+	// raw thread. Reading a fork source never renews that retention window.
+	HistoryRetentionDays int `mapstructure:"history_retention_days"`
+}
+
+// HistoryRetention supplies the production default to manually built configs.
+// Loaded configs reject zero and negative retention instead of disabling GC.
+func (c CodexIdentityConfig) HistoryRetention() time.Duration {
+	days := c.HistoryRetentionDays
+	if days <= 0 {
+		days = DefaultCodexIdentityHistoryRetentionDays
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -1045,6 +1065,9 @@ type GatewayConfig struct {
 	// client sessions afterward. A mode switch changes their upstream identity;
 	// retaining the v2 store allows re-enabling v2 to recover its saved mappings.
 	CodexSessionIdentityMapping string `mapstructure:"codex_session_identity_mapping"`
+	// CodexIdentity controls HTTP session identity storage retention. It does not
+	// change the fixed period or the lifetime of an independent side session.
+	CodexIdentity CodexIdentityConfig `mapstructure:"codex_identity"`
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。
 	CodexImageGenerationBridgeEnabled bool `mapstructure:"codex_image_generation_bridge_enabled"`
@@ -2528,6 +2551,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_session_identity_mapping", "v2")
+	viper.SetDefault("gateway.codex_identity.history_retention_days", DefaultCodexIdentityHistoryRetentionDays)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.5")
@@ -3424,6 +3448,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Idempotency.CleanupBatchSize <= 0 {
 		return fmt.Errorf("idempotency.cleanup_batch_size must be positive")
+	}
+	if c.Gateway.CodexIdentity.HistoryRetentionDays < 1 || c.Gateway.CodexIdentity.HistoryRetentionDays > 36500 {
+		return fmt.Errorf("gateway.codex_identity.history_retention_days must be between 1 and 36500 days")
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

@@ -141,7 +141,7 @@ func TestCodexSideSessionConcurrentRegistrationAcrossEpochs(t *testing.T) {
 		require.Equal(t, first.threadID, ids.threadID)
 		require.Equal(t, first.promptCacheKey, ids.promptCacheKey)
 	}
-	require.Len(t, server.Keys(), 7, "period, side, pinned fork, two current threads and two histories")
+	require.Len(t, server.Keys(), 8, "period, side, pinned fork, side lifecycle, two current threads and two histories")
 }
 
 func TestCodexSideSessionMissingReferenceIsNotInvented(t *testing.T) {

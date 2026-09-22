@@ -22,11 +22,13 @@ const (
 )
 
 type AuthCacheInvalidationEvent struct {
-	ID        int64
-	CacheKey  string
-	Attempts  int
-	Stage     int
-	CreatedAt time.Time
+	ID         int64
+	CacheKey   string
+	EventType  string
+	OwnerToken string
+	Attempts   int
+	Stage      int
+	CreatedAt  time.Time
 }
 
 type AuthCacheInvalidationOutboxStats struct {
@@ -83,19 +85,21 @@ func (s *OpsService) GetAuthCacheInvalidationHealth(ctx context.Context) OpsAuth
 }
 
 type AuthCacheInvalidationWorker struct {
-	repo      AuthCacheInvalidationOutboxRepository
-	cache     APIKeyCache
-	local     *APIKeyService
-	workerID  string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	start     sync.Once
-	stop      sync.Once
-	running   atomic.Bool
-	processed atomic.Uint64
-	failures  atomic.Uint64
-	lastError atomic.Value
+	repo                         AuthCacheInvalidationOutboxRepository
+	cache                        APIKeyCache
+	local                        *APIKeyService
+	codexIdentityCleanup         CodexIdentityOwnerCleaner
+	nextCodexIdentityMaintenance time.Time
+	workerID                     string
+	ctx                          context.Context
+	cancel                       context.CancelFunc
+	wg                           sync.WaitGroup
+	start                        sync.Once
+	stop                         sync.Once
+	running                      atomic.Bool
+	processed                    atomic.Uint64
+	failures                     atomic.Uint64
+	lastError                    atomic.Value
 }
 
 func NewAuthCacheInvalidationWorker(repo AuthCacheInvalidationOutboxRepository, cache APIKeyCache, local ...*APIKeyService) *AuthCacheInvalidationWorker {
@@ -141,6 +145,7 @@ func (w *AuthCacheInvalidationWorker) run() {
 		if err := w.processBatch(w.ctx); err != nil && w.ctx.Err() == nil {
 			w.recordFailure(err)
 		}
+		w.maintainCodexIdentityIndexes(w.ctx, time.Now())
 		select {
 		case <-w.ctx.Done():
 			return
@@ -175,14 +180,8 @@ func (w *AuthCacheInvalidationWorker) processBatch(ctx context.Context) error {
 }
 
 func (w *AuthCacheInvalidationWorker) processEvent(parent context.Context, event AuthCacheInvalidationEvent) {
-	if w.local != nil {
-		w.local.invalidateLocalAuthCache(event.CacheKey)
-	}
 	ctx, cancel := context.WithTimeout(parent, authInvalidationRedisTimeout)
-	err := w.cache.DeleteAuthCache(ctx, event.CacheKey)
-	if err == nil {
-		err = w.cache.PublishAuthCacheInvalidation(ctx, event.CacheKey)
-	}
+	err := w.invalidateEvent(ctx, event)
 	cancel()
 	if err != nil {
 		w.recordFailure(err)
@@ -286,8 +285,9 @@ func (w *AuthCacheInvalidationWorker) Health(ctx context.Context) AuthCacheInval
 	return health
 }
 
-func ProvideAuthCacheInvalidationWorker(repo AuthCacheInvalidationOutboxRepository, cache APIKeyCache, apiKeyService *APIKeyService) *AuthCacheInvalidationWorker {
+func ProvideAuthCacheInvalidationWorker(repo AuthCacheInvalidationOutboxRepository, cache APIKeyCache, apiKeyService *APIKeyService, gatewayCache GatewayCache) *AuthCacheInvalidationWorker {
 	worker := NewAuthCacheInvalidationWorker(repo, cache, apiKeyService)
+	worker.codexIdentityCleanup, _ = gatewayCache.(CodexIdentityOwnerCleaner)
 	worker.Start()
 	return worker
 }

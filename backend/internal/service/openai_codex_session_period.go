@@ -66,10 +66,12 @@ type codexHTTPSessionSelection struct {
 	preserveV3Threads bool
 	forkThreadID      string
 	threadTTL         time.Duration
+	threadExpiresAt   time.Time
+	sideKey           string
 }
 
 func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *gin.Context, input *codexSessionIdentityInput, userScope, accountScope string, period codexSessionPeriod, now time.Time) (codexHTTPSessionSelection, error) {
-	selection := codexHTTPSessionSelection{cacheNamespace: period.key, threadTTL: period.expiresAt.Sub(now)}
+	selection := codexHTTPSessionSelection{cacheNamespace: period.key, threadTTL: period.expiresAt.Sub(now), threadExpiresAt: period.expiresAt}
 	if input.originalSessionID != "" {
 		sideKey := codexHTTPIdentityMappingKey("side-session", userScope, accountScope, input.originalSessionID)
 		side, lookupErr := s.lookupCodexHTTPIdentityMapping(ctx, c, sideKey)
@@ -77,7 +79,11 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 			return selection, lookupErr
 		}
 		if lookupErr == nil || input.forkedFromThreadID != "" {
+			if lookupErr == nil {
+				RecordCodexIdentityEvent("side_session", "reused")
+			}
 			if lookupErr != nil && input.parentThreadID != "" {
+				RecordCodexIdentityEvent("current_parent", "missing")
 				return selection, fmt.Errorf("new Codex side has no registered parent in its session: %w", ErrCodexSessionIdentityNotFound)
 			}
 			if input.forkedFromThreadID != "" {
@@ -107,6 +113,7 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 				return selection, fmt.Errorf("invalid Codex side session mapping value")
 			}
 			selection.id, selection.cacheNamespace, selection.threadTTL = side, sideKey, 0
+			selection.threadExpiresAt, selection.sideKey = time.Time{}, sideKey
 			return selection, nil
 		}
 	} else if input.forkedFromThreadID != "" {
@@ -117,8 +124,13 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 		// A normal child can only join a period session already established by
 		// its parent. Do not allocate a new session on a missing-parent request.
 		selection.id, err = s.lookupCodexHTTPIdentityMapping(ctx, c, period.key)
+		if err == nil {
+			RecordCodexIdentityEvent("period_session", "reused")
+		} else if errors.Is(err, ErrCodexSessionIdentityNotFound) {
+			RecordCodexIdentityEvent("current_parent", "missing")
+		}
 	} else {
-		selection.id, err = s.resolveCodexSessionIdentityMapping(ctx, c, period.key, selection.threadTTL)
+		selection.id, err = s.resolveCodexSessionIdentityMapping(codexIdentityDeadlineContext(ctx, period.expiresAt), c, period.key, selection.threadTTL)
 	}
 	return selection, err
 }
@@ -129,6 +141,9 @@ func (s *OpenAIGatewayService) resolveCodexHTTPSession(ctx context.Context, c *g
 func (s *OpenAIGatewayService) resolveCodexHTTPCurrentThread(ctx context.Context, c *gin.Context, selection codexHTTPSessionSelection, userScope, accountScope, raw string, reference bool) (string, error) {
 	key := codexHTTPThreadKey("thread-current", userScope, accountScope, selection.id, raw)
 	mapped, err := s.lookupCodexHTTPIdentityMapping(ctx, c, key)
+	if err == nil {
+		RecordCodexIdentityEvent("thread_current", "reused")
+	}
 	if err == nil || !errors.Is(err, ErrCodexSessionIdentityNotFound) {
 		return mapped, err
 	}
@@ -142,7 +157,11 @@ func (s *OpenAIGatewayService) resolveCodexHTTPCurrentThread(ctx context.Context
 		}
 	}
 	if reference {
+		RecordCodexIdentityEvent("current_parent", "missing")
 		return "", fmt.Errorf("Codex parent thread not registered in current session: %w", ErrCodexSessionIdentityNotFound)
+	}
+	if !selection.threadExpiresAt.IsZero() {
+		ctx = codexIdentityDeadlineContext(ctx, selection.threadExpiresAt)
 	}
 	return s.registerCodexHTTPThread(ctx, c, key, candidate, selection.threadTTL)
 }
@@ -150,7 +169,16 @@ func (s *OpenAIGatewayService) resolveCodexHTTPCurrentThread(ctx context.Context
 // resolveCodexHTTPFingerprintIDs is called once per HTTP attempt, before either
 // carrier is projected. Only session mode needs authenticated scope and a store.
 // Missing task/user identity conservatively retains device convergence.
-func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Context, c *gin.Context, account *Account, now time.Time) (*codexFingerprintIDs, error) {
+func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Context, c *gin.Context, account *Account, now time.Time) (_ *codexFingerprintIDs, resultErr error) {
+	defer func() {
+		switch {
+		case resultErr == nil, errors.Is(resultErr, ErrCodexSessionIdentityNotFound), errors.Is(resultErr, errCodexSideForkConflict):
+		case errors.Is(resultErr, ErrCodexIdentityOwnerRetired):
+			RecordCodexIdentityEvent("ownership", "stale_rejected")
+		default:
+			RecordCodexIdentityEvent("identity_store", "error")
+		}
+	}()
 	if account == nil {
 		return nil, nil
 	}
@@ -176,6 +204,11 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 		return ids, nil
 	}
 	accountScope := codexSessionIdentityUpstreamScope(account)
+	ctx = codexHTTPIdentityOwnershipContext(ctx, c, account, now, false)
+	if owner, ok := CodexIdentityOwnershipFromContext(ctx); ok {
+		owner.HistoryRetentionMs = s.codexIdentityHistoryRetention().Milliseconds()
+		ctx = WithCodexIdentityOwnership(ctx, owner)
+	}
 	period := resolveCodexSessionPeriod(ids.seed, userScope, accountScope, now)
 	selection, err := s.resolveCodexHTTPSession(ctx, c, input, userScope, accountScope, period, now)
 	if err != nil {
@@ -208,6 +241,11 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 		SessionID: selection.id, ThreadID: ids.threadID, ObservedAtMs: now.UnixMilli(),
 	}); err != nil {
 		return nil, err
+	}
+	if selection.sideKey != "" {
+		if err := s.observeCodexHTTPSide(ctx, selection.sideKey, selection.id, now); err != nil {
+			return nil, err
+		}
 	}
 	ids.windowID = ids.threadID + ":0"
 	ids.turnID = turnID

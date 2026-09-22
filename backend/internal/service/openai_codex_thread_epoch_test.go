@@ -174,7 +174,7 @@ func TestCodexHTTPThreadEpochCurrentRecordsExpireButHistorySurvives(t *testing.T
 	historyKey := "openai_codex_session_identity:" + codexHTTPThreadKey("thread-history", "user:1", accountScope, "", raw)
 	ttl := server.TTL(currentKey)
 	require.InDelta(t, period.expiresAt.Sub(now).Milliseconds(), ttl.Milliseconds(), 1)
-	require.Zero(t, server.TTL(historyKey))
+	require.Greater(t, server.TTL(historyKey), 179*24*time.Hour)
 	server.FastForward(time.Minute)
 	buildCodexTopologyAt(t, svc, account, codexRootTopology, now.Add(time.Minute), 1, 22, false)
 	require.Equal(t, ttl-time.Minute, server.TTL(currentKey), "current-thread presence never slides the period deadline")

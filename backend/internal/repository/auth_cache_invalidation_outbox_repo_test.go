@@ -21,8 +21,8 @@ func TestAuthCacheInvalidationOutboxRepository_ClaimUsesLeaseAndSkipLocked(t *te
 	created := time.Now().UTC()
 	mock.ExpectQuery("(?s)claimed_at < NOW\\(\\) - .*FOR UPDATE SKIP LOCKED.*RETURNING").
 		WithArgs("worker-a", 100, int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "cache_key", "attempts", "delivery_stage", "created_at"}).
-			AddRow(int64(4), strings.Repeat("a", 64), 2, 1, created))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "cache_key", "attempts", "delivery_stage", "created_at", "event_type", "owner_token"}).
+			AddRow(int64(4), strings.Repeat("a", 64), 2, 1, created, "auth", ""))
 
 	repo := NewAuthCacheInvalidationOutboxRepository(db)
 	events, err := repo.Claim(context.Background(), "worker-a", 100, 30*time.Second)
@@ -39,7 +39,7 @@ func TestAuthCacheInvalidationOutboxRepository_ClaimIsBoundedByDefault(t *testin
 	defer func() { _ = db.Close() }()
 	mock.ExpectQuery("(?s)FROM auth_cache_invalidation_outbox.*LIMIT \\$2.*SKIP LOCKED").
 		WithArgs("worker", 100, int64(30)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "cache_key", "attempts", "delivery_stage", "created_at"}))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "cache_key", "attempts", "delivery_stage", "created_at", "event_type", "owner_token"}))
 	repo := NewAuthCacheInvalidationOutboxRepository(db)
 	_, err = repo.Claim(context.Background(), "worker", 0, 0)
 	require.NoError(t, err)

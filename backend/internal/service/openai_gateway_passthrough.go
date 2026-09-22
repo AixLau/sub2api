@@ -129,6 +129,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
+	codexIdentityObservedAt := CaptureCodexIdentityObservedAt(c)
 	requestedModel := reqModel
 	upstreamPassthroughModel := ""
 	if isOpenAIResponsesCompactPath(c) {
@@ -189,7 +190,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// 手术，透传热路径禁全量 Unmarshal），出站头改写由请求构造器读取
 		// context 中的同一份 IDs 完成（turn_id 等随机字段两侧必须一致）。
 		if !isOpenAIResponsesCompactPath(c) {
-			fpIDs, fpResolveErr := s.resolveCodexHTTPFingerprintIDs(ctx, c, account, time.Now())
+			fpIDs, fpResolveErr := s.resolveCodexHTTPFingerprintIDs(ctx, c, account, codexIdentityObservedAt)
 			if fpResolveErr != nil {
 				return nil, fmt.Errorf("resolve Codex HTTP fingerprint: %w", fpResolveErr)
 			}

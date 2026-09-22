@@ -364,7 +364,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	defer h.logOpenAIRemoteCompactOutcome(c, compactStartedAt)
 	setOpenAIClientTransportHTTP(c)
 
-	requestStart := time.Now()
+	requestStart := service.CaptureCodexIdentityObservedAt(c)
 
 	// Get apiKey and user from context (set by ApiKeyAuth middleware)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
