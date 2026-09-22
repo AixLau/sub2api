@@ -198,6 +198,35 @@ func TestPublicTransitSnapshotRejectsUnsupportedRangeBeforeReadingData(t *testin
 	require.Empty(t, monitor.filters)
 }
 
+func TestPublicTransitSnapshotTrendResolution(t *testing.T) {
+	for _, tc := range []struct {
+		rangeValue string
+		bucket     time.Duration
+		points     int
+	}{
+		{"", 20 * time.Minute, 504},
+		{"7d", 20 * time.Minute, 504},
+		{"90m", 5 * time.Minute, 18},
+		{"24h", time.Hour, 24},
+		{"30d", 24 * time.Hour, 30},
+	} {
+		t.Run(tc.rangeValue, func(t *testing.T) {
+			svc, monitor := newPublicTransitFixture()
+			_, err := svc.Snapshot(context.Background(), tc.rangeValue)
+			require.NoError(t, err)
+			require.Len(t, monitor.filters, 3)
+			for _, filter := range monitor.filters {
+				require.Equal(t, tc.bucket, filter.Bucket)
+				require.Equal(t, tc.points, int(filter.End.Sub(filter.Start)/filter.Bucket))
+				require.LessOrEqual(t, tc.points, publicTransitMaxTrendPoints)
+				require.Equal(t, filter.Start.Truncate(filter.Bucket), filter.Start)
+				require.Equal(t, filter.End.Truncate(filter.Bucket), filter.End)
+				require.Equal(t, monitor.filters[0], filter)
+			}
+		})
+	}
+}
+
 func TestPublicTransitSnapshotRejectsMissingDependencies(t *testing.T) {
 	result, err := NewPublicTransitService(nil, nil).Snapshot(context.Background(), "")
 	require.Error(t, err)
