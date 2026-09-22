@@ -147,9 +147,11 @@ function cellClass(cell: ActivityCell): string {
 function cellStyle(cell: ActivityCell): Record<string, string> | undefined {
   if (cell.isFuture || cell.value <= 0) return undefined
   const ratio = Math.min(1, cell.value / 1_000_000_000)
-  const red = 14
-  const green = Math.round(165 - ratio * 100)
-  const blue = Math.round(233 - ratio * 80)
+  // Keep the activity scale in a lighter sky-blue range so high usage cells
+  // retain contrast without becoming visually heavy on the dashboard.
+  const red = 56
+  const green = Math.round(189 - ratio * 45)
+  const blue = Math.round(248 - ratio * 30)
   return { backgroundColor: `rgb(${red} ${green} ${blue})` }
 }
 
