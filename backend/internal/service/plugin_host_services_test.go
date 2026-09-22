@@ -282,6 +282,29 @@ func TestPluginHostServiceServer_AccountDirectory(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
+func TestScopedPluginAccountDirectoryRestrictsEnumerationAndIdentity(t *testing.T) {
+	dir := &fakeAccountDirectory{
+		ids:      []int64{3, 7, 11},
+		identity: &PluginOutboundIdentity{AccountID: 3, Token: "must-not-leak"},
+	}
+	scoped := newScopedPluginAccountDirectory(dir, []int64{7, 11})
+
+	ids, err := scoped.ListPluginAccounts(context.Background(), "openai", "oauth")
+	require.NoError(t, err)
+	assert.Equal(t, []int64{7, 11}, ids)
+
+	identity, err := scoped.ResolvePluginOutboundIdentity(context.Background(), 3)
+	require.NoError(t, err)
+	assert.Nil(t, identity)
+	assert.Zero(t, dir.lastReq, "未绑定账号不得触发凭据解析")
+
+	dir.identity = &PluginOutboundIdentity{AccountID: 7, Token: "allowed"}
+	identity, err = scoped.ResolvePluginOutboundIdentity(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, identity)
+	assert.Equal(t, "allowed", identity.Token)
+}
+
 // 无目录时账号目录 RPC 必须返回 Unavailable（KV 仍可用），保证未授权插件拿不到凭据。
 func TestPluginHostServiceServer_DirectoryUnavailableWithoutDirectory(t *testing.T) {
 	server := newPluginHostServiceServer("local.example.plugin", newFakePluginKVStore(), nil)
@@ -311,15 +334,18 @@ func TestPluginDeclaresOpenAIOAuthCapability(t *testing.T) {
 
 // buildHostServices 只对声明了 OpenAI OAuth 能力的插件注入账号目录。
 func TestBuildHostServicesGatesDirectoryByCapability(t *testing.T) {
-	dir := &fakeAccountDirectory{}
+	dir := &fakeAccountDirectory{ids: []int64{3, 7}}
 	m := &PluginManager{kvStore: newFakePluginKVStore(), accountDirectory: dir}
 
 	authorized := &PluginInstallation{PluginKey: "p.authorized", Manifest: PluginManifest{
 		Capabilities: []PluginCapability{{ID: PluginCapabilityOpenAIOAuthOutbound, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}},
-	}}
+	}, Bindings: []PluginBinding{{Capability: PluginCapabilityOpenAIOAuthOutbound, AccountIDs: []int64{7}}}}
 	srv, ok := m.buildHostServices(authorized).(*pluginHostServiceServer)
 	require.True(t, ok)
 	require.NotNil(t, srv.directory)
+	accounts, err := srv.ListAccounts(context.Background(), &pluginv1.ListAccountsRequest{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{7}, accounts.AccountIds)
 
 	unauthorized := &PluginInstallation{PluginKey: "p.other", Manifest: PluginManifest{
 		Capabilities: []PluginCapability{{ID: "some.other.capability", Platform: "x", AccountType: "y"}},

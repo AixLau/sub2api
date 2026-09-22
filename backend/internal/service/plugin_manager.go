@@ -1081,12 +1081,12 @@ func (m *PluginManager) SetAccountDirectory(directory PluginAccountDirectory) {
 	m.mu.Unlock()
 }
 
-// buildHostServices 为单个插件构造绑定其 pluginKey 的宿主服务端点。返回 nil（未配置
-// 键值存储或缺少 pluginKey）时，startPluginRuntime 不会向插件暴露任何宿主服务。
+// buildHostServices 为单个插件构造绑定其 pluginKey 的宿主服务端点。缺少 pluginKey
+// 或所有宿主服务均未配置时返回 nil，不向插件暴露宿主服务。
 // 账号目录（会向插件交付账号凭据）只对「清单声明了 OpenAI OAuth 出站能力」的插件开放，
 // 从而把凭据暴露面收敛到本就要处理这些账号的插件。
 func (m *PluginManager) buildHostServices(installation *PluginInstallation) pluginv1.HostServiceServer {
-	if m.kvStore == nil || installation == nil || strings.TrimSpace(installation.PluginKey) == "" {
+	if installation == nil || strings.TrimSpace(installation.PluginKey) == "" {
 		return nil
 	}
 	var directory PluginAccountDirectory
@@ -1094,6 +1094,10 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 		m.mu.Lock()
 		directory = m.accountDirectory
 		m.mu.Unlock()
+		directory = newScopedPluginAccountDirectory(directory, bindingAccountIDs(installation.Bindings))
+	}
+	if m.kvStore == nil && directory == nil {
+		return nil
 	}
 	return newPluginHostServiceServer(installation.PluginKey, m.kvStore, directory)
 }

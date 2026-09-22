@@ -6,12 +6,10 @@ import (
 	"strings"
 )
 
-// OpenAIGatewayService implements service.PluginAccountDirectory for the OpenAI
-// OAuth outbound transport capability. The directory is intentionally scoped to
-// OpenAI OAuth-like, non-shadow accounts regardless of the requested filter, so a
-// plugin can never enumerate or resolve credentials outside that set. The host
-// additionally only wires this directory into plugins whose manifest declares the
-// matching capability (see PluginManager.buildHostServices).
+// OpenAIGatewayService implements the unscoped source directory for the OpenAI
+// OAuth outbound transport capability. PluginManager wraps it with the binding's
+// account allowlist before exposing it to a plugin, so this service itself can
+// enumerate active OpenAI OAuth accounts without widening a plugin's scope.
 
 // ListPluginAccounts returns the ids of active OpenAI OAuth-like accounts.
 func (s *OpenAIGatewayService) ListPluginAccounts(ctx context.Context, platform, accountType string) ([]int64, error) {

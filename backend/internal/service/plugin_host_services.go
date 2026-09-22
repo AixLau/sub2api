@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"sort"
 	"time"
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
@@ -46,13 +47,63 @@ type PluginOutboundIdentity struct {
 	Headers     http.Header
 }
 
-// PluginAccountDirectory 让插件枚举其能力所覆盖的账号，并按需解析这些账号的出站身份，
+// PluginAccountDirectory 让插件枚举其绑定范围内的账号，并按需解析这些账号的出站身份，
 // 无需等待一条真实请求流经插件。这是一项敏感能力（会把账号凭据交给插件进程），因此
 // 宿主只对「其声明能力确实覆盖这些账号」的插件开放（见 PluginManager.buildHostServices）。
 // 实现方自身也必须把返回范围收敛到该能力对应的账号集合。
 type PluginAccountDirectory interface {
 	ListPluginAccounts(ctx context.Context, platform, accountType string) ([]int64, error)
 	ResolvePluginOutboundIdentity(ctx context.Context, accountID int64) (*PluginOutboundIdentity, error)
+}
+
+// scopedPluginAccountDirectory narrows the sensitive account directory to the
+// account allowlist persisted on the plugin binding. The underlying directory
+// may know about every OpenAI OAuth account, but a plugin must only be able to
+// enumerate and resolve accounts that the host routes into that plugin.
+type scopedPluginAccountDirectory struct {
+	directory  PluginAccountDirectory
+	accountIDs map[int64]struct{}
+}
+
+func newScopedPluginAccountDirectory(directory PluginAccountDirectory, accountIDs []int64) PluginAccountDirectory {
+	if directory == nil {
+		return nil
+	}
+	allowed := make(map[int64]struct{}, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if accountID > 0 {
+			allowed[accountID] = struct{}{}
+		}
+	}
+	return &scopedPluginAccountDirectory{directory: directory, accountIDs: allowed}
+}
+
+func (s *scopedPluginAccountDirectory) ListPluginAccounts(ctx context.Context, platform, accountType string) ([]int64, error) {
+	if s == nil || s.directory == nil {
+		return nil, nil
+	}
+	ids, err := s.directory.ListPluginAccounts(ctx, platform, accountType)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]int64, 0, len(ids))
+	for _, accountID := range ids {
+		if _, ok := s.accountIDs[accountID]; ok {
+			filtered = append(filtered, accountID)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i] < filtered[j] })
+	return filtered, nil
+}
+
+func (s *scopedPluginAccountDirectory) ResolvePluginOutboundIdentity(ctx context.Context, accountID int64) (*PluginOutboundIdentity, error) {
+	if s == nil || s.directory == nil {
+		return nil, nil
+	}
+	if _, ok := s.accountIDs[accountID]; !ok {
+		return nil, nil
+	}
+	return s.directory.ResolvePluginOutboundIdentity(ctx, accountID)
 }
 
 // pluginHostServiceServer 实现 pluginv1.HostServiceServer，是宿主经 go-plugin broker
