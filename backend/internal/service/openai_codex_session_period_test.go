@@ -243,7 +243,7 @@ func TestCodexSessionPeriodRedisConcurrentCreationAndHardExpiry(t *testing.T) {
 		turns[ids.turnID] = true
 	}
 	require.Len(t, turns, 16)
-	require.Len(t, server.Keys(), 2, "one period session and one durable thread")
+	require.Len(t, server.Keys(), 3, "period session, current thread and latest history")
 	key := "openai_codex_session_identity:" + period.key
 	ttl := server.TTL(key)
 	require.InDelta(t, period.expiresAt.Sub(now).Milliseconds(), ttl.Milliseconds(), 1)
@@ -299,13 +299,14 @@ func TestCodexSessionPeriodHTTPBoundaryAndAuthoritativeNormalization(t *testing.
 			}
 			build(boundary.Add(-time.Millisecond), "parent-task", "")
 			before := build(boundary.Add(-time.Millisecond), "same-task", "parent-task")
+			build(boundary, "parent-task", "")
 			after := build(boundary, "same-task", "parent-task")
 			require.NotEqual(t, before.session, after.session)
-			require.Equal(t, before.thread, after.thread, "a previously used thread survives the session epoch boundary")
-			require.Equal(t, before.parent, after.parent, "parent references retain their durable thread mapping")
+			require.NotEqual(t, before.thread, after.thread, "ordinary thread belongs to the new period session")
+			require.NotEqual(t, before.parent, after.parent, "parent belongs to the current period session")
 			require.NotEqual(t, before.cache, after.cache)
 			require.Equal(t, before.installation, after.installation)
-			require.Len(t, server.Keys(), 4, "two period sessions and two durable threads; no second UUIDv7 isolation mapping")
+			require.Len(t, server.Keys(), 8, "two sessions, four current thread records and two latest histories")
 		})
 	}
 }

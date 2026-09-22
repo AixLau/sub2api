@@ -45,6 +45,16 @@ func (s *codexSessionIdentityTestStore) SetCodexSessionIdentityIfAbsent(_ contex
 	return true, nil
 }
 
+func (s *codexSessionIdentityTestStore) CompareAndSwapCodexSessionIdentity(_ context.Context, key, expected, value string, ttl time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.values[key] != expected {
+		return false, nil
+	}
+	s.values[key] = value
+	return true, nil
+}
+
 func newCodexSessionIdentityTestContext(t *testing.T, userID, apiKeyID int64) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

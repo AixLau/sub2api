@@ -99,9 +99,9 @@ func TestCodexSideSessionForkAfterPeriodExpiry(t *testing.T) {
 			sideKey := codexHTTPIdentityMappingKey("side-session", "user:1", accountScope, gjson.Get(codexSideTopology, "session_id").String())
 			require.True(t, server.Exists("openai_codex_session_identity:"+sideKey))
 			require.Zero(t, server.TTL("openai_codex_session_identity:"+sideKey))
-			// Re-visiting the original parent also recovers the old thread ID.
+			// Re-visiting a normal parent joins the new session and thread namespace.
 			rootAgain := buildCodexTopologyAt(t, newCodexPeriodRedisService(t, server), account, codexRootTopology, later, 1, 103, passthrough)
-			require.Equal(t, root.thread(), rootAgain.thread())
+			require.NotEqual(t, root.thread(), rootAgain.thread())
 			require.NotEqual(t, root.session(), rootAgain.session())
 		})
 	}
@@ -141,7 +141,7 @@ func TestCodexSideSessionConcurrentRegistrationAcrossEpochs(t *testing.T) {
 		require.Equal(t, first.threadID, ids.threadID)
 		require.Equal(t, first.promptCacheKey, ids.promptCacheKey)
 	}
-	require.Len(t, server.Keys(), 4, "one period, two threads and one side session")
+	require.Len(t, server.Keys(), 7, "period, side, pinned fork, two current threads and two histories")
 }
 
 func TestCodexSideSessionMissingReferenceIsNotInvented(t *testing.T) {

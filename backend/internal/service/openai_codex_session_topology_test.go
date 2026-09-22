@@ -319,11 +319,12 @@ func TestCodexSessionPeriodTopologyAcrossEpoch(t *testing.T) {
 						}
 					}
 					if epoch > 0 {
-						require.Equal(t, previous[i].thread(), current[i].thread())
 						if i == 2 {
+							require.Equal(t, previous[i].thread(), current[i].thread())
 							require.Equal(t, previous[i].session(), current[i].session())
 							require.Equal(t, previous[i].cache(), current[i].cache())
 						} else {
+							require.NotEqual(t, previous[i].thread(), current[i].thread())
 							require.NotEqual(t, previous[i].session(), current[i].session())
 							require.NotEqual(t, previous[i].cache(), current[i].cache())
 						}
@@ -335,7 +336,11 @@ func TestCodexSessionPeriodTopologyAcrossEpoch(t *testing.T) {
 				require.Equal(t, root.cache(), child.cache())
 				require.NotEqual(t, root.cache(), side.cache())
 				require.Equal(t, root.thread(), child.headers.Get("x-codex-parent-thread-id"))
-				require.Equal(t, root.thread(), side.body.Get("client_metadata.forked_from_thread_id").String())
+				if epoch == 0 {
+					require.Equal(t, root.thread(), side.body.Get("client_metadata.forked_from_thread_id").String())
+				} else {
+					require.Equal(t, previous[2].body.Get("client_metadata.forked_from_thread_id").String(), side.body.Get("client_metadata.forked_from_thread_id").String())
+				}
 				previous = current
 			}
 		})

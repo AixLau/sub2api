@@ -60,6 +60,30 @@ func (s *codexSessionIdentityRedisStore) SetCodexSessionIdentityIfAbsent(ctx con
 	return s.client.SetNX(ctx, "openai_codex_session_identity:"+key, value, ttl).Result()
 }
 
+func (s *codexSessionIdentityRedisStore) CompareAndSwapCodexSessionIdentity(ctx context.Context, key, expected, value string, ttl time.Duration) (bool, error) {
+	key = "openai_codex_session_identity:" + key
+	updated := false
+	err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+		current, err := tx.Get(ctx, key).Result()
+		if err != nil && err != redis.Nil {
+			return err
+		}
+		if current != expected {
+			return nil
+		}
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(ctx, key, value, ttl)
+			return nil
+		})
+		updated = err == nil
+		return err
+	}, key)
+	if err == redis.TxFailedErr {
+		return false, nil
+	}
+	return updated, err
+}
+
 func (s *codexSessionIdentitySharedStore) GetCodexSessionIdentity(_ context.Context, key string) (string, error) {
 	s.backend.mu.Lock()
 	defer s.backend.mu.Unlock()

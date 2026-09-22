@@ -121,6 +121,52 @@ func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key,
 	return c.rdb.SetNX(ctx, openAICodexSessionIdentityPrefix+key, value, ttl).Result()
 }
 
+var compareAndSwapCodexSessionIdentityScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if ARGV[1] == '' then
+  if current ~= false then
+    return 0
+  end
+elseif current == false or current ~= ARGV[1] then
+  return 0
+end
+if tonumber(ARGV[3]) > 0 then
+  redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+else
+  redis.call('SET', KEYS[1], ARGV[2])
+end
+return 1
+`)
+
+// CompareAndSwapCodexSessionIdentity atomically replaces exactly the expected
+// mapping and its expiry. An empty expected value requires an absent key. A
+// failed comparison leaves both the value and its remaining TTL unchanged.
+func (c *gatewayCache) CompareAndSwapCodexSessionIdentity(ctx context.Context, key, expected, value string, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" || strings.TrimSpace(value) == "" {
+		return false, errors.New("invalid Codex session identity mapping")
+	}
+	if ttl < 0 {
+		return false, errors.New("invalid Codex session identity TTL")
+	}
+	ttlMilliseconds := ttl.Milliseconds()
+	if ttl > 0 && ttlMilliseconds == 0 {
+		ttlMilliseconds = 1
+	}
+	n, err := compareAndSwapCodexSessionIdentityScript.Run(
+		ctx,
+		c.rdb,
+		[]string{openAICodexSessionIdentityPrefix + key},
+		expected,
+		value,
+		ttlMilliseconds,
+	).Int()
+	return n == 1, err
+}
+
 func (c *gatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
 	setKey := buildUserAccountCooldownSetKey(userID)
 	itemKey := buildUserAccountCooldownKey(userID, accountID)

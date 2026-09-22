@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -242,10 +243,14 @@ func TestCodexSessionParentReferenceRetainsCacheOwnershipAcrossModes(t *testing.
 						svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
 						account := newTestOAuthAccount(9531, map[string]any{codexFingerprintModeExtraKey: string(mode), "openai_passthrough": transport == "passthrough"})
 						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "parent-downgrade-account"}
-						// This cache-binding test starts with a parent already selected
-						// by a previous request. Full graph forwarding is tested separately.
+						// Establish the parent in this period before forwarding its child.
 						if mode == codexFingerprintSession {
-							store.values[codexHTTPIdentityMappingKey("thread", "user:95", codexSessionIdentityUpstreamScope(account), "parent-thread")] = deriveStableUUIDv4("previous-parent")
+							parentCtx := newCodexSessionIdentityTestContext(t, 95, 953)
+							parentCtx.Request.Header.Set("session-id", "client-session-a")
+							parentCtx.Request.Header.Set("thread-id", "parent-thread")
+							stageCodexSessionIdentityInputMap(parentCtx, nil)
+							_, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(), parentCtx, account, time.Now())
+							require.NoError(t, err)
 						}
 						c := newCodexSessionIdentityTestContext(t, 95, 953)
 						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
