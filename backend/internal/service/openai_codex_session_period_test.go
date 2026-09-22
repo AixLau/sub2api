@@ -232,6 +232,65 @@ func TestCodexSessionPeriodMigratesOrdinaryForkMarkerWithoutSideEvidence(t *test
 	}
 }
 
+func TestCodexSessionPeriodTurnStartedAtWireTypeAndReplay(t *testing.T) {
+	for _, passthrough := range []bool{false, true} {
+		for _, incoming := range []any{json.Number("1740000000011"), "1740000000011"} {
+			t.Run(fmt.Sprintf("passthrough=%v/type=%T", passthrough, incoming), func(t *testing.T) {
+				server := miniredis.RunT(t)
+				svc := newCodexPeriodRedisService(t, server)
+				account := newTestOAuthAccount(7607, map[string]any{codexFingerprintModeExtraKey: "session", "openai_passthrough": passthrough})
+				account.Credentials = map[string]any{"access_token": "test", "chatgpt_account_id": "turn-wire"}
+
+				c, body := codexPeriodInput(t, 1, 11, "turn-wire-session", "turn-wire-task", "", "turn-wire-session")
+				var requestBody map[string]any
+				require.NoError(t, json.Unmarshal(body, &requestBody))
+				metadata, ok := requestBody["client_metadata"].(map[string]any)
+				require.True(t, ok)
+				metadata["turn_started_at_unix_ms"] = incoming
+				nested := map[string]any{}
+				require.NoError(t, json.Unmarshal([]byte(metadata[openAIWSTurnMetadataHeader].(string)), &nested))
+				nested["turn_started_at_unix_ms"] = incoming
+				nestedRaw, err := json.Marshal(nested)
+				require.NoError(t, err)
+				metadata[openAIWSTurnMetadataHeader] = string(nestedRaw)
+				c.Request.Header.Set(openAIWSTurnMetadataHeader, string(nestedRaw))
+				body, err = json.Marshal(requestBody)
+				require.NoError(t, err)
+				c.Request.Body = io.NopCloser(bytes.NewReader(body))
+
+				upstream := &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: 200,
+					Header:     http.Header{"Content-Type": {"text/event-stream"}},
+					Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+				}}
+				svc.httpUpstream = upstream
+				_, err = svc.Forward(context.Background(), c, account, body)
+				require.NoError(t, err)
+
+				assertCodexTurnStartedAtString := func(t *testing.T, raw []byte, header http.Header) {
+					t.Helper()
+					require.Equal(t, gjson.String, gjson.GetBytes(raw, "client_metadata.turn_started_at_unix_ms").Type)
+					require.Equal(t, "1740000000011", gjson.GetBytes(raw, "client_metadata.turn_started_at_unix_ms").String())
+					bodyNested := gjson.GetBytes(raw, "client_metadata.x-codex-turn-metadata").String()
+					require.Equal(t, gjson.String, gjson.Get(bodyNested, "turn_started_at_unix_ms").Type)
+					require.Equal(t, "1740000000011", gjson.Get(bodyNested, "turn_started_at_unix_ms").String())
+					headerNested := gjson.Get(header.Get(openAIWSTurnMetadataHeader), "turn_started_at_unix_ms")
+					require.Equal(t, gjson.String, headerNested.Type)
+					require.Equal(t, "1740000000011", headerNested.String())
+				}
+				assertCodexTurnStartedAtString(t, upstream.lastBody, upstream.lastReq.Header)
+
+				replayed, err := upstream.lastReq.GetBody()
+				require.NoError(t, err)
+				replayBody, err := io.ReadAll(replayed)
+				require.NoError(t, err)
+				require.NoError(t, replayed.Close())
+				assertCodexTurnStartedAtString(t, replayBody, upstream.lastReq.Header)
+			})
+		}
+	}
+}
+
 func TestCodexSessionPeriodFixedScheduleAndScope(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	boundaries := map[time.Time]bool{}

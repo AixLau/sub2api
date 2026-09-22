@@ -106,11 +106,27 @@ func codexOriginalTurnStartedAt(metadata map[string]any, identity codexRequestId
 		gjson.Get(identity.bodyTurnMetadataRaw, "turn_started_at_unix_ms").Raw,
 		gjson.Get(identity.headerTurnMetadataRaw, "turn_started_at_unix_ms").Raw,
 	} {
-		if value, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if value, ok := parseCodexTurnStartedAtJSON(raw); ok {
 			return &value
 		}
 	}
 	return nil
+}
+
+func parseCodexTurnStartedAtJSON(raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return 0, false
+	}
+	if strings.HasPrefix(raw, `"`) {
+		var text string
+		if err := json.Unmarshal([]byte(raw), &text); err != nil {
+			return 0, false
+		}
+		raw = strings.TrimSpace(text)
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	return value, err == nil
 }
 
 func stageCodexSessionIdentityInputRaw(c *gin.Context, body []byte) {

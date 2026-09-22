@@ -131,23 +131,14 @@ func applyCodexSessionFingerprintMetadata(metadata map[string]any, ids *codexFin
 		fields["x-codex-parent-thread-id"] = ids.parentThreadID
 	}
 	changed := false
+	turnStartedAt := strconv.FormatInt(ids.turnStartedAtUnixMs, 10)
 	for key, value := range fields {
 		if key == "turn_started_at_unix_ms" {
-			// Map and raw decoders may have materialized the client value as an
-			// integer, while the session wire format is a decimal string.
-			switch current := metadata[key].(type) {
-			case string:
-				if current == strconv.FormatInt(ids.turnStartedAtUnixMs, 10) {
-					continue
-				}
-			case json.Number:
-				if number, err := current.Int64(); err == nil && number == ids.turnStartedAtUnixMs {
-					continue
-				}
-			case float64:
-				if current == float64(ids.turnStartedAtUnixMs) {
-					continue
-				}
+			// Regardless of the inbound JSON representation, session v3 always
+			// emits the upstream wire value as a decimal string. Only an already
+			// canonical string can be kept as-is; numeric values must be replaced.
+			if current, ok := metadata[key].(string); ok && current == turnStartedAt {
+				continue
 			}
 		}
 		if metadata[key] != value {

@@ -198,6 +198,7 @@ func TestCodexHTTPThreadEpochNewSideCannotImportUnrelatedParent(t *testing.T) {
 		"client_metadata": map[string]any{
 			"session_id": "new-side", "thread_id": "new-side",
 			"parent_thread_id": rawRoot, "forked_from_thread_id": rawRoot,
+			"forked_from_ordinal_exclusive": 33,
 		},
 	})
 	_, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(), c, account, now)

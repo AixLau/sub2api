@@ -72,6 +72,14 @@ func newCodexUUIDv7ForTest(t *testing.T) string {
 	return value.String()
 }
 
+func TestParseCodexTurnStartedAtJSONAcceptsNumberAndString(t *testing.T) {
+	for _, raw := range []string{"1740000000011", `"1740000000011"`} {
+		value, ok := parseCodexTurnStartedAtJSON(raw)
+		require.True(t, ok)
+		require.Equal(t, int64(1740000000011), value)
+	}
+}
+
 func TestResolveCodexMappedSessionIdentityUsesDurableUUIDv7Mapping(t *testing.T) {
 	store := &codexSessionIdentityTestStore{values: make(map[string]string)}
 	account := &Account{ID: 7101, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "upstream-7101"}}
