@@ -47,3 +47,16 @@ func TestPluginAccountScopeMigrationReplacesPercentageRollout(t *testing.T) {
 	require.Contains(t, sql, "DROP COLUMN IF EXISTS rollout_percent")
 	require.NotContains(t, strings.ToUpper(sql), "ALTER TABLE ACCOUNTS")
 }
+
+func TestPluginAccountScopeSoftDeleteMigrationCleansBindings(t *testing.T) {
+	content, err := FS.ReadFile("246_plugin_account_scope_soft_delete.sql")
+	require.NoError(t, err)
+
+	sql := strings.Join(strings.Fields(string(content)), " ")
+	require.Contains(t, sql, "DELETE FROM sub2api_plugin_binding_accounts AS binding_account USING accounts AS account")
+	require.Contains(t, sql, "account.deleted_at IS NOT NULL")
+	require.Contains(t, sql, "CREATE OR REPLACE FUNCTION cleanup_plugin_account_scope_on_account_soft_delete()")
+	require.Contains(t, sql, "AFTER UPDATE OF deleted_at ON accounts")
+	require.Contains(t, sql, "WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)")
+	require.Contains(t, sql, "DELETE FROM sub2api_plugin_binding_accounts WHERE account_id = NEW.id")
+}

@@ -85,3 +85,54 @@ func TestPluginRepositoryLifecycleIsAtomicAndOptimistic(t *testing.T) {
 	require.True(t, errors.Is(err, service.ErrPluginStateChanged))
 	require.NoError(t, repo.Delete(ctx, replaced.ID, second.BinarySHA256))
 }
+
+func TestPluginAccountScopeIsRemovedWhenAccountIsSoftDeleted(t *testing.T) {
+	ctx := context.Background()
+	repo := &pluginRepository{db: integrationDB}
+	pluginKey := "local.test.soft-delete-" + strings.ToLower(time.Now().Format("150405.000000000"))
+
+	var accountID int64
+	err := integrationDB.QueryRowContext(ctx, `
+		INSERT INTO accounts (name, platform, type, credentials, extra, status)
+		VALUES ($1, $2, $3, '{}'::jsonb, '{}'::jsonb, 'active')
+		RETURNING id
+	`, "plugin-soft-delete-"+pluginKey, service.PlatformOpenAI, service.AccountTypeOAuth).Scan(&accountID)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_installations WHERE plugin_key = $1`, pluginKey)
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM accounts WHERE id = $1`, accountID)
+	})
+
+	installed, err := repo.Install(ctx, &service.PluginInstallation{
+		PluginKey: pluginKey,
+		Name:      "软删除绑定测试插件",
+		Version:   "1.0.0",
+		Manifest: service.PluginManifest{
+			SchemaVersion: 1,
+			ID:            pluginKey,
+			Name:          "软删除绑定测试插件",
+			Version:       "1.0.0",
+		},
+		ArtifactData:    []byte("package"),
+		ArtifactPath:    "/tmp/plugin-soft-delete.s2plugin",
+		InstallPath:     "/tmp/plugin-soft-delete",
+		BinaryPath:      "/tmp/plugin-soft-delete/plugin",
+		BinarySHA256:    strings.Repeat("c", 64),
+		SignatureStatus: service.PluginSignatureTrusted,
+		State:           service.PluginStateDisabled,
+	}, []service.PluginBinding{{
+		Capability:  service.PluginCapabilityOpenAIOAuthOutbound,
+		Platform:    service.PlatformOpenAI,
+		AccountType: service.AccountTypeOAuth,
+		AccountIDs:  []int64{accountID},
+	}})
+	require.NoError(t, err)
+	require.Equal(t, []int64{accountID}, installed.Bindings[0].AccountIDs)
+
+	_, err = integrationDB.ExecContext(ctx, `UPDATE accounts SET deleted_at = NOW() WHERE id = $1`, accountID)
+	require.NoError(t, err)
+
+	updated, err := repo.GetByID(ctx, installed.ID)
+	require.NoError(t, err)
+	require.Empty(t, updated.Bindings[0].AccountIDs)
+}
