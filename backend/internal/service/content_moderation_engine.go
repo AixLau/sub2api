@@ -42,6 +42,8 @@ var typeSafeModerationQuestions = map[string]typesafe.Question{
 	"sexual/minors":          {Type: "noul", Instructions: "文本是否包含未成年人色情、性化描写或性行为？儿童保护、医疗教育和中立报道不算。"},
 	"violence":               {Type: "noul", Instructions: "文本是否描写、鼓励或威胁造成身体伤害或死亡的暴力行为？防范建议和抽象讨论不算。"},
 	"violence/graphic":       {Type: "noul", Instructions: "文本是否包含血腥、肢解、器官或重伤等露骨暴力细节？一般提及和医学教育不算。"},
+	"cyber":                  {Type: "noul", Instructions: "文本是否请求或提供针对未授权目标的入侵、漏洞利用、凭据窃取、恶意代码、持久化、绕过安全控制或数据窃取等可操作网络攻击帮助？合法授权测试、防御、修复、检测、教学和安全研究不算。"},
+	"biosecurity":            {Type: "noul", Instructions: "文本是否请求或提供病原体增强、毒素制备、扩大传播、规避检测或造成生物伤害的可操作帮助？医学研究、公共卫生、疾病预防、诊断、治疗和生物安全防御不算。"},
 }
 
 func (s *ContentModerationService) callTypeSafeModeration(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {

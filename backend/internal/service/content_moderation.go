@@ -238,6 +238,8 @@ var contentModerationCategoryOrder = []string{
 	"sexual/minors",
 	"violence",
 	"violence/graphic",
+	"cyber",
+	"biosecurity",
 }
 
 func ContentModerationDefaultThresholds() map[string]float64 {
@@ -255,6 +257,8 @@ func ContentModerationDefaultThresholds() map[string]float64 {
 		"sexual/minors":          0.65,
 		"violence":               0.95,
 		"violence/graphic":       0.95,
+		"cyber":                  0.65,
+		"biosecurity":            0.65,
 	}
 }
 
