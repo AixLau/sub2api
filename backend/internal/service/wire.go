@@ -237,9 +237,10 @@ func ProvideOpenAIQuotaService(
 	proxyRepo ProxyRepository,
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
+	referralClient OpenAIReferralClient,
 	openAIGatewayService *OpenAIGatewayService,
 ) *OpenAIQuotaService {
-	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
+	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory, referralClient)
 	service.agentIdentityWS = openAIGatewayService
 	service.runtimeBlocker = openAIGatewayService
 	return service
@@ -418,8 +419,9 @@ func ProvideGrokTokenProvider(
 }
 
 // ProvideDashboardAggregationService 创建并启动仪表盘聚合服务
-func ProvideDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *DashboardAggregationService {
+func ProvideDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config, settingRepo SettingRepository) *DashboardAggregationService {
 	svc := NewDashboardAggregationService(repo, timingWheel, cfg)
+	svc.settingRepo = settingRepo
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc
@@ -447,6 +449,13 @@ func ProvideOpenAICodexVersionSyncService(
 	githubClient GitHubReleaseClient,
 ) *OpenAICodexVersionSyncService {
 	svc := NewOpenAICodexVersionSyncService(settingRepo, settingService, githubClient, openAICodexVersionSyncInterval)
+	svc.Start()
+	return svc
+}
+
+// ProvideClaudeCodeVersionSyncService creates and starts ClaudeCodeVersionSyncService.
+func ProvideClaudeCodeVersionSyncService(settingRepo SettingRepository, settingService *SettingService, githubClient GitHubReleaseClient) *ClaudeCodeVersionSyncService {
+	svc := NewClaudeCodeVersionSyncService(settingRepo, settingService, githubClient, claudeCodeVersionSyncInterval)
 	svc.Start()
 	return svc
 }
@@ -973,6 +982,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAccountTestService,
 	ProvideUpstreamBillingProbeService,
 	ProvideOllamaCloudUsageService,
+	ProvideOpenCodeGoUsageService,
 	ProvideSettingService,
 	NewDataManagementService,
 	ProvideBackupService,
@@ -1004,6 +1014,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(GrokOAuthReconciler), new(*TokenRefreshService)),
 	ProvideAccountExpiryService,
 	ProvideOpenAICodexVersionSyncService,
+	ProvideClaudeCodeVersionSyncService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,
 	ProvideTimingWheelService,

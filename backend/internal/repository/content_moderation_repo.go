@@ -170,7 +170,7 @@ RETURNING id, created_at`,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error, string(metadata),
 		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
-		log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, nullableInt64Ptr(log.ReviewedBy), log.ReviewedAt,
+		log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, moderationNullableInt64Ptr(log.ReviewedBy), log.ReviewedAt,
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS),
 		log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
 		log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
@@ -1012,7 +1012,7 @@ func nullableIntPtr(value *int) any {
 	return *value
 }
 
-func nullableInt64Ptr(value *int64) any {
+func moderationNullableInt64Ptr(value *int64) any {
 	if value == nil {
 		return nil
 	}

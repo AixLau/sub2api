@@ -119,6 +119,7 @@ type OpenAIQuotaService struct {
 	tokenProvider        *OpenAITokenProvider
 	privacyClientFactory PrivacyClientFactory
 	runtimeBlocker       AccountRuntimeBlocker
+	referralClient       OpenAIReferralClient
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
 }
@@ -131,12 +132,19 @@ func NewOpenAIQuotaService(
 	proxyRepo ProxyRepository,
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
+	referralClient ...OpenAIReferralClient,
 ) *OpenAIQuotaService {
 	return &OpenAIQuotaService{
 		accountRepo:          accountRepo,
 		proxyRepo:            proxyRepo,
 		tokenProvider:        tokenProvider,
 		privacyClientFactory: privacyClientFactory,
+		referralClient: func() OpenAIReferralClient {
+			if len(referralClient) > 0 {
+				return referralClient[0]
+			}
+			return nil
+		}(),
 	}
 }
 
@@ -672,4 +680,18 @@ func mapUpstreamStatus(status int) int {
 	default:
 		return http.StatusBadGateway
 	}
+}
+
+func (s *OpenAIQuotaService) CacheCreditsSnapshot(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage) error {
+	if usage == nil || accountID <= 0 || s == nil || s.accountRepo == nil {
+		return nil
+	}
+	updates := buildCodexSparkWindowExtraUpdates(usage, time.Now())
+	if len(updates) == 0 {
+		updates = buildCodexGlobalWindowExtraUpdates(usage, time.Now())
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.accountRepo.UpdateExtra(ctx, accountID, updates)
 }

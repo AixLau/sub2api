@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,15 +30,13 @@ const (
 	pluginReconcilePeriod = time.Second
 	pluginHealthTimeout   = 5 * time.Second
 	pluginUITokenPrefix   = "sub2api:plugin-ui:v1:"
-	pluginAccountLimit    = 10000
 )
 
 type pluginRoute struct {
-	pluginID    int64
-	runtime     *pluginRuntime
-	accountIDs  map[int64]struct{}
-	allAccounts bool
-	unavailable string
+	pluginID       int64
+	runtime        *pluginRuntime
+	rolloutPercent int
+	unavailable    string
 }
 
 // PluginManager 管理插件安装、配置、进程生命周期和 OpenAI OAuth 能力绑定。
@@ -204,11 +201,11 @@ func (m *PluginManager) Install(ctx context.Context, reader io.Reader, installed
 	bindings := make([]PluginBinding, 0, len(packageInfo.Manifest.Capabilities))
 	for _, capability := range packageInfo.Manifest.SortedCapabilities() {
 		bindings = append(bindings, PluginBinding{
-			Capability:  capability.ID,
-			Platform:    capability.Platform,
-			AccountType: capability.AccountType,
-			Enabled:     false,
-			AccountIDs:  []int64{},
+			Capability:     capability.ID,
+			Platform:       capability.Platform,
+			AccountType:    capability.AccountType,
+			Enabled:        false,
+			RolloutPercent: 100,
 		})
 	}
 	installed, err := m.repo.Install(ctx, packageInfo, bindings)
@@ -274,7 +271,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	installations, err := m.repo.List(ctx)
 	if err != nil {
 		// 无法读取权威绑定状态时不能假设插件未启用，否则会把 OAuth 请求静默回落到旧直连路径。
-		m.publishUnavailableRoute(0, nil, true, "插件启用状态暂时无法读取")
+		m.publishUnavailableRoute(0, 100, "插件启用状态暂时无法读取")
 		return fmt.Errorf("读取插件启用状态: %w", err)
 	}
 	m.cleanupStaleLocalInstallations(installations)
@@ -285,7 +282,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		}
 		if enabled != nil {
 			err := errors.New("检测到多个 OpenAI OAuth 出站插件同时启用")
-			m.publishUnavailableRoute(enabled.ID, nil, true, err.Error())
+			m.publishUnavailableRoute(enabled.ID, 100, err.Error())
 			return err
 		}
 		enabled = installation
@@ -309,15 +306,10 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		return nil
 	}
 
-	accountIDs := bindingAccountIDs(enabled.Bindings)
-	if len(accountIDs) == 0 {
-		err := errors.New("已启用的 OpenAI OAuth 插件未绑定账号")
-		m.publishUnavailableRoute(enabled.ID, nil, false, err.Error())
-		return err
-	}
+	rollout := bindingRollout(enabled.Bindings)
 	current := m.route.Load()
 	if current != nil && current.pluginID == enabled.ID && current.runtime != nil &&
-		!current.runtime.client.Exited() && samePluginAccountIDs(current.accountIDs, accountIDs) &&
+		!current.runtime.client.Exited() && current.rolloutPercent == rollout &&
 		current.runtime.installation.BinarySHA256 == enabled.BinarySHA256 &&
 		current.runtime.installation.ConfigEncrypted == enabled.ConfigEncrypted {
 		healthCtx, cancel := context.WithTimeout(ctx, pluginHealthTimeout)
@@ -336,21 +328,19 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	}
 	if enabled.State == PluginStateStarting && !m.startingStateExpired(enabled) {
 		if current == nil {
-			m.route.Store(&pluginRoute{
-				pluginID: enabled.ID, accountIDs: pluginAccountIDSet(accountIDs), unavailable: "插件正在其他实例中启动",
-			})
+			m.route.Store(&pluginRoute{pluginID: enabled.ID, rolloutPercent: rollout, unavailable: "插件正在其他实例中启动"})
 		}
 		return nil
 	}
 
 	local, err := m.ensureLocalInstallation(ctx, enabled)
 	if err != nil {
-		m.publishUnavailableRoute(enabled.ID, accountIDs, false, err.Error())
+		m.publishUnavailableRoute(enabled.ID, rollout, err.Error())
 		return err
 	}
 	runtime, err := m.prepareRuntime(ctx, local, true)
 	if err != nil {
-		m.publishUnavailableRoute(enabled.ID, accountIDs, false, err.Error())
+		m.publishUnavailableRoute(enabled.ID, rollout, err.Error())
 		return err
 	}
 
@@ -361,7 +351,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		return err
 	}
 	if !hasEnabledOpenAIBinding(latest.Bindings) || latest.BinarySHA256 != enabled.BinarySHA256 ||
-		latest.ConfigEncrypted != enabled.ConfigEncrypted || !samePluginAccountIDs(pluginAccountIDSet(bindingAccountIDs(latest.Bindings)), accountIDs) {
+		latest.ConfigEncrypted != enabled.ConfigEncrypted || bindingRollout(latest.Bindings) != rollout {
 		runtime.kill()
 		return nil
 	}
@@ -389,7 +379,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		}
 	}
 	m.runtimes[enabled.ID] = runtime
-	m.route.Store(&pluginRoute{pluginID: enabled.ID, runtime: runtime, accountIDs: pluginAccountIDSet(accountIDs)})
+	m.route.Store(&pluginRoute{pluginID: enabled.ID, runtime: runtime, rolloutPercent: rollout})
 	m.mu.Unlock()
 	for _, candidate := range stale {
 		candidate.drain(10 * time.Second)
@@ -425,7 +415,7 @@ func (m *PluginManager) detachAllRuntimes() []*pluginRuntime {
 	return runtimes
 }
 
-func (m *PluginManager) publishUnavailableRoute(pluginID int64, accountIDs []int64, allAccounts bool, message string) {
+func (m *PluginManager) publishUnavailableRoute(pluginID int64, rollout int, message string) {
 	m.mu.Lock()
 	stale := make([]*pluginRuntime, 0, len(m.runtimes))
 	for id, runtime := range m.runtimes {
@@ -433,9 +423,7 @@ func (m *PluginManager) publishUnavailableRoute(pluginID int64, accountIDs []int
 		stale = append(stale, runtime)
 		delete(m.runtimes, id)
 	}
-	m.route.Store(&pluginRoute{
-		pluginID: pluginID, accountIDs: pluginAccountIDSet(accountIDs), allAccounts: allAccounts, unavailable: message,
-	})
+	m.route.Store(&pluginRoute{pluginID: pluginID, rolloutPercent: rollout, unavailable: message})
 	m.mu.Unlock()
 	for _, runtime := range stale {
 		runtime.drain(10 * time.Second)
@@ -516,7 +504,7 @@ func mergeLocalInstallation(local, persisted *PluginInstallation) *PluginInstall
 	merged.ArtifactPath = local.ArtifactPath
 	merged.InstallPath = local.InstallPath
 	merged.BinaryPath = local.BinaryPath
-	merged.Bindings = clonePluginBindings(persisted.Bindings)
+	merged.Bindings = append([]PluginBinding(nil), persisted.Bindings...)
 	return &merged
 }
 
@@ -566,27 +554,20 @@ func verifyLocalPluginBinary(installation *PluginInstallation, root string) erro
 	return nil
 }
 
-func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested bool, accountIDs []int64) (*PluginInstallation, error) {
+func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested bool, rolloutPercent int) (*PluginInstallation, error) {
 	m.operationMu.Lock()
 	defer m.operationMu.Unlock()
-	accountIDs, err := normalizePluginAccountIDs(accountIDs)
-	if err != nil {
-		return nil, err
+	if rolloutPercent < 1 || rolloutPercent > 100 {
+		return nil, errors.New("灰度比例必须在 1 到 100 之间")
 	}
 	installation, err := m.repo.GetByID(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	if err := m.repo.ValidateOpenAIOAuthAccounts(ctx, accountIDs); err != nil {
 		return nil, err
 	}
 	if active := m.route.Load(); active != nil && active.pluginID != id {
 		return nil, errors.New("OpenAI OAuth 出站能力已有启用插件，请先停用当前插件")
 	}
 	if installation.State == PluginStateEnabled && hasEnabledOpenAIBinding(installation.Bindings) {
-		if !samePluginAccountIDs(pluginAccountIDSet(bindingAccountIDs(installation.Bindings)), accountIDs) {
-			return nil, errors.New("请先停用插件，再修改绑定账号")
-		}
 		installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
 		m.mu.Lock()
 		runtime := m.runtimes[id]
@@ -608,10 +589,10 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err != nil {
 		return nil, err
 	}
-	originalBindings := clonePluginBindings(installation.Bindings)
+	originalBindings := append([]PluginBinding(nil), installation.Bindings...)
 	for index := range installation.Bindings {
 		installation.Bindings[index].Enabled = true
-		installation.Bindings[index].AccountIDs = append([]int64(nil), accountIDs...)
+		installation.Bindings[index].RolloutPercent = rolloutPercent
 	}
 	if err := m.repo.BeginEnable(ctx, id, installation.BinarySHA256, installation.State); err != nil {
 		return nil, err
@@ -622,9 +603,7 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 		stateErr := m.repo.UpdateState(stateCtx, id, PluginStateError, err.Error(), nil, installation.BinarySHA256, PluginStateStarting)
 		cancel()
 		if hasEnabledOpenAIBinding(originalBindings) {
-			m.route.Store(&pluginRoute{
-				pluginID: id, accountIDs: pluginAccountIDSet(bindingAccountIDs(originalBindings)), unavailable: err.Error(),
-			})
+			m.route.Store(&pluginRoute{pluginID: id, rolloutPercent: bindingRollout(originalBindings), unavailable: err.Error()})
 		}
 		return nil, errors.Join(err, stateErr)
 	}
@@ -1006,14 +985,7 @@ func (m *PluginManager) ShouldRouteOpenAIOAuth(account *Account) bool {
 		return false
 	}
 	route := m.route.Load()
-	if route == nil {
-		return false
-	}
-	if route.allAccounts {
-		return true
-	}
-	_, selected := route.accountIDs[account.ID]
-	return selected
+	return route != nil && route.rolloutPercent > 0 && int(stablePluginBucket(account.ID)) < route.rolloutPercent
 }
 
 func (m *PluginManager) markRuntimeUnavailable(failedRoute *pluginRoute, message string) error {
@@ -1028,8 +1000,9 @@ func (m *PluginManager) markRuntimeUnavailable(failedRoute *pluginRoute, message
 	}
 	delete(m.runtimes, failedRoute.pluginID)
 	m.route.Store(&pluginRoute{
-		pluginID: failedRoute.pluginID, accountIDs: failedRoute.accountIDs,
-		allAccounts: failedRoute.allAccounts, unavailable: message,
+		pluginID:       failedRoute.pluginID,
+		rolloutPercent: failedRoute.rolloutPercent,
+		unavailable:    message,
 	})
 	m.mu.Unlock()
 	return nil
@@ -1059,8 +1032,9 @@ func (m *PluginManager) publishRuntimeLocked(installation *PluginInstallation, r
 	}
 	m.runtimes[installation.ID] = runtime
 	m.route.Store(&pluginRoute{
-		pluginID: installation.ID, runtime: runtime,
-		accountIDs: pluginAccountIDSet(bindingAccountIDs(installation.Bindings)),
+		pluginID:       installation.ID,
+		runtime:        runtime,
+		rolloutPercent: bindingRollout(installation.Bindings),
 	})
 }
 
@@ -1081,37 +1055,44 @@ func (m *PluginManager) SetAccountDirectory(directory PluginAccountDirectory) {
 	m.mu.Unlock()
 }
 
-// buildHostServices 为单个插件构造绑定其 pluginKey 的宿主服务端点。缺少 pluginKey
-// 或所有宿主服务均未配置时返回 nil，不向插件暴露宿主服务。
-// 账号目录（会向插件交付账号凭据）只对「清单声明了 OpenAI OAuth 出站能力」的插件开放，
-// 从而把凭据暴露面收敛到本就要处理这些账号的插件。
+// buildHostServices 为单个插件构造绑定其 pluginKey 的宿主服务端点。返回 nil（未配置
+// 键值存储或缺少 pluginKey）时，startPluginRuntime 不会向插件暴露任何宿主服务。
+// 账号目录（会向插件交付账号凭据与全量元数据）只对「清单声明的能力授予了账号范围」的
+// 插件开放，且严格限定在该范围内，从而把暴露面收敛到本就要处理这些账号的插件。
 func (m *PluginManager) buildHostServices(installation *PluginInstallation) pluginv1.HostServiceServer {
-	if installation == nil || strings.TrimSpace(installation.PluginKey) == "" {
+	if m.kvStore == nil || installation == nil || strings.TrimSpace(installation.PluginKey) == "" {
 		return nil
 	}
+	scope := pluginAccountScopeFromManifest(installation.Manifest)
 	var directory PluginAccountDirectory
-	if pluginDeclaresOpenAIOAuthCapability(installation.Manifest) {
+	if !scope.Empty() {
 		m.mu.Lock()
 		directory = m.accountDirectory
 		m.mu.Unlock()
-		directory = newScopedPluginAccountDirectory(directory, bindingAccountIDs(installation.Bindings))
 	}
-	if m.kvStore == nil && directory == nil {
-		return nil
-	}
-	return newPluginHostServiceServer(installation.PluginKey, m.kvStore, directory)
+	return newPluginHostServiceServer(installation.PluginKey, m.kvStore, directory, scope)
 }
 
-// pluginDeclaresOpenAIOAuthCapability reports whether the (install-validated)
-// manifest declares the OpenAI OAuth outbound transport capability.
-func pluginDeclaresOpenAIOAuthCapability(manifest PluginManifest) bool {
+// pluginCapabilityAccountScopeGrants 把「能力 id」映射到它授予的账号范围条目。这是
+// 唯一放宽账号可见性的通用入口：为需要账号访问的新能力扩权只需在此加一行，无需新增
+// RPC 或按插件定制目录实现。授予的范围以能力 id 为准并被固定，清单无法通过声明不同的
+// platform/account_type 来扩大它。
+var pluginCapabilityAccountScopeGrants = map[string]pluginAccountScopeEntry{
+	PluginCapabilityOpenAIOAuthOutbound: {Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
+}
+
+// pluginAccountScopeFromManifest 从（安装期已校验的）清单声明能力推导出账号可见范围
+// （各能力授予范围的并集）。
+func pluginAccountScopeFromManifest(manifest PluginManifest) PluginAccountScope {
+	entries := make([]pluginAccountScopeEntry, 0, len(manifest.Capabilities))
 	for _, capability := range manifest.Capabilities {
-		if capability.ID == PluginCapabilityOpenAIOAuthOutbound &&
-			capability.Platform == PlatformOpenAI && capability.AccountType == AccountTypeOAuth {
-			return true
+		grant, ok := pluginCapabilityAccountScopeGrants[capability.ID]
+		if !ok {
+			continue
 		}
+		entries = append(entries, grant)
 	}
-	return false
+	return newPluginAccountScope(entries...)
 }
 
 func (m *PluginManager) removeRuntimeLocked(id int64) *pluginRuntime {
@@ -1166,62 +1147,19 @@ func hasEnabledOpenAIBinding(bindings []PluginBinding) bool {
 	return false
 }
 
-func bindingAccountIDs(bindings []PluginBinding) []int64 {
+func bindingRollout(bindings []PluginBinding) int {
 	for _, binding := range bindings {
 		if binding.Capability == PluginCapabilityOpenAIOAuthOutbound {
-			return append([]int64(nil), binding.AccountIDs...)
+			return binding.RolloutPercent
 		}
 	}
-	return nil
+	return 100
 }
 
-func normalizePluginAccountIDs(accountIDs []int64) ([]int64, error) {
-	if len(accountIDs) == 0 {
-		return nil, errors.New("请至少选择一个 OpenAI OAuth 账号")
-	}
-	if len(accountIDs) > pluginAccountLimit {
-		return nil, fmt.Errorf("插件最多可绑定 %d 个账号", pluginAccountLimit)
-	}
-	unique := make(map[int64]struct{}, len(accountIDs))
-	for _, accountID := range accountIDs {
-		if accountID <= 0 {
-			return nil, errors.New("插件绑定包含无效账号 ID")
-		}
-		unique[accountID] = struct{}{}
-	}
-	normalized := make([]int64, 0, len(unique))
-	for accountID := range unique {
-		normalized = append(normalized, accountID)
-	}
-	sort.Slice(normalized, func(i, j int) bool { return normalized[i] < normalized[j] })
-	return normalized, nil
-}
-
-func pluginAccountIDSet(accountIDs []int64) map[int64]struct{} {
-	set := make(map[int64]struct{}, len(accountIDs))
-	for _, accountID := range accountIDs {
-		set[accountID] = struct{}{}
-	}
-	return set
-}
-
-func samePluginAccountIDs(set map[int64]struct{}, accountIDs []int64) bool {
-	if len(set) != len(accountIDs) {
-		return false
-	}
-	for _, accountID := range accountIDs {
-		if _, ok := set[accountID]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func clonePluginBindings(bindings []PluginBinding) []PluginBinding {
-	cloned := make([]PluginBinding, len(bindings))
-	copy(cloned, bindings)
-	for index := range cloned {
-		cloned[index].AccountIDs = append([]int64(nil), bindings[index].AccountIDs...)
-	}
-	return cloned
+func stablePluginBucket(accountID int64) uint64 {
+	value := uint64(accountID)
+	value ^= value >> 33
+	value *= 0xff51afd7ed558ccd
+	value ^= value >> 33
+	return value % 100
 }

@@ -214,6 +214,17 @@ func cacheWritePriceFromLiteLLM(lp *LiteLLMModelPricing) *float64 {
 
 }
 
+func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
+	if pricing == nil {
+		return nil
+	}
+	clone := pricing.Clone()
+	if clone.MaxReasoningEffortMultiplier == nil {
+		clone.MaxReasoningEffortMultiplier = defaultMaxReasoningEffortMultiplier(model)
+	}
+	return &clone
+}
+
 func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {
 	if pricing == nil {
 		return nil

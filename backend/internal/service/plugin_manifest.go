@@ -115,15 +115,16 @@ type PluginInstallation struct {
 }
 
 type PluginBinding struct {
-	ID          int64     `json:"id"`
-	PluginID    int64     `json:"plugin_id"`
-	Capability  string    `json:"capability"`
-	Platform    string    `json:"platform"`
-	AccountType string    `json:"account_type"`
-	Enabled     bool      `json:"enabled"`
-	AccountIDs  []int64   `json:"account_ids"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID             int64     `json:"id"`
+	PluginID       int64     `json:"plugin_id"`
+	Capability     string    `json:"capability"`
+	Platform       string    `json:"platform"`
+	AccountType    string    `json:"account_type"`
+	Enabled        bool      `json:"enabled"`
+	RolloutPercent int       `json:"rollout_percent"`
+	AccountIDs     []int64   `json:"account_ids"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type PluginRepository interface {

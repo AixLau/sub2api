@@ -81,8 +81,8 @@ func (h *PluginHandler) Upload(c *gin.Context) {
 }
 
 type pluginEnableRequest struct {
-	AcceptUntested bool    `json:"accept_untested"`
-	AccountIDs     []int64 `json:"account_ids"`
+	AcceptUntested bool `json:"accept_untested"`
+	RolloutPercent int  `json:"rollout_percent"`
 }
 
 func (h *PluginHandler) Enable(c *gin.Context) {
@@ -90,12 +90,12 @@ func (h *PluginHandler) Enable(c *gin.Context) {
 	if !ok {
 		return
 	}
-	request := pluginEnableRequest{}
+	request := pluginEnableRequest{RolloutPercent: 100}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.BadRequest(c, "启用参数无效")
 		return
 	}
-	plugin, err := h.manager.Enable(c.Request.Context(), id, request.AcceptUntested, request.AccountIDs)
+	plugin, err := h.manager.Enable(c.Request.Context(), id, request.AcceptUntested, request.RolloutPercent)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

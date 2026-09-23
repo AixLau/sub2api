@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"strings"
 )
 
@@ -272,9 +273,7 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 	}
 	resolved.BasePricing.FastMultiplier = chPricing.FastMultiplier
 	resolved.BasePricing.FlexMultiplier = chPricing.FlexMultiplier
-	if chPricing.MaxReasoningEffortMultiplier != nil {
-		resolved.BasePricing.MaxReasoningEffortMultiplier = chPricing.MaxReasoningEffortMultiplier
-	}
+	resolved.BasePricing.ReasoningEffortMultipliers = maps.Clone(chPricing.ReasoningEffortMultipliers)
 	// 渠道定价覆盖一切：显式配置则用配置值，未配置则归零（不回退到 LiteLLM）
 	if chPricing.ImageOutputPrice != nil {
 		resolved.BasePricing.ImageOutputPricePerToken = *chPricing.ImageOutputPrice
@@ -420,4 +419,26 @@ func (r *ModelPricingResolver) GetRequestTierPriceByContext(resolved *ResolvedPr
 		return *iv.PerRequestPrice
 	}
 	return 0
+}
+
+func reasoningEffortMultipliersFromPricing(pricing any) map[string]float64 {
+	var source map[string]float64
+	switch value := pricing.(type) {
+	case *ModelPricing:
+		if value != nil {
+			source = value.ReasoningEffortMultipliers
+		}
+	case *ChannelModelPricing:
+		if value != nil {
+			source = value.ReasoningEffortMultipliers
+		}
+	}
+	if len(source) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(source))
+	for k, v := range source {
+		out[k] = v
+	}
+	return out
 }
