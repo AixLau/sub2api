@@ -484,6 +484,10 @@ export default {
         saved: 'Ollama Cloud usage refresh settings saved',
         saveFailed: 'Failed to save Ollama Cloud usage refresh settings'
       },
+      opencodeGoUsage: {
+        title: 'OpenCode Go Usage Refresh', description: 'Refresh usage windows reported by OpenCode Go accounts.', enabled: 'Enable global automatic refresh', enabledHint: 'Only opted-in accounts are refreshed.',
+        intervalMinutes: 'Maximum wait (minutes)', intervalHint: 'Range: 5–1440 minutes.', debounceMinutes: 'Quiet period (minutes)', debounceHint: 'Refresh after requests have been quiet.', saved: 'OpenCode Go usage refresh settings saved', saveFailed: 'Failed to save OpenCode Go usage refresh settings'
+      },
       gatewayForwarding: {
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',
@@ -550,6 +554,7 @@ export default {
         openaiCodexVersionAutoSyncHint: 'Fetches the latest stable client version from the official repository every 6 hours, so you never need to upgrade this service just to keep the version current. When disabled, only the version above or the built-in default is used.',
         openaiCodexVersionSyncedValue: 'Currently synced: {version}',
 
+        claudeCodeClientVersion: 'Claude Code client version', claudeCodeClientVersionHint: 'Version declared upstream for Claude Code requests.', claudeCodeVersionAutoSync: 'Auto-sync Claude Code version', claudeCodeVersionAutoSyncHint: 'Fetch the latest official version automatically.', claudeCodeVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:
@@ -1234,6 +1239,7 @@ export default {
         oauthRateTitle: 'OAuth scheduling reference rate',
         oauthRatePriorityDescription: 'When a group contains both API Key and OAuth accounts, this rate is used to order OAuth accounts alongside probed API Key billing rates.',
         oauthRateWeightedDescription: 'When a group contains both API Key and OAuth accounts, this rate is used for OAuth accounts when calculating the billing-rate score.',
+        oauthRateInvalid: 'The OAuth scheduling reference rate must be a non-negative number, or blank to use account rates.',
         stickyWeightedTitle: 'Sticky weighting',
         stickyWeightedDescription: 'When enabled, previous_response_id and session_hash affinity are scored by the advanced scheduler. When disabled, sticky accounts keep the legacy hard-hit behavior.',
         subscriptionPriorityTitle: 'Subscription priority',

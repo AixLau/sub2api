@@ -477,6 +477,10 @@ export default {
         saved: 'Ollama Cloud 用量刷新设置已保存',
         saveFailed: '保存 Ollama Cloud 用量刷新设置失败'
       },
+      opencodeGoUsage: {
+        title: 'OpenCode Go 用量刷新', description: '刷新 OpenCode Go 账号返回的用量窗口。', enabled: '启用全局自动刷新', enabledHint: '仅刷新已在账号上开启自动刷新的账号。',
+        intervalMinutes: '最大等待时间（分钟）', intervalHint: '范围：5–1440 分钟。', debounceMinutes: '请求静默时间（分钟）', debounceHint: '请求安静一段时间后刷新。', saved: 'OpenCode Go 用量刷新设置已保存', saveFailed: '保存 OpenCode Go 用量刷新设置失败'
+      },
       gatewayForwarding: {
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',
@@ -543,6 +547,7 @@ export default {
         openaiCodexVersionAutoSyncHint: '每 6 小时从官方仓库获取最新稳定版客户端版本号，无需为了跟版本而升级本服务。关闭后仅使用上方手填版本或内置版本。',
         openaiCodexVersionSyncedValue: '当前同步到：{version}',
 
+        claudeCodeClientVersion: 'Claude Code 客户端版本', claudeCodeClientVersionHint: '网关向上游声明的 Claude Code 版本。', claudeCodeVersionAutoSync: '自动同步 Claude Code 版本', claudeCodeVersionAutoSyncHint: '自动获取官方最新版本。', claudeCodeVersionSyncedValue: '当前同步：{version}',
         codexHardeningTitle: 'Codex 设置',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
@@ -1228,6 +1233,7 @@ export default {
         oauthRateTitle: 'OAuth 调度参考倍率',
         oauthRatePriorityDescription: '同一分组同时包含 API Key 和 OAuth 账号时，OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。',
         oauthRateWeightedDescription: '同一分组同时包含 API Key 和 OAuth 账号时，计算“计费倍率”得分时，OAuth 账号按此倍率参与计算。',
+        oauthRateInvalid: 'OAuth 调度参考倍率必须是非负数字，留空则使用账号自身倍率。',
         stickyWeightedTitle: '粘性加权',
         stickyWeightedDescription: '开启后 previous_response_id 和 session_hash 粘性进入高级调度打分；关闭时仍按旧逻辑硬命中粘性账号。',
         subscriptionPriorityTitle: '订阅优先',

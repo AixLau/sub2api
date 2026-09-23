@@ -377,6 +377,15 @@ export default {
           restoreDefaults: '恢复默认',
           fallback: '未命中以上规则 → Chat Completions（/v1/chat/completions）',
         },
+        title: 'OpenCode Go 用量', panelHint: '显示 OpenCode Go 上游账号返回的用量窗口。', notRefreshed: '尚未刷新', refreshNow: '刷新用量',
+        autoRefresh: '自动刷新用量', autoRefreshHint: '账号开关和全局开关都开启时才会运行。', rolling: '5 小时', rollingShort: '5h', weekly: '每周', weeklyShort: '7d', monthly: '每月', monthlyShort: '1m',
+        status: '状态', updatedAt: '更新时间', ok: '正常', unauthorized: '会话已过期', failed: '刷新失败', windowWithReset: '已用 {percent}，重置于 {reset}',
+        loadFailed: '加载 OpenCode Go 用量设置失败', autoRefreshFailed: '更新自动刷新设置失败', refreshSuccess: 'OpenCode Go 用量已刷新', refreshFailed: '刷新 OpenCode Go 用量失败',
+      },
+      openaiReferral: {
+        available: '剩余邀请数', invite: '邀请用户', fromAccount: '邀请账号：', email: '收件人邮箱', consent: '我已获得对方同意发送邀请。', send: '发送邀请', sending: '发送中…',
+        sent: '已向 {email} 发送邀请', queryHint: '点击查询剩余邀请数', checkedAt: '检查于：{time}。点击刷新。', unavailable: '暂时无法邀请。', sendUnknown: '邀请结果未知。',
+        shadowHint: '请从母账号发送邀请。', cacheFailed: '已获取实时额度，但缓存保存失败。', refreshFailed: '邀请已发送，但剩余额度刷新失败。',
       },
       cnProviders: {
         accountMode: {
