@@ -324,6 +324,8 @@ export default {
       promptFilterSourceLink: 'view source',
       provider: 'Moderation Provider',
       providerZhipu: 'Zhipu AI',
+      providerTypeSafe: 'TypeSafe',
+      providerSwitchHint: 'Choose the engine that scores content. Keyword rules, caching, and enforcement stay shared.',
       baseUrl: 'Provider Base URL',
       model: 'Model',
       passCache: 'Reuse PASS Results',

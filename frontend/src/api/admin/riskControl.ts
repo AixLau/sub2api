@@ -1,7 +1,7 @@
 import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
-export type ModerationProvider = 'openai' | 'zhipu'
+export type ModerationProvider = 'openai' | 'zhipu' | 'typesafe'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationEngineMode = 'rules_only' | 'model_only' | 'rules_and_model'
 export type ContentModerationPromptFilterMode = 'off' | 'observe' | 'warn' | 'block'

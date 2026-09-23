@@ -944,6 +944,17 @@
                   </div>
                 </dl>
               </div>
+	      <div class="rounded-lg border border-sky-200 bg-sky-50/60 p-4 dark:border-sky-900 dark:bg-sky-950/20">
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.provider') }}</p>
+                    <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">{{ t('admin.riskControl.providerSwitchHint') }}</p>
+                  </div>
+                  <div class="w-full md:w-64">
+                    <Select v-model="configForm.provider" :options="providerOptions" @update:modelValue="onProviderChange" />
+                  </div>
+                </div>
+              </div>
 	      <div v-if="false" style="display: none !important">
               <div>
 					<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
@@ -2378,13 +2389,19 @@ function engineModeDescription(mode: string) {
 const providerOptions = computed<SelectOption[]>(() => [
   { label: 'OpenAI', value: 'openai' },
   { label: t('admin.riskControl.providerZhipu'), value: 'zhipu' },
+  { label: t('admin.riskControl.providerTypeSafe'), value: 'typesafe' },
 ])
 
 function onProviderChange(value: string | number | boolean | null) {
-  const provider: ModerationProvider = value === 'zhipu' ? 'zhipu' : 'openai'
+  const provider: ModerationProvider = value === 'zhipu' || value === 'typesafe' ? value : 'openai'
   if (provider === 'zhipu') {
     if (!configForm.base_url || configForm.base_url === 'https://api.openai.com') configForm.base_url = 'https://open.bigmodel.cn/api'
     if (!configForm.model || configForm.model === 'omni-moderation-latest') configForm.model = 'moderation'
+    return
+  }
+  if (provider === 'typesafe') {
+    if (!configForm.base_url || configForm.base_url === 'https://api.openai.com' || configForm.base_url === 'https://open.bigmodel.cn/api') configForm.base_url = 'https://api.typesafe.ai'
+    if (!configForm.model || configForm.model === 'omni-moderation-latest' || configForm.model === 'moderation') configForm.model = 'jev-latest'
     return
   }
   if (!configForm.base_url || configForm.base_url === 'https://open.bigmodel.cn/api') configForm.base_url = 'https://api.openai.com'

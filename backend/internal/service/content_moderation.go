@@ -1175,6 +1175,7 @@ type ModerationFeedbackEpochRepository interface {
 }
 
 type ContentModerationService struct {
+	engines                  map[string]ContentModerationEngine
 	resourceProtection       *ResourceProtectionManager
 	configUpdateMu           sync.Mutex
 	configSnapshot           atomic.Pointer[contentModerationConfigSnapshot]
@@ -1374,6 +1375,7 @@ func NewContentModerationService(
 	accountScopeRepos ...ContentModerationAccountScopeRepository,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
+		engines:                  make(map[string]ContentModerationEngine),
 		resourceProtection:       NewResourceProtectionManager(DefaultResourceProtectionConfig()),
 		settingRepo:              settingRepo,
 		repo:                     repo,
@@ -1391,6 +1393,9 @@ func NewContentModerationService(
 		runtimeDone:              make(chan struct{}),
 		runtimeTimings:           defaultContentModerationRuntimeTimings(),
 	}
+	svc.engines["openai"] = contentModerationEngineFunc(svc.callLegacyModerationOnceWithInput)
+	svc.engines["zhipu"] = contentModerationEngineFunc(svc.callLegacyModerationOnceWithInput)
+	svc.engines[contentModerationProviderTypeSafe] = contentModerationEngineFunc(svc.callTypeSafeModeration)
 	if len(accountScopeRepos) > 0 {
 		svc.accountScopeRepo = accountScopeRepos[0]
 	}
@@ -1951,7 +1956,7 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		}
 	}
 	cfg.normalize()
-	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
+	if cfg.Provider != "openai" && cfg.Provider != "zhipu" && cfg.Provider != contentModerationProviderTypeSafe {
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
 	}
 	testInput, imageCount, err := buildModerationTestInput(input.Prompt, input.Images)
@@ -5281,7 +5286,7 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	default:
 		return infraerrors.BadRequest("INVALID_PROMPT_FILTER_MODE", "网络安全提示词规则模式无效")
 	}
-	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
+	if cfg.Provider != "openai" && cfg.Provider != "zhipu" && cfg.Provider != contentModerationProviderTypeSafe {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
 	}
 	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
@@ -5390,6 +5395,31 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 }
 
 func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {
+	if engine := s.engineFor(cfg.Provider); engine != nil {
+		return engine.Moderate(ctx, cfg, apiKey, input, httpStatus)
+	}
+	return nil, fmt.Errorf("unsupported content moderation engine %q", cfg.Provider)
+}
+
+func (s *ContentModerationService) engineFor(name string) ContentModerationEngine {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if s != nil && s.engines != nil {
+		if engine := s.engines[name]; engine != nil {
+			return engine
+		}
+	}
+	// Services built in tests with a struct literal still get the built-in
+	// engines without having to know about registry wiring.
+	if name == contentModerationProviderTypeSafe {
+		return contentModerationEngineFunc(s.callTypeSafeModeration)
+	}
+	if name == "openai" || name == "zhipu" {
+		return contentModerationEngineFunc(s.callLegacyModerationOnceWithInput)
+	}
+	return nil
+}
+
+func (s *ContentModerationService) callLegacyModerationOnceWithInput(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {
 	if cfg.Provider == "zhipu" {
 		text, ok := input.(string)
 		if !ok || strings.TrimSpace(text) == "" {
@@ -6287,9 +6317,21 @@ func (cfg *ContentModerationConfig) normalize() {
 	if cfg.Provider == "" {
 		cfg.Provider = "openai"
 	}
+	if cfg.Provider == contentModerationProviderTypeSafe {
+		// Switching the engine through the API should not accidentally send
+		// TypeSafe requests to the previous OpenAI/Zhipu endpoint.
+		if cfg.BaseURL == "" || cfg.BaseURL == defaultContentModerationBaseURL || cfg.BaseURL == "https://open.bigmodel.cn/api" {
+			cfg.BaseURL = "https://api.typesafe.ai"
+		}
+		if cfg.Model == "" || cfg.Model == defaultContentModerationModel || cfg.Model == "moderation" {
+			cfg.Model = "jev-latest"
+		}
+	}
 	if cfg.BaseURL == "" {
 		if cfg.Provider == "zhipu" {
 			cfg.BaseURL = "https://open.bigmodel.cn/api"
+		} else if cfg.Provider == contentModerationProviderTypeSafe {
+			cfg.BaseURL = "https://api.typesafe.ai"
 		} else {
 			cfg.BaseURL = defaultContentModerationBaseURL
 		}
@@ -6298,6 +6340,8 @@ func (cfg *ContentModerationConfig) normalize() {
 	if cfg.Model == "" {
 		if cfg.Provider == "zhipu" {
 			cfg.Model = "moderation"
+		} else if cfg.Provider == contentModerationProviderTypeSafe {
+			cfg.Model = "jev-latest"
 		} else {
 			cfg.Model = defaultContentModerationModel
 		}

@@ -324,6 +324,8 @@ export default {
       promptFilterSourceLink: '查看源码',
       provider: '审核服务商',
       providerZhipu: '智谱 AI',
+      providerTypeSafe: 'TypeSafe',
+      providerSwitchHint: '选择实际执行内容评分的引擎；关键词规则、缓存和处置流程保持共用。',
       baseUrl: '服务商 Base URL',
       model: '模型名',
       passCache: '复用 PASS 结果',
