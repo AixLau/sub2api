@@ -1,0 +1,29 @@
+:root {
+  color-scheme: light dark;
+  font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+body { margin: 0; background: #f6f7f9; color: #202124; }
+.panel { max-width: 760px; margin: 0 auto; padding: 28px; }
+header { margin-bottom: 24px; }
+h1 { margin: 0 0 6px; font-size: 22px; }
+p, small { color: #5f6368; }
+label { display: block; margin: 14px 0; }
+label > span:first-child { display: block; margin-bottom: 6px; font-weight: 600; }
+input, select, textarea { box-sizing: border-box; width: 100%; border: 1px solid #c8ccd1; border-radius: 6px; padding: 8px 10px; background: #fff; color: inherit; font: inherit; }
+textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 14px; }
+.checkbox { display: flex; align-items: center; gap: 8px; }
+.checkbox input { width: auto; }
+.actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+button { border: 0; border-radius: 6px; padding: 9px 16px; background: #2563eb; color: #fff; cursor: pointer; font: inherit; }
+button.secondary { background: #e5e7eb; color: #1f2937; }
+button:disabled { opacity: .55; cursor: wait; }
+#message { color: #2563eb; }
+.status { display: flex; gap: 12px; margin-top: 24px; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #111827; color: #f3f4f6; }
+  input, select, textarea { border-color: #4b5563; background: #1f2937; }
+  p, small { color: #9ca3af; }
+  button.secondary { background: #374151; color: #f3f4f6; }
+  .status { border-color: #374151; }
+}
