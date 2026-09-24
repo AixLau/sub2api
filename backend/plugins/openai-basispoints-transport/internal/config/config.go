@@ -64,7 +64,7 @@ func Parse(raw []byte) (Config, []byte, error) {
 	if err := json.Unmarshal(raw, &root); err != nil || root == nil {
 		return Config{}, nil, errors.New("配置必须是 JSON 对象")
 	}
-	var cfg Config
+	cfg := Defaults()
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&cfg); err != nil {

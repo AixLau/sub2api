@@ -11,8 +11,8 @@
       var timer = setTimeout(function () {
         pending.delete(requestId);
         reject(new Error("宿主响应超时"));
-      }, 15000);
-      pending.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+      }, 30000);
+      pending.set(requestId, { resolve: resolve, reject: reject, timer: timer, type: type });
       parent.postMessage(Object.assign({
         source: "sub2api-plugin-ui",
         bridge_token: token,
@@ -22,18 +22,24 @@
     });
   }
 
-  window.addEventListener("message", function (event) {
+  function onMessage(event) {
     if (event.source !== parent || !event.data || event.data.source !== "sub2api-plugin-host" || event.data.bridge_token !== token) return;
     var item = pending.get(event.data.request_id);
-    if (!item) return;
+    if (!item || event.data.type !== item.type + ".result") return;
     pending.delete(event.data.request_id);
     clearTimeout(item.timer);
-    if (event.data.ok === false) item.reject(new Error(event.data.message || "宿主请求失败"));
+    if (event.data.ok === false) item.reject(new Error(event.data.message || (event.data.result && event.data.result.message) || "宿主请求失败"));
     else item.resolve(event.data);
-  });
+  }
+  window.addEventListener("message", onMessage);
 
   window.sub2apiPluginBridge = {
     request: request,
+    dispose: function () {
+      window.removeEventListener("message", onMessage);
+      pending.forEach(function (item) { clearTimeout(item.timer); item.reject(new Error("配置页面已关闭")); });
+      pending.clear();
+    },
     notify: function (level, message) { parent.postMessage({ source: "sub2api-plugin-ui", bridge_token: token, type: "ui.notify", request_id: "notify-" + Date.now(), level: level, message: message }, "*"); },
     resize: function (height) { parent.postMessage({ source: "sub2api-plugin-ui", bridge_token: token, type: "ui.resize", request_id: "resize-" + Date.now(), height: height }, "*"); }
   };

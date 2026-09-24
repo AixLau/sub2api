@@ -2,13 +2,13 @@
   "schema_version": 1,
   "id": "local.sub2api.openai-transport",
   "name": "Sub2API OpenAI OAuth Transport",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "通过用户自己授权的 OpenAI OAuth 账号转发 Responses 请求到 Basis Points 上游。",
   "author": "Sub2API",
   "requires": {
     "sub2api": ">=0.2.8 <0.3.0",
     "recommended_sub2api_version": "0.2.8",
-    "tested_sub2api_versions": ["0.2.8"],
+    "tested_sub2api_versions": [],
     "plugin_protocol": 1,
     "transport_api": 1,
     "ui_bridge": 1

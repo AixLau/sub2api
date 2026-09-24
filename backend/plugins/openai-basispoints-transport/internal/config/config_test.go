@@ -13,6 +13,13 @@ func TestParseDefaultsAndRejectsUnknownFields(t *testing.T) {
 	if cfg.UpstreamBaseURL != DefaultUpstreamBaseURL || cfg.AuthMode != DefaultAuthMode || cfg.ProxyMode != DefaultProxyMode {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
+	if !cfg.EnableHTTP2 {
+		t.Fatal("empty configuration must enable HTTP/2")
+	}
+	disabled, _, err := Parse([]byte(`{"enable_http2":false}`))
+	if err != nil || disabled.EnableHTTP2 {
+		t.Fatal("explicit HTTP/2 opt-out must be preserved")
+	}
 	if !strings.Contains(string(normalized), `"extra_headers":{}`) {
 		t.Fatalf("normalized config omitted extra_headers: %s", normalized)
 	}

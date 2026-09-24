@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -9,12 +10,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
+	"github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/bridge"
 	pluginconfig "github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/config"
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -22,7 +25,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.1.0"
+	PluginVersion = "0.2.0"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -56,7 +59,9 @@ type Plugin struct {
 	hostConn *grpc.ClientConn
 	host     pluginv1.HostServiceClient
 
-	stats requestStats
+	stats           requestStats
+	lastBridgeError atomic.Value
+	omittedTools    atomic.Value
 }
 
 func New() *Plugin {
@@ -91,14 +96,17 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		return &pluginv1.HealthResponse{Healthy: false, Message: "传输配置未初始化"}, nil
 	}
 	statusJSON, _ := json.Marshal(map[string]any{
-		"upstream_base_url":  state.cfg.UpstreamBaseURL,
-		"proxy_mode":         state.cfg.ProxyMode,
-		"host_identity":      p.hostClient() != nil,
-		"requests_total":     p.stats.total.Load(),
-		"requests_succeeded": p.stats.succeeded.Load(),
-		"requests_failed":    p.stats.failed.Load(),
-		"last_status_code":   p.stats.lastCode.Load(),
-		"last_latency_ms":    p.stats.lastMs.Load(),
+		"upstream_base_url":    state.cfg.UpstreamBaseURL,
+		"proxy_mode":           state.cfg.ProxyMode,
+		"host_kv":              p.hostClient() != nil,
+		"tool_bridge":          "run_officejs-v1",
+		"requests_total":       p.stats.total.Load(),
+		"requests_succeeded":   p.stats.succeeded.Load(),
+		"requests_failed":      p.stats.failed.Load(),
+		"last_status_code":     p.stats.lastCode.Load(),
+		"last_latency_ms":      p.stats.lastMs.Load(),
+		"last_bridge_error":    p.lastBridgeError.Load(),
+		"omitted_hosted_tools": p.omittedTools.Load(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
 }
@@ -159,7 +167,7 @@ func (p *Plugin) TestConfig(_ context.Context, request *pluginv1.TestConfigReque
 }
 
 func (p *Plugin) InitHostServices(ctx context.Context, request *pluginv1.InitHostServicesRequest) (*pluginv1.InitHostServicesResponse, error) {
-	if request == nil || request.HostServiceId == 0 {
+	if request == nil || request.HostServiceId == 0 || request.HostServiceApiVersion < 1 {
 		return &pluginv1.InitHostServicesResponse{Ready: false, Message: "宿主服务标识无效"}, nil
 	}
 	p.brokerMu.RLock()
@@ -173,12 +181,6 @@ func (p *Plugin) InitHostServices(ctx context.Context, request *pluginv1.InitHos
 		return &pluginv1.InitHostServicesResponse{Ready: false, Message: "连接宿主服务失败"}, nil
 	}
 	client := pluginv1.NewHostServiceClient(conn)
-	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if _, err := client.ListAccounts(probeCtx, &pluginv1.ListAccountsRequest{Platform: "openai", AccountType: "oauth"}); err != nil {
-		_ = conn.Close()
-		return &pluginv1.InitHostServicesResponse{Ready: false, Message: "宿主账号目录不可用"}, nil
-	}
 	p.brokerMu.Lock()
 	old := p.hostConn
 	p.hostConn = conn
@@ -187,13 +189,10 @@ func (p *Plugin) InitHostServices(ctx context.Context, request *pluginv1.InitHos
 	if old != nil {
 		_ = old.Close()
 	}
-	return &pluginv1.InitHostServicesResponse{Ready: true, Message: "宿主账号身份服务已连接"}, nil
+	return &pluginv1.InitHostServicesResponse{Ready: true, Message: "宿主 KV 服务已连接"}, nil
 }
 
 func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse]) error {
-	if stream == nil {
-		return errors.New("转发流为空")
-	}
 	first, err := stream.Recv()
 	if err != nil {
 		return err
@@ -205,102 +204,141 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if err := validateStart(start); err != nil {
 		return p.sendError(stream, "PLUGIN_INVALID_REQUEST", err.Error(), false)
 	}
-
 	state := p.state.Load()
-	if state == nil {
-		return p.sendError(stream, "PLUGIN_NOT_READY", "传输配置未初始化", false)
-	}
 	target, err := resolveTarget(start.Url, state.cfg)
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_TARGET_INVALID", err.Error(), false)
 	}
-	identity, err := p.resolveIdentity(stream.Context(), start)
-	if err != nil {
-		return p.sendError(stream, "PLUGIN_IDENTITY_UNAVAILABLE", err.Error(), false)
+	// This adapter implements only Responses creation. It must not silently
+	// send compact/images/count requests to an unverified endpoint.
+	if start.Method != http.MethodPost || !strings.HasSuffix(target.Path, "/responses") {
+		return p.sendError(stream, "PLUGIN_UNSUPPORTED_ENDPOINT", "此插件目前仅支持 POST /responses", false)
 	}
-	body, bodyDone := receiveRequestBody(stream, start.HasBody)
-	request, err := p.buildRequest(stream.Context(), start, target, state.cfg, identity, body)
+	body, err := readRequestBody(stream, start)
 	if err != nil {
-		if closer, ok := body.(io.Closer); ok {
-			_ = closer.Close()
+		return p.sendError(stream, "PLUGIN_REQUEST_BODY_FAILED", err.Error(), false)
+	}
+	headers := headersFromProto(start.Headers)
+	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
+		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
+	}
+	var inputMeta struct {
+		PromptCacheKey string `json:"prompt_cache_key"`
+	}
+	_ = json.Unmarshal(body, &inputMeta)
+	session := ""
+	for _, key := range []string{"session_id", "session-id", "conversation_id"} {
+		if value := headers.Get(key); value != "" {
+			session = value
+			break
 		}
+	}
+	if session == "" {
+		session = inputMeta.PromptCacheKey
+	}
+	scope := bridge.Scope(strconv.FormatInt(start.AccountId, 10), state.cfg.UpstreamBaseURL, session)
+	var store bridge.Store
+	if client := p.hostClient(); client != nil {
+		store = hostStateStore{client: client}
+	}
+	adapted, err := bridge.Prepare(stream.Context(), body, scope, store)
+	if err != nil {
+		return p.sendError(stream, "TOOL_BRIDGE_REQUEST_INVALID", err.Error(), false)
+	}
+	p.omittedTools.Store(strings.Join(adapted.OmittedTools, ", "))
+	// The host has already authorized this exact outbound request. Do not mint
+	// another token or query unrelated accounts through HostService.
+	identity := outboundIdentity{headers: headers, proxy: start.ProxyUrl}
+	request, err := p.buildRequest(stream.Context(), start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(adapted.Body)))
+	if err != nil {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", err.Error(), false)
 	}
-
+	request.ContentLength = int64(len(adapted.Body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
 	requestCtx, cancel := context.WithTimeout(request.Context(), time.Duration(state.cfg.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 	request = request.WithContext(requestCtx)
 	p.stats.total.Add(1)
 	started := time.Now()
+	succeeded := false
+	defer func() {
+		p.stats.lastMs.Store(time.Since(started).Milliseconds())
+		if succeeded {
+			p.stats.succeeded.Add(1)
+		} else {
+			p.stats.failed.Add(1)
+		}
+	}()
 	response, err := state.client.Do(request)
 	if err != nil {
-		p.stats.failed.Add(1)
-		p.stats.lastMs.Store(time.Since(started).Milliseconds())
-		if closer, ok := body.(io.Closer); ok {
-			_ = closer.Close()
-		}
-		<-bodyDone
-		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游请求失败", true)
+		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游连接失败或超时", true)
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer response.Body.Close()
 	p.stats.lastCode.Store(int64(response.StatusCode))
-	p.stats.lastMs.Store(time.Since(started).Milliseconds())
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		response.Header.Del("Content-Length")
+		response.Header.Del("ETag")
+		response.ContentLength = -1
+		if !strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			raw, readErr := io.ReadAll(io.LimitReader(response.Body, bridge.MaxBodyBytes+1))
+			if readErr != nil || len(raw) > bridge.MaxBodyBytes {
+				return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "上游响应读取失败或过大", true)
+			}
+			converted, convertErr := adapted.Response(requestCtx, raw)
+			if convertErr != nil {
+				return p.sendError(stream, "TOOL_BRIDGE_RESPONSE_FAILED", convertErr.Error(), true)
+			}
+			response.Body.Close()
+			response.Body = io.NopCloser(bytes.NewReader(converted))
+			response.ContentLength = int64(len(converted))
+		}
+	}
 	if err := stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_Start{Start: responseStart(response)}}); err != nil {
 		return err
 	}
-	buffer := make([]byte, chunkSize)
-	for {
-		read, readErr := response.Body.Read(buffer)
-		if read > 0 {
-			chunk := append([]byte(nil), buffer[:read]...)
+	var received int64
+	emit := func(data []byte) error {
+		for len(data) > 0 {
+			n := min(len(data), chunkSize)
+			chunk := append([]byte(nil), data[:n]...)
 			if err := stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_BodyChunk{BodyChunk: chunk}}); err != nil {
 				return err
 			}
+			received += int64(n)
+			data = data[n:]
 		}
-		if readErr == io.EOF {
-			break
+		return nil
+	}
+	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+		if err := adapted.Stream(requestCtx, response.Body, emit); err != nil {
+			return p.sendError(stream, "TOOL_BRIDGE_STREAM_FAILED", err.Error(), true)
 		}
-		if readErr != nil {
-			p.stats.failed.Add(1)
-			return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "读取上游响应失败", true)
+	} else {
+		buffer := make([]byte, chunkSize)
+		for {
+			n, err := response.Body.Read(buffer)
+			if n > 0 {
+				if sendErr := emit(buffer[:n]); sendErr != nil {
+					return sendErr
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "读取上游响应失败", true)
+			}
 		}
 	}
-	if err := <-bodyDone; err != nil {
-		p.stats.failed.Add(1)
-		return p.sendError(stream, "PLUGIN_REQUEST_BODY_FAILED", "读取请求体失败", true)
-	}
-	p.stats.succeeded.Add(1)
-	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{
-		BytesReceived: response.ContentLength,
-		DurationMs:    time.Since(started).Milliseconds(),
-	}}})
+	succeeded = response.StatusCode >= 200 && response.StatusCode < 300 && !adapted.Failed
+	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})
 }
 
 type outboundIdentity struct {
 	token   string
 	headers http.Header
 	proxy   string
-}
-
-func (p *Plugin) resolveIdentity(ctx context.Context, start *pluginv1.ForwardRequestStart) (outboundIdentity, error) {
-	host := p.hostClient()
-	if host != nil {
-		identityCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		identity, err := host.ResolveOutboundIdentity(identityCtx, &pluginv1.ResolveOutboundIdentityRequest{AccountId: start.AccountId})
-		if err != nil || identity == nil || !identity.Found {
-			return outboundIdentity{}, errors.New("宿主未解析到绑定账号身份")
-		}
-		if identity.Platform != "openai" || identity.AccountType != "oauth" || strings.TrimSpace(identity.Token) == "" {
-			return outboundIdentity{}, errors.New("宿主返回的账号身份类型无效")
-		}
-		return outboundIdentity{token: identity.Token, headers: headersFromProto(identity.Headers), proxy: identity.ProxyUrl}, nil
-	}
-	// A missing HostService is useful for local integration tests and for a
-	// manually launched development runtime. The normal Sub2API process always
-	// supplies the already-authorized request headers for a routed account.
-	headers := headersFromProto(start.Headers)
-	return outboundIdentity{headers: headers, proxy: start.ProxyUrl}, nil
 }
 
 func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardRequestStart, target *url.URL, cfg pluginconfig.Config, identity outboundIdentity, body io.ReadCloser) (*http.Request, error) {
@@ -338,9 +376,10 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))
 	}
 	if accountID != "" {
+		request.Header.Set("chatgpt-account-id", accountID)
 		request.Header.Set("x-openai-account-id", accountID)
 	}
-	if strings.EqualFold(target.Hostname(), "bps.openai.com") {
+	{
 		if request.Header.Get("Authorization") == "" || accountID == "" {
 			return nil, errors.New("Basis Points 上游需要 OAuth 授权和 ChatGPT 账号 ID")
 		}
@@ -390,7 +429,7 @@ func buildRuntimeState(cfg pluginconfig.Config) (*runtimeState, error) {
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 	}
-	return &runtimeState{cfg: cfg, transport: transport, client: &http.Client{Transport: transport}}, nil
+	return &runtimeState{cfg: cfg, transport: transport, client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (p *Plugin) hostClient() pluginv1.HostServiceClient {
@@ -399,48 +438,33 @@ func (p *Plugin) hostClient() pluginv1.HostServiceClient {
 	return p.host
 }
 
-func receiveRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], hasBody bool) (io.ReadCloser, <-chan error) {
-	done := make(chan error, 1)
-	if !hasBody {
-		go func() {
-			for {
-				frame, err := stream.Recv()
-				if err != nil {
-					done <- err
-					return
-				}
-				if frame.GetBodyEnd() {
-					done <- nil
-					return
-				}
-			}
-		}()
-		return http.NoBody, done
+// Read the bounded JSON body before dialing upstream. This avoids an upload
+// goroutine blocked in Recv when an upstream rejects a request before body_end.
+func readRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], start *pluginv1.ForwardRequestStart) ([]byte, error) {
+	if start.ContentLength > bridge.MaxBodyBytes {
+		return nil, errors.New("请求体超过桥接大小限制")
 	}
-	reader, writer := io.Pipe()
-	go func() {
-		defer close(done)
-		for {
-			frame, err := stream.Recv()
-			if err != nil {
-				_ = writer.CloseWithError(err)
-				done <- err
-				return
-			}
-			if chunk := frame.GetBodyChunk(); len(chunk) > 0 {
-				if _, err := writer.Write(chunk); err != nil {
-					done <- err
-					return
-				}
-			}
-			if frame.GetBodyEnd() {
-				_ = writer.Close()
-				done <- nil
-				return
-			}
+	var body bytes.Buffer
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			return nil, errors.New("请求体在 body_end 前中断")
 		}
-	}()
-	return reader, done
+		switch value := frame.Frame.(type) {
+		case *pluginv1.ForwardRequest_BodyChunk:
+			if !start.HasBody || len(value.BodyChunk) > bridge.MaxBodyBytes-body.Len() {
+				return nil, errors.New("请求体帧无效或超过大小限制")
+			}
+			body.Write(value.BodyChunk)
+		case *pluginv1.ForwardRequest_BodyEnd:
+			if !value.BodyEnd || (start.ContentLength > 0 && start.ContentLength != int64(body.Len())) {
+				return nil, errors.New("请求体长度或 body_end 无效")
+			}
+			return body.Bytes(), nil
+		default:
+			return nil, errors.New("请求体帧顺序无效")
+		}
+	}
 }
 
 func validateStart(start *pluginv1.ForwardRequestStart) error {
@@ -461,9 +485,6 @@ func resolveTarget(raw string, cfg pluginconfig.Config) (*url.URL, error) {
 	base, err := url.Parse(cfg.UpstreamBaseURL)
 	if err != nil {
 		return nil, errors.New("上游 Base URL 无效")
-	}
-	if cfg.UpstreamBaseURL == pluginconfig.DefaultUpstreamBaseURL && isLocalHost(incoming.Hostname()) {
-		return incoming, nil
 	}
 	suffix := basisPointsPathSuffix(incoming.Path)
 	base.Path = strings.TrimRight(base.Path, "/") + suffix
@@ -489,11 +510,6 @@ func basisPointsPathSuffix(path string) string {
 	return path
 }
 
-func isLocalHost(host string) bool {
-	host = strings.Trim(strings.ToLower(host), "[]")
-	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "127.")
-}
-
 func responseStart(response *http.Response) *pluginv1.ForwardResponseStart {
 	return &pluginv1.ForwardResponseStart{
 		StatusCode:    int32(response.StatusCode),
@@ -507,6 +523,7 @@ func responseStart(response *http.Response) *pluginv1.ForwardResponseStart {
 }
 
 func (p *Plugin) sendError(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], code, message string, requestSent bool) error {
+	p.lastBridgeError.Store(code)
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_Error{Error: &pluginv1.ForwardResponseError{
 		Code: code, Message: message, RequestSent: requestSent,
 	}}})
@@ -518,7 +535,9 @@ func headersFromProto(input map[string]*pluginv1.HeaderValues) http.Header {
 		if values == nil || strings.TrimSpace(key) == "" {
 			continue
 		}
-		output[key] = append([]string(nil), values.Values...)
+		for _, value := range values.Values {
+			output.Add(key, value)
+		}
 	}
 	return output
 }

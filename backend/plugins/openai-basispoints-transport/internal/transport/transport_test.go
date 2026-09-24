@@ -28,10 +28,11 @@ func TestResolveTargetMapsResponsesPaths(t *testing.T) {
 	}
 }
 
-func TestResolveTargetPreservesLocalDevelopmentServer(t *testing.T) {
+func TestResolveTargetUsesExplicitDevelopmentServer(t *testing.T) {
 	cfg := pluginconfig.Defaults()
-	got, err := resolveTarget("http://127.0.0.1:4242/test", cfg)
-	if err != nil || got.String() != "http://127.0.0.1:4242/test" {
+	cfg.UpstreamBaseURL = "http://127.0.0.1:4242"
+	got, err := resolveTarget("https://chatgpt.com/backend-api/codex/responses", cfg)
+	if err != nil || got.String() != "http://127.0.0.1:4242/responses" {
 		t.Fatalf("local target: got %v, err %v", got, err)
 	}
 }
