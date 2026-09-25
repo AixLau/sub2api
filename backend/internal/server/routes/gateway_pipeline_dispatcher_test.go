@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -62,7 +63,7 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "OpenAI messages",
 			platform: service.PlatformOpenAI,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
@@ -90,14 +91,14 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "Grok messages non-streaming",
 			platform: service.PlatformGrok,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
 			name:     "Grok messages streaming",
 			platform: service.PlatformGrok,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
@@ -150,28 +151,28 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "Deepseek messages auto route enters only the OpenAI HTTP branch",
 			platform: service.PlatformDeepseek,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
 			name:     "Kimi messages auto route enters only the OpenAI HTTP branch",
 			platform: service.PlatformKimi,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
 			name:     "Zhipu messages auto route enters only the OpenAI HTTP branch",
 			platform: service.PlatformZhipu,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
 			name:     "MiniMax messages auto route enters only the OpenAI HTTP branch",
 			platform: service.PlatformMiniMax,
 			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
-				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+				"OpenAIGatewayHandler.Messages", handler.GatewayProtocolOpenAIMessages),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
@@ -199,7 +200,7 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "Deepseek embeddings remain unsupported",
 			platform: service.PlatformDeepseek,
 			metas: []ModeratedRouteMeta{openAITextBranch("/v1/embeddings", "OpenAIGatewayHandler.Embeddings",
-				service.ContentModerationProtocolOpenAIEmbeddings)},
+				handler.GatewayProtocolOpenAIEmbeddings)},
 		},
 		{
 			name:     "Deepseek images remain unsupported",
@@ -267,7 +268,7 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "OpenAI embeddings",
 			platform: service.PlatformOpenAI,
 			metas: []ModeratedRouteMeta{openAITextBranch("/v1/embeddings", "OpenAIGatewayHandler.Embeddings",
-				service.ContentModerationProtocolOpenAIEmbeddings)},
+				handler.GatewayProtocolOpenAIEmbeddings)},
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
 		{
@@ -341,7 +342,7 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 			name:     "Grok embeddings remain unsupported",
 			platform: service.PlatformGrok,
 			metas: []ModeratedRouteMeta{openAITextBranch("/v1/embeddings", "OpenAIGatewayHandler.Embeddings",
-				service.ContentModerationProtocolOpenAIEmbeddings)},
+				handler.GatewayProtocolOpenAIEmbeddings)},
 		},
 		{
 			name:     "Grok count tokens remains unsupported",

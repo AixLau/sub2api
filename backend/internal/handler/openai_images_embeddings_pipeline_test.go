@@ -36,7 +36,7 @@ func TestOpenAIChatMessagesResponsesImagesAndEmbeddingsPreForwardRunThroughGatew
 			name:             "messages",
 			file:             "openai_gateway_handler.go",
 			handler:          "Messages",
-			protocolConstant: "ContentModerationProtocolOpenAIMessages",
+			protocolConstant: "GatewayProtocolOpenAIMessages",
 		},
 		{
 			name:             "responses",
@@ -54,7 +54,7 @@ func TestOpenAIChatMessagesResponsesImagesAndEmbeddingsPreForwardRunThroughGatew
 			name:             "embeddings",
 			file:             "openai_embeddings.go",
 			handler:          "Embeddings",
-			protocolConstant: "ContentModerationProtocolOpenAIEmbeddings",
+			protocolConstant: "GatewayProtocolOpenAIEmbeddings",
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestOpenAIImagesAndEmbeddingsPipelineSkipCyberStagePreservesExistingBehavio
 		{
 			name:     "embeddings",
 			target:   "/v1/embeddings",
-			protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+			protocol: GatewayProtocolOpenAIEmbeddings,
 			model:    "text-embedding-3-small",
 			body:     []byte(`{"model":"text-embedding-3-small","input":"hello"}`),
 		},

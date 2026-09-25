@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -41,7 +42,7 @@ type BatchImageAccountSelectionRepository interface {
 }
 
 type BatchImageModerationGate interface {
-	CheckAccountAttempt(context.Context, ContentModerationCheckInput, *ContentModerationAttemptState) (*ContentModerationGateResult, error)
+	Check(context.Context, ContentModerationCheckInput) (*ContentModerationDecision, error)
 }
 
 type ContentModerationGateError struct {
@@ -262,7 +263,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if err != nil {
 		return nil, err
 	}
-	if err := s.moderateSelectedAccount(ctx, owner, normalized, provider.Name(), account, batchImageModerationRequestID(ctx, batchID)); err != nil {
+	if err := s.moderateBatch(ctx, owner, normalized, provider.Name(), batchImageModerationRequestID(ctx, batchID)); err != nil {
 		return nil, err
 	}
 	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
@@ -427,44 +428,53 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	return BatchImageJobToPublic(created), nil
 }
 
-func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account, requestID string) error {
-	if s == nil || s.Moderation == nil || account == nil {
+func (s *BatchImagePublicService) moderateBatch(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, requestID string) error {
+	if s == nil || s.Moderation == nil {
 		return nil
 	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return &ContentModerationGateError{StatusCode: 500, Code: "CONTENT_MODERATION_INPUT_ERROR", Message: "failed to prepare content moderation input"}
-	}
-	result, err := s.Moderation.CheckAccountAttempt(ctx, ContentModerationCheckInput{
-		RequestID:   requestID,
-		UserID:      owner.UserID,
-		UserEmail:   owner.UserEmail,
-		APIKeyID:    owner.APIKeyID,
-		APIKeyName:  owner.APIKeyName,
-		GroupID:     cloneInt64Ptr(owner.GroupID),
-		GroupName:   owner.GroupName,
-		AccountID:   account.ID,
-		AccountName: account.Name,
-		AccountType: account.Type,
-		Endpoint:    "/v1/images/batches",
-		Provider:    provider,
-		Model:       req.Model,
-		Protocol:    ContentModerationProtocolBatchImages,
-		Body:        body,
-	}, nil)
-	if err != nil {
-		return &ContentModerationGateError{StatusCode: 503, Code: "CONTENT_MODERATION_UNAVAILABLE", Message: "content moderation is temporarily unavailable"}
-	}
-	if result != nil && result.Decision != nil && result.Decision.Blocked {
-		status := result.Decision.StatusCode
-		if status < 400 || status > 599 {
-			status = 403
+	for _, item := range req.Items {
+		images := make([]map[string]any, 0, len(item.ReferenceImages))
+		for _, ref := range item.ReferenceImages {
+			imageURL := ref.FileURI
+			if len(ref.Data) > 0 {
+				imageURL = "data:" + ref.MimeType + ";base64," + base64.StdEncoding.EncodeToString(ref.Data)
+			}
+			if imageURL != "" {
+				images = append(images, map[string]any{"type": "image_url", "image_url": map[string]string{"url": imageURL}})
+			}
 		}
-		message := strings.TrimSpace(result.Decision.Message)
-		if message == "" {
-			message = "request blocked by content policy"
+		body, err := json.Marshal(map[string]any{"prompt": item.Prompt, "images": images})
+		if err != nil {
+			return fmt.Errorf("prepare batch content audit: %w", err)
 		}
-		return &ContentModerationGateError{StatusCode: status, Code: "content_policy_violation", Message: message}
+		decision, err := s.Moderation.Check(ctx, ContentModerationCheckInput{
+			RequestID:  requestID,
+			UserID:     owner.UserID,
+			UserEmail:  owner.UserEmail,
+			APIKeyID:   owner.APIKeyID,
+			APIKeyName: owner.APIKeyName,
+			GroupID:    cloneInt64Ptr(owner.GroupID),
+			GroupName:  owner.GroupName,
+			Endpoint:   "/v1/images/batches",
+			Provider:   provider,
+			Model:      req.Model,
+			Protocol:   ContentModerationProtocolOpenAIImages,
+			Body:       body,
+		})
+		if err != nil {
+			return &ContentModerationGateError{StatusCode: 503, Code: "CONTENT_MODERATION_UNAVAILABLE", Message: "content moderation is temporarily unavailable"}
+		}
+		if decision != nil && decision.Blocked {
+			status := decision.StatusCode
+			if status < 400 || status > 599 {
+				status = 403
+			}
+			message := strings.TrimSpace(decision.Message)
+			if message == "" {
+				message = "request blocked by content policy"
+			}
+			return &ContentModerationGateError{StatusCode: status, Code: "content_policy_violation", Message: message}
+		}
 	}
 	return nil
 }

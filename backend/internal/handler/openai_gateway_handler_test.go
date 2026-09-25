@@ -1488,35 +1488,17 @@ func (r *contentModerationHandlerTestRepo) UpdateLogEmailSent(ctx context.Contex
 	return nil
 }
 
-func (r *contentModerationHandlerTestRepo) UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error {
-	return nil
-}
-
-func (r *contentModerationHandlerTestRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
-	return nil
-}
-
-func (r *contentModerationHandlerTestRepo) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
-	return nil
-}
-
-func (r *contentModerationHandlerTestRepo) ReviewLog(ctx context.Context, id int64, input service.ContentModerationLogReviewInput) (*service.ContentModerationLog, error) {
-	return &service.ContentModerationLog{ID: id, ReviewStatus: input.Status, ReviewNote: input.Note}, nil
-}
-
 func newBlockingContentModerationServiceForHandlerTest(t *testing.T, keyword string) (*service.ContentModerationService, *contentModerationHandlerTestRepo) {
 	t.Helper()
 	cfg := &service.ContentModerationConfig{
-		Enabled:      true,
-		Mode:         service.ContentModerationModePreBlock,
-		APIKeys:      []string{},
-		AllGroups:    true,
-		EngineMode:   service.ContentModerationEngineModeRuleOnly,
-		BlockStatus:  http.StatusForbidden,
-		BlockMessage: "内容审计测试阻断",
-		KeywordRules: []service.ContentModerationKeywordRule{
-			{Keyword: keyword, Category: service.ContentModerationKeywordCategoryCustom, Severity: service.ContentModerationKeywordSeverityHigh, Action: service.ContentModerationKeywordActionBlock, Enabled: true},
-		},
+		Enabled:             true,
+		Mode:                service.ContentModerationModePreBlock,
+		APIKeys:             []string{},
+		AllGroups:           true,
+		BlockStatus:         http.StatusForbidden,
+		BlockMessage:        "内容审计测试阻断",
+		BlockedKeywords:     []string{keyword},
+		KeywordBlockingMode: service.ContentModerationKeywordModeKeywordOnly,
 	}
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -1526,7 +1508,7 @@ func newBlockingContentModerationServiceForHandlerTest(t *testing.T, keyword str
 		service.SettingKeyRiskControlEnabled:      "true",
 		service.SettingKeyContentModerationConfig: string(rawCfg),
 	}}
-	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil), repo
+	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil), repo
 }
 
 func newDisabledContentModerationServiceForHandlerTest(t *testing.T) *service.ContentModerationService {
@@ -1535,7 +1517,7 @@ func newDisabledContentModerationServiceForHandlerTest(t *testing.T) *service.Co
 	settingRepo := &contentModerationHandlerSettingRepo{values: map[string]string{
 		service.SettingKeyRiskControlEnabled: "false",
 	}}
-	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil)
+	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil)
 }
 
 func setGatewayAuthContextForModerationTest(c *gin.Context) {
@@ -1575,7 +1557,7 @@ func TestOpenAIEmbeddings_ContentModerationBlocksBeforeScheduling(t *testing.T) 
 		Handler:            "OpenAIGatewayHandler.Embeddings",
 		Upstream:           true,
 		ModerationRequired: true,
-		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Protocol:           GatewayProtocolOpenAIEmbeddings,
 		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
 	})
 
@@ -1631,7 +1613,7 @@ func TestOpenAIEmbeddings_UsesModerationGuardBeforeScheduling(t *testing.T) {
 		Handler:            "OpenAIGatewayHandler.Embeddings",
 		Upstream:           true,
 		ModerationRequired: true,
-		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Protocol:           GatewayProtocolOpenAIEmbeddings,
 		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
 	})
 
@@ -1639,7 +1621,7 @@ func TestOpenAIEmbeddings_UsesModerationGuardBeforeScheduling(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "guard blocked")
 	require.Len(t, guard.calls, 1)
-	require.Equal(t, service.ContentModerationProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
+	require.Equal(t, GatewayProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
 	require.Equal(t, "text-embedding-3-small", guard.calls[0].Model)
 	require.JSONEq(t, body, string(guard.calls[0].Body))
 }
@@ -1668,19 +1650,19 @@ func TestOpenAIEmbeddings_GatewayPipelineEntrypointRunsPreForwardAndCachesReques
 		Handler:            "OpenAIGatewayHandler.Embeddings",
 		Upstream:           true,
 		ModerationRequired: true,
-		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Protocol:           GatewayProtocolOpenAIEmbeddings,
 		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
 	})
 
 	require.False(t, result.Stop)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Len(t, guard.calls, 1)
-	require.Equal(t, service.ContentModerationProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
+	require.Equal(t, GatewayProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
 	require.Equal(t, "text-embedding-3-small", guard.calls[0].Model)
 	require.JSONEq(t, body, string(guard.calls[0].Body))
 	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
 
-	cached, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIEmbeddings)
+	cached, ok := openAIHTTPPreForwardRequestFromContext(c, GatewayProtocolOpenAIEmbeddings)
 	require.True(t, ok)
 	require.Equal(t, "text-embedding-3-small", cached.Model)
 	require.JSONEq(t, body, string(cached.Body))
@@ -1740,7 +1722,7 @@ func TestOpenAIEmbeddings_SkipsPreForwardWhenGatewayPipelineEntrypointAlreadyRan
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(string(body)))
 	setGatewayAuthContextForModerationTest(c)
 	setOpenAIHTTPPreForwardRequest(c, openAIHTTPPreForwardRequest{
-		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+		Protocol: GatewayProtocolOpenAIEmbeddings,
 		Model:    "text-embedding-3-small",
 		Body:     body,
 	})
@@ -1842,7 +1824,7 @@ func TestOpenAIChat_GatewayPipelineEntrypointCyberBlockStopsBeforeHandler(t *tes
 	require.Equal(t, []string{service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 
-func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *testing.T) {
+func TestOpenAIResponses_ContentModerationIgnoresToolSchemasOutsideUserInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "deep schema risk")
 
@@ -1888,20 +1870,11 @@ func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *t
 
 	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
-	require.True(t, result.Stop)
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, w.Body.String(), "内容审计测试阻断")
-	require.Eventually(t, func() bool {
-		return len(repo.logSnapshot()) == 1
-	}, time.Second, 10*time.Millisecond)
-	logs := repo.logSnapshot()
-	require.Equal(t, "/v1/responses", logs[0].Endpoint)
-	require.Equal(t, "gpt-5.5", logs[0].Model)
-	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
-	require.Equal(t, "deep schema risk", logs[0].MatchedKeyword)
+	require.False(t, result.Stop)
+	require.Empty(t, repo.logSnapshot())
 }
 
-func TestOpenAIAnthropicMessages_ContentModerationBlocksToolUseMediaBeforeForward(t *testing.T) {
+func TestOpenAIAnthropicMessages_ContentModerationIgnoresAssistantToolPayloads(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "tool media risk")
 
@@ -1939,17 +1912,8 @@ func TestOpenAIAnthropicMessages_ContentModerationBlocksToolUseMediaBeforeForwar
 
 	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIMessagesHTTPRouteMetaForTest())
 
-	require.True(t, result.Stop)
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, w.Body.String(), "内容审计测试阻断")
-	require.Eventually(t, func() bool {
-		return len(repo.logSnapshot()) == 1
-	}, time.Second, 10*time.Millisecond)
-	logs := repo.logSnapshot()
-	require.Equal(t, EndpointMessages, logs[0].Endpoint)
-	require.Equal(t, "claude-sonnet-4-5", logs[0].Model)
-	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
-	require.Equal(t, "tool media risk", logs[0].MatchedKeyword)
+	require.False(t, result.Stop)
+	require.Empty(t, repo.logSnapshot())
 }
 
 func openAIMessagesHTTPRouteMetaForTest() moderationcoverage.Entry {
@@ -1959,7 +1923,7 @@ func openAIMessagesHTTPRouteMetaForTest() moderationcoverage.Entry {
 		Handler:            "OpenAIGatewayHandler.Messages",
 		Upstream:           true,
 		ModerationRequired: true,
-		Protocol:           service.ContentModerationProtocolOpenAIMessages,
+		Protocol:           GatewayProtocolOpenAIMessages,
 		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
 	}
 }
@@ -2017,15 +1981,14 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	defer moderationServer.Close()
 
 	cfg := &service.ContentModerationConfig{
-		Enabled:           true,
-		Mode:              service.ContentModerationModePreBlock,
-		BaseURL:           moderationServer.URL,
-		Model:             "omni-moderation-latest",
-		APIKeys:           []string{"sk-test"},
-		SampleRate:        100,
-		AllGroups:         true,
-		StoreInputExcerpt: true,
-		BlockMessage:      "内容审计测试阻断",
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		BaseURL:      moderationServer.URL,
+		Model:        "omni-moderation-latest",
+		APIKeys:      []string{"sk-test"},
+		SampleRate:   100,
+		AllGroups:    true,
+		BlockMessage: "内容审计测试阻断",
 	}
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)

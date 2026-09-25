@@ -191,18 +191,8 @@ func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 	}
 }
 
-func TestOpenAIWebSocketDeferredReviewUsesRetryableCloseStatus(t *testing.T) {
-	result := openAIWebSocketPipelineResult{
-		Blocked:     true,
-		BlockReason: openAIWebSocketPipelineBlockReasonModeration,
-		ModerationDecision: &service.ContentModerationDecision{
-			Blocked: true,
-			Action:  service.ContentModerationActionSemanticReviewDeferred,
-		},
-	}
-	require.Equal(t, coderws.StatusTryAgainLater, openAIWebSocketPipelineCloseStatus(result))
-
-	result.ModerationDecision.Action = service.ContentModerationActionSemanticReviewReject
+func TestOpenAIWebSocketModerationBlockUsesPolicyCloseStatus(t *testing.T) {
+	result := openAIWebSocketPipelineResult{Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonModeration, ModerationDecision: &service.ContentModerationDecision{Blocked: true, Action: service.ContentModerationActionBlock}}
 	require.Equal(t, coderws.StatusPolicyViolation, openAIWebSocketPipelineCloseStatus(result))
 }
 

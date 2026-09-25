@@ -1,5 +1,3 @@
-//go:build upstream_runtime_cache
-
 package service
 
 import (

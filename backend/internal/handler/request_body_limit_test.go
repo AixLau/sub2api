@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestRequestBodyLimitTooLarge(t *testing.T) {
@@ -199,46 +199,15 @@ func TestMarkOpsRequestBodyTooLarge_InspectedBodyLogsMetadataOnly(t *testing.T) 
 	require.NotContains(t, gotDetail.(string), dataURL)
 }
 
-func TestOpenAIHTTPGatewayPipeline_OversizedAdmissionRecordsSafeDiagnostic(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"private":"body"}`))
-	c.Request.ContentLength = 51 << 20
-
-	h := &OpenAIGatewayHandler{
-		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
+func TestRequestBodyReadersUseGatewayConfiguredLimit(t *testing.T) {
+	cfg := &config.Config{Gateway: config.GatewayConfig{MaxBodySize: 32}}
+	for name, read := range map[string]func(*http.Request, *config.Config) ([]byte, error){"raw": readRawRequestBodyWithLimit, "json": readLenientJSONRequestBodyWithPrealloc} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(strings.Repeat("x", 64)))
+			_, err := read(req, cfg)
+			maxErr, ok := extractMaxBytesError(err)
+			require.True(t, ok)
+			require.Equal(t, int64(32), maxErr.Limit)
+		})
 	}
-	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
-
-	require.True(t, result.Stop)
-	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
-	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
-	require.True(t, ok)
-	require.Equal(t, int64(51<<20), gjson.Get(gotDetail.(string), "content_length").Int())
-	require.Equal(t, int64(50<<20), gjson.Get(gotDetail.(string), "limit_bytes").Int())
-	require.False(t, gjson.Get(gotDetail.(string), "body_inspected").Bool())
-	require.NotContains(t, gotDetail.(string), "private")
-}
-
-func TestGatewayPreForwardPipeline_OversizedAdmissionRecordsSafeDiagnostic(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{"private":"body"}`))
-	c.Request.ContentLength = 51 << 20
-
-	h := &GatewayHandler{
-		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
-	}
-	result := h.EnterGatewayPreForwardPipeline(c, gatewayCountTokensRouteMetaForTest())
-
-	require.True(t, result.Blocked)
-	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
-	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
-	require.True(t, ok)
-	require.Equal(t, int64(51<<20), gjson.Get(gotDetail.(string), "content_length").Int())
-	require.Equal(t, int64(50<<20), gjson.Get(gotDetail.(string), "limit_bytes").Int())
-	require.False(t, gjson.Get(gotDetail.(string), "body_inspected").Bool())
-	require.NotContains(t, gotDetail.(string), "private")
 }

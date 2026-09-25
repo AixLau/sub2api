@@ -969,7 +969,7 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 				routeMeta = openAIResponsesHTTPRouteMetaForTest()
 			}
 		case "/openai/v1/messages":
-			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/messages", Handler: "OpenAIGatewayHandler.Messages", Protocol: service.ContentModerationProtocolOpenAIMessages}
+			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/messages", Handler: "OpenAIGatewayHandler.Messages", Protocol: GatewayProtocolOpenAIMessages}
 		case "/openai/v1/chat/completions":
 			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/chat/completions", Handler: "OpenAIGatewayHandler.ChatCompletions", Protocol: service.ContentModerationProtocolOpenAIChat}
 		case "/openai/v1/videos/generations":

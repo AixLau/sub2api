@@ -85,25 +85,7 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	if !gatewayPreForwardEntrypointSupported(meta.Handler, meta.Protocol) {
 		return gatewayPreForwardPipelineResult{}
 	}
-	if h.contentModerationService != nil {
-		protectedCtx, err := h.contentModerationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
-		if err != nil {
-			if errors.Is(err, service.ErrRequestMemoryBudgetExhausted) {
-				c.Header("Retry-After", "1")
-				writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusTooManyRequests, "request_memory_budget_exhausted", "Request memory budget exhausted")
-			} else {
-				var sizeErr *service.RequestBodyTooLargeError
-				if errors.As(err, &sizeErr) {
-					markOpsRequestBodyTooLarge(c, sizeErr.Limit, nil, false)
-					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusRequestEntityTooLarge, "request_body_too_large", buildBodyTooLargeMessage(sizeErr.Limit))
-				} else {
-					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusBadRequest, "invalid_request_error", err.Error())
-				}
-			}
-			return gatewayPreForwardPipelineResult{Blocked: true}
-		}
-		c.Request = c.Request.WithContext(protectedCtx)
-	}
+
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
 		writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusUnauthorized, "authentication_error", "Invalid API key")
@@ -716,11 +698,7 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 						h.writeGatewayPreForwardPromptAuditError(c, request.ErrorFormat, decision)
 						return ExecutableStageResult{Stop: true}
 					}
-					gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, account)
-					if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
-						h.writeGatewayPreForwardModerationError(c, request.ErrorFormat, gate.Decision)
-						return ExecutableStageResult{Stop: true}
-					}
+
 				}
 			}
 		}
@@ -743,15 +721,7 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 					h.writeGatewayPreForwardPromptAuditError(c, request.ErrorFormat, decision)
 					return ExecutableStageResult{Stop: true}
 				}
-				gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, selection.Account)
-				if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
-					if selection.Acquired && selection.ReleaseFunc != nil {
-						selection.ReleaseFunc()
-						selection.ReleaseFunc = nil
-					}
-					h.writeGatewayPreForwardModerationError(c, request.ErrorFormat, gate.Decision)
-					return ExecutableStageResult{Stop: true}
-				}
+
 			}
 		}
 	}
@@ -998,6 +968,15 @@ func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) 
 		pipeline = newGatewayPreForwardPipeline(nil)
 	}
 	input := ctx.input
+	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
+		decision := ctx.handler.checkSecurityAudit(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
+		if decision != nil && !decision.AllowNextStage {
+			ctx.handler.writeGatewayPreForwardPromptAuditError(ctx.c, input.ErrorFormat, decision)
+			return gatewayPreForwardStageResult{Blocked: true}
+		}
+		return gatewayPreForwardStageResult{}
+	}
+
 	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
 		APIKey:   input.APIKey,
 		Subject:  input.Subject,
@@ -1043,13 +1022,9 @@ func gatewayPreForwardExecutableStages(ctx *gatewayPreForwardStageContext, stage
 		executableStages = append(executableStages, ExecutableStage{
 			Name: stage.Name(),
 			Run: func() ExecutableStageResult {
-				receiptCountBefore := 0
-				if ctx != nil {
-					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
-				}
 				result := stage.Run(ctx)
 				if !result.Blocked && stage.Name() == moderationcoverage.StageModeration && ctx != nil {
-					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+					moderationcoverage.MarkModerationReceipt(ctx.c, moderationcoverage.ModerationExecutionReceipt{Protocol: ctx.input.Protocol, LocalScanDone: true, Outcome: "allow", ForwardAllowed: true})
 				}
 				return ExecutableStageResult{Stop: result.Blocked}
 			},
@@ -1075,16 +1050,16 @@ func (p *GatewayPreForwardPipeline) preForwardStages() []gatewayPreForwardStage 
 }
 
 func (h *GatewayHandler) writeGatewayPreForwardModerationError(c *gin.Context, format gatewayPreForwardErrorFormat, decision *service.ContentModerationDecision) {
-	markOpsContentModerationDiagnostic(c, decision)
+
 	switch format {
 	case gatewayPreForwardErrorGemini:
-		googleError(c, contentModerationStatus(decision), contentModerationClientMessage(decision))
+		googleError(c, contentModerationStatus(decision), decision.Message)
 	case gatewayPreForwardErrorOpenAIChat:
-		h.chatCompletionsErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+		h.chatCompletionsErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 	case gatewayPreForwardErrorOpenAIResponses:
-		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 	default:
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 	}
 }
 

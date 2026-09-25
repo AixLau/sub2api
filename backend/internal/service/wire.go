@@ -49,60 +49,6 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// ProvideContentModerationService creates ContentModerationService with runtime build metadata.
-func ProvideContentModerationService(
-	settingRepo SettingRepository,
-	repo ContentModerationRepository,
-	outboxRepo ContentModerationOutboxRepository,
-	hashCache ContentModerationHashCache,
-	groupRepo GroupRepository,
-	accountRepo AccountRepository,
-	userRepo UserRepository,
-	proxyRepo ProxyRepository,
-	authCacheInvalidator APIKeyAuthCacheInvalidator,
-	emailService *EmailService,
-	passCache ContentModerationPassCache,
-	decisionCache ContentModerationDecisionCache,
-	feedbackEpochRepo ModerationFeedbackEpochRepository,
-	encryptor SecretEncryptor,
-	openAIGatewayService *OpenAIGatewayService,
-	openAIQuotaService *OpenAIQuotaService,
-	usageLogRepo UsageLogRepository,
-	billingService *BillingService,
-	pricingResolver *ModelPricingResolver,
-	cfg *config.Config,
-	buildInfo BuildInfo,
-	settingService *SettingService,
-) *ContentModerationService {
-	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
-	svc.SetProxyRepository(proxyRepo)
-	key, _ := cfg.Moderation.CacheHMACKeyBytes()
-	decisionCacheKey, _ := cfg.ContentModerationDecisionCacheHMACKeyBytes()
-	svc.SetIncrementalModerationDependencies(
-		passCache,
-		feedbackEpochRepo,
-		NewRestrictedModerationClientFactory(cfg.Moderation.AllowedHosts),
-		key,
-		cfg.Moderation.CacheHMACKeyVersion,
-	)
-	svc.SetDecisionCacheKey(decisionCacheKey)
-	svc.SetDecisionCache(decisionCache)
-	svc.SetModerationMetrics(NewContentModerationMetrics())
-	svc.SetOutboxRepository(outboxRepo)
-	// Content moderation uses only the administrator-configured API Key route.
-	// The OpenAI account gateway is intentionally not injected here.
-	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(nil, nil, NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver), settingService))
-	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
-		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
-	}
-	if evidenceStore, ok := repo.(ContentModerationEvidenceStore); ok {
-		svc.SetEvidenceStore(evidenceStore, encryptor)
-	}
-	svc.SetBuildInfo(buildInfo)
-	svc.Start(context.Background())
-	return svc
-}
-
 // ProvideEmailQueueService creates EmailQueueService with default worker count
 func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
@@ -1041,7 +987,7 @@ var ProviderSet = wire.NewSet(
 	NewModelPricingResolver,
 	NewModelPlazaService,
 	ProvidePluginManager,
-	ProvideContentModerationService,
+	NewContentModerationService,
 	wire.Bind(new(BatchImageModerationGate), new(*ContentModerationService)),
 	NewAffiliateService,
 	ProvidePaymentConfigService,

@@ -2,14 +2,12 @@ package handler
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -74,6 +72,7 @@ type openAIWebSocketPipelineBlockReason int
 const (
 	openAIWebSocketPipelineBlockReasonNone openAIWebSocketPipelineBlockReason = iota
 	openAIWebSocketPipelineBlockReasonModeration
+	openAIWebSocketPipelineBlockReasonSecurityAudit
 	openAIWebSocketPipelineBlockReasonImagePermission
 	openAIWebSocketPipelineBlockReasonCyberSession
 )
@@ -89,11 +88,12 @@ type openAIWebSocketPipelineInput struct {
 }
 
 type openAIWebSocketPipelineResult struct {
-	Blocked            bool
-	BlockReason        openAIWebSocketPipelineBlockReason
-	ModerationDecision *service.ContentModerationDecision
-	Message            string
-	CyberBlockKey      string
+	Blocked               bool
+	BlockReason           openAIWebSocketPipelineBlockReason
+	ModerationDecision    *service.ContentModerationDecision
+	SecurityAuditDecision *securityaudit.Decision
+	Message               string
+	CyberBlockKey         string
 }
 
 type contentModerationGuard struct {
@@ -104,30 +104,6 @@ func newContentModerationGuard(svc *service.ContentModerationService) moderation
 	return &contentModerationGuard{service: svc}
 }
 
-func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
-	if cached, ok := contentModerationDecisionFromCache(c, input.Protocol, input.Model, input.Body); ok {
-		return cached
-	}
-	if h == nil {
-		decision := newOpenAIGatewayPipeline(nil).CheckModeration(c, reqLog, input)
-		cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, decision)
-		return decision
-	}
-	pipeline := h.pipeline
-	if pipeline == nil {
-		guard := h.moderationGuard
-		if guard == nil {
-			guard = newContentModerationGuard(h.contentModerationService)
-		}
-		pipeline = newOpenAIGatewayPipeline(guard)
-	}
-	decision := pipeline.CheckModeration(c, reqLog, input)
-	if !selectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body) {
-		cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, decision)
-	}
-	return decision
-}
-
 func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, reqLog *zap.Logger, input openAIHTTPPreForwardPipelineInput) openAIHTTPPreForwardPipelineResult {
 	pipeline := h.openAIHTTPPreForwardPipeline()
 	return pipeline.RunHTTPPreForward(h, c, reqLog, input)
@@ -136,46 +112,12 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, r
 func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, meta moderationcoverage.Entry) OpenAIHTTPGatewayPipelineEntryResult {
 	meta = moderationcoverage.NormalizeEntry(meta)
 	switch meta.Protocol {
-	case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIMessages, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
+	case service.ContentModerationProtocolOpenAIChat, GatewayProtocolOpenAIMessages, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, GatewayProtocolOpenAIEmbeddings:
 	default:
 		return OpenAIHTTPGatewayPipelineEntryResult{}
 	}
 	if h == nil {
 		return OpenAIHTTPGatewayPipelineEntryResult{}
-	}
-	if h.contentModerationService != nil {
-		protectedCtx, protectErr := h.contentModerationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
-		if protectErr != nil {
-			if errors.Is(protectErr, service.ErrRequestMemoryBudgetExhausted) {
-				var budgetErr *service.RequestMemoryBudgetExhaustedError
-				if errors.As(protectErr, &budgetErr) {
-					logger.FromContext(c.Request.Context()).Warn("request_memory_admission_rejected",
-						zap.Int64("request_content_length", budgetErr.RequestContentLength),
-						zap.Int64("estimated_charge_bytes", budgetErr.EstimatedChargeBytes),
-						zap.Int64("active_bytes", budgetErr.ActiveBytes),
-						zap.Int64("admission_limit_bytes", budgetErr.AdmissionLimitBytes),
-						zap.Int64("available_bytes", budgetErr.AvailableBytes),
-						zap.Int("active_reservations", budgetErr.ActiveReservations),
-						zap.Int("waiting_requests", budgetErr.WaitingRequests),
-						zap.Int("admission_wait_ms", budgetErr.AdmissionWaitMS),
-						zap.Bool("ambiguous_length", budgetErr.AmbiguousLength),
-						zap.Bool("small_request", budgetErr.SmallRequest),
-					)
-					if raw, err := json.Marshal(budgetErr); err == nil {
-						service.SetOpsDiagnostic(c, "请求内存准入预算耗尽", string(raw))
-					}
-				}
-				c.Header("Retry-After", "1")
-				h.errorResponse(c, http.StatusTooManyRequests, "request_memory_budget_exhausted", "Request memory budget exhausted")
-			} else if varMax := new(service.RequestBodyTooLargeError); errors.As(protectErr, &varMax) {
-				markOpsRequestBodyTooLarge(c, varMax.Limit, nil, false)
-				h.errorResponse(c, http.StatusRequestEntityTooLarge, "request_body_too_large", buildBodyTooLargeMessage(varMax.Limit))
-			} else {
-				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", protectErr.Error())
-			}
-			return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
-		}
-		c.Request = c.Request.WithContext(protectedCtx)
 	}
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -193,7 +135,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 	switch meta.Protocol {
 	case service.ContentModerationProtocolOpenAIChat:
 		logComponent = "handler.openai_gateway.chat_completions"
-	case service.ContentModerationProtocolOpenAIMessages:
+	case GatewayProtocolOpenAIMessages:
 		logComponent = "handler.openai_gateway.messages"
 	case service.ContentModerationProtocolOpenAIResponses:
 		logComponent = "handler.openai_gateway.responses"
@@ -226,7 +168,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 	switch meta.Protocol {
 	case service.ContentModerationProtocolOpenAIChat:
 		pipelineInput.CyberFormat = cyberBlockFormatChat
-	case service.ContentModerationProtocolOpenAIMessages:
+	case GatewayProtocolOpenAIMessages:
 		pipelineInput.CyberBody = body
 		pipelineInput.CyberFormat = cyberBlockFormatAnthropic
 		pipelineInput.ModerationErrorFormat = openAIHTTPModerationErrorAnthropic
@@ -245,7 +187,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		pipelineInput.EnableImageStage = true
 		pipelineInput.ImagePermissionBeforeModeration = true
 		usesModerationBody = true
-	case service.ContentModerationProtocolOpenAIEmbeddings:
+	case GatewayProtocolOpenAIEmbeddings:
 		pipelineInput.SkipCyberStage = true
 	}
 	if meta.Handler == "OpenAIGatewayHandler.AlphaSearch" {
@@ -416,7 +358,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 		return nil, "", false, nil, nil, false
 	}
 	stream := false
-	if protocol == service.ContentModerationProtocolOpenAIChat || protocol == service.ContentModerationProtocolOpenAIMessages || protocol == service.ContentModerationProtocolOpenAIResponses {
+	if protocol == service.ContentModerationProtocolOpenAIChat || protocol == GatewayProtocolOpenAIMessages || protocol == service.ContentModerationProtocolOpenAIResponses {
 		var ok bool
 		stream, ok = parseOpenAICompatibleStream(body)
 		if !ok {
@@ -536,32 +478,13 @@ func (h *OpenAIGatewayHandler) checkCyberSessionWithPipeline(c *gin.Context, req
 }
 
 func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
-	if g == nil || g.service == nil {
-		if reqLog != nil {
-			reqLog.Warn("content_moderation.service_unavailable")
-		}
-		decision := contentModerationCheckErrorDecision()
-		markContentModerationReceipt(c, input.Protocol, "", decision, false)
-		return decision
-	}
-	if selectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body) {
-		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
-	}
-	if c != nil && c.Request != nil && g.service.RequiresSelectedAccount(c.Request.Context()) {
-		baselineInput := buildContentModerationInput(c, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
-		baseline := g.service.CheckSelectedAccountBaseline(c.Request.Context(), baselineInput)
-		markPromptInjectionBaselineCompleted(c, input.Protocol, input.Model, input.Body, baseline)
-		baselineDecision := baseline.Decision
-		if baselineDecision != nil && baselineDecision.Blocked {
-			cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, baselineDecision)
-			markContentModerationReceipt(c, input.Protocol, baselineDecision.PolicyRevision, baselineDecision, false)
-			recordContentModerationReceiptMetric(g.service, c, "selected_account_baseline")
-			return baselineDecision
-		}
-		markSelectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body)
-		markContentModerationReceipt(c, input.Protocol, "", nil, true)
-		recordContentModerationReceiptMetric(g.service, c, "selected_account")
-		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
+	if g == nil {
+		return nil
 	}
 	return runContentModeration(c, reqLog, g.service, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
 }
+
+const GatewayProtocolOpenAIMessages = "openai_messages"
+const GatewayProtocolOpenAIEmbeddings = "openai_embeddings"
+
+const GatewayProtocolBatchImages = "batch_images"

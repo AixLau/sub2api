@@ -76,6 +76,14 @@ export default {
     },
   },
   riskControl: {
+    activeEngine: 'Active engine: {engine}',
+    auditSource: 'Audit source',
+    engine: 'Audit engine',
+    engineUnavailable: 'No audit keys are currently available for the active engine. Check the key status and configuration.',
+    legacyAuditSource: 'Historical record: engine source was not recorded',
+    skippedImages: 'Skipped images: {count}',
+    typeSafeNotice: 'TypeSafe AI audits text only. Images are skipped and the skipped count is recorded.',
+    typeSafeThresholds: 'TypeSafe AI uses its own category scores. Configure thresholds independently from OpenAI.',
     action: {
       allow: 'Allowed',
       block: 'Blocked',

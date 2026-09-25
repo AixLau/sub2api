@@ -1303,7 +1303,7 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 		if candidate.account == nil {
 			continue
 		}
-		if !isSemanticReviewSystemRouting(ctx) && candidate.loadKnown && candidate.account.Concurrency > 0 &&
+		if candidate.loadKnown && candidate.account.Concurrency > 0 &&
 			candidate.loadInfo.CurrentConcurrency >= candidate.account.Concurrency {
 			concurrencyFiltered++
 			continue
@@ -1867,7 +1867,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 				continue
 			}
 			if budget != nil && budget.limited {
-				knownFull := !isSemanticReviewSystemRouting(ctx) && candidate.loadKnown && candidate.account.Concurrency > 0 &&
+				knownFull := candidate.loadKnown && candidate.account.Concurrency > 0 &&
 					candidate.loadInfo.CurrentConcurrency >= candidate.account.Concurrency
 				if budget.wasAttempted(candidate.account.ID) != wantAttempted || knownFull != wantKnownFull {
 					continue

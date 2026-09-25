@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -205,13 +204,6 @@ func (r *ModeratedRouteRegistrar) prependModeratedRouteMetaHandler(meta Moderate
 	}
 	prepended = append(prepended, handlers[:len(handlers)-1]...)
 	prepended = append(prepended, func(c *gin.Context) {
-		// Resolve the request context when the deferred function runs. The
-		// pipeline entrypoint replaces c.Request with a context containing the
-		// resource reservation; evaluating c.Request.Context() while registering
-		// the defer captures the old context and leaks that reservation.
-		defer func() {
-			service.ReleaseRequestResources(c.Request.Context())
-		}()
 		if r.runGatewayPipelineEntrypoint(c, meta).Stop {
 			return
 		}

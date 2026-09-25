@@ -209,7 +209,7 @@ func RegisterGatewayRoutes(
 		openAIMessagesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/messages",
 			"OpenAIGatewayHandler.Messages",
-			service.ContentModerationProtocolOpenAIMessages,
+			handler.GatewayProtocolOpenAIMessages,
 			"OpenAI groups using the Anthropic-compatible Messages endpoint are moderated by the OpenAI HTTP pipeline before scheduling and upstream forwarding.",
 		))
 		// /v1/messages: auto-route based on group platform
@@ -339,7 +339,7 @@ func RegisterGatewayRoutes(
 		moderatedGateway.POST("/embeddings", coveredOpenAIHTTPRoute(
 			"/v1/embeddings",
 			"OpenAIGatewayHandler.Embeddings",
-			service.ContentModerationProtocolOpenAIEmbeddings,
+			handler.GatewayProtocolOpenAIEmbeddings,
 			"Embeddings input can be submitted to upstream policy systems, so input is moderated before channel mapping, scheduling, and forwarding.",
 		), textBodyLimit, func(c *gin.Context) {
 			if !isOpenAIOnlyEndpointGatewayPlatform(c) {
@@ -460,7 +460,7 @@ func RegisterGatewayRoutes(
 		moderatedGateway.POST("/images/batches", coveredModeratedRoute(
 			"/v1/images/batches",
 			"BatchImageHandler.Submit",
-			service.ContentModerationProtocolBatchImages,
+			handler.GatewayProtocolBatchImages,
 			"Batch image submit is moderated after account selection and before pricing, job creation, balance hold, or provider submission.",
 		), h.BatchImage.Submit)
 		moderatedGateway.GETNoAudit("/images/batches", intentionalNoAuditRoute(
@@ -810,7 +810,7 @@ func RegisterGatewayRoutes(
 	moderatedRoot.POST("/embeddings", coveredOpenAIHTTPRoute(
 		"/embeddings",
 		"OpenAIGatewayHandler.Embeddings",
-		service.ContentModerationProtocolOpenAIEmbeddings,
+		handler.GatewayProtocolOpenAIEmbeddings,
 		"Root embeddings alias reaches the same Embeddings handler and moderation hook.",
 	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if !isOpenAIOnlyEndpointGatewayPlatform(c) {

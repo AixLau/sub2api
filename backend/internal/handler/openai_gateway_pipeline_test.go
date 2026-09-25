@@ -89,11 +89,7 @@ func TestOpenAIGatewayPipelineCheckModerationNilGuardFailsOpen(t *testing.T) {
 			Body:     []byte(`{"input":"hello"}`),
 		})
 
-		require.NotNil(t, decision)
-		require.True(t, decision.Allowed)
-		require.False(t, decision.Blocked)
-		require.Zero(t, decision.StatusCode)
-		require.Equal(t, service.ContentModerationActionError, decision.Action)
+		require.Nil(t, decision)
 	})
 }
 

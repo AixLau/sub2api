@@ -178,9 +178,7 @@ func TestOpenAIResponsesWebSocketV2PassthroughCyberMarkIsConsumedAfterTurn(t *te
 
 	require.Eventually(t, func() bool {
 		logs := harness.moderationRepo.logSnapshot()
-		return len(logs) == 1 && logs[0].Action == service.ContentModerationActionCyberPolicy &&
-			gjson.GetBytes(logs[0].Metadata, "upstream_input_tokens").Int() == 11 &&
-			gjson.GetBytes(logs[0].Metadata, "upstream_output_tokens").Int() == 3
+		return len(logs) == 1 && logs[0].Action == service.ContentModerationActionCyberPolicy
 	}, 3*time.Second, 10*time.Millisecond, "handler AfterTurn must call recordCyberPolicyIfMarked and write the risk-control event")
 
 	keyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())

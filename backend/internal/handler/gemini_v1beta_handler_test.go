@@ -176,7 +176,7 @@ func (s *geminiV1BetaPipelineModeration) Check(c *gin.Context, _ *zap.Logger, in
 		decision.StatusCode = http.StatusForbidden
 		decision.Message = "fixture policy rejected request"
 	}
-	cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, decision)
+
 	return decision
 }
 

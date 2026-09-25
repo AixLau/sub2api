@@ -144,7 +144,7 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 		case "OpenAIGatewayHandler.ChatCompletions":
 			return protocol == service.ContentModerationProtocolOpenAIChat
 		case "OpenAIGatewayHandler.Messages":
-			return protocol == service.ContentModerationProtocolOpenAIMessages
+			return protocol == handler.GatewayProtocolOpenAIMessages
 		case "OpenAIGatewayHandler.Responses":
 			return protocol == service.ContentModerationProtocolOpenAIResponses
 		case "OpenAIGatewayHandler.AlphaSearch":
@@ -152,7 +152,7 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 		case "OpenAIGatewayHandler.Images":
 			return protocol == service.ContentModerationProtocolOpenAIImages
 		case "OpenAIGatewayHandler.Embeddings":
-			return protocol == service.ContentModerationProtocolOpenAIEmbeddings
+			return protocol == handler.GatewayProtocolOpenAIEmbeddings
 		default:
 			return false
 		}
@@ -165,7 +165,7 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 		case "OpenAIGatewayHandler.ChatCompletions":
 			return protocol == service.ContentModerationProtocolOpenAIChat
 		case "OpenAIGatewayHandler.Messages":
-			return protocol == service.ContentModerationProtocolOpenAIMessages
+			return protocol == handler.GatewayProtocolOpenAIMessages
 		case "OpenAIGatewayHandler.Responses":
 			return protocol == service.ContentModerationProtocolOpenAIResponses
 		default:

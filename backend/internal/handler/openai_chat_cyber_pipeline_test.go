@@ -115,7 +115,7 @@ func TestOpenAIMessages_CyberBlockedByRegistrarBeforeHandler(t *testing.T) {
 	require.False(t, handlerReached, "registrar must reject blocked sessions before the Messages handler")
 	require.Zero(t, userSlotCalls)
 	require.Len(t, guard.calls, 1)
-	require.Equal(t, service.ContentModerationProtocolOpenAIMessages, guard.calls[0].Protocol)
+	require.Equal(t, GatewayProtocolOpenAIMessages, guard.calls[0].Protocol)
 	require.Equal(t, []byte(body), guard.calls[0].Body)
 	require.NotEmpty(t, blockKey)
 	require.Equal(t, []string{blockKey}, checker.checkedKeys)

@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestOpenAIGatewayHandlerCheckWithModerationGuardUsesPipelineStage(t *testing.T) {
+func TestOpenAIGatewayHandlerPipelineModerationUsesPipelineStage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pipelineDecision := &service.ContentModerationDecision{
 		Blocked:    true,
@@ -48,7 +48,7 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardUsesPipelineStage(t *testin
 		pipeline:        newOpenAIGatewayPipeline(pipelineGuard),
 	}
 
-	decision := h.checkWithModerationGuard(c, reqLog, input)
+	decision := h.openAIHTTPPreForwardPipeline().CheckModeration(c, reqLog, input)
 
 	require.Same(t, pipelineDecision, decision)
 	require.Len(t, pipelineGuard.calls, 1)
@@ -56,7 +56,7 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardUsesPipelineStage(t *testin
 	require.Empty(t, handlerGuard.calls)
 }
 
-func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFallsBackToHandlerGuard(t *testing.T) {
+func TestOpenAIGatewayHandlerPipelineModerationNilPipelineFallsBackToHandlerGuard(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	expectedDecision := &service.ContentModerationDecision{
 		Blocked:    true,
@@ -79,7 +79,7 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFallsBackToHandl
 
 	var decision *service.ContentModerationDecision
 	require.NotPanics(t, func() {
-		decision = h.checkWithModerationGuard(c, zap.NewNop(), input)
+		decision = h.openAIHTTPPreForwardPipeline().CheckModeration(c, zap.NewNop(), input)
 	})
 
 	require.Same(t, expectedDecision, decision)
@@ -87,7 +87,7 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFallsBackToHandl
 	require.Equal(t, input, guard.calls[0])
 }
 
-func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFailsOpenWithoutGuard(t *testing.T) {
+func TestOpenAIGatewayHandlerPipelineModerationNilPipelineFailsOpenWithoutGuard(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -96,19 +96,15 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFailsOpenWithout
 
 	var decision *service.ContentModerationDecision
 	require.NotPanics(t, func() {
-		decision = h.checkWithModerationGuard(c, zap.NewNop(), moderationGuardInput{
+		decision = h.openAIHTTPPreForwardPipeline().CheckModeration(c, zap.NewNop(), moderationGuardInput{
 			Subject:  middleware2.AuthSubject{UserID: 7, Concurrency: 1},
-			Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+			Protocol: GatewayProtocolOpenAIEmbeddings,
 			Model:    "text-embedding-3-small",
 			Body:     []byte(`{"model":"text-embedding-3-small","input":"hello"}`),
 		})
 	})
 
-	require.NotNil(t, decision)
-	require.False(t, decision.Blocked)
-	require.True(t, decision.Allowed)
-	require.Zero(t, decision.StatusCode)
-	require.Equal(t, service.ContentModerationActionError, decision.Action)
+	require.Nil(t, decision)
 }
 
 func TestGrokTextModerationBlocksBeforeBillingAccountSelectionAndForward(t *testing.T) {
@@ -145,7 +141,7 @@ func TestGrokTextModerationBlocksBeforeBillingAccountSelectionAndForward(t *test
 			path: "/v1/messages",
 			meta: moderationcoverage.Entry{
 				Handler:  "OpenAIGatewayHandler.Messages",
-				Protocol: service.ContentModerationProtocolOpenAIMessages,
+				Protocol: GatewayProtocolOpenAIMessages,
 				Pipeline: moderationcoverage.PipelineOpenAIHTTP,
 			},
 			body: `{"model":"grok-4","stream":false,"messages":[{"role":"user","content":"blocked"}]}`,
@@ -155,7 +151,7 @@ func TestGrokTextModerationBlocksBeforeBillingAccountSelectionAndForward(t *test
 			path: "/v1/messages",
 			meta: moderationcoverage.Entry{
 				Handler:  "OpenAIGatewayHandler.Messages",
-				Protocol: service.ContentModerationProtocolOpenAIMessages,
+				Protocol: GatewayProtocolOpenAIMessages,
 				Pipeline: moderationcoverage.PipelineOpenAIHTTP,
 			},
 			body: `{"model":"grok-4","stream":true,"messages":[{"role":"user","content":"blocked"}]}`,

@@ -1078,7 +1078,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	var body []byte
 	var reqModel string
 	var reqStream bool
-	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIMessages); ok {
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, GatewayProtocolOpenAIMessages); ok {
 		body = preForwardRequest.Body
 		reqModel = preForwardRequest.Model
 		reqStream = preForwardRequest.Stream
@@ -1133,7 +1133,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, GatewayProtocolOpenAIMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.anthropicSecurityAuditError(c, decision)
 		return
 	}
@@ -1914,13 +1914,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	reqLog *zap.Logger,
 ) (func(), bool) {
 	ctx := c.Request.Context()
-	if h.contentModerationService != nil && h.contentModerationService.IsInternalSemanticReviewRequest(c.Request) {
-		// Internal semantic-review calls reuse the caller's identity. Acquiring
-		// that same user's slot would wait for the outer request to finish, while
-		// the outer request is waiting for this reviewer response.
-		reqLog.Info("openai.skip_user_slot_internal_semantic_review")
-		return func() {}, true
-	}
+
 	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
 	if err != nil {
 		reqLog.Warn("openai.user_slot_acquire_failed", zap.Error(err))
@@ -2384,19 +2378,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, true)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
 
-	beginContentModerationFrame(c, ctx)
-	if moderationDecision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey: apiKey, Subject: subject, Protocol: service.ContentModerationProtocolOpenAIResponses,
-		Model: reqModel, Body: firstMessage,
-	}); moderationDecision != nil && moderationDecision.Blocked {
-		pipelineResult := openAIWebSocketPipelineResult{
-			Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonModeration,
-			ModerationDecision: moderationDecision, Message: moderationDecision.Message,
-		}
-		closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, pipelineResult)
-		closeOpenAIClientWS(wsConn, openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason)
-		return
-	}
+	c.Request = c.Request.WithContext(ctx)
+	c.Set(securityAuditWSTurnContextKey, 1)
 	if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, "first_turn"); decision != nil && !decision.AllowNextStage {
 		writeSecurityAuditWSError(ctx, wsConn, decision)
 		closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
@@ -2665,18 +2648,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
 			return
 		}
-		if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
-			releaseAccountSlot()
-			pipelineResult := openAIWebSocketPipelineResult{
-				Blocked:            true,
-				BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
-				ModerationDecision: gate.Decision,
-				Message:            gate.Decision.Message,
-			}
-			closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, pipelineResult)
-			closeOpenAIClientWS(wsConn, openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason)
-			return
-		}
+
 		maxReasoningEffort, reasoningEffortMappings, overLimit, _ := openAIReasoningEffortPolicyForRequest(c, apiKey)
 		var requestPayloadHash string
 		// Passthrough rejects overlapping response.create frames, so one immutable
@@ -2732,18 +2704,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked), nil)
 				}
 				frameCtx := context.WithValue(ctx, ctxkey.RequestedPublicModel, model)
-				beginContentModerationFrame(c, frameCtx)
-				if moderationDecision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-					APIKey: apiKey, Subject: subject, Protocol: service.ContentModerationProtocolOpenAIResponses,
-					Model: model, Body: payload,
-				}); moderationDecision != nil && moderationDecision.Blocked {
-					pipelineResult := openAIWebSocketPipelineResult{
-						Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonModeration,
-						ModerationDecision: moderationDecision, Message: moderationDecision.Message,
-					}
-					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
-					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
-				}
+				c.Request = c.Request.WithContext(frameCtx)
+
 				if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, "subsequent_turn"); decision != nil && !decision.AllowNextStage {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
@@ -2764,16 +2726,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
 				}
-				if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
-					pipelineResult := openAIWebSocketPipelineResult{
-						Blocked:            true,
-						BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
-						ModerationDecision: gate.Decision,
-						Message:            gate.Decision.Message,
-					}
-					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
-					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
-				}
+
 				return nil
 			},
 			MapRequestModel: func(turn int, originalModel string) (string, error) {
@@ -2841,7 +2794,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return checkSimpleModeTurnBilling()
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
-				completeContentModerationFrame(c, turn, turnErr)
 				cyberBlockBody := takeCyberTurnBody(turn)
 				turnRequestedModel := reqModel
 				turnUpstreamModel := ""
@@ -3870,16 +3822,13 @@ func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, deci
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	message := contentModerationClientMessage(decision)
+	message := decision.Message
 	if message == "" {
 		message = "content moderation blocked this request"
 	}
 	eventID := "evt_content_moderation_blocked"
 	errorType := "invalid_request_error"
-	if contentModerationIsNonViolationDeferred(decision) {
-		eventID = "evt_network_error"
-		errorType = "server_error"
-	}
+
 	payload, err := json.Marshal(gin.H{
 		"event_id": eventID,
 		"type":     "error",
@@ -3900,12 +3849,14 @@ func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, deci
 func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Context, c *gin.Context, conn *coderws.Conn, apiKey *service.APIKey, model string, result openAIWebSocketPipelineResult) string {
 	message := strings.TrimSpace(result.Message)
 	switch result.BlockReason {
+	case openAIWebSocketPipelineBlockReasonSecurityAudit:
+		writeSecurityAuditWSError(ctx, conn, result.SecurityAuditDecision)
+		return securityAuditWSCloseReason(result.SecurityAuditDecision)
 	case openAIWebSocketPipelineBlockReasonModeration:
 		if result.ModerationDecision != nil {
-			markOpsContentModerationDiagnostic(c, result.ModerationDecision)
 			writeContentModerationWSError(ctx, conn, result.ModerationDecision)
 			if message == "" {
-				message = contentModerationClientMessage(result.ModerationDecision)
+				message = result.ModerationDecision.Message
 			}
 		}
 	case openAIWebSocketPipelineBlockReasonImagePermission:
@@ -3929,10 +3880,10 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 }
 
 func openAIWebSocketPipelineCloseStatus(result openAIWebSocketPipelineResult) coderws.StatusCode {
-	if result.BlockReason == openAIWebSocketPipelineBlockReasonModeration &&
-		contentModerationIsNonViolationDeferred(result.ModerationDecision) {
-		return coderws.StatusTryAgainLater
+	if result.BlockReason == openAIWebSocketPipelineBlockReasonSecurityAudit {
+		return securityAuditWSCloseStatus(result.SecurityAuditDecision)
 	}
+
 	return coderws.StatusPolicyViolation
 }
 
@@ -4060,10 +4011,10 @@ func cyberSessionBlockPlatform(apiKey *service.APIKey, protocol string, format c
 	case service.ContentModerationProtocolAnthropicMessages:
 		return service.PlatformAnthropic
 	case service.ContentModerationProtocolOpenAIChat,
-		service.ContentModerationProtocolOpenAIMessages,
+		GatewayProtocolOpenAIMessages,
 		service.ContentModerationProtocolOpenAIResponses,
 		service.ContentModerationProtocolOpenAIImages,
-		service.ContentModerationProtocolOpenAIEmbeddings:
+		GatewayProtocolOpenAIEmbeddings:
 		return service.PlatformOpenAI
 	}
 	if format == cyberBlockFormatAnthropic {
@@ -4191,7 +4142,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 		service.MarkOpsStreamError(c, "permission_error", message, http.StatusForbidden)
 		if writeResponsesFailedSSE(c, "permission_error", "", message) {
 			h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)
-			h.recordCyberSessionBlockedRiskEvent(c, apiKey, model, key, body)
+
 			return true
 		}
 	}
@@ -4209,7 +4160,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 		}})
 	}
 	h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)
-	h.recordCyberSessionBlockedRiskEvent(c, apiKey, model, key, body)
+
 	return true
 }
 
@@ -4290,48 +4241,6 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 		meta.UserID = apiKey.User.ID
 	}
 	enqueueOpsErrorLog(h.opsService, buildCyberSessionBlockedOpsEntry(meta))
-}
-
-func (h *OpenAIGatewayHandler) recordCyberSessionBlockedRiskEvent(c *gin.Context, apiKey *service.APIKey, model string, sessionBlockKey string, requestBody []byte) {
-	if h == nil || h.contentModerationService == nil || c == nil {
-		return
-	}
-	requestID := c.Writer.Header().Get("X-Request-Id")
-	inboundEndpoint := GetInboundEndpoint(c)
-	var userID, apiKeyID int64
-	var userEmail, apiKeyName, groupName string
-	var groupID *int64
-	if apiKey != nil {
-		apiKeyID = apiKey.ID
-		apiKeyName = apiKey.Name
-		groupID = apiKey.GroupID
-		if apiKey.User != nil {
-			userID = apiKey.User.ID
-			userEmail = apiKey.User.Email
-		}
-		if apiKey.Group != nil {
-			groupName = apiKey.Group.Name
-		}
-	}
-	cmSvc := h.contentModerationService
-	body := append([]byte(nil), requestBody...)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		cmSvc.RecordCyberSessionBlockedEvent(ctx, service.CyberSessionBlockedRecordInput{
-			RequestID:       requestID,
-			UserID:          userID,
-			UserEmail:       userEmail,
-			APIKeyID:        apiKeyID,
-			APIKeyName:      apiKeyName,
-			GroupID:         groupID,
-			GroupName:       groupName,
-			Endpoint:        inboundEndpoint,
-			Model:           model,
-			SessionBlockKey: sessionBlockKey,
-			RequestBody:     body,
-		})
-	}()
 }
 
 // recordCyberPolicyIfMarked 在 gateway forward 返回后检查 cyber 标记，异步写风控日志/邮件，
@@ -4459,7 +4368,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
-				RequestBody:     requestBody,
 			})
 		}
 		if forwardErrored && gwSvc != nil {

@@ -4,36 +4,26 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 import RiskControlView from '../RiskControlView.vue'
-import type { ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
+import type { ContentModerationAPIKeyStatus, ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
 
 const {
   getConfig,
-  getSemanticReviewModels,
-  testSemanticReviewModel,
   updateConfig,
   getStatus,
   listLogs,
-  testKeywords,
-  reviewLog,
-  getRawRequest,
   getGroups,
-	listAccounts,
   getProxies,
+  testAPIKeys,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
   getConfig: vi.fn(),
-  getSemanticReviewModels: vi.fn(),
-  testSemanticReviewModel: vi.fn(),
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   listLogs: vi.fn(),
-  testKeywords: vi.fn(),
-  reviewLog: vi.fn(),
-  getRawRequest: vi.fn(),
   getGroups: vi.fn(),
-	listAccounts: vi.fn(),
   getProxies: vi.fn(),
+  testAPIKeys: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -42,15 +32,10 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     riskControl: {
       getConfig,
-      getSemanticReviewModels,
-      testSemanticReviewModel,
       updateConfig,
       getStatus,
       listLogs,
-      testKeywords,
-      reviewLog,
-      getRawRequest,
-      testAPIKeys: vi.fn(),
+      testAPIKeys,
       deleteFlaggedHash: vi.fn(),
       clearFlaggedHashes: vi.fn(),
       unbanUser: vi.fn(),
@@ -58,9 +43,6 @@ vi.mock('@/api/admin', () => ({
     groups: {
       getAll: getGroups,
     },
-	accounts: {
-		list: listAccounts,
-	},
     proxies: {
       getAll: getProxies,
     },
@@ -108,13 +90,7 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
-  account_scope: 'all',
-  account_ids: [],
   record_non_hits: false,
-  audit_scope: 'user_only',
-  latest_turn_only: false,
-  store_input_excerpt: true,
-  search_input_excerpt: false,
   worker_count: 4,
   queue_size: 32768,
   block_status: 403,
@@ -128,33 +104,7 @@ const baseConfig = (): ContentModerationConfig => ({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   blocked_keywords: [],
-  keyword_rules: [],
   keyword_blocking_mode: 'keyword_and_api',
-  engine_mode: 'candidate_only',
-  decision_cache_enabled: true,
-  decision_cache_ttl_seconds: 600,
-  candidate_fragment_runes: 2000,
-	semantic_review: {
-	  enabled: true,
-	  trigger: 'local_review',
-	  primary_model: 'gpt-5.3-codex-spark',
-	  fallback_models: ['gpt-5.4-mini'],
-	  escalation_enabled: true,
-	  escalation_model: 'gpt-5.6-sol',
-	  escalation_timeout_ms: 15000,
-	  escalation_max_input_runes: 12000,
-	  escalation_reasoning_effort: 'high',
-	  timeout_ms: 8000,
-	  primary_timeout_ms: 5000,
-	  fallback_timeout_ms: 3000,
-	  max_attempts_per_model: 1,
-	  max_input_runes: 2000,
-	  max_output_tokens: 512,
-	  reasoning_effort: 'low',
-	  prompt_injection_reviewer_enabled: true,
-	  prompt_injection_max_input_runes: 12000,
-	  prompt_injection_fail_closed: true,
-	},
   thresholds: {
     harassment: 0.98,
     sexual: 0.65,
@@ -163,7 +113,6 @@ const baseConfig = (): ContentModerationConfig => ({
     type: 'all',
     models: [],
   },
-  cyber_policy_exclude_from_ban_count: false,
 })
 
 const runtimeStatus = () => ({
@@ -246,35 +195,18 @@ function findButtonByText(wrapper: VueWrapper, text: string): DOMWrapper<HTMLBut
 describe('admin RiskControlView', () => {
   beforeEach(() => {
     getConfig.mockReset()
-    testSemanticReviewModel.mockReset()
     updateConfig.mockReset()
     getStatus.mockReset()
     listLogs.mockReset()
-    testKeywords.mockReset()
-    reviewLog.mockReset()
-    getRawRequest.mockReset()
     getGroups.mockReset()
-	listAccounts.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
+    testAPIKeys.mockReset()
 
     getConfig.mockResolvedValue(baseConfig())
-    getSemanticReviewModels.mockResolvedValue(['gpt-5.3-codex-spark'])
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
-    testKeywords.mockResolvedValue({
-      matched: false,
-      matched_keyword: '',
-      keyword_category: '',
-      keyword_severity: '',
-      keyword_action: '',
-      effective_keyword_action: '',
-      risk_context_type: '',
-      risk_context_reason: '',
-      normalized_excerpt: '',
-    })
     getGroups.mockResolvedValue([])
-	listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
     getProxies.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
@@ -286,642 +218,123 @@ describe('admin RiskControlView', () => {
       api_key_masks: [],
       api_key_statuses: [],
     }))
-    reviewLog.mockImplementation(async (id: number, payload: { status: string; note?: string }) => ({
-      id,
-      request_id: 'req-keyword',
-      user_id: 7,
-      user_email: 'risk@example.com',
-      api_key_id: 3,
-      api_key_name: 'Team Key',
-      group_id: 2,
-      group_name: 'Default',
-      endpoint: '/v1/responses',
-      provider: 'openai',
-      model: 'gpt-5',
-      mode: 'pre_block',
-      action: 'keyword_review',
-      flagged: false,
-      highest_category: 'keyword',
-      highest_score: 1,
-      category_scores: {},
-      threshold_snapshot: {},
-      input_excerpt: 'please sell api key',
-      matched_keyword: 'sell api key',
-      keyword_category: 'account_abuse',
-      keyword_severity: 'critical',
-      keyword_action: 'block',
-      effective_keyword_action: 'observe',
-      risk_context_type: 'meta_discussion',
-      risk_context_reason: 'policy_or_keyword_rule_discussion',
-      review_status: payload.status,
-      review_note: payload.note ?? '',
-      reviewed_by: 1,
-      reviewed_at: '2026-06-19T08:01:00Z',
-      raw_request_available: false,
-      raw_request_bytes: 0,
-      raw_request_truncated: false,
-      upstream_latency_ms: null,
-      error: '',
-      violation_count: 0,
-      auto_banned: false,
-      email_sent: false,
-      user_status: 'active',
-      queue_delay_ms: null,
-      created_at: '2026-06-19T08:00:00Z',
-    }))
   })
 
-  it('does not render the upstream protection status card', async () => {
-    getStatus.mockResolvedValue({
-      ...runtimeStatus(),
-      effective_protection: {
-        effective_blocking: true,
-        risk_control_enabled: true,
-        moderation_enabled: true,
-        mode: 'pre_block',
-        audit_scope: 'user_only',
-        public_fail_strategy: 'closed',
-        group_coverage: 'all_public_groups',
-        model_coverage: 'all',
-        engine_mode: 'candidate_only',
-        external_api_configured: false,
-        external_api_healthy: false,
-        external_api_usable_key_count: 0,
-        external_api_last_error: '',
-        high_risk_rules_blocking: true,
-        deterministic_policy_present: true,
-        high_risk_rules_present: true,
-        unsafe_reasons: [],
-      },
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
+  it.each(['openai', 'typesafe'] as const)('shows the selected draft engine keys while %s remains active', async (activeEngine) => {
+    const openaiKey: ContentModerationAPIKeyStatus = {
+      index: 1, key_hash: 'openai-hash', masked: '********oa01', status: 'frozen',
+      failure_count: 1, success_count: 0, last_error: '', last_latency_ms: 100,
+      last_http_status: 429, last_tested: false, configured: true,
+    }
+    const typesafeKey: ContentModerationAPIKeyStatus = { ...openaiKey, key_hash: 'typesafe-hash', masked: '********ts02', status: 'ok', failure_count: 0, success_count: 1, last_http_status: 200 }
+    const profiles = {
+      openai: { ...baseConfig(), engine: 'openai' as const, api_key_configured: true, api_key_count: 1, api_key_statuses: [openaiKey] },
+      typesafe: { ...baseConfig(), engine: 'typesafe' as const, api_key_configured: true, api_key_count: 1, api_key_statuses: [typesafeKey] },
+    }
+    const otherEngine = activeEngine === 'openai' ? 'typesafe' : 'openai'
+    getConfig.mockResolvedValue({ ...profiles[activeEngine], engine_configs: profiles })
+    getStatus.mockResolvedValue({ ...runtimeStatus(), engine: activeEngine, api_key_statuses: profiles[activeEngine].api_key_statuses })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
     await flushPromises()
-
-    expect(wrapper.text()).not.toContain('admin.riskControl.protectionTitle')
-    expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalSemanticFallback')
-  })
-
-  it('shows semantic reviewer calls and filters platform review records', async () => {
-    getStatus.mockResolvedValue({
-      ...runtimeStatus(),
-      semantic_review_usage: {
-        available: true,
-        window_hours: 24,
-        total_calls: 12,
-        primary_calls: 9,
-        fallback_calls: 3,
-        other_calls: 0,
-        input_tokens: 4800,
-        output_tokens: 600,
-        avg_latency_ms: 742,
-      },
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-    await flushPromises()
-
-    const usage = wrapper.get('[data-test="semantic-review-usage"]')
-    expect(usage.text()).toContain('12')
-    expect(usage.text()).toContain('gpt-5.3-codex-spark')
-    expect(usage.text()).toContain('admin.riskControl.semanticUsage.fallback')
-    expect(usage.text()).toContain('742 ms')
-
-    await findButtonByText(wrapper, 'admin.riskControl.semanticUsage.viewRecords').trigger('click')
-    await flushPromises()
-    expect(listLogs).toHaveBeenLastCalledWith(expect.objectContaining({
-      decision_source: 'semantic_review',
-      from: expect.any(String),
-    }))
-  })
-
-  it('shows actionable admin risk totals and filters records from a metric', async () => {
-    listLogs.mockImplementation(async (params: Record<string, unknown>) => {
-      let total = 0
-      if (params.result === 'blocked' && params.page_size === 1) total = 7
-      if (params.result === 'hit' && params.page_size === 1) total = 11
-      if (params.review_status === 'pending' && params.page_size === 1) total = 3
-      if (params.result === 'error' && params.page_size === 1) total = 2
-      return { items: [], total, page: 1, page_size: Number(params.page_size ?? 20), pages: total > 0 ? 1 : 0 }
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="admin-metric-blocked"]').text()).toContain('7')
-    expect(wrapper.get('[data-test="admin-metric-hit"]').text()).toContain('11')
-    expect(wrapper.get('[data-test="admin-metric-pending"]').text()).toContain('3')
-    expect(wrapper.get('[data-test="admin-metric-error"]').text()).toContain('2')
-
-    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
-      page_size: 1,
-      review_status: 'pending',
-    }))
-    expect(listLogs).not.toHaveBeenCalledWith(expect.objectContaining({
-      page_size: 1,
-      result: 'review',
-      review_status: 'pending',
-    }))
-
-    await wrapper.get('[data-test="admin-metric-pending"]').trigger('click')
-    await flushPromises()
-
-    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
-      page_size: 20,
-      result: undefined,
-      review_status: 'pending',
-    }))
-
-    await wrapper.get('[data-test="admin-metric-blocked"]').trigger('click')
-    await flushPromises()
-
-    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
-      page_size: 20,
-      result: 'blocked',
-      from: expect.any(String),
-    }))
-  })
-
-	it('shows normalized semantic reviewer output from metadata in record details', async () => {
-    listLogs.mockResolvedValue({
-      items: [{
-        id: 91,
-        created_at: '2026-07-14T01:00:54Z',
-        user_email: 'admin@example.com',
-        action: 'semantic_review_allow',
-        flagged: false,
-        highest_category: 'benign_task_generation_guidance',
-        highest_score: 0.99,
-        input_excerpt: 'semantic excerpt',
-        decision_source: 'semantic_review',
-        moderation_provider: 'platform_openai',
-        moderation_model: 'gpt-5.3-codex-spark',
-        error: '',
-        metadata: {
-          semantic_review_verdict: 'allow',
-          semantic_review_intent: 'benign',
-          semantic_review_confidence: 0.99,
-          semantic_review_categories: ['benign_task_generation_guidance'],
-        },
-      }],
-      total: 1,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-    await flushPromises()
-
-    await findButtonByText(wrapper, 'semantic excerpt').trigger('click')
-
-    expect(wrapper.text()).toContain('admin.riskControl.modelResponse')
-    expect(wrapper.text()).toContain('admin.riskControl.modelResponseFields.intent')
-    expect(wrapper.text()).toContain('benign')
-    expect(wrapper.text()).toContain('99.0%')
-  })
-
-  it('renders keyword metadata in records and input detail', async () => {
-    listLogs.mockResolvedValue({
-      items: [
-        {
-          id: 42,
-          request_id: 'req-keyword',
-          user_id: 7,
-          user_email: 'risk@example.com',
-          api_key_id: 3,
-          api_key_name: 'Team Key',
-          group_id: 2,
-          group_name: 'Default',
-          endpoint: '/v1/responses',
-          provider: 'openai',
-          model: 'gpt-5',
-          mode: 'pre_block',
-          action: 'keyword_block',
-          flagged: true,
-          highest_category: 'keyword',
-          highest_score: 1,
-          category_scores: {},
-          threshold_snapshot: {},
-          input_excerpt: 'please sell api key',
-          matched_keyword: 'sell api key',
-          keyword_category: 'account_abuse',
-          keyword_severity: 'critical',
-          keyword_action: 'block',
-          effective_keyword_action: 'block',
-          risk_context_type: 'actual_request',
-          risk_context_reason: 'request_intent_marker',
-          review_status: '',
-          review_note: '',
-          reviewed_by: null,
-          reviewed_at: null,
-          raw_request_available: false,
-          raw_request_bytes: 0,
-          raw_request_truncated: false,
-          upstream_latency_ms: null,
-          error: '',
-          violation_count: 1,
-          auto_banned: false,
-          email_sent: false,
-          user_status: 'active',
-          queue_delay_ms: null,
-          created_at: '2026-06-19T08:00:00Z',
-        },
-      ],
-      total: 1,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.riskControl.matchedKeyword')
-    expect(wrapper.text()).toContain('sell api key')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.accountAbuse')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
-
-    await findButtonByText(wrapper, 'please sell api key').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.riskControl.keywordMetadata')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordCategory')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverity')
-  })
-
-  it('loads full raw request content from a risk audit log detail', async () => {
-    listLogs.mockResolvedValue({
-      items: [
-        {
-          id: 26190,
-          request_id: 'def739c1-3389-45ba-acb1-2c47977b82c4',
-          user_id: 244,
-          user_email: '1914823683@qq.com',
-          api_key_id: 9,
-          api_key_name: 'H',
-          group_id: 5,
-          group_name: 'Codex高速专线',
-          endpoint: '/responses',
-          provider: 'openai',
-          model: 'gpt-5.4',
-          mode: 'pre_upstream',
-          action: 'cyber_policy_session_blocked',
-          flagged: true,
-          highest_category: 'cyber_policy_session_blocked',
-          highest_score: 1,
-          category_scores: {},
-          threshold_snapshot: {},
-          input_excerpt: 'cyber_policy_session_blocked',
-          matched_keyword: '',
-          keyword_category: '',
-          keyword_severity: '',
-          keyword_action: '',
-          effective_keyword_action: '',
-          risk_context_type: 'actual_request',
-          risk_context_reason: 'openai_cyber_policy_session_block',
-          review_status: '',
-          review_note: '',
-          reviewed_by: null,
-          reviewed_at: null,
-          raw_request_available: true,
-          raw_request_bytes: 103,
-          raw_request_truncated: false,
-          upstream_latency_ms: null,
-          error: 'cyber_policy_session_blocked',
-          truncate_reasons: ['max_total_runes'],
-          violation_count: 0,
-          auto_banned: false,
-          email_sent: false,
-          user_status: 'active',
-          queue_delay_ms: null,
-          created_at: '2026-07-06T13:55:56Z',
-        },
-      ],
-      total: 1,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    })
-    getRawRequest.mockResolvedValue({
-      log_id: 26190,
-      request_id: 'def739c1-3389-45ba-acb1-2c47977b82c4',
-      body: '{"model":"gpt-5.4","input":[{"role":"user","content":"please inspect this OpenAI cyber policy block"}]}',
-      body_bytes: 103,
-      truncated: false,
-      created_at: '2026-07-06T13:55:56Z',
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.riskControl.action.cyberPolicySessionBlocked')
-    await findButtonByText(wrapper, 'cyber_policy_session_blocked').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.riskControl.viewRawRequest')
-    expect(wrapper.text()).toContain('admin.riskControl.truncationReasons')
-    expect(wrapper.text()).toContain('admin.riskControl.truncationReason.maxTotalRunes')
-    expect(wrapper.text()).not.toContain('max_total_runes')
-    expect(wrapper.text()).toContain('admin.riskControl.rawRequestMeta')
-
-    await findButtonByText(wrapper, 'admin.riskControl.viewRawRequest').trigger('click')
-    await flushPromises()
-
-    expect(getRawRequest).toHaveBeenCalledWith(26190)
-    expect(wrapper.text()).toContain('please inspect this OpenAI cyber policy block')
-  })
-
-  it('runs keyword tests without saving config or writing logs', async () => {
-    testKeywords.mockResolvedValue({
-      matched: true,
-      matched_keyword: 'sell api key',
-      keyword_category: 'account_abuse',
-      keyword_severity: 'critical',
-      keyword_action: 'block',
-      effective_keyword_action: 'observe',
-      risk_context_type: 'meta_discussion',
-      risk_context_reason: 'policy_or_keyword_rule_discussion',
-      normalized_excerpt: 'please sell api key now',
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    const promptInjectionStatus = wrapper.get('[data-test="prompt-injection-reviewer-status"]')
-    expect(promptInjectionStatus.text()).toContain('admin.riskControl.promptInjectionReviewerStatus')
-    expect(promptInjectionStatus.text()).toContain('admin.riskControl.promptInjectionFailClosedStatus')
-    expect(promptInjectionStatus.text()).toContain('12,000')
-    await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
-    await wrapper.get('[data-test="keyword-test-prompt"]').setValue('please s e l l api key now')
-    await findButtonByText(wrapper, 'admin.riskControl.runKeywordTest').trigger('click')
+    const engine = () => wrapper.findComponent('[data-test="audit-engine-select"]')
+    const keyPanel = () => wrapper.get('[data-test="audit-key-statuses"]')
+    expect(keyPanel().text()).toContain(profiles[activeEngine].api_key_statuses[0].masked)
+    engine().vm.$emit('update:modelValue', otherEngine)
     await flushPromises()
-
-    expect(testKeywords).toHaveBeenCalledWith({ prompt: 'please s e l l api key now' })
+    expect(keyPanel().text()).toContain(profiles[otherEngine].api_key_statuses[0].masked)
+    expect(keyPanel().text()).not.toContain(profiles[activeEngine].api_key_statuses[0].masked)
+    expect(keyPanel().text()).toContain(otherEngine === 'openai' ? 'admin.riskControl.apiKeyStatusFrozen' : 'admin.riskControl.apiKeyStatusOk')
+    await findButtonByText(wrapper, 'admin.riskControl.refreshStatus').trigger('click')
+    await flushPromises()
+    expect(keyPanel().text()).toContain(profiles[otherEngine].api_key_statuses[0].masked)
+    expect(keyPanel().text()).not.toContain(profiles[activeEngine].api_key_statuses[0].masked)
+    engine().vm.$emit('update:modelValue', activeEngine)
+    await flushPromises()
+    expect(keyPanel().text()).toContain(profiles[activeEngine].api_key_statuses[0].masked)
+    expect(keyPanel().text()).not.toContain(profiles[otherEngine].api_key_statuses[0].masked)
     expect(updateConfig).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('admin.riskControl.keywordTestMatched')
-    expect(wrapper.text()).toContain('sell api key')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.accountAbuse')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
-    expect(wrapper.text()).toContain('admin.riskControl.action.block')
-    expect(wrapper.text()).toContain('please sell api key now')
+    wrapper.unmount()
   })
 
-  it('allows pending blocked semantic records to be reviewed', async () => {
-    listLogs.mockResolvedValue({
-      items: [
-        {
-          id: 99,
-          request_id: 'req-review',
-          user_id: 7,
-          user_email: 'risk@example.com',
-          api_key_id: 3,
-          api_key_name: 'Team Key',
-          group_id: 2,
-          group_name: 'Default',
-          endpoint: '/v1/responses',
-          provider: 'openai',
-          model: 'gpt-5',
-          mode: 'pre_block',
-          action: 'semantic_review_deferred',
-          flagged: true,
-          highest_category: 'prompt_injection',
-          highest_score: 1,
-          category_scores: {},
-          threshold_snapshot: {},
-          input_excerpt: 'audit keyword discussion',
-          matched_keyword: '儿童性虐待材料',
-          keyword_category: 'minor_safety',
-          keyword_severity: 'critical',
-          keyword_action: 'block',
-          effective_keyword_action: 'observe',
-          risk_context_type: 'meta_discussion',
-          risk_context_reason: 'policy_or_keyword_rule_discussion',
-          review_status: 'pending',
-          review_note: '',
-          reviewed_by: null,
-          reviewed_at: null,
-          raw_request_available: false,
-          raw_request_bytes: 0,
-          raw_request_truncated: false,
-          upstream_latency_ms: null,
-          error: '',
-          violation_count: 0,
-          auto_banned: false,
-          email_sent: false,
-          user_status: 'active',
-          queue_delay_ms: null,
-          created_at: '2026-06-19T08:00:00Z',
-        },
-      ],
-      total: 1,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
+  it('shows an empty key panel for an unconfigured draft engine', async () => {
+    getStatus.mockResolvedValue({ ...runtimeStatus(), api_key_statuses: [{ masked: '********oa01', configured: true, status: 'ok' }] })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
     await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.riskControl.action.semanticReviewDeferred')
-    expect(wrapper.text()).toContain('admin.riskControl.reviewStatusLabel')
-    await findButtonByText(wrapper, 'admin.riskControl.markFalsePositive').trigger('click')
-    await flushPromises()
-
-    expect(reviewLog).toHaveBeenCalledWith(99, {
-      status: 'false_positive',
-      note: 'admin.riskControl.defaultFalsePositiveNote',
-    })
-    expect(showSuccess).toHaveBeenCalledWith('admin.riskControl.reviewSaved')
-  })
-
-  it('shows structured keyword rules and preserves them when saving config', async () => {
-    const config = baseConfig()
-    config.keyword_rules = [
-      {
-        keyword: 'child sexual abuse material',
-        category: 'minor_safety',
-        severity: 'critical',
-        action: 'block',
-        enabled: true,
-      },
-      {
-        keyword: 'suicide method',
-        category: 'self_harm',
-        severity: 'critical',
-        action: 'block',
-        enabled: false,
-      },
-    ]
-    getConfig.mockResolvedValue(config)
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
+    wrapper.findComponent('[data-test="audit-engine-select"]').vm.$emit('update:modelValue', 'typesafe')
+    await flushPromises()
+    expect(wrapper.get('[data-test="audit-key-statuses"]').text()).toContain('admin.riskControl.apiKeyHealthEmpty')
+    expect(wrapper.get('[data-test="audit-key-statuses"]').text()).not.toContain('********oa01')
+    expect(updateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
-    expect(wrapper.text()).toContain('admin.riskControl.keywordRules')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleCount')
-    expect(wrapper.text()).toContain('admin.riskControl.legacyBlockedKeywords')
-    expect(wrapper.text()).toContain('admin.riskControl.legacyBlockedKeywordCount')
-    expect(wrapper.text()).not.toContain('admin.riskControl.blockedKeywordCount')
-    expect(wrapper.text()).toContain('child sexual abuse material')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.minorSafety')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
-    expect(wrapper.text()).not.toContain('admin.riskControl.keywordAction')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleEnabled')
-    expect(wrapper.text()).toContain('suicide method')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.selfHarm')
-    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleDisabled')
-
+  it('preserves both engine drafts and saves thresholds independently', async () => {
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await wrapper.get('[data-test="audit-base-url"]').setValue('https://openai-edited.example')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.riskThresholds').trigger('click')
+    await wrapper.get('[data-test="risk-threshold-sexual"]').setValue('73')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.basic').trigger('click')
+    const engine = () => wrapper.findComponent('[data-test="audit-engine-select"]')
+    engine().vm.$emit('update:modelValue', 'typesafe')
+    await flushPromises()
+    expect((wrapper.get('[data-test="audit-model"]').element as HTMLInputElement).value).toBe('jev-latest')
+    await wrapper.get('[data-test="audit-base-url"]').setValue('https://typesafe-edited.example')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.riskThresholds').trigger('click')
+    expect((wrapper.get('[data-test="risk-threshold-sexual"]').element as HTMLInputElement).value).toBe('65')
+    await wrapper.get('[data-test="risk-threshold-sexual"]').setValue('91')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.basic').trigger('click')
+    engine().vm.$emit('update:modelValue', 'openai')
+    await flushPromises()
+    expect((wrapper.get('[data-test="audit-base-url"]').element as HTMLInputElement).value).toBe('https://openai-edited.example')
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
     await flushPromises()
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ engine: 'openai', engine_configs: {
+      openai: expect.objectContaining({ base_url: 'https://openai-edited.example', thresholds: expect.objectContaining({ sexual: 0.73 }) }),
+      typesafe: expect.objectContaining({ base_url: 'https://typesafe-edited.example', thresholds: expect.objectContaining({ sexual: 0.91 }) }),
+    } }))
+    expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
-    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
-      keyword_rules: config.keyword_rules,
-      engine_mode: 'candidate_only',
-      keyword_blocking_mode: 'keyword_and_api',
-      record_non_hits: false,
-      audit_scope: 'user_only',
-	      semantic_review: expect.objectContaining({
-	        enabled: true,
-	        trigger: 'local_review',
-	        fallback_models: ['gpt-5.4-mini'],
-	        timeout_ms: 8000,
-	        primary_timeout_ms: 5000,
-	        fallback_timeout_ms: 3000,
-	        escalation_enabled: true,
-	        escalation_model: 'gpt-5.6-sol',
-	        escalation_timeout_ms: 15000,
-	        escalation_max_input_runes: 12000,
-	        escalation_reasoning_effort: 'high',
-	        max_attempts_per_model: 1,
-	        max_input_runes: 2000,
-	        max_submit_runes: 2000,
-	        max_output_tokens: 512,
-	        reasoning_effort: 'low',
-	        prompt_injection_reviewer_enabled: true,
-	        prompt_injection_max_input_runes: 12000,
-	        prompt_injection_fail_closed: true,
-	      }),
-    }))
+  it('tests the draft engine without switching the active engine', async () => {
+    testAPIKeys.mockResolvedValue({ items: [{ status: 'ok', configured: false }], image_count: 0 })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    wrapper.findComponent('[data-test="audit-engine-select"]').vm.$emit('update:modelValue', 'typesafe')
+    await flushPromises()
+    await wrapper.get('textarea[autocomplete="new-password"]').setValue('test-only-key')
+    await findButtonByText(wrapper, 'admin.riskControl.testInputApiKeys').trigger('click')
+    await flushPromises()
+    expect(testAPIKeys).toHaveBeenCalledWith(expect.objectContaining({ engine: 'typesafe', api_keys: ['test-only-key'], model: 'jev-latest', thresholds: expect.objectContaining({ sexual: 0.65 }) }))
+    expect(updateConfig).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-test="active-audit-engine"]').text()).not.toContain('TypeSafe AI')
+    wrapper.unmount()
+  })
+
+  it.each(['openai', 'typesafe'] as const)('restores the shared defaults for %s without replacing saved thresholds on load', async (engine) => {
+    getConfig.mockResolvedValue({ ...baseConfig(), engine, thresholds: { sexual: 0.8, harassment: 0.8 } })
+    const wrapper = mount(RiskControlView, { global: { stubs: { AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true, Select: true, Toggle: true, Pagination: true, ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true } } })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.riskThresholds').trigger('click')
+    expect((wrapper.get('[data-test="risk-threshold-sexual"]').element as HTMLInputElement).value).toBe('80')
+    await findButtonByText(wrapper, 'admin.riskControl.riskThresholdReset').trigger('click')
+    const defaults = {
+      harassment: 98, 'harassment/threatening': 90, hate: 65, 'hate/threatening': 65,
+      illicit: 95, 'illicit/violent': 95, 'self-harm': 65, 'self-harm/intent': 85,
+      'self-harm/instructions': 65, sexual: 65, 'sexual/minors': 65, violence: 95, 'violence/graphic': 95,
+    }
+    for (const [category, value] of Object.entries(defaults)) {
+      expect((wrapper.get(`[data-test="risk-threshold-${category}"]`).element as HTMLInputElement).value).toBe(String(value))
+    }
+    if (engine === 'typesafe') expect(wrapper.text()).toContain('admin.riskControl.typeSafeThresholds')
+    expect(updateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('saves the selected model filter mode and models', async () => {
@@ -956,167 +369,6 @@ describe('admin RiskControlView', () => {
       },
     }))
     expect(showError).not.toHaveBeenCalled()
-  })
-
-  it('tests the draft model with the configured endpoint and reasoning without saving', async () => {
-    const config = baseConfig()
-    config.engine_mode = 'rules_and_model'
-    Object.assign(config.semantic_review, {
-      api_base_url: 'https://provider.example/v1',
-      api_endpoint: 'responses',
-      api_key_configured: true,
-      api_key_masked: 'sk-****',
-      reasoning_effort: 'none',
-      max_output_tokens: 512,
-      timeout_ms: 30000,
-      primary_timeout_ms: 15000,
-      max_attempts_per_model: 3,
-    })
-    getConfig.mockResolvedValue(config)
-    testSemanticReviewModel.mockResolvedValue({ message: 'ok' })
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-          ProxySelector: true,
-        },
-      },
-    })
-    await flushPromises()
-    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    await wrapper.get('input[placeholder="admin.riskControl.semanticReviewPrimaryModelPlaceholder"]').setValue('deepseek-v4.1-flash')
-    await findButtonByText(wrapper, 'admin.riskControl.semanticReviewTestModel').trigger('click')
-    await flushPromises()
-
-    expect(testSemanticReviewModel).toHaveBeenCalledWith({
-      base_url: 'https://provider.example/v1',
-      api_key: '',
-      model: 'deepseek-v4.1-flash',
-      api_endpoint: 'responses',
-      reasoning_effort: 'none',
-      max_output_tokens: 512,
-      timeout_ms: 30000,
-      primary_timeout_ms: 15000,
-      max_attempts_per_model: 3,
-    })
-    expect(updateConfig).not.toHaveBeenCalled()
-    expect(showError).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('loads and submits latest-turn-only content moderation scope', async () => {
-    const config = baseConfig()
-    config.latest_turn_only = true
-    getConfig.mockResolvedValue(config)
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    expect(wrapper.text()).toContain('admin.riskControl.latestTurnOnly')
-    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
-    await flushPromises()
-
-    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ latest_turn_only: true }))
-  })
-
-	it('saves OAuth credential account scope without selected account IDs', async () => {
-		const wrapper = mount(RiskControlView, {
-			global: {
-				stubs: {
-					AppLayout: AppLayoutStub,
-					BaseDialog: BaseDialogStub,
-					Icon: true,
-					Select: true,
-					Toggle: true,
-					Pagination: true,
-					ModelWhitelistSelector: ModelWhitelistSelectorStub,
-				},
-			},
-		})
-
-		await flushPromises()
-		await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-		await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
-		await findButtonByText(wrapper, 'admin.riskControl.accountScopeOAuth').trigger('click')
-		await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
-		await flushPromises()
-
-		expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
-			account_scope: 'oauth',
-			account_ids: [],
-		}))
-	})
-
-  it('loads and saves the ordinary semantic review input budget', async () => {
-    const config = baseConfig()
-    config.semantic_review!.max_input_runes = 6000
-    getConfig.mockResolvedValue(config)
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true,
-          Select: true, Toggle: true, Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true,
-        },
-      },
-    })
-    await flushPromises()
-    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    const input = wrapper.get<HTMLInputElement>('[data-test="semantic-review-max-input"]')
-    expect(input.element.value).toBe('6000')
-    expect(input.attributes('max')).toBeUndefined()
-    await input.setValue('100000')
-    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
-    await flushPromises()
-    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
-      semantic_review: expect.objectContaining({ max_input_runes: 100000 }),
-    }))
-  })
-
-  it('loads and saves the submitted semantic review text budget', async () => {
-    const config = baseConfig()
-    config.semantic_review!.max_input_runes = 6000
-    config.semantic_review!.max_submit_runes = 8000
-    getConfig.mockResolvedValue(config)
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true,
-          Select: true, Toggle: true, Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true,
-        },
-      },
-    })
-    await flushPromises()
-    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
-    const input = wrapper.get<HTMLInputElement>('[data-test="semantic-review-max-submit"]')
-    expect(input.element.value).toBe('8000')
-    expect(input.attributes('max')).toBeUndefined()
-    await input.setValue('12000')
-    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
-    await flushPromises()
-    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
-      semantic_review: expect.objectContaining({ max_submit_runes: 12000 }),
-    }))
   })
 
   it('submits edited risk control thresholds when saving moderation config', async () => {
@@ -1282,187 +534,5 @@ describe('admin RiskControlView', () => {
       'max-h-[280px]',
       'overflow-y-auto',
     ]))
-  })
-
-  it('renders operator-readable protection summary and keeps pipeline diagnostics collapsed by default', async () => {
-    getStatus.mockResolvedValue({
-      ...runtimeStatus(),
-      pipeline_coverage: {
-        manifest_version: '2026-06-29.2',
-        version: 'openai-http-pre-forward-v2',
-        manifest_hash: 'stage-hash-123',
-        status: 'mismatch',
-        openai_http: {
-          version: 'openai-http-pre-forward-v2',
-          pipeline: 'openai_http',
-          required_routes: 2,
-          covered_routes: 1,
-          uncovered_routes: ['POST /v1/responses'],
-          stage_coverage: [
-            {
-              stage: 'moderation',
-              required_routes: 2,
-              covered_routes: 2,
-              uncovered_routes: [],
-            },
-            {
-              stage: 'cyber',
-              required_routes: 2,
-              covered_routes: 2,
-              uncovered_routes: [],
-            },
-            {
-              stage: 'image',
-              required_routes: 1,
-              covered_routes: 0,
-              uncovered_routes: ['POST /v1/responses'],
-            },
-          ],
-          routes: [
-            {
-              method: 'POST',
-              path: '/v1/chat/completions',
-              handler: 'OpenAIGatewayHandler.ChatCompletions',
-              protocol: 'openai_chat_completions',
-              pipeline: 'openai_http',
-              covered: true,
-              stages: [
-                { stage: 'moderation', required: true, covered: true },
-                { stage: 'cyber', required: true, covered: true },
-              ],
-            },
-            {
-              method: 'POST',
-              path: '/v1/responses',
-              handler: 'OpenAIGatewayHandler.Responses',
-              protocol: 'openai_responses',
-              pipeline: 'openai_http',
-              covered: false,
-              forward_adapters: ['OpenAIHTTPForwardStage'],
-              forward_adapter_descriptors: [
-                { stage: 'forward', pipeline: 'openai_http', name: 'OpenAIHTTPForwardStage' },
-              ],
-              stage_adapter_descriptors: [
-                { stage: 'billing', pipeline: 'openai_http', name: 'OpenAIHTTPBillingStage' },
-                { stage: 'routing', pipeline: 'openai_http', name: 'OpenAIHTTPRoutingStage' },
-                { stage: 'forward', pipeline: 'openai_http', name: 'OpenAIHTTPForwardStage' },
-                { stage: 'usage', pipeline: 'openai_http', name: 'OpenAIHTTPUsageStage' },
-              ],
-              uncovered_stages: ['image'],
-              stages: [
-                { stage: 'moderation', required: true, covered: true },
-                { stage: 'cyber', required: true, covered: true },
-                { stage: 'image', required: true, covered: false },
-              ],
-            },
-          ],
-        },
-      },
-      pipeline_execution: {
-        total_count: 7,
-        error_count: 2,
-        recent_window_seconds: 300,
-        recent_window_count: 3,
-        recent_window_error_count: 1,
-        stage_observation_coverage: {
-          status: 'mismatch',
-          expected_stages: 7,
-          observed_stages: 1,
-          unobserved_stages: [
-            'POST /v1/responses OpenAIGatewayHandler.Responses moderation',
-            'POST /v1/responses OpenAIGatewayHandler.Responses usage',
-          ],
-        },
-        executions: [
-          {
-            pipeline: 'openai_http',
-            stage: 'forward',
-            source: 'OpenAIGatewayPipeline.RunHTTPExecutableStage',
-            method: 'POST',
-            path: '/v1/responses',
-            handler: 'OpenAIGatewayHandler.Responses',
-            protocol: 'openai_responses',
-            count: 7,
-            error_count: 2,
-            recent_count: 3,
-            recent_error_count: 1,
-          },
-        ],
-        routes: [
-          {
-            pipeline: 'openai_http',
-            method: 'POST',
-            path: '/v1/responses',
-            handler: 'OpenAIGatewayHandler.Responses',
-            protocol: 'openai_responses',
-            count: 7,
-            error_count: 2,
-            recent_count: 3,
-            recent_error_count: 1,
-            stages: [
-              {
-                pipeline: 'openai_http',
-                stage: 'forward',
-                source: 'OpenAIGatewayPipeline.RunHTTPExecutableStage',
-                method: 'POST',
-                path: '/v1/responses',
-                handler: 'OpenAIGatewayHandler.Responses',
-                protocol: 'openai_responses',
-                count: 7,
-                error_count: 2,
-                recent_count: 3,
-                recent_error_count: 1,
-              },
-            ],
-          },
-        ],
-      },
-    })
-
-    const wrapper = mount(RiskControlView, {
-      global: {
-        stubs: {
-          AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
-          Icon: true,
-          Select: true,
-          Toggle: true,
-          Pagination: true,
-          ModelWhitelistSelector: ModelWhitelistSelectorStub,
-        },
-      },
-    })
-
-    await flushPromises()
-
-    const summary = wrapper.get('[data-test="pipeline-operator-summary"]')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainTitle')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainCoverage')
-    expect(summary.text()).toContain('mismatch · 1/2')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainRecentTraffic')
-    expect(summary.text()).toContain('3')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainErrors')
-    expect(summary.text()).toContain('2')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainObservedChecks')
-    expect(summary.text()).toContain('1/7')
-    expect(summary.text()).toContain('admin.riskControl.protectionChainUnobservedSummary')
-    expect(summary.text()).toContain('2')
-
-    expect(summary.text()).not.toContain('stage-hash-123')
-    expect(summary.text()).not.toContain('OpenAIGatewayHandler.Responses')
-    expect(summary.text()).not.toContain('billing:OpenAIHTTPBillingStage@openai_http')
-
-    expect(wrapper.find('[data-test="pipeline-advanced-diagnostics"]').exists()).toBe(false)
-
-    await wrapper.get('[data-test="pipeline-advanced-toggle"]').trigger('click')
-
-    const diagnostics = wrapper.get('[data-test="pipeline-advanced-diagnostics"]')
-    expect(diagnostics.text()).toContain('2026-06-29.2')
-    expect(diagnostics.text()).toContain('openai-http-pre-forward-v2')
-    expect(diagnostics.text()).toContain('stage-hash-123')
-    expect(diagnostics.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
-    expect(diagnostics.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
-    expect(diagnostics.text()).toContain('billing:OpenAIHTTPBillingStage@openai_http')
-    expect(diagnostics.text()).toContain('forward:OpenAIHTTPForwardStage@openai_http')
   })
 })

@@ -99,6 +99,19 @@ func (OpenAIHTTPModerationStage) Run(ctx *openAIHTTPGatewayStageContext) openAIH
 		pipeline = newOpenAIGatewayPipeline(nil)
 	}
 	input := ctx.input
+	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
+		decision := ctx.handler.checkSecurityAudit(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
+		if decision != nil && !decision.AllowNextStage {
+			if input.ModerationErrorFormat == openAIHTTPModerationErrorAnthropic {
+				ctx.handler.anthropicSecurityAuditError(ctx.c, decision)
+			} else {
+				ctx.handler.openAISecurityAuditError(ctx.c, decision)
+			}
+			return openAIHTTPGatewayStageResult{Blocked: true}
+		}
+		return openAIHTTPGatewayStageResult{}
+	}
+
 	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
 		APIKey:   input.APIKey,
 		Subject:  input.Subject,
@@ -116,12 +129,12 @@ func (OpenAIHTTPModerationStage) Run(ctx *openAIHTTPGatewayStageContext) openAIH
 }
 
 func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, format openAIHTTPModerationErrorFormat, decision *service.ContentModerationDecision) {
-	markOpsContentModerationDiagnostic(c, decision)
+
 	switch format {
 	case openAIHTTPModerationErrorAnthropic:
-		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 	default:
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 	}
 }
 
@@ -242,7 +255,7 @@ func (OpenAIHTTPCyberStage) Run(ctx *openAIHTTPGatewayStageContext) openAIHTTPGa
 	}
 	if ctx.handler != nil {
 		ctx.handler.enqueueCyberSessionBlockedOpsEntry(ctx.c, input.APIKey, input.Model, result.BlockKey)
-		ctx.handler.recordCyberSessionBlockedRiskEvent(ctx.c, input.APIKey, input.Model, result.BlockKey, cyberBody)
+
 	}
 	return openAIHTTPGatewayStageResult{Blocked: true}
 }
@@ -282,13 +295,9 @@ func openAIHTTPPreForwardExecutableStages(ctx *openAIHTTPGatewayStageContext, st
 		executableStages = append(executableStages, ExecutableStage{
 			Name: openAIHTTPPreForwardExecutableStageName(stage.Name()),
 			Run: func() ExecutableStageResult {
-				receiptCountBefore := 0
-				if ctx != nil {
-					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
-				}
 				stageResult := stage.Run(ctx)
 				if !stageResult.Blocked && openAIHTTPPreForwardExecutableStageName(stage.Name()) == moderationcoverage.StageModeration && ctx != nil {
-					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+					moderationcoverage.MarkModerationReceipt(ctx.c, moderationcoverage.ModerationExecutionReceipt{Protocol: ctx.input.Protocol, LocalScanDone: true, Outcome: "allow", ForwardAllowed: true})
 				}
 				if cleanup != nil {
 					*cleanup = combineOpenAIHTTPGatewayCleanup(*cleanup, stageResult.Cleanup)
@@ -394,11 +403,20 @@ func (OpenAIWebSocketModerationStage) Run(ctx *openAIWebSocketGatewayStageContex
 		pipeline = newOpenAIGatewayPipeline(nil)
 	}
 	input := ctx.input
-	if selectedAccountModerationRequired(ctx.c, input.Protocol, input.Model, input.Body) {
+	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
+		stage := "first_turn"
+		if turn, ok := securityAuditWSTurn(ctx.c); ok && turn > 1 {
+			stage = "subsequent_turn"
+		}
+		decision := ctx.handler.checkSecurityAuditStage(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body, stage)
+		if decision != nil && !decision.AllowNextStage {
+			return openAIWebSocketGatewayStageResult{Result: openAIWebSocketPipelineResult{Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonSecurityAudit, SecurityAuditDecision: decision}}
+		}
 		return openAIWebSocketGatewayStageResult{}
 	}
-	decision, completed := contentModerationDecisionFromCache(ctx.c, input.Protocol, input.Model, input.Body)
-	if !completed {
+
+	var decision *service.ContentModerationDecision
+	{
 		decision = pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
 			APIKey:   input.APIKey,
 			Subject:  input.Subject,
@@ -414,7 +432,7 @@ func (OpenAIWebSocketModerationStage) Run(ctx *openAIWebSocketGatewayStageContex
 		Blocked:            true,
 		BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
 		ModerationDecision: decision,
-		Message:            contentModerationClientMessage(decision),
+		Message:            decision.Message,
 	}}
 }
 
@@ -533,13 +551,9 @@ func openAIWebSocketExecutableStages(ctx *openAIWebSocketGatewayStageContext, st
 		executableStages = append(executableStages, ExecutableStage{
 			Name: openAIWebSocketExecutableStageName(stage.Name()),
 			Run: func() ExecutableStageResult {
-				receiptCountBefore := 0
-				if ctx != nil {
-					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
-				}
 				stageResult := stage.Run(ctx).Result
 				if !stageResult.Blocked && openAIWebSocketExecutableStageName(stage.Name()) == moderationcoverage.StageModeration && ctx != nil {
-					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+					moderationcoverage.MarkModerationReceipt(ctx.c, moderationcoverage.ModerationExecutionReceipt{Protocol: ctx.input.Protocol, LocalScanDone: true, Outcome: "allow", ForwardAllowed: true})
 				}
 				if result != nil && stageResult.CyberBlockKey != "" {
 					result.CyberBlockKey = stageResult.CyberBlockKey

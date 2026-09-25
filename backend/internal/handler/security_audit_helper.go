@@ -12,8 +12,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const securityAuditInternalRequestContextKey = "sub2api.security_audit.internal_request"
-
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
 const securityAuditWSTurnContextKey = "sub2api.security_audit.ws_turn"
 const securityAuditWSDedupeContextKey = "sub2api.security_audit.ws_dedupe"
@@ -72,35 +70,13 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		return nil
 	}
 	cacheCompletion := cachesSecurityAuditCompletion(stage)
-	if legacy != nil && legacy.IsInternalSemanticReviewRequest(c.Request) {
-		c.Set(securityAuditInternalRequestContextKey, true)
-		// A custom semantic reviewer may call this same gateway. Bypass the full
-		// security-audit coordinator for that authenticated internal hop to avoid
-		// recursively auditing the reviewer prompt itself.
-		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
-		if cacheCompletion {
-			c.Set(securityAuditCompletedContextKey, true)
-		}
-		if reqLog != nil {
-			reqLog.Info("security_audit.skip_internal_semantic_review")
-		}
-		return &decision
-	}
+
 	if cacheCompletion {
 		if completed, exists := c.Get(securityAuditCompletedContextKey); exists && completed == true {
 			return nil
 		}
 	}
 	if coordinator == nil {
-		if selectedAccountModerationRequired(c, protocol, model, body) {
-			decision := securityaudit.Decision{
-				Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true,
-			}
-			if cacheCompletion {
-				c.Set(securityAuditCompletedContextKey, true)
-			}
-			return &decision
-		}
 		legacyDecision := runContentModeration(c, reqLog, legacy, apiKey, subject, protocol, model, body)
 		if legacyDecision == nil {
 			return nil
@@ -108,11 +84,11 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
 		decision.Legacy = &securityaudit.LegacyDecision{
 			Allowed: legacyDecision.Allowed, Blocked: legacyDecision.Blocked, Flagged: legacyDecision.Flagged,
-			Message: contentModerationClientMessage(legacyDecision), StatusCode: legacyDecision.StatusCode,
+			Message: legacyDecision.Message, StatusCode: legacyDecision.StatusCode,
 			ErrorCode: contentModerationErrorCode(legacyDecision), Action: legacyDecision.Action,
 		}
 		if legacyDecision.Blocked {
-			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), contentModerationErrorCode(legacyDecision), contentModerationClientMessage(legacyDecision), false
+			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), contentModerationErrorCode(legacyDecision), legacyDecision.Message, false
 		}
 		if decision.AllowNextStage && cacheCompletion {
 			c.Set(securityAuditCompletedContextKey, true)
@@ -133,11 +109,7 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			}
 			logSecurityAuditStart(reqLog, request, len(body), false)
 			decision := coordinator.Check(c.Request.Context(), request)
-			if decision.Kind == securityaudit.DecisionBlock && legacy != nil {
-				if message := legacy.ConfiguredBlockMessage(c.Request.Context()); message != "" {
-					decision.ClientMessage = message
-				}
-			}
+
 			if decision.Kind == securityaudit.DecisionAllow {
 				c.Set(securityAuditWSDedupeContextKey, securityAuditWSDedupeEntry{
 					stage: request.Stage, turn: turnNo, bodyHash: bodyHash, decision: decision,
@@ -148,30 +120,12 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		}
 	}
 	logSecurityAuditStart(reqLog, request, len(body), false)
-	var decision securityaudit.Decision
-	if selectedAccountModerationRequired(c, protocol, model, body) {
-		decision = coordinator.CheckWithLegacy(c.Request.Context(), request, nil)
-	} else if cached, ok := contentModerationDecisionFromCache(c, protocol, model, body); ok {
-		decision = coordinator.CheckWithLegacy(c.Request.Context(), request, securityAuditLegacyDecision(cached))
-	} else {
-		decision = coordinator.Check(c.Request.Context(), request)
-	}
+	decision := coordinator.Check(c.Request.Context(), request)
 	if decision.AllowNextStage && cacheCompletion {
 		c.Set(securityAuditCompletedContextKey, true)
 	}
 	logSecurityAuditDone(reqLog, request, decision, false)
 	return &decision
-}
-
-func securityAuditLegacyDecision(decision *service.ContentModerationDecision) *securityaudit.LegacyDecision {
-	if decision == nil {
-		return nil
-	}
-	return &securityaudit.LegacyDecision{
-		Allowed: decision.Allowed, Blocked: decision.Blocked, Flagged: decision.Flagged,
-		Message: contentModerationClientMessage(decision), StatusCode: decision.StatusCode,
-		ErrorCode: contentModerationErrorCode(decision), Action: decision.Action,
-	}
 }
 
 func logSecurityAuditStart(reqLog *zap.Logger, request securityaudit.Request, bodyBytes int, cached bool) {
@@ -265,9 +219,7 @@ func runSelectedAccountPromptAudit(c *gin.Context, coordinator *securityaudit.Co
 	if c == nil || c.Request == nil || account == nil {
 		return nil
 	}
-	if internal, _ := c.Get(securityAuditInternalRequestContextKey); internal == true {
-		return nil
-	}
+
 	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
 	request.AccountID, request.AccountPlatform, request.AccountType = account.ID, account.Platform, account.Type
 	return coordinator.CheckSelectedAccount(c.Request.Context(), request)

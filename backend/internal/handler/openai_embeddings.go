@@ -44,7 +44,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	var body []byte
 	var reqModel string
-	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIEmbeddings); ok {
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, GatewayProtocolOpenAIEmbeddings); ok {
 		body = preForwardRequest.Body
 		reqModel = preForwardRequest.Model
 	} else {

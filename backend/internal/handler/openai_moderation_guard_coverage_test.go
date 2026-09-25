@@ -47,7 +47,7 @@ func TestOpenAIEntryPointsUseModerationGuardForOpenAIProtocols(t *testing.T) {
 			}
 
 			protocol := contentModerationProtocolArg(call)
-			if strings.HasPrefix(protocol, "ContentModerationProtocolOpenAI") {
+			if strings.HasPrefix(protocol, "ContentModerationProtocolOpenAI") || strings.HasPrefix(protocol, "GatewayProtocolOpenAI") {
 				pos := fset.Position(selector.Pos())
 				violations = append(violations, fmt.Sprintf(
 					"%s:%d calls h.checkContentModeration with service.%s",
@@ -106,7 +106,7 @@ func TestOpenAIEntryPointsUseUnifiedModerationGuardHelper(t *testing.T) {
 				if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "h" {
 					pos := fset.Position(selector.Pos())
 					violations = append(violations, fmt.Sprintf(
-						"%s:%d reads h.moderationGuard directly; use h.checkWithModerationGuard",
+						"%s:%d reads h.moderationGuard directly; use pipeline.CheckModeration",
 						file,
 						pos.Line,
 					))
@@ -180,7 +180,7 @@ func contentModerationProtocolArg(call *ast.CallExpr) string {
 		if !ok {
 			continue
 		}
-		if strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") {
+		if strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") || strings.HasPrefix(selector.Sel.Name, "GatewayProtocol") {
 			return selector.Sel.Name
 		}
 	}

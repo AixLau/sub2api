@@ -173,13 +173,10 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.Empty(t, gemini.submits)
 	})
 
-	t.Run("moderates selected account before pricing job hold and provider submit", func(t *testing.T) {
+	t.Run("moderates batch items before pricing job hold and provider submit", func(t *testing.T) {
 		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
-		gate := &fakeBatchImageModerationGate{result: &ContentModerationGateResult{
-			Disposition: ContentModerationDispositionBlocked,
-			Decision: &ContentModerationDecision{
-				Blocked: true, StatusCode: 451, Message: "blocked batch prompt", Action: ContentModerationActionBlock,
-			},
+		gate := &fakeBatchImageModerationGate{result: &ContentModerationDecision{
+			Blocked: true, StatusCode: 451, Message: "blocked batch prompt", Action: ContentModerationActionBlock,
 		}}
 		svc.Moderation = gate
 		owner := BatchImageOwner{UserID: 11, UserEmail: "user@example.com", APIKeyID: 22, APIKeyName: "batch-key", GroupName: "images"}
@@ -192,13 +189,11 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.Equal(t, "content_policy_violation", gateErr.Code)
 		require.Equal(t, "blocked batch prompt", gateErr.Message)
 		require.Len(t, gate.inputs, 1)
-		require.Equal(t, int64(202), gate.inputs[0].AccountID)
-		require.Equal(t, AccountTypeServiceAccount, gate.inputs[0].AccountType)
-		require.Equal(t, ContentModerationProtocolBatchImages, gate.inputs[0].Protocol)
+		require.Equal(t, ContentModerationProtocolOpenAIImages, gate.inputs[0].Protocol)
 		require.Equal(t, "batch-key", gate.inputs[0].APIKeyName)
-		var normalized BatchImageSubmitRequest
+		var normalized struct{ Prompt string }
 		require.NoError(t, json.Unmarshal(gate.inputs[0].Body, &normalized))
-		require.Equal(t, "hero", normalized.Items[0].Prompt)
+		require.Equal(t, "hero", normalized.Prompt)
 		require.Empty(t, repo.jobs)
 		require.Empty(t, queue.enqueued)
 		require.Empty(t, gemini.submits)
@@ -835,11 +830,11 @@ func testBatchImageOwner() BatchImageOwner {
 
 type fakeBatchImageModerationGate struct {
 	inputs []ContentModerationCheckInput
-	result *ContentModerationGateResult
+	result *ContentModerationDecision
 	err    error
 }
 
-func (f *fakeBatchImageModerationGate) CheckAccountAttempt(_ context.Context, input ContentModerationCheckInput, _ *ContentModerationAttemptState) (*ContentModerationGateResult, error) {
+func (f *fakeBatchImageModerationGate) Check(_ context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
 	f.inputs = append(f.inputs, input)
 	return f.result, f.err
 }
@@ -1065,3 +1060,20 @@ func (r *publicBatchImageUserGroupRateRepo) GetByUserAndGroup(_ context.Context,
 
 var _ BatchImageGroupPricingRepository = (*publicBatchImageGroupRepo)(nil)
 var _ BatchImageUserGroupRateRepository = (*publicBatchImageUserGroupRateRepo)(nil)
+
+func TestBatchContentAuditChecksEveryItemAndReferenceImage(t *testing.T) {
+	gate := &fakeBatchImageModerationGate{}
+	svc := &BatchImagePublicService{Moderation: gate}
+	request := BatchImageSubmitRequest{Model: "image-model", Items: []BatchImageSubmitItem{
+		{CustomID: "one", Prompt: "first prompt", ReferenceImages: []BatchImageReferenceInput{{MimeType: "image/png", Data: []byte{1, 2, 3}}}},
+		{CustomID: "two", Prompt: "second prompt"},
+	}}
+	require.NoError(t, svc.moderateBatch(context.Background(), testBatchImageOwner(), request, PlatformGemini, "request-id"))
+	require.Len(t, gate.inputs, 2)
+	first := ExtractContentModerationInput(gate.inputs[0].Protocol, gate.inputs[0].Body)
+	second := ExtractContentModerationInput(gate.inputs[1].Protocol, gate.inputs[1].Body)
+	require.Equal(t, "first prompt", first.Text)
+	require.Equal(t, []string{"data:image/png;base64,AQID"}, first.Images)
+	require.Equal(t, "second prompt", second.Text)
+	require.Equal(t, "request-id", gate.inputs[1].RequestID)
+}

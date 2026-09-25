@@ -212,24 +212,13 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 	risk := admin.Group("/risk-control")
 	{
 		risk.GET("/config", h.Admin.ContentModeration.GetConfig)
-		risk.GET("/semantic-review/models", h.Admin.ContentModeration.GetSemanticReviewModels)
-		risk.POST("/semantic-review/models", h.Admin.ContentModeration.FetchSemanticReviewModels)
-		risk.POST("/semantic-review/test", h.Admin.ContentModeration.TestSemanticReviewModel)
 		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
 		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
-		risk.POST("/keywords/test", h.Admin.ContentModeration.TestKeywords)
 		risk.GET("/status", h.Admin.ContentModeration.GetStatus)
-		risk.GET("/metrics", h.Admin.ContentModeration.GetMetrics)
 		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
-		risk.GET("/logs/:id/raw-request", h.Admin.ContentModeration.GetRawRequestSnapshot)
-		risk.GET("/logs/:id/evidence", h.Admin.ContentModeration.GetEvidenceSnapshot)
-		risk.PATCH("/logs/:id/review", h.Admin.ContentModeration.ReviewLog)
 		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
 		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
 		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
-		risk.GET("/outbox/dead-letters", h.Admin.ContentModeration.ListOutboxDeadLetters)
-		risk.POST("/outbox/dead-letters/:id/replay", h.Admin.ContentModeration.ReplayOutboxDeadLetter)
-		risk.POST("/outbox/cleanup", h.Admin.ContentModeration.CleanupOutbox)
 	}
 }
 

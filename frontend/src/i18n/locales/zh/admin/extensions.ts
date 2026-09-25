@@ -91,6 +91,14 @@ export default {
     },
   },
   riskControl: {
+    activeEngine: '当前审核引擎：{engine}',
+    auditSource: '审核来源',
+    engine: '审核引擎',
+    engineUnavailable: '当前引擎没有可用的审核密钥，请检查密钥状态和配置。',
+    legacyAuditSource: '历史记录：未记录审核引擎来源',
+    skippedImages: '已跳过图片：{count}',
+    typeSafeNotice: 'TypeSafe AI 仅审核文本，图片会被跳过并记录数量。',
+    typeSafeThresholds: 'TypeSafe AI 使用独立的分类评分，请单独设置阈值，不要照搬 OpenAI 阈值。',
     action: {
       allow: '放行',
       block: '拦截',

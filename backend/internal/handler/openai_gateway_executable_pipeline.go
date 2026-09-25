@@ -541,7 +541,7 @@ func ExecutableForwardStage(adapter ForwardStage) ExecutableStage {
 		Name: adapter.StageName(),
 		RunWithContext: func(c *gin.Context) ExecutableStageResult {
 			if moderationReceiptRequiredAndMissing(c) {
-				recordContentModerationForwardConflict(c)
+
 				return ExecutableStageResult{Stop: true, Err: errModerationReceiptNotForwardable}
 			}
 			return adapter.RunForward(c)
@@ -581,7 +581,7 @@ func executableForwardStageWithContext(c *gin.Context, adapter ForwardStage) Exe
 		Name: adapter.StageName(),
 		RunWithContext: func(*gin.Context) ExecutableStageResult {
 			if moderationReceiptRequiredAndMissing(c) {
-				recordContentModerationForwardConflict(c)
+
 				return ExecutableStageResult{Stop: true, Err: errModerationReceiptNotForwardable}
 			}
 			return adapter.RunForward(c)
@@ -924,25 +924,14 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 				if releaseFunc != nil {
 					releaseFunc()
 				}
-				if request.Protocol == service.ContentModerationProtocolOpenAIMessages {
+				if request.Protocol == GatewayProtocolOpenAIMessages {
 					h.anthropicSecurityAuditError(c, decision)
 				} else {
 					h.openAISecurityAuditError(c, decision)
 				}
 				return ExecutableStageResult{Stop: true}
 			}
-			gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, s.APIKey, subject, request.Protocol, request.Model, request.contentModerationBody(), refreshedAccount)
-			if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
-				if releaseFunc != nil {
-					releaseFunc()
-				}
-				format := openAIHTTPModerationErrorOpenAI
-				if request.Protocol == service.ContentModerationProtocolOpenAIMessages {
-					format = openAIHTTPModerationErrorAnthropic
-				}
-				h.writeOpenAIHTTPModerationError(c, format, gate.Decision)
-				return ExecutableStageResult{Stop: true}
-			}
+
 		}
 	}
 	if s.AccountReleaseFunc != nil {
