@@ -4,11 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -25,7 +31,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.2.0"
+	PluginVersion = "0.3.0"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -38,10 +44,43 @@ type runtimeState struct {
 	transport *http.Transport
 }
 
+// pathSample records which upstream a request took, for the status page.
+type pathSample struct {
+	At    int64  `json:"at"`
+	Model string `json:"model"`
+	Path  string `json:"path"`
+}
+
+const recentPathSamples = 20
+
+// pathRing keeps the most recent request paths (newest last).
+type pathRing struct {
+	mu      sync.Mutex
+	samples []pathSample
+}
+
+func (r *pathRing) add(model, path string) {
+	// stderr only: the plugin's stdout carries the RPC protocol.
+	log.Printf("sub2api-bps-transport: path=%s model=%s", path, model)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.samples = append(r.samples, pathSample{At: time.Now().UnixMilli(), Model: model, Path: path})
+	if len(r.samples) > recentPathSamples {
+		r.samples = r.samples[len(r.samples)-recentPathSamples:]
+	}
+}
+
+func (r *pathRing) snapshot() []pathSample {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]pathSample(nil), r.samples...)
+}
+
 type requestStats struct {
 	total     atomic.Uint64
 	succeeded atomic.Uint64
 	failed    atomic.Uint64
+	native    atomic.Uint64
 	lastCode  atomic.Int64
 	lastMs    atomic.Int64
 }
@@ -60,6 +99,7 @@ type Plugin struct {
 	host     pluginv1.HostServiceClient
 
 	stats           requestStats
+	recentPaths     pathRing
 	lastBridgeError atomic.Value
 	omittedTools    atomic.Value
 }
@@ -103,10 +143,12 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		"requests_total":       p.stats.total.Load(),
 		"requests_succeeded":   p.stats.succeeded.Load(),
 		"requests_failed":      p.stats.failed.Load(),
+		"native_requests":      p.stats.native.Load(),
 		"last_status_code":     p.stats.lastCode.Load(),
 		"last_latency_ms":      p.stats.lastMs.Load(),
 		"last_bridge_error":    p.lastBridgeError.Load(),
 		"omitted_hosted_tools": p.omittedTools.Load(),
+		"recent_paths":         p.recentPaths.snapshot(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
 }
@@ -222,6 +264,25 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
 	}
+	// Capability routing: requests the Basis Points tool bridge cannot serve
+	// (images, image generation, hosted tool_choice, structured output) bypass
+	// the bridge entirely and are forwarded verbatim to the native Codex
+	// upstream. The decision is made on the original body before any bridge
+	// rewriting so the native path sees the request exactly as the host built
+	// it, and the same conversation can alternate between the two paths per
+	// request without any history migration.
+	if state.cfg.NativeFallbackEnabled() && bridge.NeedsNativeUpstream(body) != "" {
+		p.recentPaths.add(requestModel(body), "native")
+		return p.forwardNative(stream, start, state, body, headers)
+	}
+	// Client tools are first-class on the native Codex upstream. The BPS
+	// executor suite cannot carry them reliably (its injected suite varies and
+	// often has no run_officejs transport), so tool-carrying requests go native
+	// where exec_command and friends are plain model tools.
+	if state.cfg.ToolsViaNativeEnabled() && bridge.RequestsClientTools(body) {
+		p.recentPaths.add(requestModel(body), "native")
+		return p.forwardNative(stream, start, state, body, headers)
+	}
 	var inputMeta struct {
 		PromptCacheKey string `json:"prompt_cache_key"`
 	}
@@ -241,28 +302,24 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if client := p.hostClient(); client != nil {
 		store = hostStateStore{client: client}
 	}
-	adapted, err := bridge.Prepare(stream.Context(), body, scope, store)
-	if err != nil {
-		return p.sendError(stream, "TOOL_BRIDGE_REQUEST_INVALID", err.Error(), false)
-	}
-	p.omittedTools.Store(strings.Join(adapted.OmittedTools, ", "))
 	// The host has already authorized this exact outbound request. Do not mint
 	// another token or query unrelated accounts through HostService.
 	identity := outboundIdentity{headers: headers, proxy: start.ProxyUrl}
-	request, err := p.buildRequest(stream.Context(), start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(adapted.Body)))
-	if err != nil {
-		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", err.Error(), false)
-	}
-	request.ContentLength = int64(len(adapted.Body))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept-Encoding", "identity")
-	requestCtx, cancel := context.WithTimeout(request.Context(), time.Duration(state.cfg.RequestTimeoutSeconds)*time.Second)
+	// Inline images become attachment references only after Prepare derived the
+	// turn identity from the original request bytes; upload ids must not change
+	// task/turn state.
+	cacheScope := bridge.Scope(strings.TrimSpace(headers.Get("chatgpt-account-id")), target.String(), state.cfg.AuthMode+"\x00"+headers.Get("Authorization"))
+	requestCtx, cancel := context.WithTimeout(stream.Context(), time.Duration(state.cfg.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
-	request = request.WithContext(requestCtx)
-	p.stats.total.Add(1)
-	started := time.Now()
+	// Stats count outbound HTTP attempts only: requests rejected before the
+	// upstream call (protocol errors, attachment failures) are not traffic.
+	started := time.Time{}
 	succeeded := false
+	counted := false
 	defer func() {
+		if !counted {
+			return
+		}
 		p.stats.lastMs.Store(time.Since(started).Milliseconds())
 		if succeeded {
 			p.stats.succeeded.Add(1)
@@ -270,9 +327,121 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			p.stats.failed.Add(1)
 		}
 	}()
-	response, err := state.client.Do(request)
+	markStarted := func() {
+		if counted {
+			return
+		}
+		counted = true
+		started = time.Now()
+		p.stats.total.Add(1)
+	}
+	p.recentPaths.add(requestModel(body), "bps")
+	// execute prepares and sends one BPS attempt. The code names the
+	// pre-upstream failure class for the error frame.
+	execute := func(rawBody []byte) (*http.Response, *bridge.Request, string, error) {
+		adapted, err := bridge.Prepare(requestCtx, rawBody, scope, store, state.cfg.ModelMapping)
+		if err != nil {
+			return nil, nil, "TOOL_BRIDGE_REQUEST_INVALID", err
+		}
+		p.omittedTools.Store(strings.Join(adapted.OmittedTools, ", "))
+		rewritten, err := bridge.RewriteInlineImages(requestCtx, adapted.Body, cacheScope, func(ctx context.Context, mediaType string, data []byte) (string, error) {
+			endpoint, err := attachmentEndpoint(target)
+			if err != nil {
+				return "", err
+			}
+			return p.uploadImage(ctx, endpoint, state.cfg, identity, mediaType, data)
+		})
+		if err != nil {
+			return nil, nil, "ATTACHMENT_UPLOAD_FAILED", err
+		}
+		adapted.Body = rewritten
+		request, err := p.buildRequest(requestCtx, start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(adapted.Body)))
+		if err != nil {
+			return nil, nil, "PLUGIN_REQUEST_INVALID", err
+		}
+		request.ContentLength = int64(len(adapted.Body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept-Encoding", "identity")
+		markStarted()
+		resp, err := state.client.Do(request)
+		return resp, adapted, "", err
+	}
+	response, adapted, code, err := execute(body)
 	if err != nil {
-		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游连接失败或超时", true)
+		return p.sendError(stream, code, err.Error(), code == "")
+	}
+	// Encrypted reasoning and function outputs are channel-scoped: a history
+	// mixed across native and BPS turns replays ciphertexts this backend cannot
+	// read and fails the whole response with invalid_encrypted_content. Retry
+	// once without them instead of dying on a poisoned conversation. The
+	// upstream's generic "An error occurred while processing" invites a retry
+	// too, and is intermittent on long agent histories.
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		text := string(payload)
+		restore := func() { response.Body = io.NopCloser(bytes.NewReader(payload)) }
+		if strings.Contains(text, "invalid_encrypted_content") {
+			// Channel-scoped ciphertexts from mixed native/BPS history poison
+			// the response. Strip them and retry once: repeating cannot help.
+			if stripped, stripErr := bridge.StripEncryptedContent(body); stripErr == nil && !bytes.Equal(stripped, body) {
+				if retry, retryAdapted, _, retryErr := execute(stripped); retryErr == nil {
+					response.Body.Close()
+					response, adapted = retry, retryAdapted
+				} else {
+					restore()
+				}
+			} else {
+				restore()
+			}
+		} else if strings.Contains(text, "An error occurred while processing") {
+			// The upstream explicitly invites a retry for this transient
+			// processing failure; it is intermittent on long agent histories.
+			bodyConsumed := true
+			for i := 0; i < maxTransientRetries && requestCtx.Err() == nil; i++ {
+				select {
+				case <-requestCtx.Done():
+				case <-time.After(transientRetryDelay):
+				}
+				if requestCtx.Err() != nil {
+					break
+				}
+				retry, retryAdapted, _, retryErr := execute(body)
+				if retryErr != nil {
+					break
+				}
+				response.Body.Close()
+				response, adapted = retry, retryAdapted
+				if response.StatusCode >= 200 && response.StatusCode < 300 {
+					bodyConsumed = false
+					break
+				}
+				payload, _ = io.ReadAll(io.LimitReader(response.Body, 1<<20))
+				response.Body.Close()
+				text = string(payload)
+				if !strings.Contains(text, "An error occurred while processing") {
+					break // a different failure; surface it instead of retrying
+				}
+			}
+			if bodyConsumed {
+				// Repeated identical failures are not transient: give the
+				// request one last shot without channel-scoped ciphertexts,
+				// which can surface as this generic server error too.
+				if strings.Contains(string(body), "encrypted_content") {
+					if stripped, stripErr := bridge.StripEncryptedContent(body); stripErr == nil && !bytes.Equal(stripped, body) {
+						if retry, retryAdapted, _, retryErr := execute(stripped); retryErr == nil {
+							response.Body.Close()
+							response, adapted = retry, retryAdapted
+							bodyConsumed = false
+						}
+					}
+				}
+			}
+			if bodyConsumed {
+				restore()
+			}
+		} else {
+			restore()
+		}
 	}
 	defer response.Body.Close()
 	p.stats.lastCode.Store(int64(response.StatusCode))
@@ -335,6 +504,90 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})
 }
 
+// forwardNative takes the native Codex path for requests the Basis Points tool
+// bridge cannot serve. The original request body is forwarded byte-identical to
+// the native target (no wire-shape rebuild, no tool bridging, no turn metadata,
+// no model mapping) and the response is streamed back untouched: SSE stays
+// streaming and no event rewriting is applied on this path.
+func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], start *pluginv1.ForwardRequestStart, state *runtimeState, body []byte, headers http.Header) error {
+	target, err := resolveNativeTarget(start.Url, state.cfg)
+	if err != nil {
+		return p.sendError(stream, "PLUGIN_TARGET_INVALID", err.Error(), false)
+	}
+	// The host has already authorized this exact outbound request. Reuse the
+	// same identity header assembly as the BPS path so OAuth/account headers are
+	// identical across both paths.
+	identity := outboundIdentity{headers: headers, proxy: start.ProxyUrl}
+	request, err := p.buildRequest(stream.Context(), start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(body)))
+	if err != nil {
+		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", err.Error(), false)
+	}
+	request.ContentLength = int64(len(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
+	requestCtx, cancel := context.WithTimeout(request.Context(), time.Duration(state.cfg.RequestTimeoutSeconds)*time.Second)
+	defer cancel()
+	request = request.WithContext(requestCtx)
+	p.stats.total.Add(1)
+	p.stats.native.Add(1)
+	started := time.Now()
+	succeeded := false
+	defer func() {
+		p.stats.lastMs.Store(time.Since(started).Milliseconds())
+		if succeeded {
+			p.stats.succeeded.Add(1)
+		} else {
+			p.stats.failed.Add(1)
+		}
+	}()
+	response, err := state.client.Do(request)
+	if err != nil {
+		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游连接失败或超时", true)
+	}
+	defer response.Body.Close()
+	p.stats.lastCode.Store(int64(response.StatusCode))
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		response.Header.Del("Content-Length")
+		response.Header.Del("ETag")
+		response.ContentLength = -1
+	}
+	if err := stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_Start{Start: responseStart(response)}}); err != nil {
+		return err
+	}
+	var received int64
+	emit := func(data []byte) error {
+		for len(data) > 0 {
+			n := min(len(data), chunkSize)
+			chunk := append([]byte(nil), data[:n]...)
+			if err := stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_BodyChunk{BodyChunk: chunk}}); err != nil {
+				return err
+			}
+			received += int64(n)
+			data = data[n:]
+		}
+		return nil
+	}
+	// Forward the response body untouched. text/event-stream is copied chunk by
+	// chunk without bridge.Stream() so no SSE events are rewritten here.
+	buffer := make([]byte, chunkSize)
+	for {
+		n, err := response.Body.Read(buffer)
+		if n > 0 {
+			if sendErr := emit(buffer[:n]); sendErr != nil {
+				return sendErr
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "读取上游响应失败", true)
+		}
+	}
+	succeeded = response.StatusCode >= 200 && response.StatusCode < 300
+	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})
+}
+
 type outboundIdentity struct {
 	token   string
 	headers http.Header
@@ -385,6 +638,8 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 		}
 		request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
 	}
+	applyExcelClientProfile(request.Header)
+	ensureCodexIdentity(request.Header)
 	for key, value := range cfg.ExtraHeaders {
 		request.Header.Set(key, value)
 	}
@@ -402,6 +657,238 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 		}
 	}
 	return request, nil
+}
+
+// applyExcelClientProfile stamps the official Excel add-in client identity on
+// outbound requests. The backend keys parts of its behavior — including which
+// executor tool set it injects (run_officejs vs the generic suite) — off this
+// profile, and it removes the most obvious non-browser tells.
+func applyExcelClientProfile(header http.Header) {
+	for key, value := range map[string]string{
+		"x-openai-internal-basispoints-client-agent-profile":  "excel",
+		"x-openai-internal-basispoints-client-editor":         "excel",
+		"x-openai-internal-basispoints-client-host":           "office",
+		"x-openai-internal-basispoints-client-platform":       "excel",
+		"x-openai-internal-basispoints-client-platform-class": "PC",
+		"x-openai-internal-basispoints-client-product":        "basispoints-excel-plugin",
+		"x-openai-internal-basispoints-client-runtime":        "desktop",
+		"x-openai-internal-basispoints-office-host":           "Excel",
+		"x-openai-internal-basispoints-office-platform":       "PC",
+		"x-stainless-arch":            "unknown",
+		"x-stainless-lang":            "js",
+		"x-stainless-os":              "Unknown",
+		"x-stainless-package-version": "6.31.0",
+		"x-stainless-retry-count":     "0",
+		"x-stainless-runtime":         "browser:chrome",
+	} {
+		header.Set(key, value)
+	}
+}
+
+// The upstream's transient processing failure ("An error occurred while
+// processing") invites a retry; long agent histories hit it intermittently.
+const (
+	maxTransientRetries = 10
+	transientRetryDelay = 250 * time.Millisecond
+)
+
+// Codex identity the upstream validates: originator must pair with the
+// User-Agent's client segment and the version header must match the UA version
+// segment verbatim. Versions below the upstream floor are rejected outright.
+const (
+	codexOriginatorDefault = "codex-tui"
+	codexVersionFloor      = "0.146.0"
+)
+
+// ensureCodexIdentity stamps the Codex client identity the ChatGPT internal
+// endpoints validate and prioritize by: originator, version, OpenAI-Beta, and a
+// Codex-form User-Agent whose client/version pair with them. Requests without
+// this identity are treated as anonymous clients and get the generic tool
+// suite instead of the Codex executor suite.
+func ensureCodexIdentity(header http.Header) {
+	ua := strings.TrimSpace(header.Get("User-Agent"))
+	client, version := codexIdentityFromUA(ua)
+	switch {
+	case client == "":
+		ua = codexOriginatorDefault + "/" + codexVersionFloor + " (Ubuntu 22.4.0; x86_64) xterm-256color"
+		client, version = codexOriginatorDefault, codexVersionFloor
+		header.Set("User-Agent", ua)
+	case compareVersionStrings(version, codexVersionFloor) < 0:
+		version = codexVersionFloor
+		header.Set("User-Agent", replaceUAVersion(ua, version))
+	}
+	header.Set("originator", client)
+	header.Set("version", version)
+	header.Set("OpenAI-Beta", "responses=experimental")
+}
+
+// codexIdentityFromUA extracts the official originator and version segment
+// from a Codex-form User-Agent ("{client}/{version} ...").
+func codexIdentityFromUA(ua string) (string, string) {
+	slash := strings.IndexByte(ua, '/')
+	if slash <= 0 {
+		return "", ""
+	}
+	client := strings.TrimSpace(ua[:slash])
+	if client != "codex-tui" && client != "codex_cli_rs" {
+		return "", ""
+	}
+	rest := ua[slash+1:]
+	version := rest
+	if space := strings.IndexByte(rest, ' '); space >= 0 {
+		version = rest[:space]
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return "", ""
+	}
+	return client, version
+}
+
+// replaceUAVersion rebuilds the UA's version segment in place, keeping the
+// trailing OS/terminal fingerprint untouched.
+func replaceUAVersion(ua, version string) string {
+	slash := strings.IndexByte(ua, '/')
+	if slash <= 0 {
+		return ua
+	}
+	rest := ua[slash+1:]
+	tail := ""
+	if space := strings.IndexByte(rest, ' '); space >= 0 {
+		tail = rest[space:]
+	}
+	return ua[:slash+1] + version + tail
+}
+
+func compareVersionStrings(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		ai, bi := 0, 0
+		if i < len(as) {
+			ai, _ = strconv.Atoi(as[i])
+		}
+		if i < len(bs) {
+			bi, _ = strconv.Atoi(bs[i])
+		}
+		if ai != bi {
+			return ai - bi
+		}
+	}
+	return 0
+}
+
+// requestModel extracts the requested model for the request-path ring.
+func requestModel(body []byte) string {
+	var meta struct {
+		Model string `json:"model"`
+	}
+	_ = json.Unmarshal(body, &meta)
+	return meta.Model
+}
+
+// attachmentEndpoint derives the upload URL next to the /responses endpoint.
+// The official client uploads to the same origin and directory; credentials are
+// never sent to a different site.
+func attachmentEndpoint(responses *url.URL) (string, error) {
+	if responses == nil || responses.Host == "" || (responses.Scheme != "https" && responses.Scheme != "http") {
+		return "", errors.New("无法从上游地址推导附件上传端点")
+	}
+	base := *responses
+	base.User = nil
+	base.RawQuery = ""
+	base.Fragment = ""
+	base.RawPath = ""
+	base.Path = strings.TrimRight(base.Path, "/")
+	return base.ResolveReference(&url.URL{Path: "attachments"}).String(), nil
+}
+
+// uploadImage uploads one decoded image and returns its upstream file id.
+func (p *Plugin) uploadImage(ctx context.Context, endpoint string, cfg pluginconfig.Config, identity outboundIdentity, mediaType string, data []byte) (string, error) {
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	_, extension, supported := bridge.CanonicalImageType(mediaType)
+	if !supported {
+		return "", errors.New("附件图片格式 " + mediaType + " 不受支持；仅支持 JPEG/PNG/GIF/WebP")
+	}
+	filename := "image" + extension
+	partHeaders := make(textproto.MIMEHeader)
+	partHeaders.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "file", "filename": filename}))
+	partHeaders.Set("Content-Type", mediaType)
+	part, err := writer.CreatePart(partHeaders)
+	if err != nil {
+		return "", errors.New("附件表单编码失败")
+	}
+	if _, err := part.Write(data); err != nil {
+		return "", errors.New("附件表单编码失败")
+	}
+	if err := writer.Close(); err != nil {
+		return "", errors.New("附件表单编码失败")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload.Bytes()))
+	if err != nil {
+		return "", errors.New("附件上传请求无效")
+	}
+	request.ContentLength = int64(payload.Len())
+	for key, values := range identity.headers {
+		if isHopByHopHeader(key) {
+			continue
+		}
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
+	request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
+	applyExcelClientProfile(request.Header)
+	ensureCodexIdentity(request.Header)
+	accountID := strings.TrimSpace(request.Header.Get("chatgpt-account-id"))
+	if accountID == "" {
+		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))
+	}
+	if accountID != "" {
+		request.Header.Set("chatgpt-account-id", accountID)
+		request.Header.Set("x-openai-account-id", accountID)
+	}
+	if request.Header.Get("Authorization") == "" || accountID == "" {
+		return "", errors.New("Basis Points 附件上传需要 OAuth 授权和 ChatGPT 账号 ID")
+	}
+	if cfg.ProxyMode == "account" {
+		if proxy := strings.TrimSpace(identity.proxy); proxy != "" {
+			request = request.WithContext(context.WithValue(request.Context(), proxyContextKey{}, proxy))
+		}
+	}
+	response, err := p.state.Load().client.Do(request)
+	if err != nil {
+		return "", redactAttachmentError(errors.New("附件上传失败或超时"), data, request.Header.Get("Authorization"))
+	}
+	defer response.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message := strings.TrimSpace(string(raw))
+		if len(message) > 512 {
+			message = message[:512]
+		}
+		return "", redactAttachmentError(fmt.Errorf("附件上传 HTTP %d: %s", response.StatusCode, message), data, request.Header.Get("Authorization"))
+	}
+	var result struct {
+		FileID string `json:"openai_file_id"`
+	}
+	if json.Unmarshal(raw, &result) != nil || strings.TrimSpace(result.FileID) == "" {
+		return "", errors.New("附件上传响应缺少 openai_file_id")
+	}
+	return strings.TrimSpace(result.FileID), nil
+}
+
+func redactAttachmentError(err error, data []byte, authorization string) error {
+	message := err.Error()
+	for _, secret := range []string{authorization, base64.StdEncoding.EncodeToString(data), string(data)} {
+		if secret != "" {
+			message = strings.ReplaceAll(message, secret, "[REDACTED]")
+		}
+	}
+	return errors.New(message)
 }
 
 func buildRuntimeState(cfg pluginconfig.Config) (*runtimeState, error) {
@@ -508,6 +995,31 @@ func basisPointsPathSuffix(path string) string {
 		return "/responses"
 	}
 	return path
+}
+
+// resolveNativeTarget resolves the native Codex endpoint. When
+// NativeUpstreamBaseURL is set it becomes the base with the incoming
+// /responses path suffix appended; otherwise the host-supplied request URL is
+// forwarded verbatim (scheme/host/path/query exactly as the host built it).
+func resolveNativeTarget(raw string, cfg pluginconfig.Config) (*url.URL, error) {
+	incoming, err := url.Parse(raw)
+	if err != nil || incoming.Scheme == "" || incoming.Host == "" || incoming.User != nil || (incoming.Scheme != "http" && incoming.Scheme != "https") {
+		return nil, errors.New("请求 URL 无效")
+	}
+	base := strings.TrimSpace(cfg.NativeUpstreamBaseURL)
+	if base == "" {
+		return incoming, nil
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return nil, errors.New("原生上游 Base URL 无效")
+	}
+	suffix := basisPointsPathSuffix(incoming.Path)
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+	parsed.RawPath = ""
+	parsed.RawQuery = incoming.RawQuery
+	parsed.Fragment = ""
+	return parsed, nil
 }
 
 func responseStart(response *http.Response) *pluginv1.ForwardResponseStart {

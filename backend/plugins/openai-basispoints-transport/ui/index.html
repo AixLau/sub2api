@@ -20,6 +20,12 @@
           <small>默认：Basis Points Responses 入口。请勿在 URL 中填写 Token。</small>
         </label>
 
+        <label>
+          <span>原生端点 Base URL（留空则用宿主原始 URL）</span>
+          <input id="native_upstream_base_url" name="native_upstream_base_url" type="url" />
+          <small>可选。原生通道回退时转发到的 Codex 端点；留空表示使用宿主下发的原始请求 URL。</small>
+        </label>
+
         <div class="grid">
           <label>
             <span>代理模式</span>
@@ -47,10 +53,20 @@
 
         <label class="checkbox"><input id="enable_http2" type="checkbox" /> <span>启用 HTTP/2</span></label>
 
+        <label class="checkbox"><input id="native_fallback" type="checkbox" /> <span>启用原生通道回退（图片/图片生成等走原生端点）</span></label>
+
+        <label class="checkbox"><input id="tools_via_native" type="checkbox" /> <span>携带客户端工具的请求走原生通道（exec_command 等原生可调）</span></label>
+
         <label>
           <span>额外请求头（JSON 对象）</span>
           <textarea id="extra_headers" rows="5" spellcheck="false">{}</textarea>
           <small>Authorization、账号 ID、Host 等身份请求头由宿主和插件管理，不能在这里覆盖。</small>
+        </label>
+
+        <label>
+          <span>模型映射（JSON 对象：请求模型 → 上游模型）</span>
+          <textarea id="model_mapping" rows="5" spellcheck="false">{}</textarea>
+          <small>例：{"gpt-6-astra-basispoints":"gpt-6-astra"}。未列出的模型原样透传（自动去掉 -excel 后缀）。</small>
         </label>
 
         <div class="actions">

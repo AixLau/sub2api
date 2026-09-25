@@ -8,12 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 )
 
 const (
 	MaxBodyBytes    = 64 << 20
 	MaxItemBytes    = 240 << 10 // HostService KV values are limited to 256 KiB.
-	MaxIterations   = 64
+	MaxIterations   = 512 // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
 	StateTTLSeconds = 24 * 60 * 60
 	callPrefix      = "call_bps_"
 )
@@ -52,6 +53,32 @@ func Scope(accountID, endpoint, session string) string {
 }
 
 func stateKey(scope, kind, id string) string { return digest(scope, kind, id) }
+
+// functionItemID derives the item id used by replayed tool results. The
+// upstream validates item ids as fc_ + [A-Za-z0-9_-] and rejects anything
+// else, so ids are concatenated only when the call id is already clean and not
+// itself fc_ prefixed; otherwise a stable hash is used.
+func functionItemID(callID string) string {
+	const maxLength = 64
+	if callID != "" && !strings.HasPrefix(callID, "fc_") && isCleanItemID(callID) {
+		if id := "fc_" + callID; len(id) <= maxLength {
+			return id
+		}
+	}
+	sum := sha256.Sum256([]byte(callID))
+	return "fc_" + hex.EncodeToString(sum[:])[:maxLength-len("fc_")]
+}
+
+func isCleanItemID(id string) bool {
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 func loadCall(ctx context.Context, store Store, scope, id string) (*callRecord, error) {
 	if store == nil {

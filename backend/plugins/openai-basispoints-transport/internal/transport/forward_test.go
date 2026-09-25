@@ -131,8 +131,12 @@ func testForwardReplay(t *testing.T, binary string) {
 		for _, field := range []string{"tools", "tool_choice", "parallel_tool_calls"} {
 			require.NotContains(t, body, field)
 		}
+		require.Equal(t, `"explicit"`, string(body["model_selection"]))
+		require.Equal(t, `false`, string(body["store"]))
+		var meta map[string]string
+		require.NoError(t, json.Unmarshal(body["metadata"], &meta))
 		w.Header().Set("Content-Type", "text/event-stream")
-		if string(body["agent_iteration"]) == "0" {
+		if meta["agent_iteration"] == "0" {
 			w.Write([]byte("event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":" + string(native) + "}\n\n"))
 			w.(http.Flusher).Flush()
 			w.Write([]byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_server\",\"status\":\"completed\",\"output\":[" + string(native) + "],\"usage\":{\"total_tokens\":10}}}\n\n"))
@@ -143,7 +147,7 @@ func testForwardReplay(t *testing.T, binary string) {
 	}))
 	defer upstream.Close()
 	apply := func(c *pluginv1.TransportClient) {
-		raw, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled"})
+		raw, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "tools_via_native": false})
 		result, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: raw})
 		require.NoError(t, err)
 		require.True(t, result.Applied)
@@ -182,8 +186,11 @@ func testForwardReplay(t *testing.T, binary string) {
 	require.Nil(t, failure)
 	require.Contains(t, string(output), "18°C")
 	second := <-requests
-	require.Equal(t, string(first["turn_id"]), string(second["turn_id"]))
-	require.Equal(t, "1", string(second["agent_iteration"]))
+	var firstMeta, secondMeta map[string]string
+	require.NoError(t, json.Unmarshal(first["metadata"], &firstMeta))
+	require.NoError(t, json.Unmarshal(second["metadata"], &secondMeta))
+	require.Equal(t, firstMeta["turn_id"], secondMeta["turn_id"])
+	require.Equal(t, "1", secondMeta["agent_iteration"])
 	var input []json.RawMessage
 	require.NoError(t, json.Unmarshal(second["input"], &input))
 	require.Len(t, input, 3)

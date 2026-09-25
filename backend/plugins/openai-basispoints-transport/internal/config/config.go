@@ -19,6 +19,8 @@ const (
 
 	maxExtraHeaders = 32
 	maxHeaderValue  = 8 * 1024
+	maxModelMapping = 64
+	maxModelName    = 128
 )
 
 // Config is deliberately limited to transport concerns. OAuth credentials are
@@ -36,6 +38,36 @@ type Config struct {
 	EnableHTTP2                  bool              `json:"enable_http2"`
 	TLSMinVersion                string            `json:"tls_min_version"`
 	ExtraHeaders                 map[string]string `json:"extra_headers"`
+	// ModelMapping translates the requested model to the upstream slug before
+	// the request leaves the plugin. Requests for models that are not listed
+	// keep the default pass-through behavior.
+	ModelMapping map[string]string `json:"model_mapping"`
+	// NativeFallback enables the native-channel fallback: requests the Basis
+	// Points upstream cannot serve are forwarded verbatim to the native Codex
+	// endpoint. A missing value means enabled.
+	NativeFallback *bool `json:"native_fallback"`
+	// NativeUpstreamBaseURL optionally overrides the native Codex endpoint the
+	// fallback path forwards to. Empty means the host-supplied request URL is
+	// used verbatim.
+	NativeUpstreamBaseURL string `json:"native_upstream_base_url"`
+	// ToolsViaNative routes every request that declares client function/custom
+	// tools to the native Codex endpoint, where those tools are first-class.
+	// Tool-carrying agent sessions belong on the BPS bridge by default, so a
+	// missing value means disabled; enable only when the BPS executor suite
+	// lacks the run_officejs transport.
+	ToolsViaNative *bool `json:"tools_via_native"`
+}
+
+// NativeFallbackEnabled reports whether the native-channel fallback is active.
+// An absent value means enabled.
+func (c Config) NativeFallbackEnabled() bool {
+	return c.NativeFallback == nil || *c.NativeFallback
+}
+
+// ToolsViaNativeEnabled reports whether client-tool requests go native.
+// An absent value means disabled: tool sessions stay on the BPS bridge.
+func (c Config) ToolsViaNativeEnabled() bool {
+	return c.ToolsViaNative != nil && *c.ToolsViaNative
 }
 
 func Defaults() Config {
@@ -51,7 +83,15 @@ func Defaults() Config {
 		EnableHTTP2:                  true,
 		TLSMinVersion:                DefaultTLSMinVersion,
 		ExtraHeaders:                 map[string]string{},
+		ModelMapping:                 map[string]string{},
+		NativeFallback:               boolPtr(true),
+		NativeUpstreamBaseURL:        "",
+		ToolsViaNative:               boolPtr(false),
 	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 // Parse validates and normalizes a JSON object. Unknown fields are rejected so
@@ -119,16 +159,39 @@ func applyDefaults(cfg *Config, defaults Config) {
 	if cfg.ExtraHeaders == nil {
 		cfg.ExtraHeaders = map[string]string{}
 	}
+	if cfg.ModelMapping == nil {
+		cfg.ModelMapping = map[string]string{}
+	}
+	if cfg.NativeFallback == nil {
+		if defaults.NativeFallback != nil {
+			cfg.NativeFallback = boolPtr(*defaults.NativeFallback)
+		} else {
+			cfg.NativeFallback = boolPtr(true)
+		}
+	}
+	if cfg.ToolsViaNative == nil {
+		if defaults.ToolsViaNative != nil {
+			cfg.ToolsViaNative = boolPtr(*defaults.ToolsViaNative)
+		} else {
+			cfg.ToolsViaNative = boolPtr(false)
+		}
+	}
 }
 
 func validate(cfg *Config) error {
-	cfg.UpstreamBaseURL = strings.TrimRight(strings.TrimSpace(cfg.UpstreamBaseURL), "/")
-	parsed, err := url.Parse(cfg.UpstreamBaseURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return errors.New("upstream_base_url 必须是无用户信息、无查询参数的绝对 URL")
+	normalizedUpstream, err := normalizeBaseURL("upstream_base_url", cfg.UpstreamBaseURL)
+	if err != nil {
+		return err
 	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return errors.New("upstream_base_url 仅支持 http 或 https")
+	cfg.UpstreamBaseURL = normalizedUpstream
+	if strings.TrimSpace(cfg.NativeUpstreamBaseURL) == "" {
+		cfg.NativeUpstreamBaseURL = ""
+	} else {
+		normalizedNative, err := normalizeBaseURL("native_upstream_base_url", cfg.NativeUpstreamBaseURL)
+		if err != nil {
+			return err
+		}
+		cfg.NativeUpstreamBaseURL = normalizedNative
 	}
 	if cfg.AuthMode != "chatgpt" {
 		return errors.New("auth_mode 目前必须是 chatgpt")
@@ -169,7 +232,34 @@ func validate(cfg *Config) error {
 			return fmt.Errorf("extra_headers 不允许覆盖受保护请求头: %s", name)
 		}
 	}
+	if len(cfg.ModelMapping) > maxModelMapping {
+		return fmt.Errorf("model_mapping 最多允许 %d 条映射", maxModelMapping)
+	}
+	normalizedMapping := make(map[string]string, len(cfg.ModelMapping))
+	for requested, mapped := range cfg.ModelMapping {
+		requested, mapped = strings.TrimSpace(requested), strings.TrimSpace(mapped)
+		if requested == "" || mapped == "" {
+			return errors.New("model_mapping 的键和值必须是非空模型名")
+		}
+		if len(requested) > maxModelName || len(mapped) > maxModelName {
+			return errors.New("model_mapping 的模型名过长")
+		}
+		normalizedMapping[requested] = mapped
+	}
+	cfg.ModelMapping = normalizedMapping
 	return nil
+}
+
+func normalizeBaseURL(name, raw string) (string, error) {
+	normalized := strings.TrimRight(strings.TrimSpace(raw), "/")
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("%s 必须是无用户信息、无查询参数的绝对 URL", name)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return "", fmt.Errorf("%s 仅支持 http 或 https", name)
+	}
+	return normalized, nil
 }
 
 func boundedInt(name string, value, min, max int) error {
