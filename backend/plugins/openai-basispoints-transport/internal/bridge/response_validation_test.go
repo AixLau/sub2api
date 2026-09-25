@@ -26,9 +26,12 @@ func TestInvalidEnvelopeNeverEscapesToClient(t *testing.T) {
 			}
 			var out strings.Builder
 			err := r.Stream(context.Background(), strings.NewReader(frame), func(b []byte) error { out.Write(b); return nil })
-			var toolErr *ToolCallError
-			require.ErrorAs(t, err, &toolErr)
-			require.Empty(t, out.String())
+			require.NoError(t, err, "semantic rejection must finish the stream normally")
+			require.True(t, r.Failed)
+			require.Contains(t, out.String(), "TOOL_BRIDGE_CALL_INVALID")
+			require.Equal(t, 1, strings.Count(out.String(), "event: response.failed"))
+			require.NotContains(t, out.String(), "run_officejs")
+			require.NotContains(t, out.String(), "response.completed")
 			require.Empty(t, r.converted)
 		}
 	}
@@ -66,4 +69,35 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 			require.Equal(t, r.Turn.ID, restored.Turn.ID)
 		}
 	}
+}
+
+func TestInvalidCustomCallAfterTextPreservesIdentityAndSequence(t *testing.T) {
+	r, err := Prepare(context.Background(), []byte(`{"input":"hi","tools":[{"type":"custom","name":"exec"}]}`), "session", memoryStore{}, nil)
+	require.NoError(t, err)
+	item := officeItem("exec", map[string]any{"code": "private executable input"}, false)
+	input := event("response.created", map[string]any{"response": map[string]any{"id": "resp_partial", "model": "model"}}) +
+		event("response.output_text.delta", map[string]any{"delta": "visible text"}) +
+		event("response.output_item.done", map[string]any{"item": json.RawMessage(item)}) +
+		event("response.completed", map[string]any{"response": map[string]any{"output": []any{}}})
+	var out strings.Builder
+	require.NoError(t, r.Stream(context.Background(), strings.NewReader(input), func(b []byte) error { out.Write(b); return nil }))
+	require.True(t, r.Failed)
+	require.Contains(t, out.String(), "visible text")
+	require.Contains(t, out.String(), "resp_partial")
+	require.NotContains(t, out.String(), "private executable input")
+	require.NotContains(t, out.String(), "response.completed")
+	require.Equal(t, 1, strings.Count(out.String(), "event: response.failed"))
+	sequence := 0
+	for _, line := range strings.Split(out.String(), "\n") {
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		var frame map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &frame))
+		var actual int
+		require.NoError(t, json.Unmarshal(frame["sequence_number"], &actual))
+		require.Equal(t, sequence, actual)
+		sequence++
+	}
+	require.Equal(t, 3, sequence)
 }

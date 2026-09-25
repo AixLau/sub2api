@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -16,11 +17,14 @@ const (
 	DefaultAuthMode        = "chatgpt"
 	DefaultProxyMode       = "account"
 	DefaultTLSMinVersion   = "1.2"
+	BPSModelModeAll        = "all"
+	BPSModelModeSelected   = "selected"
 
 	maxExtraHeaders = 32
 	maxHeaderValue  = 8 * 1024
 	maxModelMapping = 64
 	maxModelName    = 128
+	maxBPSModels    = 64
 )
 
 // Config is deliberately limited to transport concerns. OAuth credentials are
@@ -42,6 +46,10 @@ type Config struct {
 	// the request leaves the plugin. Requests for models that are not listed
 	// keep the default pass-through behavior.
 	ModelMapping map[string]string `json:"model_mapping"`
+	// BPSModelMode selects all models or only exact pre-mapping model names.
+	// An empty selected list sends every request to the native upstream.
+	BPSModelMode string   `json:"bps_model_mode"`
+	BPSModels    []string `json:"bps_models"`
 	// NativeFallback enables the native-channel fallback: requests the Basis
 	// Points upstream cannot serve are forwarded verbatim to the native Codex
 	// endpoint. A missing value means enabled.
@@ -70,6 +78,22 @@ func (c Config) ToolsViaNativeEnabled() bool {
 	return c.ToolsViaNative != nil && *c.ToolsViaNative
 }
 
+// AllowsBPSModel is evaluated before capability routing and model mapping.
+func (c Config) AllowsBPSModel(model string) bool {
+	if c.BPSModelMode == BPSModelModeAll {
+		return true
+	}
+	if c.BPSModelMode != BPSModelModeSelected {
+		return false
+	}
+	for _, selected := range c.BPSModels {
+		if model == selected {
+			return true
+		}
+	}
+	return false
+}
+
 func Defaults() Config {
 	return Config{
 		UpstreamBaseURL:              DefaultUpstreamBaseURL,
@@ -84,6 +108,8 @@ func Defaults() Config {
 		TLSMinVersion:                DefaultTLSMinVersion,
 		ExtraHeaders:                 map[string]string{},
 		ModelMapping:                 map[string]string{},
+		BPSModelMode:                 BPSModelModeAll,
+		BPSModels:                    []string{},
 		NativeFallback:               boolPtr(true),
 		NativeUpstreamBaseURL:        "",
 		ToolsViaNative:               boolPtr(false),
@@ -161,6 +187,9 @@ func applyDefaults(cfg *Config, defaults Config) {
 	}
 	if cfg.ModelMapping == nil {
 		cfg.ModelMapping = map[string]string{}
+	}
+	if cfg.BPSModels == nil {
+		cfg.BPSModels = []string{}
 	}
 	if cfg.NativeFallback == nil {
 		if defaults.NativeFallback != nil {
@@ -247,6 +276,25 @@ func validate(cfg *Config) error {
 		normalizedMapping[requested] = mapped
 	}
 	cfg.ModelMapping = normalizedMapping
+	if cfg.BPSModelMode != BPSModelModeAll && cfg.BPSModelMode != BPSModelModeSelected {
+		return errors.New("bps_model_mode 必须是 all 或 selected")
+	}
+	if len(cfg.BPSModels) > maxBPSModels {
+		return fmt.Errorf("bps_models 最多允许 %d 个模型", maxBPSModels)
+	}
+	models := make([]string, 0, len(cfg.BPSModels))
+	seen := make(map[string]bool, len(cfg.BPSModels))
+	for _, model := range cfg.BPSModels {
+		model = strings.TrimSpace(model)
+		if model == "" || len(model) > maxModelName || strings.IndexFunc(model, unicode.IsSpace) >= 0 || strings.ContainsAny(model, "*?") {
+			return errors.New("bps_models 必须填写非空模型名，不得包含空白或通配符，每个模型名最多 128 字节")
+		}
+		if !seen[model] {
+			models = append(models, model)
+			seen[model] = true
+		}
+	}
+	cfg.BPSModels = models
 	return nil
 }
 

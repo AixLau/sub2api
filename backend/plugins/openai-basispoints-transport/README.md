@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.3.1 是根据 BPS 实测协议实现的独立 Sub2API 插件，仅修改插件工程。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。
+0.3.2 是根据 BPS 实测协议实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。本次修复还包含宿主的插件语义错误分类，完整修复需要同时更新宿主和插件。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -19,13 +19,31 @@
 
 SSE 中的普通文本保持流式输出；工具 envelope 等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效 envelope、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
 
-## 0.3.1 修复与恢复边界
+## 0.3.2 修复与恢复边界
 
 - 修复非法工具信封原样泄漏导致 Codex 连续报告 unsupported call: run_officejs。包括嵌套 JSON 中非法的单引号转义；客户端只会收到已校验的工具调用或明确错误。namespace custom 工具的输入增量也等待完整校验。
 - BPS SSE 收到终结事件立即结束，不继续等待 HTTP 连接关闭；读取超时单独报告 UPSTREAM_RESPONSE_TIMEOUT，避免被吞成不明读取错误。该修改不表示可以消除上游真正的中断或超时。
 - invalid_encrypted_content 支持 HTTP 错误和 HTTP 200 中的早期 SSE 失败。只有在文本、推理或工具输出之前，才允许清理一次并重试；SSE 探测上限为 32 个前导事件、256 KiB，普通无密文请求不探测。
 - 清理发生在 Prepare 恢复 KV 原始调用之后，保持 turn_id、agent_iteration 和真实工具结果。仅移除可选 reasoning 或有完整可读副本的协议密文字段；不递归修改工具业务参数或字符串 JSON，不改写 KV 原始记录。
-- 密文是工具结果或压缩历史唯一副本时，返回 TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE，需重新提供结果或开新会话。不会用空结果伪装恢复成功，也不会在一般 server_error 重试耗尽后盲目删密文。
+- 无法确认完整副本时，不在 BPS 通道继续重试，也不改写或删除原始历史；插件立即把原始请求体交给原生 Codex 通道，原生通道失败时才返回原生错误。插件内部仍保留结构化诊断（input 索引路径、白名单类型和原因），不包含密文、调用 ID 或工具正文。显式文本（包括空字符串）和已验证的内联媒体可作为 BPS 重试副本；null/空串密文元数据本身不构成加密历史。
+- 工具校验失败和加密回放拒绝按语义错误交付：流式发送一个 response.failed 并正常结束 RPC；非流式返回 HTTP 400 的结构化错误。不会返回可执行的坏工具调用；流式序号、响应 ID 和已有文本保留。无效 JSON 的通用诊断不再一概归因于单引号转义。
+- 宿主按结构化错误码区分协议失败与断流；工具协议错误不换号、不触发代理隔离，已交付终端错误后不追加通用错误。真正的网络断流仍执行原有熔断策略。上游 invalid_encrypted_content 在 BPS 一次安全清理失败后转原生，不通过换号重复发送。
+
+## 按模型选择 BPS 通道
+
+配置页提供“全部模型”和“仅指定模型”。例如以下配置只允许插件收到的 model-a 请求进入 BPS 适配，其余模型直接走原生端点：
+
+```json
+{
+  "bps_model_mode": "selected",
+  "bps_models": ["model-a"]
+}
+```
+
+- bps_model_mode 默认 all；selected 按 bps_models 名单匹配，名单为空时全部走原生。
+- 名单最多 64 个，区分大小写、精确匹配，不支持通配符；使用插件收到的模型名，在插件 model_mapping 和去除 -excel 后缀之前判定。宿主若已有模型映射，应填写宿主实际交给插件的名字。
+- 名单外请求不受 native_fallback 开关影响，模型名、工具定义和请求体均原样转发。名单内仍遵循图片/结构化输出路由和 tools_via_native 设置。
+- 不内置“哪些模型支持 BPS”的猜测名单。切换通道不会解密既有历史；带不透明历史的会话可能仍需重新提供结果或新建会话。
 
 ## 客户端工具走原生通道（tools_via_native）
 
@@ -39,7 +57,7 @@ BPS 注入的执行器套件**不稳定**：有的账号/时段拿到带 `run_of
 
 ## 模型映射
 
-插件配置里的 `model_mapping`（JSON 对象）把客户端请求的模型名翻译成上游 slug：
+插件配置里的 `model_mapping`（JSON 对象）仅在 BPS 通道把收到的请求模型名翻译成上游 slug；原生通道不改写模型名：
 
 ```json
 {
@@ -111,12 +129,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.1.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.2.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.1.s2plugin`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.2.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -128,6 +146,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先停用已安装的同 ID 插件，再上传 0.3.1，保存配置并选择账号。该版本未声明完整宿主联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，最后才扩大账号范围。
+先更新包含本次语义分类修复的宿主，再停用已安装的同 ID 插件，上传 0.3.2，保存配置并选择账号和 BPS 模型范围。该版本未声明完整线上联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，最后才扩大账号范围。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。

@@ -66,6 +66,9 @@ var persistentUpstreamTransportErrorMarkers = []string{
 //     "network is unreachable", "no such host") are kept as a cross-platform safety
 //     net even though the typed checks should cover them on modern Go+Linux.
 func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
+	if _, semantic := pluginSemanticTransportError(err); semantic {
+		return upstreamTransportErrorClass{}
+	}
 	if err == nil {
 		return upstreamTransportErrorClass{}
 	}
@@ -134,7 +137,7 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 
 	// 插件已把请求交给上游时，自动切换账号可能造成重复扣费或重复执行。
 	var pluginErr *PluginTransportError
-	if errors.As(err, &pluginErr) && pluginErr.RequestSent {
+	if errors.As(err, &pluginErr) && (pluginErr.RequestSent || isPluginSemanticErrorCode(pluginErr.Code)) {
 		return err
 	}
 

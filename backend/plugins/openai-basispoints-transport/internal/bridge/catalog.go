@@ -161,6 +161,7 @@ func (c catalog) prompt() string {
 		fmt.Fprintf(&b, "Only request tool %q for this response.\n", c.forced)
 	}
 	b.WriteString("Client tool directory:\n")
+	b.WriteString("Function tools require args to be a JSON object. Custom/freeform tools require args to be a JSON string with the exact raw input, including newlines: {\"tool\":\"catalog.custom_name\",\"args\":\"RAW_INPUT\"}. Never wrap custom input in an object such as {code: ...} or {input: ...}. Serialize the complete inner envelope before placing it in the outer code string. Never nest another transport wrapper inside that envelope.\n")
 	b.WriteString("The code string must parse as strict JSON. Inside JSON strings, escape double quotes, backslashes and control characters; never backslash-escape a single quote. JavaScript source belongs only in args for custom tools. Invalid JSON is rejected before client execution.\n")
 	b.WriteString(c.description)
 	if len(c.omitted) > 0 {

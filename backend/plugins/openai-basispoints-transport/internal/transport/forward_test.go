@@ -221,9 +221,10 @@ func TestForwardPreserves422AndRejectsInvalidJSONBeforeNetwork(t *testing.T) {
 	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: config})
 	require.NoError(t, err)
 	require.True(t, applied.Applied)
-	_, _, failure := forwardForTest(t, c, []byte(`{broken`), ctx)
-	require.NotNil(t, failure)
-	require.False(t, failure.RequestSent)
+	invalidStart, invalidBody, failure := forwardForTest(t, c, []byte(`{broken`), ctx)
+	require.Nil(t, failure)
+	require.Equal(t, int32(400), invalidStart.StatusCode)
+	require.Contains(t, string(invalidBody), "TOOL_BRIDGE_REQUEST_INVALID")
 	select {
 	case <-requests:
 		t.Fatal("invalid JSON reached upstream")

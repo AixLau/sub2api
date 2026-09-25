@@ -31,7 +31,7 @@ func wireEvent(typ string, fields map[string]any) string {
 }
 
 func TestEncryptedSSERecoveryBoundaries(t *testing.T) {
-	for _, mode := range []string{"recover", "repeated", "after_output", "opaque"} {
+	for _, mode := range []string{"recover", "repeated", "after_output"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -60,17 +60,8 @@ func TestEncryptedSSERecoveryBoundaries(t *testing.T) {
 			defer upstream.Close()
 			c := recoveryClient(t, ctx, upstream.URL)
 			input := []any{map[string]any{"role": "user", "content": "hi"}, map[string]any{"type": "reasoning", "encrypted_content": "foreign"}}
-			if mode == "opaque" {
-				input = append(input, map[string]any{"type": "compaction", "encrypted_content": "only-copy"})
-			}
 			body, _ := json.Marshal(map[string]any{"input": input, "stream": true})
 			_, out, failure := forwardForTest(t, c, body, ctx)
-			if mode == "opaque" {
-				require.NotNil(t, failure)
-				require.Equal(t, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", failure.Code)
-				require.Equal(t, int32(1), hits.Load())
-				return
-			}
 			require.Nil(t, failure)
 			if mode == "after_output" {
 				require.Equal(t, int32(1), hits.Load())
@@ -113,12 +104,59 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 			json.NewEncoder(w).Encode(response)
 		}))
 		c := recoveryClient(t, ctx, upstream.URL)
-		_, out, failure := forwardForTest(t, c, []byte("{\"input\":\"hi\"}"), ctx)
-		require.NotNil(t, failure)
-		require.Equal(t, "TOOL_BRIDGE_CALL_INVALID", failure.Code)
-		require.Contains(t, failure.Message, "JSON")
-		require.True(t, failure.RequestSent)
+		body, _ := json.Marshal(map[string]any{"input": "hi", "stream": stream})
+		start, out, failure := forwardForTest(t, c, body, ctx)
+		require.Nil(t, failure, "semantic failures must not use RPC error frames")
+		require.Contains(t, string(out), "TOOL_BRIDGE_CALL_INVALID")
+		require.Contains(t, string(out), "JSON")
+		if stream {
+			require.Equal(t, int32(200), start.StatusCode)
+		} else {
+			require.Equal(t, int32(400), start.StatusCode)
+		}
 		require.NotContains(t, string(out), "run_officejs")
 		upstream.Close()
 	}
+}
+
+func TestOpaqueEncryptedHistoryFallsBackToNativeWithOriginalBody(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var bpsHits, nativeHits atomic.Int32
+	var nativeBody []byte
+	var mu sync.Mutex
+	bps := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		bpsHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		io.WriteString(w, `{"response":{"error":{"code":"invalid_encrypted_content","message":"Encrypted function output content could not be decrypted or decoded."}}}`)
+	}))
+	defer bps.Close()
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		nativeHits.Add(1)
+		raw, _ := io.ReadAll(req.Body)
+		mu.Lock()
+		nativeBody = append([]byte(nil), raw...)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"resp_native","status":"completed","output":[]}`)
+	}))
+	defer native.Close()
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	cfg, _ := json.Marshal(map[string]any{"upstream_base_url": bps.URL, "native_upstream_base_url": native.URL, "proxy_mode": "disabled"})
+	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	body, _ := json.Marshal(map[string]any{"model": "gpt-5.6-terra", "stream": false, "input": []any{
+		map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": "continue"}}},
+		map[string]any{"type": "compaction", "encrypted_content": "opaque-history"},
+	}})
+	_, out, failure := forwardForTest(t, c, body, ctx)
+	require.Nil(t, failure)
+	require.Contains(t, string(out), "resp_native")
+	require.Equal(t, int32(1), bpsHits.Load())
+	require.Equal(t, int32(1), nativeHits.Load())
+	mu.Lock()
+	require.Equal(t, body, nativeBody, "native fallback must preserve opaque encrypted history verbatim")
+	mu.Unlock()
 }

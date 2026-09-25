@@ -17,6 +17,7 @@ type Request struct {
 	Turn         Turn
 	OmittedTools []string
 	Failed       bool
+	FailureCode  string
 	originals    map[string]string
 	store        Store
 	scope        string

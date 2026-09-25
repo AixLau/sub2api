@@ -1407,6 +1407,9 @@ func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 }
 
 func openAIStreamFailureStatus(payload []byte, message string) int {
+	if isOpenAINonRetryableProtocolFailure(payload) {
+		return http.StatusBadRequest
+	}
 	if len(bytes.TrimSpace(payload)) == 0 || !gjson.ValidBytes(payload) {
 		return http.StatusBadGateway
 	}
@@ -1529,6 +1532,9 @@ func applyOpenAIStreamFailedErrorPassthroughRule(
 }
 
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
+	if isOpenAINonRetryableProtocolFailure(payload) {
+		return false
+	}
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
 	}
@@ -1581,6 +1587,9 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 }
 
 func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
+	if isOpenAINonRetryableProtocolFailure(payload) {
+		return false
+	}
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
 	}
@@ -1677,6 +1686,9 @@ func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	}
 	statusCode := openAIStreamFailureStatus(payload, message)
 	detail := ""
+	if isOpenAINonRetryableProtocolFailure(payload) {
+		kind = "protocol_error"
+	}
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
 		if maxBytes <= 0 {
@@ -2126,6 +2138,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 				}
 				forceFlushFailedEvent = true
+				if isOpenAINonRetryableProtocolFailure(dataBytes) {
+					MarkResponseCommitted(c)
+				}
 				sawFailedEvent = true
 			}
 			if trimmedData == "[DONE]" {
@@ -2222,6 +2237,19 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if sawFailedEvent {
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
+		}
+		if pluginErr, semantic := pluginSemanticTransportError(err); semantic {
+			payload := pluginSemanticFailurePayload(responseID, originalModel, pluginErr)
+			s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "plugin_error", payload, pluginErr.Error())
+			stopKeepalive()
+			if !clientDisconnected {
+				// Pending preamble/partial frames must not swallow the terminal event.
+				if _, writeErr := fmt.Fprintf(w, "\nevent: response.failed\ndata: %s\n\n", payload); writeErr == nil {
+					MarkResponseCommitted(c)
+				}
+				flusher.Flush()
+			}
+			return resultWithUsage(), err
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)

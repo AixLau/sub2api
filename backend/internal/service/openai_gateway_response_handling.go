@@ -336,7 +336,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		eventStartsFirstResponse = false
 		eventShouldFlush = false
 	}
-	sendErrorEvent := func(reason string) {
+	sendErrorEvent := func(reason string, semanticPayload ...[]byte) {
 		if errorEventSent || clientDisconnected || failureDelivered {
 			return
 		}
@@ -346,6 +346,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if openAIStreamingRequestIsResponses(c) {
 			eventName = "response.failed"
 			payload = buildOpenAIResponsesStreamFailurePayload(responseID, originalModel, "upstream_error", reason)
+			if len(semanticPayload) > 0 {
+				payload = string(semanticPayload[0])
+			}
 		}
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
@@ -362,6 +365,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if err := flushBuffered(); err != nil {
 			clientDisconnected = true
 			return
+		}
+		if len(semanticPayload) > 0 {
+			MarkResponseCommitted(c)
 		}
 		clientOutputStarted = true
 		lastDownstreamWriteAt = time.Now()
@@ -470,6 +476,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			result, err := finalizeStream()
 			return result, err, true
+		}
+		if pluginErr, semantic := pluginSemanticTransportError(scanErr); semantic {
+			payload := pluginSemanticFailurePayload(responseID, originalModel, pluginErr)
+			s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "plugin_error", payload, pluginErr.Error())
+			sendErrorEvent(pluginErr.Code, payload)
+			return resultWithUsage(), scanErr, true
 		}
 		// 客户端断开/取消请求时，上游读取往往会返回 context canceled。
 		// /v1/responses 的 SSE 事件必须符合 OpenAI 协议；这里不注入自定义 error event，避免下游 SDK 解析失败。
@@ -636,6 +648,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				forceFlushFailedEvent = true
+				if isOpenAINonRetryableProtocolFailure(dataBytes) {
+					MarkResponseCommitted(c)
+				}
 				sawFailedEvent = true
 				terminalFailurePending = !codexFailureTerminal || eventType == "response.failed"
 			}

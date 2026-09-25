@@ -53,6 +53,20 @@
 
         <label class="checkbox"><input id="enable_http2" type="checkbox" /> <span>启用 HTTP/2</span></label>
 
+        <label>
+          <span>BPS 桥接模型范围</span>
+          <select id="bps_model_mode" name="bps_model_mode">
+            <option value="all">全部模型（默认）</option>
+            <option value="selected">仅指定模型</option>
+          </select>
+          <small>仅指定模型时，名单外的模型直接走原生端点，不受下方原生通道回退开关影响。</small>
+        </label>
+        <label>
+          <span>允许走 BPS 的模型（每行一个）</span>
+          <textarea id="bps_models" name="bps_models" rows="4" spellcheck="false" aria-describedby="bps-models-help" disabled></textarea>
+          <small id="bps-models-help">填写插件收到的请求模型名，区分大小写并精确匹配，不支持通配符；在模型映射及去除 -excel 后缀之前匹配，最多 64 个。选择“仅指定模型”且名单为空时，全部走原生端点。名单内的请求仍遵循下方图片和工具路由规则。</small>
+        </label>
+
         <label class="checkbox"><input id="native_fallback" type="checkbox" /> <span>启用原生通道回退（图片/图片生成等走原生端点）</span></label>
 
         <label class="checkbox"><input id="tools_via_native" type="checkbox" /> <span>携带客户端工具的请求走原生通道（exec_command 等原生可调）</span></label>
@@ -66,7 +80,7 @@
         <label>
           <span>模型映射（JSON 对象：请求模型 → 上游模型）</span>
           <textarea id="model_mapping" rows="5" spellcheck="false">{}</textarea>
-          <small>例：{"gpt-6-astra-basispoints":"gpt-6-astra"}。未列出的模型原样透传（自动去掉 -excel 后缀）。</small>
+          <small>仅在 BPS 通道生效。例：{"gpt-6-astra-basispoints":"gpt-6-astra"}。BPS 请求中未映射的模型自动去掉 -excel 后缀；原生通道不改写模型名。</small>
         </label>
 
         <div class="actions">

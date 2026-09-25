@@ -6,10 +6,11 @@
   var status = document.getElementById("status");
   var statusDetail = document.getElementById("status-detail");
   var busy = false;
-  var defaults = { upstream_base_url: "https://bps.openai.com/basispoints/api", proxy_mode: "account", request_timeout_seconds: 120, response_header_timeout_seconds: 30, idle_connection_timeout_seconds: 90, max_idle_connections: 100, max_idle_connections_per_host: 20, tls_min_version: "1.2", enable_http2: true, extra_headers: {}, model_mapping: {}, native_fallback: true, native_upstream_base_url: "", tools_via_native: false };
-  var ids = ["upstream_base_url", "proxy_mode", "request_timeout_seconds", "response_header_timeout_seconds", "idle_connection_timeout_seconds", "max_idle_connections", "max_idle_connections_per_host", "tls_min_version", "native_upstream_base_url"];
+  var defaults = { upstream_base_url: "https://bps.openai.com/basispoints/api", proxy_mode: "account", request_timeout_seconds: 120, response_header_timeout_seconds: 30, idle_connection_timeout_seconds: 90, max_idle_connections: 100, max_idle_connections_per_host: 20, tls_min_version: "1.2", enable_http2: true, extra_headers: {}, model_mapping: {}, native_fallback: true, native_upstream_base_url: "", tools_via_native: false, bps_model_mode: "all", bps_models: [] };
+  var ids = ["upstream_base_url", "proxy_mode", "request_timeout_seconds", "response_header_timeout_seconds", "idle_connection_timeout_seconds", "max_idle_connections", "max_idle_connections_per_host", "tls_min_version", "native_upstream_base_url", "bps_model_mode"];
 
   function setMessage(text, error) { message.textContent = text || ""; message.style.color = error ? "#dc2626" : "#2563eb"; }
+  function updateModelSelection() { document.getElementById("bps_models").disabled = document.getElementById("bps_model_mode").value !== "selected"; }
   function setConfig(config) {
     config = Object.assign({}, defaults, config);
     ids.forEach(function (id) { var node = document.getElementById(id); if (node && config[id] !== undefined) node.value = config[id]; });
@@ -18,6 +19,8 @@
     document.getElementById("tools_via_native").checked = config.tools_via_native === true;
     document.getElementById("extra_headers").value = JSON.stringify(config.extra_headers || {}, null, 2);
     document.getElementById("model_mapping").value = JSON.stringify(config.model_mapping || {}, null, 2);
+    document.getElementById("bps_models").value = (config.bps_models || []).join("\n");
+    updateModelSelection();
   }
   function getConfig() {
     var extra, mapping;
@@ -33,6 +36,7 @@
     config.tools_via_native = document.getElementById("tools_via_native").checked;
     config.extra_headers = extra;
     config.model_mapping = mapping;
+    config.bps_models = document.getElementById("bps_models").value.split(/\r?\n/).map(function (model) { return model.trim(); }).filter(Boolean);
     return config;
   }
   async function save() {
@@ -69,6 +73,7 @@
     try { await action(); } catch (error) { setMessage(error.message, true); }
     finally { busy = false; document.getElementById("save").disabled = false; document.getElementById("test").disabled = false; }
   }
+  document.getElementById("bps_model_mode").addEventListener("change", updateModelSelection);
   form.addEventListener("submit", function (event) { event.preventDefault(); void run(save); });
   document.getElementById("test").addEventListener("click", function () { void run(test); });
   var statusTimer = setInterval(refreshStatus, 10000);

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
+	"github.com/google/uuid"
 )
 
 // isTransportName reports whether a native call rides the client-tool transport.
@@ -30,7 +32,7 @@ func clientEnvelope(item object) (object, error) {
 	code := stringValue(outer["code"])
 	envelope, err := parseObject([]byte(code))
 	if err != nil {
-		return nil, toolCallError("上游工具 code 不是有效 JSON 信封；JSON 字符串不能使用反斜杠转义单引号")
+		return nil, toolCallError("上游工具 code 不是有效 JSON 对象信封；请使用 JSON 序列化生成完整信封")
 	}
 	tool := stringValue(envelope["tool"])
 	if tool == "" {
@@ -56,6 +58,26 @@ type ToolCallError struct{ message string }
 func (e *ToolCallError) Error() string   { return e.message }
 func toolCallError(message string) error { return &ToolCallError{message: message} }
 
+// FailureResponse carries a semantic rejection without breaking the transport.
+// Only response identity and usage are copied; executable output never escapes.
+func FailureResponse(code string, cause error, snapshot json.RawMessage) json.RawMessage {
+	response := object{"id": encoded("resp_" + uuid.NewString()), "object": encoded("response"), "status": encoded("failed"), "output": encoded([]any{})}
+	if previous, err := parseObject(snapshot); err == nil {
+		for _, field := range []string{"id", "model", "created_at", "usage"} {
+			if value, ok := previous[field]; ok {
+				response[field] = value
+			}
+		}
+	}
+	detail := map[string]any{"type": "invalid_request_error", "code": code, "message": cause.Error()}
+	var replayErr *EncryptedReplayError
+	if errors.As(cause, &replayErr) {
+		detail["diagnostics"] = replayErr
+	}
+	response["error"] = encoded(detail)
+	return encoded(response)
+}
+
 // convertCall receives a COMPLETE output item. In particular, summary,
 // references, status, id and unknown future fields must survive in Original.
 // Every delivered call must resolve to a declared client tool. Invalid server
@@ -71,7 +93,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	}
 	callID := stringValue(item["call_id"])
 	if callID == "" {
-		return nil, errors.New("上游工具 item 缺少 call_id")
+		return nil, toolCallError("上游工具 item 缺少 call_id")
 	}
 	name := stringValue(item["name"])
 	if ns := stringValue(item["namespace"]); ns != "" {
@@ -94,11 +116,11 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		}
 	}
 	if r.catalog.choice == "none" {
-		return nil, errors.New("上游违反 tool_choice=none")
+		return nil, toolCallError("上游违反 tool_choice=none")
 	}
 	id := stringValue(item["id"])
 	if id == "" {
-		return nil, errors.New("上游工具 item 缺少 id 或 call_id，无法完整回放")
+		return nil, toolCallError("上游工具 item 缺少 id 或 call_id，无法完整回放")
 	}
 	canonicalOriginal := string(encoded(item))
 	if r.originals[id] == canonicalOriginal {
@@ -113,7 +135,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		return nil, toolCallError("上游工具信封指定了客户端未声明的工具")
 	}
 	if r.catalog.forced != "" && r.catalog.forced != toolKey && r.catalog.forced != tool {
-		return nil, errors.New("上游未遵循指定工具的 tool_choice")
+		return nil, toolCallError("上游未遵循指定工具的 tool_choice")
 	}
 	alias := callPrefix + digest(r.scope, r.Turn.ID, id, callID)[:32]
 	out := object{"type": encoded("function_call"), "id": item["id"], "call_id": encoded(alias), "name": encoded(t.Name)}
@@ -125,7 +147,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	}
 	if t.Custom {
 		var input string
-		if len(envelope["args"]) == 0 || envelope["args"][0] != '"' || json.Unmarshal(envelope["args"], &input) != nil {
+		if !isTextValue(envelope["args"]) || json.Unmarshal(envelope["args"], &input) != nil {
 			return nil, toolCallError("上游 custom 工具的 args 必须是 JSON 字符串")
 		}
 		out["type"] = encoded("custom_tool_call")

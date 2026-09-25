@@ -31,7 +31,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.3.1"
+	PluginVersion = "0.3.2"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -264,6 +264,13 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
 	}
+	// Model selection is independent of capability fallback. Unselected models
+	// keep their original body, tools and model name on the native channel.
+	model := requestModel(body)
+	if !state.cfg.AllowsBPSModel(model) {
+		p.recentPaths.add(model, "native")
+		return p.forwardNative(stream, start, state, body, headers)
+	}
 	// Capability routing: requests the Basis Points tool bridge cannot serve
 	// (images, image generation, hosted tool_choice, structured output) bypass
 	// the bridge entirely and are forwarded verbatim to the native Codex
@@ -373,6 +380,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	response, adapted, code, err := execute(body, false)
 	if err != nil {
+		if code == "TOOL_BRIDGE_REQUEST_INVALID" {
+			return p.sendSemanticFailure(stream, body, code, err, nil)
+		}
 		return p.sendError(stream, code, err.Error(), code == "")
 	}
 	// Retry only pre-output errors; include ciphertext restored from KV.
@@ -392,12 +402,22 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			cleaned, cleanErr := bridge.StripEncryptedContent(adapted.Body)
 			if cleanErr != nil {
 				response.Body.Close()
-				return p.sendError(stream, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", cleanErr.Error(), true)
+				if errors.Is(cleanErr, bridge.ErrUnsafeEncryptedReplay) {
+					p.recentPaths.add(requestModel(body), "native")
+					return p.forwardNative(stream, start, state, body, headers)
+				}
+				return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", cleanErr, nil)
 			}
 			if bytes.Equal(cleaned, adapted.Body) {
-				break
+				response.Body.Close()
+				p.recentPaths.add(requestModel(body), "native")
+				return p.forwardNative(stream, start, state, body, headers)
 			}
 			encryptedRetried = true
+		} else if errorCode == "invalid_encrypted_content" {
+			response.Body.Close()
+			p.recentPaths.add(requestModel(body), "native")
+			return p.forwardNative(stream, start, state, body, headers)
 		} else if response.StatusCode >= 400 && errorCode == "server_error" && strings.Contains(message, "An error occurred while processing") && transientRetries < maxTransientRetries {
 			transientRetries++
 			select {
@@ -431,6 +451,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			}
 			converted, convertErr := adapted.Response(requestCtx, raw)
 			if convertErr != nil {
+				var toolErr *bridge.ToolCallError
+				if errors.As(convertErr, &toolErr) {
+					return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_CALL_INVALID", toolErr, raw)
+				}
 				return p.sendError(stream, upstreamResponseReadErrorCode(convertErr, "TOOL_BRIDGE_RESPONSE_FAILED"), convertErr.Error(), true)
 			}
 			response.Body.Close()
@@ -457,6 +481,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
 		if err := adapted.Stream(requestCtx, response.Body, emit); err != nil {
 			return p.sendError(stream, upstreamResponseReadErrorCode(err, "TOOL_BRIDGE_STREAM_FAILED"), upstreamResponseReadErrorMessage(err), true)
+		}
+		if adapted.FailureCode != "" {
+			p.lastBridgeError.Store(adapted.FailureCode)
 		}
 	} else {
 		buffer := make([]byte, chunkSize)

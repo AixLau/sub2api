@@ -26,7 +26,15 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 		raw := strings.Join(data, "\n")
 		data = nil
 		size = 0
-		return s.event(ctx, []byte(raw))
+		err := s.event(ctx, []byte(raw))
+		var toolErr *ToolCallError
+		if errors.As(err, &toolErr) {
+			s.request.Failed = true
+			s.request.FailureCode = "TOOL_BRIDGE_CALL_INVALID"
+			s.terminal = true
+			return s.send(object{"type": encoded("response.failed"), "response": FailureResponse(s.request.FailureCode, toolErr, s.snapshot)})
+		}
+		return err
 	}
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
@@ -82,6 +90,7 @@ type streamBridge struct {
 	pending   map[int]string
 	delivered map[string]bool
 	terminal  bool
+	snapshot  json.RawMessage
 }
 
 func (s *streamBridge) send(event object) error {
@@ -106,6 +115,9 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		return errors.New("上游 SSE data 不是 JSON 对象")
 	}
 	typ := stringValue(event["type"])
+	if response, err := parseObject(event["response"]); err == nil {
+		s.snapshot = encoded(response)
+	}
 	if typ == "" {
 		return errors.New("上游 SSE 缺少事件类型")
 	}
