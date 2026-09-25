@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,9 @@ func clientEnvelope(item object) (object, error) {
 	outer, err := parseObject(args)
 	if err != nil {
 		return nil, toolCallError("上游工具 arguments 不是有效 JSON 对象")
+	}
+	if envelope, marked, err := customTransportEnvelope(outer); marked {
+		return envelope, err
 	}
 	code := stringValue(outer["code"])
 	envelope, err := parseObject([]byte(code))
@@ -100,7 +104,9 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		name = ns + "." + name
 	}
 	var envelope object
+	direct := false
 	if t, key, declared := r.catalog.lookup(name); declared {
+		direct = true
 		// A declared tool's code field is business data, not a transport.
 		args := item["arguments"]
 		if t.Custom {
@@ -157,13 +163,32 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 			return nil, toolCallError("上游 function 工具的 args 必须是 JSON 对象")
 		}
 		out["arguments"] = encoded(string(envelope["args"]))
+		// An absent/null list lets Codex infer encryption from tool schemas.
+		// Relay arguments are plaintext, even if the outer Office executor
+		// carries encryption metadata for its own fields. Only direct calls
+		// can declare encrypted arguments in the client's field namespace.
+		out["encrypted_function_args"] = encoded([]string{})
+		if fields := bytes.TrimSpace(item["encrypted_function_args"]); direct && len(fields) > 0 && string(fields) != "null" {
+			var names []json.RawMessage
+			if json.Unmarshal(fields, &names) != nil {
+				return nil, toolCallError("上游 encrypted_function_args 必须是字符串数组")
+			}
+			canonical := make([]string, len(names))
+			for i, name := range names {
+				if !isTextValue(name) {
+					return nil, toolCallError("上游 encrypted_function_args 必须是字符串数组")
+				}
+				canonical[i] = stringValue(name)
+			}
+			out["encrypted_function_args"] = encoded(canonical)
+		}
 	}
 	converted := encoded(out)
 	if previous := r.converted[id]; previous != nil {
 		// The final response may add metadata but cannot change an already
 		// delivered function's identity or arguments.
 		a, _ := parseObject(previous)
-		for _, key := range []string{"type", "call_id", "name", "namespace", "arguments", "input"} {
+		for _, key := range []string{"type", "call_id", "name", "namespace", "arguments", "input", "encrypted_function_args"} {
 			if string(a[key]) != string(out[key]) {
 				return nil, errors.New("上游在完成事件中修改了已输出的工具调用")
 			}

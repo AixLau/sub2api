@@ -1,16 +1,16 @@
 # Basis Points Responses 工具桥接插件
 
-0.3.2 是根据 BPS 实测协议实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。本次修复还包含宿主的插件语义错误分类，完整修复需要同时更新宿主和插件。
+0.3.3 是根据 BPS 实测协议实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.3.3 修复集中在插件内部；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
 ## 请求与回放协议
 
 1. 请求体只发送 Excel 加载项词汇表字段：`model`（见下方模型映射）、`model_selection: "explicit"`、`stream`、`store: false`、`input`、`prompt_cache_key`、`reasoning_effort`、`context_management`、`metadata`。`tools`、`tool_choice`、`parallel_tool_calls`、`reasoning` 对象、`instructions`、`include`、`text`、`max_output_tokens`、`temperature`、`top_p`、`previous_response_id` 等一律不发往上游。
-2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息开启新 turn。显式传入的 turn 与回放状态冲突时直接报错。
+2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息或非空明文 agent_message 开启新 turn；同一正文发给不同子 agent 时保留独立身份。显式传入的 turn 与回放状态冲突时直接报错。
 3. `instructions` 与客户端工具目录都写入 developer 消息（带 `type: "message"`）。工具目录是普通文本，不是上游工具声明。
-4. 描述约定：调用客户端工具时，通过 `run_officejs.arguments.code` 传递 `{"tool":"get_weather","args":{"city":"Tokyo"}}`。插件只解析 JSON，不执行 OfficeJS 或任何客户端工具。上游可能把该工具显示为 `functions.run_officejs`，两者都按传输信封解码。
-5. 解码完整的传输信封（`run_officejs` / `functions.run_officejs`，以及模型误放进其它执行器如 `run_connector_action` 的信封），识别两层 JSON，校验目标是本次声明的客户端工具，再输出标准 `function_call`。支持 namespace 内的 function，以及 custom 工具对应的 `custom_tool_call`。
+4. 工具传输协议 v2：function 工具通过执行器的 code 字符串传递 JSON 对象信封，例如 {"tool":"get_weather","args":{"city":"Tokyo"}}。custom/freeform 工具把 summary 设为 sub2api.custom/ 加完整工具名（例如 sub2api.custom/functions.exec），code 直接承载原始输入，只序列化外层执行器参数。插件不执行 OfficeJS 或任何客户端工具。
+5. 完整调用先识别显式 custom 标记，再按 function JSON 信封解码；不从正文外观猜测格式，也不修补坏 JSON。验证目标属于本次客户端目录且参数类型正确，随后输出标准 function_call 或 custom_tool_call，保留 namespace。执行器可为 run_officejs / functions.run_officejs，或携带同一传输协议的 run_connector_action。
 6. 通过宿主 HostService KV 保存完整上游 item，包含 `id`、`call_id`、`arguments` 内外的 `summary`、`references` 和未知字段。客户端收到不透明的 `call_bps_…` 标识，按正常流程决定是否执行工具。
 7. 客户端提交工具结果时，插件恢复原始调用 item 和原始 `call_id`（即使客户端只提交了工具结果也能回放），并为结果 item 补全 `fc_…` 形式的 `id`。相同调用 item 不重复插入。
 8. 非插件生成的工具历史（启用前的会话、无法解析的调用）不再拒绝：插件用客户端自己的 name/arguments 重建 `run_officejs` 传输信封继续回放。没有对应调用项的孤立工具结果仍然报错。
@@ -18,6 +18,20 @@
 10. 图片输入（**通常走原生通路**）：默认开启 `native_fallback` 时，含 `input_image` 的请求会路由到原生 Codex 上游（见下方「双通道路由」），本条描述的附件化上传**仅适用于 BPS 通路**——即路由关闭（`native_fallback: false`）或未触发时。用户消息里的内联 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）会被解码后以 multipart 上传到与 `/responses` 同目录的 `attachments` 端点（字段名 `file`，文件名固定 `image.<ext>`），拿到 `openai_file_id` 后替换为 `{"type":"input_image","file_id":…,"detail":…}`（`detail` 缺省补 `"auto"`）。直接把 data URL 发给上游会 422。**仅支持 JPEG/PNG/GIF/WebP**：媒体类型按别名归一（`image/jpg`、`image/pjpeg`→`image/jpeg`，`image/x-png`→`image/png`），扩展名由显式映射决定（不依赖系统 MIME 表，否则会出现无扩展名或 `.jpe` 这类上游不认的后缀，报 `Expected image type … but got none`）；其它格式（HEIC/AVIF/TIFF/BMP 等）在发出主请求前明确报错，不做格式转换。已有 `file_id`、远程 `https://` 图片、assistant 消息与工具结果里的图片原样保留；同内容图片按摘要缓存复用 file id（缓存按端点+凭据隔离，失败不缓存），并发同图合并为一次上传。上传失败在发出主请求前中止（`ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`），错误文本会脱敏凭据与图片字节。上传发生在 turn/task 标识计算之后，图片引用不会改变会话身份。
 
 SSE 中的普通文本保持流式输出；工具 envelope 等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效 envelope、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
+
+## 0.3.3 多 agent 与 custom 工具修复
+
+- function_call 默认显式返回 encrypted_function_args: []。缺省或 null 会使 Codex 根据工具 schema 推断加密参数；显式空数组才能说明本次 message 是明文。spawn_agent、send_message、followup_task 的 JSON 响应、SSE added/done 和终结快照使用相同声明。
+- 已声明工具的直接调用若携带真实 encrypted_function_args 列表，原样保留；Office 执行器包装层的加密字段名不会移植到客户端业务参数。KV 仍保存完整上游原始调用，回放不篡改加密元数据。
+- agent_message 只接受显式明文字符串或 input_text/text 内容段，按原顺序无损连接任务信封与正文并转换为 user message。首轮任务与后续通信都建立新 turn，工具往返沿用所属 turn；重试不增加迭代次数，空消息不重置 turn。
+- 既有 agent_message 的 encrypted_content 一律不猜测、不删除、不当作明文；即使看起来可读也不能证明未加密。请求在发送上游前返回 TOOL_BRIDGE_REQUEST_INVALID：非流式 HTTP 400，流式一个 response.failed 并正常结束 RPC。诊断仅包含索引路径和固定原因，不包含任务正文。已污染的会话需要重新创建并派发任务。
+- custom 工具采用 summary 显式标记加 code 原文，避免双层 JSON 字符串造成引号、换行和反斜杠错误。JSON 外观的原始输入也保持原样。缺失或非法标记、未声明工具、错误参数类型仍明确拒绝；不增加可执行代码的猜测或修复机制。
+- 测试覆盖 JSON/SSE 的明文加密声明、父会话工具回放、子会话首轮与后续消息、原文 custom 输入及回放，以及不安全任务在网络请求前失败。继承的 reasoning/compaction 密文保持原样；本修复不代表它们已经能够跨账号或跨通路解密。
+
+本次参考对照固定到以下提交，不依赖仓库分支后续变化：
+
+- [ranxi2001/sub2api 的多 agent 回归](https://github.com/ranxi2001/sub2api/blob/3e345632fd66aea7724c5929e9415a828a4ae83b/backend/internal/service/basispoints/agent_message_test.go)：显式空加密字段列表、拒绝凭外观识别密文；其 [custom 传输](https://github.com/ranxi2001/sub2api/blob/3e345632fd66aea7724c5929e9415a828a4ae83b/backend/internal/service/basispoints/custom_transport.go) 使用显式标记承载原文，本插件采用同一模式并使用 sub2api.custom/ 前缀。
+- [Nonary/ghcp_proxy](https://github.com/Nonary/ghcp_proxy/blob/1a73157d579dcdaa08d8ecbcd166e80ca48c9e66/excel_upstream.py) 与 [JaxsonWang/cpa-plugin-oai-basispoints](https://github.com/JaxsonWang/cpa-plugin-oai-basispoints/blob/0b47e11cecc3213774927044e3518ea4a770cd24/internal/basispoints/protocol.go) 用于请求体和工具协议对照；所检视版本未提供对应的 agent_message 专用修复，不能据此宣称多 agent 已恢复。
 
 ## 0.3.2 修复与恢复边界
 
@@ -129,12 +143,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.2.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.3.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.2.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.3.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -146,6 +160,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先更新包含本次语义分类修复的宿主，再停用已安装的同 ID 插件，上传 0.3.2，保存配置并选择账号和 BPS 模型范围。该版本未声明完整线上联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，最后才扩大账号范围。
+先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.3.3，保存配置并选择账号和 BPS 模型范围。该版本未声明完整线上联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。0.3.3 的本地测试和打包验证不等于真实 BPS 多 agent 联调通过。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。

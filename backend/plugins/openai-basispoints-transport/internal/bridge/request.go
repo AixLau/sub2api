@@ -53,10 +53,22 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		return nil, errors.New("工具桥接需要宿主 KV 服务；当前插件未连接宿主 KV")
 	}
 	lastUser := -1
+	agentMessages := map[int]json.RawMessage{}
 	for i, raw := range input {
 		item, err := parseObject(raw)
 		if err != nil {
 			return nil, err
+		}
+		if stringValue(item["type"]) == "agent_message" {
+			message, err := normalizeAgentMessage(item, i)
+			if err != nil {
+				return nil, err
+			}
+			agentMessages[i] = message
+			if len(message) > 0 {
+				lastUser = i
+			}
+			continue
 		}
 		if stringValue(item["role"]) == "user" {
 			lastUser = i
@@ -98,6 +110,10 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		}
 		typ, callID := stringValue(item["type"]), stringValue(item["call_id"])
 		switch typ {
+		case "agent_message":
+			if message := agentMessages[i]; len(message) > 0 {
+				restored = append(restored, message)
+			}
 		case "function_call", "custom_tool_call":
 			if callID == "" {
 				return nil, errors.New("工具调用缺少 call_id")
@@ -341,10 +357,12 @@ func messageItem(role, text string) map[string]any {
 // deterministic item id.
 func rebuildTransportCall(item object, typ, name string) json.RawMessage {
 	callID := stringValue(item["call_id"])
-	var args any
+	var summary, code string
 	if typ == "custom_tool_call" {
-		args = stringValue(item["input"])
+		summary = customTransportPrefix + name
+		code = stringValue(item["input"])
 	} else {
+		var args any
 		rawArgs := item["arguments"]
 		if s := stringValue(rawArgs); s != "" {
 			rawArgs = []byte(s)
@@ -355,11 +373,12 @@ func rebuildTransportCall(item object, typ, name string) json.RawMessage {
 		if _, ok := args.(map[string]any); !ok {
 			args = map[string]any{}
 		}
+		summary = "Run client tool " + name
+		code = string(encoded(map[string]any{"tool": name, "args": args}))
 	}
-	envelope := map[string]any{"tool": name, "args": args}
 	outer := map[string]any{
-		"summary":     "Run client tool " + name,
-		"code":        string(encoded(envelope)),
+		"summary":     summary,
+		"code":        code,
 		"destructive": false,
 		"references":  []string{},
 	}
