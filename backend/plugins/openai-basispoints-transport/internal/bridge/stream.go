@@ -37,6 +37,13 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 			if err := flush(); err != nil {
 				return err
 			}
+			// A terminal Responses event is sufficient to complete the exchange.
+			// Do not wait for the server to close the HTTP connection: some
+			// upstream proxies keep it alive, and a later read timeout must not
+			// turn an already completed response into UPSTREAM_RESPONSE_FAILED.
+			if s.terminal {
+				return nil
+			}
 			continue
 		}
 		if strings.HasPrefix(line, "data:") {
@@ -54,7 +61,10 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return errors.New("读取上游 SSE 失败")
+		if s.terminal {
+			return nil
+		}
+		return fmt.Errorf("读取上游 SSE 失败: %w", err)
 	}
 	if err := flush(); err != nil {
 		return err
@@ -107,11 +117,12 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		if err != nil {
 			return err
 		}
-		if stringValue(item["type"]) == "function_call" {
+		if isToolCall(item) {
 			s.pending[index] = stringValue(item["id"])
 			return nil
 		}
-	case "response.function_call_arguments.delta", "response.function_call_arguments.done":
+	case "response.function_call_arguments.delta", "response.function_call_arguments.done",
+		"response.custom_tool_call_input.delta", "response.custom_tool_call_input.done":
 		// Never leak the outer OfficeJS arguments to the local tool executor.
 		return nil
 	case "response.output_item.done":
@@ -119,7 +130,7 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		if err != nil {
 			return err
 		}
-		if stringValue(item["type"]) == "function_call" {
+		if isToolCall(item) {
 			return s.completeCall(ctx, index, event["item"], event["response_id"])
 		}
 	case "response.created", "response.in_progress":
@@ -130,7 +141,7 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 			_ = json.Unmarshal(response["output"], &items)
 			for _, raw := range items {
 				item, _ := parseObject(raw)
-				if stringValue(item["type"]) == "function_call" {
+				if isToolCall(item) {
 					response["output"] = encoded([]any{})
 					break
 				}
@@ -148,7 +159,7 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		}
 		for i, raw := range output {
 			item, _ := parseObject(raw)
-			if stringValue(item["type"]) == "function_call" {
+			if isToolCall(item) {
 				if err := s.completeCall(ctx, i, raw, response["id"]); err != nil {
 					return err
 				}
@@ -173,6 +184,11 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		s.terminal = true
 	}
 	return s.send(event)
+}
+
+func isToolCall(item object) bool {
+	typ := stringValue(item["type"])
+	return typ == "function_call" || typ == "custom_tool_call"
 }
 
 func (s *streamBridge) completeCall(ctx context.Context, index int, raw, responseID json.RawMessage) error {

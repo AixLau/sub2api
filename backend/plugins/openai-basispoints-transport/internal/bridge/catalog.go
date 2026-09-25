@@ -161,6 +161,7 @@ func (c catalog) prompt() string {
 		fmt.Fprintf(&b, "Only request tool %q for this response.\n", c.forced)
 	}
 	b.WriteString("Client tool directory:\n")
+	b.WriteString("The code string must parse as strict JSON. Inside JSON strings, escape double quotes, backslashes and control characters; never backslash-escape a single quote. JavaScript source belongs only in args for custom tools. Invalid JSON is rejected before client execution.\n")
 	b.WriteString(c.description)
 	if len(c.omitted) > 0 {
 		b.WriteString("Other client hosted-tool declarations are unavailable through this bridge.\n")

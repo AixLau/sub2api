@@ -129,7 +129,7 @@ func TestNamespaceCustomAndUndeclaredOrExecutablePayload(t *testing.T) {
 	require.Equal(t, "patch", stringValue(obj["name"]))
 	require.Equal(t, "line 1\nline 2", stringValue(obj["input"]))
 	_, err = r.convertCall(ctx, officeItem("not_declared", map[string]any{}, true))
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "未声明")
 
 	// A valid envelope stuffed into another server executor is still a client call.
 	foreign, _ := parseObject(officeItem("functions.patch", "line 1", false))
@@ -141,8 +141,7 @@ func TestNamespaceCustomAndUndeclaredOrExecutablePayload(t *testing.T) {
 	require.Equal(t, "custom_tool_call", stringValue(convertedObj["type"]))
 	require.Equal(t, "patch", stringValue(convertedObj["name"]))
 
-	// Server-injected tools and non-envelope payloads pass through untouched:
-	// they must never fail the stream and are never executed here.
+	// Undeclared server tools must never reach the client executor.
 	jsCode, _ := parseObject(officeItem("functions.patch", "text", false))
 	jsCode["arguments"] = encoded(`{"code":"Excel.run(() => doSomething())"}`)
 	connector, _ := parseObject(officeItem("functions.patch", "text", false))
@@ -154,9 +153,8 @@ func TestNamespaceCustomAndUndeclaredOrExecutablePayload(t *testing.T) {
 		encoded(connector),
 	} {
 		passed, err := r.convertCall(ctx, raw)
-		require.NoError(t, err)
-		passedObj, _ := parseObject(passed)
-		require.Contains(t, []string{"run_officejs", "run_connector_action"}, stringValue(passedObj["name"]))
+		require.Error(t, err)
+		require.Nil(t, passed)
 	}
 }
 

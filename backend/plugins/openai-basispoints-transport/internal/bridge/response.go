@@ -18,57 +18,48 @@ func isTransportName(name string) bool {
 // shape is {"tool":…,"args":…} but {"name":…,"arguments":…} and extra keys are
 // accepted the same way, so a format drift degrades into a normal client call
 // instead of an "unknown tool" failure.
-func clientEnvelope(item object) (object, bool) {
+func clientEnvelope(item object) (object, error) {
 	args := item["arguments"]
 	if s := stringValue(args); s != "" {
 		args = []byte(s)
 	}
 	outer, err := parseObject(args)
 	if err != nil {
-		return nil, false
+		return nil, toolCallError("上游工具 arguments 不是有效 JSON 对象")
 	}
 	code := stringValue(outer["code"])
 	envelope, err := parseObject([]byte(code))
 	if err != nil {
-		return nil, false
+		return nil, toolCallError("上游工具 code 不是有效 JSON 信封；JSON 字符串不能使用反斜杠转义单引号")
 	}
 	tool := stringValue(envelope["tool"])
 	if tool == "" {
 		tool = stringValue(envelope["name"])
 	}
 	if tool == "" {
-		return nil, false
+		return nil, toolCallError("上游工具信封缺少 tool 名称")
 	}
 	callArgs, ok := envelope["args"]
 	if !ok {
 		callArgs, ok = envelope["arguments"]
 	}
 	if !ok {
-		return nil, false
+		return nil, toolCallError("上游工具信封缺少 args")
 	}
 	normalized := object{"tool": encoded(tool), "args": callArgs}
-	return normalized, true
+	return normalized, nil
 }
 
-// nativeCallWithTextArguments copies a native call item and rewrites object-form
-// arguments into the JSON string clients expect.
-func nativeCallWithTextArguments(item object) object {
-	copy := object{}
-	for key, value := range item {
-		copy[key] = value
-	}
-	rawArgs := item["arguments"]
-	if len(rawArgs) > 0 && rawArgs[0] != '"' {
-		copy["arguments"] = encoded(string(rawArgs))
-	}
-	return copy
-}
+// ToolCallError contains only fixed diagnostic text, never executable input.
+type ToolCallError struct{ message string }
+
+func (e *ToolCallError) Error() string   { return e.message }
+func toolCallError(message string) error { return &ToolCallError{message: message} }
 
 // convertCall receives a COMPLETE output item. In particular, summary,
 // references, status, id and unknown future fields must survive in Original.
-// Calls that do not carry a client-tool envelope are never executed here and
-// never fail the stream: they are handed to the client unchanged so the client
-// can answer them and the turn can continue.
+// Every delivered call must resolve to a declared client tool. Invalid server
+// calls must not escape as unsupported Office tools and poison the next turn.
 func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	item, err := parseObject(raw)
 	if err != nil {
@@ -82,9 +73,25 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	if callID == "" {
 		return nil, errors.New("上游工具 item 缺少 call_id")
 	}
-	envelope, isClientCall := clientEnvelope(item)
-	if !isClientCall {
-		return encoded(nativeCallWithTextArguments(item)), nil
+	name := stringValue(item["name"])
+	if ns := stringValue(item["namespace"]); ns != "" {
+		name = ns + "." + name
+	}
+	var envelope object
+	if t, key, declared := r.catalog.lookup(name); declared {
+		// A declared tool's code field is business data, not a transport.
+		args := item["arguments"]
+		if t.Custom {
+			args = item["input"]
+		} else if text := stringValue(args); text != "" {
+			args = []byte(text)
+		}
+		envelope = object{"tool": encoded(key), "args": args}
+	} else {
+		envelope, err = clientEnvelope(item)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if r.catalog.choice == "none" {
 		return nil, errors.New("上游违反 tool_choice=none")
@@ -103,9 +110,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	tool := stringValue(envelope["tool"])
 	t, toolKey, ok := r.catalog.lookup(tool)
 	if !ok {
-		// The envelope names a tool the client never declared. Do not fail the
-		// stream over it; the client sees the raw call and can answer it.
-		return encoded(nativeCallWithTextArguments(item)), nil
+		return nil, toolCallError("上游工具信封指定了客户端未声明的工具")
 	}
 	if r.catalog.forced != "" && r.catalog.forced != toolKey && r.catalog.forced != tool {
 		return nil, errors.New("上游未遵循指定工具的 tool_choice")
@@ -121,14 +126,13 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	if t.Custom {
 		var input string
 		if len(envelope["args"]) == 0 || envelope["args"][0] != '"' || json.Unmarshal(envelope["args"], &input) != nil {
-			// Not our envelope after all; let the client judge it.
-			return encoded(nativeCallWithTextArguments(item)), nil
+			return nil, toolCallError("上游 custom 工具的 args 必须是 JSON 字符串")
 		}
 		out["type"] = encoded("custom_tool_call")
 		out["input"] = encoded(input)
 	} else {
 		if _, err := parseObject(envelope["args"]); err != nil {
-			return encoded(nativeCallWithTextArguments(item)), nil
+			return nil, toolCallError("上游 function 工具的 args 必须是 JSON 对象")
 		}
 		out["arguments"] = encoded(string(envelope["args"]))
 	}

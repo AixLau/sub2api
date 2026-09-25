@@ -1,10 +1,10 @@
 # Basis Points Responses 工具桥接插件
 
-0.3.0 是根据 BPS 实测协议实现的独立 Sub2API 插件，仅修改插件工程。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。
+0.3.1 是根据 BPS 实测协议实现的独立 Sub2API 插件，仅修改插件工程。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
-## 0.3.0 的请求与回放协议
+## 请求与回放协议
 
 1. 请求体只发送 Excel 加载项词汇表字段：`model`（见下方模型映射）、`model_selection: "explicit"`、`stream`、`store: false`、`input`、`prompt_cache_key`、`reasoning_effort`、`context_management`、`metadata`。`tools`、`tool_choice`、`parallel_tool_calls`、`reasoning` 对象、`instructions`、`include`、`text`、`max_output_tokens`、`temperature`、`top_p`、`previous_response_id` 等一律不发往上游。
 2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息开启新 turn。显式传入的 turn 与回放状态冲突时直接报错。
@@ -18,6 +18,14 @@
 10. 图片输入（**通常走原生通路**）：默认开启 `native_fallback` 时，含 `input_image` 的请求会路由到原生 Codex 上游（见下方「双通道路由」），本条描述的附件化上传**仅适用于 BPS 通路**——即路由关闭（`native_fallback: false`）或未触发时。用户消息里的内联 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）会被解码后以 multipart 上传到与 `/responses` 同目录的 `attachments` 端点（字段名 `file`，文件名固定 `image.<ext>`），拿到 `openai_file_id` 后替换为 `{"type":"input_image","file_id":…,"detail":…}`（`detail` 缺省补 `"auto"`）。直接把 data URL 发给上游会 422。**仅支持 JPEG/PNG/GIF/WebP**：媒体类型按别名归一（`image/jpg`、`image/pjpeg`→`image/jpeg`，`image/x-png`→`image/png`），扩展名由显式映射决定（不依赖系统 MIME 表，否则会出现无扩展名或 `.jpe` 这类上游不认的后缀，报 `Expected image type … but got none`）；其它格式（HEIC/AVIF/TIFF/BMP 等）在发出主请求前明确报错，不做格式转换。已有 `file_id`、远程 `https://` 图片、assistant 消息与工具结果里的图片原样保留；同内容图片按摘要缓存复用 file id（缓存按端点+凭据隔离，失败不缓存），并发同图合并为一次上传。上传失败在发出主请求前中止（`ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`），错误文本会脱敏凭据与图片字节。上传发生在 turn/task 标识计算之后，图片引用不会改变会话身份。
 
 SSE 中的普通文本保持流式输出；工具 envelope 等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效 envelope、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
+
+## 0.3.1 修复与恢复边界
+
+- 修复非法工具信封原样泄漏导致 Codex 连续报告 unsupported call: run_officejs。包括嵌套 JSON 中非法的单引号转义；客户端只会收到已校验的工具调用或明确错误。namespace custom 工具的输入增量也等待完整校验。
+- BPS SSE 收到终结事件立即结束，不继续等待 HTTP 连接关闭；读取超时单独报告 UPSTREAM_RESPONSE_TIMEOUT，避免被吞成不明读取错误。该修改不表示可以消除上游真正的中断或超时。
+- invalid_encrypted_content 支持 HTTP 错误和 HTTP 200 中的早期 SSE 失败。只有在文本、推理或工具输出之前，才允许清理一次并重试；SSE 探测上限为 32 个前导事件、256 KiB，普通无密文请求不探测。
+- 清理发生在 Prepare 恢复 KV 原始调用之后，保持 turn_id、agent_iteration 和真实工具结果。仅移除可选 reasoning 或有完整可读副本的协议密文字段；不递归修改工具业务参数或字符串 JSON，不改写 KV 原始记录。
+- 密文是工具结果或压缩历史唯一副本时，返回 TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE，需重新提供结果或开新会话。不会用空结果伪装恢复成功，也不会在一般 server_error 重试耗尽后盲目删密文。
 
 ## 客户端工具走原生通道（tools_via_native）
 
@@ -72,7 +80,7 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 
 ### 通路无关的历史不变量
 
-客户端视角始终与渠道无关：工具桥从不把 BPS 内部结构（`run_officejs` 传输信封等）暴露给客户端，客户端工具调用被转换成真实客户端工具调用、只携带不透明的 `call_bps_…` 别名。因此同一段对话可以按请求在 BPS 通路与原生 Codex 通路之间自由交替，**无需迁移或重写历史**。
+客户端工具调用使用标准 function/custom item 和不透明的 call_bps_ 别名。加密 reasoning、工具结果和压缩历史不保证跨账号或跨通路可解密；不能据此认为对话可以无损自由切换。BPS 的有限恢复规则见下方，原生通路仍原样转发。
 
 ### 配置
 
@@ -89,7 +97,7 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 - 需要宿主提供 HostService KV。记录按账号、上游地址及宿主隔离后的 session 标识隔离，保留 24 小时。KV 包含工具调用参数，可能含业务数据；不保存 OAuth 认证头或 refresh token。
 - 非桥接工具历史可以继续回放，但其中没有 BPS 原始 item，encrypted reasoning 的连续性只从插件接管后的新调用开始。桥接调用（`call_bps_…`）在 KV 过期或丢失后仍然报错，请开始新会话；切换账号或丢失 session/KV 状态后同理。
 - 仅桥接客户端 function/custom 工具。`image_generation`、`web_search` 等托管工具声明会移除，不会被转成并不存在的客户端函数；被移除的类型可在插件状态页查看。
-- 上游直接返回 `run_connector_action`、`update_plan`、`read_ranges` 等非信封调用时：**原样交给客户端、不中断流**（客户端自行决定如何应答），插件绝不执行也绝不伪造结果；工具目录提示已明确声明这些服务器注入工具不可用。历史里的同类调用同样原样回放。唯一仍会报错中断的是协议级损坏（缺 `call_id`、非法 JSON、违反 `tool_choice`）。
+- 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器信封转换为实际客户端工具；客户端已声明的直接调用也接受校验。无效 JSON、未知工具及错误参数类型返回 TOOL_BRIDGE_CALL_INVALID，不透传 Office 执行器、不猜测或修复可执行代码。
 - 当前不支持 compact、图片专用接口或计数接口；此版本不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片支持仅限用户消息内联图的附件化。
 - 工具结果（`function_call_output`）内嵌的图片不做附件化，按参考实现原样保留；宿主 `LiftResponsesToolOutputMedia` 会把工具结果里的图片抬升到后续用户消息，走附件化路径。
 - 每个 HTTP 请求 JSON 上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
@@ -103,12 +111,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.0.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.1.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.0.s2plugin`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.1.s2plugin`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -120,6 +128,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先停用已安装的同 ID 插件，再上传 0.2.0，保存配置并选择账号。该版本未声明完整宿主联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，最后才扩大账号范围。
+先停用已安装的同 ID 插件，再上传 0.3.1，保存配置并选择账号。该版本未声明完整宿主联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，最后才扩大账号范围。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。

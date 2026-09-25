@@ -31,7 +31,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.3.0"
+	PluginVersion = "0.3.1"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -269,8 +269,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// the bridge entirely and are forwarded verbatim to the native Codex
 	// upstream. The decision is made on the original body before any bridge
 	// rewriting so the native path sees the request exactly as the host built
-	// it, and the same conversation can alternate between the two paths per
-	// request without any history migration.
+	// it. Encrypted history is not guaranteed to be portable across channels.
 	if state.cfg.NativeFallbackEnabled() && bridge.NeedsNativeUpstream(body) != "" {
 		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
@@ -338,7 +337,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	p.recentPaths.add(requestModel(body), "bps")
 	// execute prepares and sends one BPS attempt. The code names the
 	// pre-upstream failure class for the error frame.
-	execute := func(rawBody []byte) (*http.Response, *bridge.Request, string, error) {
+	execute := func(rawBody []byte, stripEncrypted bool) (*http.Response, *bridge.Request, string, error) {
 		adapted, err := bridge.Prepare(requestCtx, rawBody, scope, store, state.cfg.ModelMapping)
 		if err != nil {
 			return nil, nil, "TOOL_BRIDGE_REQUEST_INVALID", err
@@ -355,6 +354,12 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			return nil, nil, "ATTACHMENT_UPLOAD_FAILED", err
 		}
 		adapted.Body = rewritten
+		if stripEncrypted {
+			adapted.Body, err = bridge.StripEncryptedContent(adapted.Body)
+			if err != nil {
+				return nil, nil, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", err
+			}
+		}
 		request, err := p.buildRequest(requestCtx, start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(adapted.Body)))
 		if err != nil {
 			return nil, nil, "PLUGIN_REQUEST_INVALID", err
@@ -366,81 +371,51 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		resp, err := state.client.Do(request)
 		return resp, adapted, "", err
 	}
-	response, adapted, code, err := execute(body)
+	response, adapted, code, err := execute(body, false)
 	if err != nil {
 		return p.sendError(stream, code, err.Error(), code == "")
 	}
-	// Encrypted reasoning and function outputs are channel-scoped: a history
-	// mixed across native and BPS turns replays ciphertexts this backend cannot
-	// read and fails the whole response with invalid_encrypted_content. Retry
-	// once without them instead of dying on a poisoned conversation. The
-	// upstream's generic "An error occurred while processing" invites a retry
-	// too, and is intermittent on long agent histories.
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		payload, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		text := string(payload)
-		restore := func() { response.Body = io.NopCloser(bytes.NewReader(payload)) }
-		if strings.Contains(text, "invalid_encrypted_content") {
-			// Channel-scoped ciphertexts from mixed native/BPS history poison
-			// the response. Strip them and retry once: repeating cannot help.
-			if stripped, stripErr := bridge.StripEncryptedContent(body); stripErr == nil && !bytes.Equal(stripped, body) {
-				if retry, retryAdapted, _, retryErr := execute(stripped); retryErr == nil {
-					response.Body.Close()
-					response, adapted = retry, retryAdapted
-				} else {
-					restore()
-				}
-			} else {
-				restore()
-			}
-		} else if strings.Contains(text, "An error occurred while processing") {
-			// The upstream explicitly invites a retry for this transient
-			// processing failure; it is intermittent on long agent histories.
-			bodyConsumed := true
-			for i := 0; i < maxTransientRetries && requestCtx.Err() == nil; i++ {
-				select {
-				case <-requestCtx.Done():
-				case <-time.After(transientRetryDelay):
-				}
-				if requestCtx.Err() != nil {
-					break
-				}
-				retry, retryAdapted, _, retryErr := execute(body)
-				if retryErr != nil {
-					break
-				}
+	// Retry only pre-output errors; include ciphertext restored from KV.
+	encryptedRetried := false
+	for transientRetries := 0; ; {
+		// Ordinary streams must publish headers immediately, even if the
+		// upstream has not produced an event yet. Probe only recoverable history.
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") && (encryptedRetried || !bytes.Contains(adapted.Body, []byte("\"encrypted_content\""))) {
+			break
+		}
+		errorCode, message, probeErr := probeUpstreamFailure(response)
+		if probeErr != nil {
+			response.Body.Close()
+			return p.sendError(stream, upstreamResponseReadErrorCode(probeErr, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(probeErr), true)
+		}
+		if errorCode == "invalid_encrypted_content" && !encryptedRetried {
+			cleaned, cleanErr := bridge.StripEncryptedContent(adapted.Body)
+			if cleanErr != nil {
 				response.Body.Close()
-				response, adapted = retry, retryAdapted
-				if response.StatusCode >= 200 && response.StatusCode < 300 {
-					bodyConsumed = false
-					break
-				}
-				payload, _ = io.ReadAll(io.LimitReader(response.Body, 1<<20))
+				return p.sendError(stream, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", cleanErr.Error(), true)
+			}
+			if bytes.Equal(cleaned, adapted.Body) {
+				break
+			}
+			encryptedRetried = true
+		} else if response.StatusCode >= 400 && errorCode == "server_error" && strings.Contains(message, "An error occurred while processing") && transientRetries < maxTransientRetries {
+			transientRetries++
+			select {
+			case <-requestCtx.Done():
 				response.Body.Close()
-				text = string(payload)
-				if !strings.Contains(text, "An error occurred while processing") {
-					break // a different failure; surface it instead of retrying
-				}
-			}
-			if bodyConsumed {
-				// Repeated identical failures are not transient: give the
-				// request one last shot without channel-scoped ciphertexts,
-				// which can surface as this generic server error too.
-				if strings.Contains(string(body), "encrypted_content") {
-					if stripped, stripErr := bridge.StripEncryptedContent(body); stripErr == nil && !bytes.Equal(stripped, body) {
-						if retry, retryAdapted, _, retryErr := execute(stripped); retryErr == nil {
-							response.Body.Close()
-							response, adapted = retry, retryAdapted
-							bodyConsumed = false
-						}
-					}
-				}
-			}
-			if bodyConsumed {
-				restore()
+				return p.sendError(stream, upstreamResponseReadErrorCode(requestCtx.Err(), "UPSTREAM_REQUEST_FAILED"), upstreamResponseReadErrorMessage(requestCtx.Err()), true)
+			case <-time.After(transientRetryDelay):
 			}
 		} else {
-			restore()
+			break
+		}
+		response.Body.Close()
+		response, adapted, code, err = execute(body, encryptedRetried)
+		if err != nil {
+			if code == "" {
+				code = "UPSTREAM_REQUEST_FAILED"
+			}
+			return p.sendError(stream, code, "上游重试失败", true)
 		}
 	}
 	defer response.Body.Close()
@@ -456,7 +431,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			}
 			converted, convertErr := adapted.Response(requestCtx, raw)
 			if convertErr != nil {
-				return p.sendError(stream, "TOOL_BRIDGE_RESPONSE_FAILED", convertErr.Error(), true)
+				return p.sendError(stream, upstreamResponseReadErrorCode(convertErr, "TOOL_BRIDGE_RESPONSE_FAILED"), convertErr.Error(), true)
 			}
 			response.Body.Close()
 			response.Body = io.NopCloser(bytes.NewReader(converted))
@@ -481,7 +456,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
 		if err := adapted.Stream(requestCtx, response.Body, emit); err != nil {
-			return p.sendError(stream, "TOOL_BRIDGE_STREAM_FAILED", err.Error(), true)
+			return p.sendError(stream, upstreamResponseReadErrorCode(err, "TOOL_BRIDGE_STREAM_FAILED"), upstreamResponseReadErrorMessage(err), true)
 		}
 	} else {
 		buffer := make([]byte, chunkSize)
@@ -496,7 +471,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 				break
 			}
 			if err != nil {
-				return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "读取上游响应失败", true)
+				return p.sendError(stream, upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(err), true)
 			}
 		}
 	}
@@ -581,7 +556,7 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 			break
 		}
 		if err != nil {
-			return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "读取上游响应失败", true)
+			return p.sendError(stream, upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(err), true)
 		}
 	}
 	succeeded = response.StatusCode >= 200 && response.StatusCode < 300
