@@ -127,3 +127,20 @@ func TestRawCustomTransportRejectsInvalidMarkersAndKinds(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestLegacyRawCustomTransportUsesExactSummaryAndCatalogValidation(t *testing.T) {
+	r := customRequest(t)
+	source := "text(await tools.exec_command({cmd: \"pwd\"}));"
+	item := rawCustomItem(object{"summary": encoded("Run client tool functions.exec"), "code": encoded(source)})
+	call, err := r.convertCall(context.Background(), item)
+	require.NoError(t, err)
+	out, _ := parseObject(call)
+	require.Equal(t, "custom_tool_call", stringValue(out["type"]))
+	require.Equal(t, "functions", stringValue(out["namespace"]))
+	require.Equal(t, source, stringValue(out["input"]))
+
+	for _, summary := range []string{"Run client tool functions.read_file", "Run client tool functions.exec extra"} {
+		_, err := r.convertCall(context.Background(), rawCustomItem(object{"summary": encoded(summary), "code": encoded(source)}))
+		require.Error(t, err, summary)
+	}
+}
