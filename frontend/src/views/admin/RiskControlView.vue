@@ -704,7 +704,7 @@
                     <div class="mt-3 max-h-52 space-y-2 overflow-y-auto pr-1">
                       <div v-for="score in moderationScoreRows" :key="score.category">
                         <div class="mb-1 flex items-center justify-between gap-3 text-xs">
-                          <span class="truncate text-gray-600 dark:text-gray-300">{{ moderationCategoryLabel(score.category) }}</span>
+                          <span class="truncate text-gray-600 dark:text-gray-300">{{ score.category }}</span>
                           <span class="font-mono text-gray-500 dark:text-gray-400">{{ percent(score.score) }} / {{ percent(score.threshold) }}</span>
                         </div>
                         <div class="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
@@ -952,7 +952,7 @@
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <label class="block truncate text-sm font-semibold text-gray-900 dark:text-white" :for="`risk-threshold-${row.category}`">
-                      {{ moderationCategoryLabel(row.category) }}
+                      {{ row.category }}
                     </label>
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                       {{ t('admin.riskControl.riskThresholdDefault', { value: formatThresholdPercent(row.defaultValue) }) }}
@@ -1222,20 +1222,8 @@ const riskThresholdDefaults: Record<string, number> = {
   'sexual/minors': 65,
   violence: 95,
   'violence/graphic': 95,
-  cybersecurity: 65,
-  cyber_abuse: 65,
-  biochemistry: 65,
 }
 const riskThresholdCategories = Object.keys(riskThresholdDefaults)
-const moderationCategoryLabels: Record<string, string> = {
-  cybersecurity: 'admin.riskControl.moderationCategories.cybersecurity',
-  cyber_abuse: 'admin.riskControl.moderationCategories.cyberAbuse',
-  biochemistry: 'admin.riskControl.moderationCategories.biochemistry',
-}
-const moderationCategoryLabel = (category: string): string => {
-  const key = moderationCategoryLabels[category]
-  return key ? t(key) : category
-}
 
 const { t } = useI18n()
 const appStore = useAppStore()
