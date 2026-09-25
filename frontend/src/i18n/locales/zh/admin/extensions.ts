@@ -134,6 +134,9 @@ export default {
       sexualMinors: '未成年人色情',
       violence: '暴力',
       violenceGraphic: '血腥暴力',
+      cybersecurity: '网络安全',
+      cyberAbuse: '网络滥用',
+      biochemistry: '生物化学',
     },
     keywordCategories: {
       custom: '自定义',

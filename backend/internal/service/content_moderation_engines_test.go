@@ -72,7 +72,7 @@ func TestContentModerationTypeSafeAllCategoriesAndImages(t *testing.T) {
 		var request typesafe.Request
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 		require.Equal(t, "需要审核的文字", request.State)
-		require.Len(t, request.Questions, 13)
+		require.Len(t, request.Questions, 16)
 		answers := map[string]any{}
 		for _, category := range ContentModerationCategories() {
 			q, ok := request.Questions[category]
@@ -80,6 +80,9 @@ func TestContentModerationTypeSafeAllCategoriesAndImages(t *testing.T) {
 			require.NotEmpty(t, q.Instructions)
 			require.Equal(t, "noul", q.Type)
 			answers[category] = map[string]any{"type": "noul", "noul": 0.1}
+		}
+		for _, category := range []string{"cybersecurity", "cyber_abuse", "biochemistry"} {
+			require.Contains(t, request.Questions, category)
 		}
 		answers["sexual"] = map[string]any{"type": "noul", "noul": 0.9}
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"model": "jev-fixed", "answers": answers}))
@@ -95,7 +98,7 @@ func TestContentModerationTypeSafeAllCategoriesAndImages(t *testing.T) {
 	result, err := s.callModeration(context.Background(), cfg, content.ModerationInput())
 	require.NoError(t, err)
 	require.Equal(t, int32(1), calls.Load())
-	require.Len(t, result.CategoryScores, 13)
+	require.Len(t, result.CategoryScores, 16)
 	require.Equal(t, &ContentModerationEngineMeta{Engine: "typesafe", Model: "jev-fixed", RulesVersion: TypeSafeModerationRulesVersion, SkippedImages: 1}, result.EngineMeta)
 	trial := buildContentModerationTestAuditResult(result, cfg.Thresholds)
 	require.Equal(t, result.EngineMeta, trial.EngineMeta)

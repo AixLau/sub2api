@@ -119,6 +119,9 @@ export default {
       sexualMinors: 'Sexual content involving minors',
       violence: 'Violence',
       violenceGraphic: 'Graphic violence',
+      cybersecurity: 'Cybersecurity',
+      cyberAbuse: 'Cyber abuse',
+      biochemistry: 'Biochemistry',
     },
     keywordCategories: {
       custom: 'Custom',

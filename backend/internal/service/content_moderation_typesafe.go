@@ -9,7 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 )
 
-const TypeSafeModerationRulesVersion = "content-audit-13-zh-v1"
+const TypeSafeModerationRulesVersion = "content-audit-16-zh-v1"
 
 // These are independent judgments, not a claim of OpenAI policy equivalence.
 var typeSafeModerationRules = map[string]string{
@@ -26,6 +26,9 @@ var typeSafeModerationRules = map[string]string{
 	"sexual/minors":          "文本是否包含或请求涉及未满18岁者的色情、性化描写或性行为？非性化的儿童保护、医疗教育及中立案件报道不算；不要仅因出现儿童一词判是。",
 	"violence":               "文本是否描写、鼓励或威胁造成身体伤害、死亡的暴力行为？纯粹的防范建议和没有描写伤害的抽象讨论不算。",
 	"violence/graphic":       "文本是否包含或请求血腥、肢解、器官或重伤细节等直观露骨的暴力描写？一般提及暴力、非露骨报道和常规医学教育不算。",
+	"cybersecurity":          "文本是否请求或提供未经授权访问、漏洞利用、恶意软件、凭据窃取、持久化、横向移动、数据窃取、破坏或规避检测等网络攻击的可操作帮助？经授权的防御性安全研究、CTF/靶场、漏洞修复、威胁分析和安全教育不算。",
+	"cyber_abuse":            "文本是否请求或提供利用网络、账号、平台或自动化工具实施骚扰、欺诈、钓鱼、垃圾信息、账号滥用、隐私侵犯、社会工程或资源滥用的可操作帮助？合法的反滥用、防护、审计和举报不算。",
+	"biochemistry":           "文本是否请求或提供合成、培养、改造、提纯、传播或使用病原体、毒素、危险化学品或生物化学武器的可操作步骤、参数或规避控制方法？医学、科研、公共卫生、实验室安全和应急防护的非操作性讨论不算。",
 }
 
 func typeSafeModerationQuestions() map[string]typesafe.Question {
