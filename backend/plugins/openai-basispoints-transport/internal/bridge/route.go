@@ -33,7 +33,7 @@ func NeedsNativeUpstream(body []byte) (reason string) {
 		return ""
 	}
 	switch {
-	case hasImageInput(root):
+	case hasNativeImageInput(root):
 		reason = RouteImageInput
 	case hasImageGeneration(root):
 		reason = RouteImageGeneration
@@ -73,12 +73,24 @@ func hasEncryptedAgentMessage(root object) bool {
 	return false
 }
 
-// hasImageInput reports whether an input_image content part appears anywhere
-// in the request input. The reference form (data URL, https URL, url dict, or
-// file_id) is irrelevant; only the part type matters.
-func hasImageInput(root object) bool {
+// HasImageInput detects vision content in messages and tool results.
+func HasImageInput(body []byte) bool {
+	root, err := parseObject(body)
+	if err != nil {
+		return false
+	}
 	return walkJSON(root["input"], func(item object) bool {
 		return stringValue(item["type"]) == "input_image"
+	})
+}
+
+// Inline images can be uploaded under the BPS account before forwarding.
+// Remote URLs and caller-provided file IDs retain the native route: a file ID
+// from another channel is not proof that BPS can access the attachment.
+func hasNativeImageInput(root object) bool {
+	return walkJSON(root["input"], func(item object) bool {
+		return stringValue(item["type"]) == "input_image" &&
+			(stringValue(item["file_id"]) != "" || !isInlineImageURL(inlineImageURL(item)))
 	})
 }
 

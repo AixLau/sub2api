@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"mime"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -113,93 +115,115 @@ func CanonicalImageType(mediaType string) (string, string, bool) {
 	return canonical, extension, ok
 }
 
-// RewriteInlineImages replaces data-URL input_image parts in user messages with
-// file_id references produced by upload. Existing file ids, remote URLs,
-// assistant messages and tool outputs are left untouched, and the body is
-// returned unchanged when no inline image is present. cacheNamespace isolates
-// the upload cache per endpoint and credential.
+// RewriteInlineImages uploads inline input_image parts throughout input,
+// including nested tool results. Remote URLs and existing file IDs are kept
+// unchanged. cacheNamespace isolates uploads per endpoint and credential.
 func RewriteInlineImages(ctx context.Context, body []byte, cacheNamespace string, upload UploadFunc) ([]byte, error) {
 	root, err := parseObject(body)
 	if err != nil {
 		return nil, err
 	}
-	var input []json.RawMessage
-	if len(root["input"]) == 0 || json.Unmarshal(root["input"], &input) != nil {
-		return body, nil
-	}
-	changed := false
-	for i, raw := range input {
-		item, err := parseObject(raw)
-		if err != nil {
-			continue
-		}
-		if stringValue(item["role"]) != "user" {
-			continue
-		}
-		if typ := stringValue(item["type"]); typ != "" && typ != "message" {
-			continue
-		}
-		var parts []json.RawMessage
-		if len(item["content"]) == 0 || json.Unmarshal(item["content"], &parts) != nil {
-			continue
-		}
-		updated := append([]json.RawMessage(nil), parts...)
-		partsChanged := false
-		for j, partRaw := range parts {
-			part, err := parseObject(partRaw)
-			if err != nil {
-				continue
-			}
-			if stringValue(part["type"]) != "input_image" {
-				continue
-			}
-			imageURL := stringValue(part["image_url"])
-			if imageURL == "" {
-				// Chat Completions style {"url": "data:..."} parts.
-				if nested, err := parseObject(part["image_url"]); err == nil {
-					imageURL = stringValue(nested["url"])
-				}
-			}
-			if len(imageURL) < 5 || !strings.EqualFold(imageURL[:5], "data:") {
-				continue
-			}
-			if stringValue(part["file_id"]) != "" {
-				return nil, errors.New("input_image 不能同时包含 image_url 和 file_id")
-			}
-			mediaType, data, err := decodeInlineImage(imageURL)
-			if err != nil {
-				return nil, err
-			}
-			key := attachmentCacheKey(cacheNamespace, mediaType, data)
-			fileID, err := attachmentUploads.getOrUpload(key, func() (string, error) {
-				return upload(ctx, mediaType, data)
-			})
-			if err != nil {
-				return nil, err
-			}
-			replaced := object{}
-			for name, value := range part {
-				replaced[name] = value
-			}
-			delete(replaced, "image_url")
-			replaced["file_id"] = encoded(fileID)
-			if _, exists := replaced["detail"]; !exists {
-				replaced["detail"] = encoded("auto")
-			}
-			updated[j] = encoded(replaced)
-			partsChanged = true
-		}
-		if partsChanged {
-			item["content"] = encoded(updated)
-			input[i] = encoded(item)
-			changed = true
-		}
+	input, changed, err := rewriteImageParts(ctx, root["input"], cacheNamespace, upload)
+	if err != nil {
+		return nil, err
 	}
 	if !changed {
 		return body, nil
 	}
-	root["input"] = encoded(input)
+	root["input"] = input
 	return json.Marshal(root)
+}
+
+func inlineImageURL(part object) string {
+	if value := stringValue(part["image_url"]); value != "" {
+		return value
+	}
+	if nested, err := parseObject(part["image_url"]); err == nil {
+		return stringValue(nested["url"])
+	}
+	return ""
+}
+
+func isInlineImageURL(value string) bool {
+	return len(value) >= 5 && strings.EqualFold(value[:5], "data:")
+}
+
+func rewriteImageParts(ctx context.Context, raw json.RawMessage, namespace string, upload UploadFunc) (json.RawMessage, bool, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return raw, false, nil
+	}
+	switch raw[0] {
+	case '{':
+		item, err := parseObject(raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if stringValue(item["type"]) == "input_image" {
+			imageURL := inlineImageURL(item)
+			if !isInlineImageURL(imageURL) {
+				return raw, false, nil
+			}
+			if stringValue(item["file_id"]) != "" {
+				return nil, false, errors.New("input_image 不能同时包含 image_url 和 file_id")
+			}
+			mediaType, data, err := decodeInlineImage(imageURL)
+			if err != nil {
+				return nil, false, err
+			}
+			key := attachmentCacheKey(namespace, mediaType, data)
+			fileID, err := attachmentUploads.getOrUpload(key, func() (string, error) { return upload(ctx, mediaType, data) })
+			if err != nil {
+				return nil, false, err
+			}
+			delete(item, "image_url")
+			item["file_id"] = encoded(fileID)
+			if _, exists := item["detail"]; !exists {
+				item["detail"] = encoded("auto")
+			}
+			return encoded(item), true, nil
+		}
+		changed := false
+		// Sort keys so upload order is deterministic across retries.
+		keys := make([]string, 0, len(item))
+		for key := range item {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			updated, childChanged, err := rewriteImageParts(ctx, item[key], namespace, upload)
+			if err != nil {
+				return nil, false, err
+			}
+			if childChanged {
+				item[key] = updated
+				changed = true
+			}
+		}
+		if changed {
+			return encoded(item), true, nil
+		}
+	case '[':
+		var items []json.RawMessage
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return nil, false, err
+		}
+		changed := false
+		for i, item := range items {
+			updated, childChanged, err := rewriteImageParts(ctx, item, namespace, upload)
+			if err != nil {
+				return nil, false, err
+			}
+			if childChanged {
+				items[i] = updated
+				changed = true
+			}
+		}
+		if changed {
+			return encoded(items), true, nil
+		}
+	}
+	return raw, false, nil
 }
 
 func attachmentCacheKey(namespace, mediaType string, data []byte) [sha256.Size]byte {

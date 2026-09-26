@@ -18,7 +18,7 @@ import (
 )
 
 // The official contract: data-URL images in user messages are uploaded as a
-// single multipart "file" field to /attachments next to /responses and then
+// multipart "file" field with purpose=vision to /attachments next to /responses and then
 // referenced by openai_file_id.
 func TestForwardUploadsInlineImagesAsAttachments(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -44,11 +44,18 @@ func TestForwardUploadsInlineImagesAsAttachments(t *testing.T) {
 			require.Equal(t, "image/png", part.Header.Get("Content-Type"))
 			uploaded, err = io.ReadAll(part)
 			require.NoError(t, err)
+			part, err = reader.NextPart()
+			require.NoError(t, err)
+			require.Equal(t, "purpose", part.FormName())
+			purpose, err := io.ReadAll(part)
+			require.NoError(t, err)
+			require.Equal(t, "vision", string(purpose))
 			_, err = reader.NextPart()
 			require.Equal(t, io.EOF, err)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"openai_file_id":"file-uploaded"}`))
 		case "/responses":
+			require.Equal(t, "true", req.Header.Get("Copilot-Vision-Request"))
 			responses.Add(1)
 			raw, err := io.ReadAll(req.Body)
 			require.NoError(t, err)
@@ -63,7 +70,7 @@ func TestForwardUploadsInlineImagesAsAttachments(t *testing.T) {
 
 	store := &testHostKV{values: map[string][]byte{}}
 	c := clientForTest(t, store, "")
-	config, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "native_fallback": false})
+	config, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "native_fallback": true})
 	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: config})
 	require.NoError(t, err)
 	require.True(t, applied.Applied)
@@ -113,7 +120,7 @@ func TestForwardAttachmentFailureStopsBeforeResponses(t *testing.T) {
 	defer upstream.Close()
 
 	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
-	config, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "native_fallback": false})
+	config, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "native_fallback": true})
 	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: config})
 	require.NoError(t, err)
 	require.True(t, applied.Applied)
@@ -139,4 +146,99 @@ func parseTestObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	var obj map[string]json.RawMessage
 	err := json.Unmarshal(raw, &obj)
 	return obj, err
+}
+
+// Exercise the default route through gRPC, including replayed tool media and
+// requests that combine inline pictures with capabilities BPS cannot preserve.
+func TestVisionRoutingPreservesCapabilities(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var uploads atomic.Int32
+	type hit struct {
+		body   []byte
+		vision string
+		native bool
+	}
+	hits := make(chan hit, 20)
+	bps := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if req.URL.Path == "/attachments" {
+			uploads.Add(1)
+			io.WriteString(w, `{"openai_file_id":"file-vision"}`)
+			return
+		}
+		raw, _ := io.ReadAll(req.Body)
+		hits <- hit{body: raw, vision: req.Header.Get("Copilot-Vision-Request")}
+		io.WriteString(w, `{"id":"resp_bps","status":"completed","output":[]}`)
+	}))
+	defer bps.Close()
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		raw, _ := io.ReadAll(req.Body)
+		hits <- hit{body: raw, vision: req.Header.Get("Copilot-Vision-Request"), native: true}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"resp_native","status":"completed","output":[]}`)
+	}))
+	defer native.Close()
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	cfg, _ := json.Marshal(map[string]any{"upstream_base_url": bps.URL, "native_upstream_base_url": native.URL, "proxy_mode": "disabled", "extra_headers": map[string]string{"Copilot-Vision-Request": "false"}})
+	result, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	inline := map[string]any{"type": "input_image", "image_url": "data:image/png;base64,c2NyZWVuc2hvdA=="}
+	toolInput := []any{
+		map[string]any{"type": "function_call", "name": "screenshot", "call_id": "call_screen", "arguments": "{}"},
+		map[string]any{"type": "function_call_output", "call_id": "call_screen", "output": []any{inline}},
+	}
+	message := func(parts ...any) []any { return []any{map[string]any{"role": "user", "content": parts}} }
+	cases := []struct {
+		name   string
+		input  any
+		extra  map[string]any
+		native bool
+		reason string
+	}{
+		{name: "nested tool screenshot", input: toolInput},
+		{name: "replayed tool screenshot", input: toolInput},
+		{name: "plain text after picture", input: "hello"},
+		{name: "schema with inline picture", input: message(inline), extra: map[string]any{"text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "answer", "schema": map[string]any{"type": "object"}, "strict": true}}}, native: true, reason: "structured_output"},
+		{name: "image generation with picture", input: message(inline), extra: map[string]any{"tools": []any{map[string]any{"type": "image_generation"}}}, native: true, reason: "image_generation"},
+		{name: "forced hosted tool with picture", input: message(inline), extra: map[string]any{"tool_choice": map[string]any{"type": "web_search"}}, native: true, reason: "hosted_tool_choice"},
+		{name: "mixed external file and inline", input: message(inline, map[string]any{"type": "input_image", "file_id": "file-external"}), native: true, reason: "image_input"},
+		{name: "remote URL", input: message(map[string]any{"type": "input_image", "image_url": "https://example.test/screen.png"}), native: true, reason: "image_input"},
+		{name: "same session returns to BPS", input: "continue without image references"},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{"model": "gpt-6-astra", "input": tc.input}
+			for k, v := range tc.extra {
+				body[k] = v
+			}
+			raw, err := json.Marshal(body)
+			require.NoError(t, err)
+			_, _, failure := forwardForTest(t, c, raw, ctx)
+			require.Nil(t, failure)
+			got := <-hits
+			require.Equal(t, tc.native, got.native)
+			if tc.native {
+				require.Equal(t, raw, got.body)
+				require.Empty(t, got.vision)
+			} else if _, plainText := tc.input.(string); plainText {
+				require.Empty(t, got.vision)
+			} else {
+				require.Equal(t, "true", got.vision)
+				require.Contains(t, string(got.body), `"file_id":"file-vision"`)
+				require.NotContains(t, string(got.body), "data:image")
+				require.Contains(t, string(got.body), `"call_id":"call_screen"`)
+			}
+			entries := completedRequestsForTest(t, c, ctx, i+1)
+			last := entries[len(entries)-1]
+			if tc.native {
+				require.Equal(t, tc.reason, last.Reason)
+			} else {
+				require.Equal(t, "selected", last.Reason)
+			}
+			require.Len(t, last.RouteHistory, 1)
+		})
+	}
+	require.Equal(t, int32(1), uploads.Load(), "replays reuse attachments and native requests must not upload")
 }

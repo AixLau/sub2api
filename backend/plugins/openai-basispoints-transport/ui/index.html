@@ -67,7 +67,7 @@
           <small id="bps-models-help">填写插件收到的请求模型名，区分大小写并精确匹配，不支持通配符；在模型映射及去除 -excel 后缀之前匹配，最多 64 个。选择“仅指定模型”且名单为空时，全部走原生端点。名单内的请求仍遵循下方图片和工具路由规则。</small>
         </label>
 
-        <label class="checkbox"><input id="native_fallback" type="checkbox" /> <span>启用原生通道回退（图片/图片生成等走原生端点）</span></label>
+        <label class="checkbox"><input id="native_fallback" type="checkbox" /> <span>启用原生通道回退（外部图片引用、图片生成、结构化输出等）</span></label>
 
         <label class="checkbox"><input id="tools_via_native" type="checkbox" /> <span>携带客户端工具的请求走原生通道（exec_command 等原生可调）</span></label>
 
@@ -98,7 +98,7 @@
       <details class="diagnostics">
         <summary>最近 100 条已完成请求链路</summary>
         <p>每个请求一条，含请求/会话/响应 ID、最终通道、原因、重试及完整通道切换历史；不包含正文。按完成时间保留，重启后清空。未进入插件的宿主直连请求不计入；跨重启记录请查询宿主日志 bps.request_finished。</p>
-        <p>通道按每次请求判断，不按会话锁定；历史图片和图片工具声明也可能触发原生通道。</p>
+        <p>通道按每次请求判断，不按会话锁定；内嵌图片及截图上传后走 BPS，外部图片引用、图片生成和结构化输出等仍可能走原生。</p>
         <pre id="requests-detail">暂无已完成请求</pre>
         <strong>当前路由配置</strong>
         <pre id="routing-policy">暂无路由配置</pre>

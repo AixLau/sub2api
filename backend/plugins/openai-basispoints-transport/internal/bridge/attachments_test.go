@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -66,8 +67,8 @@ func TestImageUploadPreservesOtherInputKinds(t *testing.T) {
 			map[string]any{"type": "input_image", "file_id": "file-existing", "detail": "high"},
 			map[string]any{"type": "input_image", "image_url": "https://example.test/image.png", "detail": "auto"},
 		}},
-		map[string]any{"type": "function_call_output", "call_id": "call_1", "output": []any{map[string]any{"type": "input_image", "image_url": imageDataURL()}}},
-		map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "input_image", "image_url": imageDataURL()}}},
+		map[string]any{"type": "function_call_output", "call_id": "call_1", "output": []any{map[string]any{"type": "input_image", "file_id": "file-existing"}}},
+		map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "input_image", "file_id": "file-existing"}}},
 	}}
 	before, err := json.Marshal(source)
 	require.NoError(t, err)
@@ -98,6 +99,38 @@ func TestInvalidInlineImagesFailBeforeUpload(t *testing.T) {
 		_, err = RewriteInlineImages(context.Background(), raw, "ns-invalid", upload)
 		require.Error(t, err, part)
 	}
+}
+
+func TestInlineImagesInNestedToolResults(t *testing.T) {
+	input := []any{
+		map[string]any{"type": "function_call_output", "call_id": "call_1", "output": []any{
+			map[string]any{"type": "input_text", "text": "screenshot"},
+			map[string]any{"type": "input_image", "image_url": imageDataURL(), "detail": "high"},
+		}},
+		map[string]any{"role": "assistant", "content": []any{
+			map[string]any{"type": "input_image", "image_url": map[string]any{"url": imageDataURL()}},
+		}},
+	}
+	raw := mustJSON(t, map[string]any{"input": input})
+	uploads := 0
+	upload := func(context.Context, string, []byte) (string, error) {
+		uploads++
+		return "file-nested", nil
+	}
+	out, err := RewriteInlineImages(context.Background(), raw, "ns-nested", upload)
+	require.NoError(t, err)
+	require.Equal(t, 1, uploads)
+	require.NotContains(t, string(out), "data:image")
+	require.NotContains(t, string(out), "image_url")
+	require.Equal(t, 2, strings.Count(string(out), "file-nested"))
+	require.Contains(t, string(out), `"call_id":"call_1"`)
+	require.Contains(t, string(out), `"text":"screenshot"`)
+	require.Contains(t, string(out), `"detail":"high"`)
+	// Replaying the original data URLs must reuse the IDs, too.
+	again, err := RewriteInlineImages(context.Background(), raw, "ns-nested", upload)
+	require.NoError(t, err)
+	require.JSONEq(t, string(out), string(again))
+	require.Equal(t, 1, uploads)
 }
 
 func TestImageTypesAreCanonicalizedAndNamed(t *testing.T) {

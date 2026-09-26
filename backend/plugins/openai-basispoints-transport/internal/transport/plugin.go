@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.5"
+	PluginVersion = "0.4.6"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -361,6 +361,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		request.ContentLength = int64(len(adapted.Body))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept-Encoding", "identity")
+		if bridge.HasImageInput(adapted.Body) {
+			request.Header.Set("Copilot-Vision-Request", "true")
+		} else {
+			request.Header.Del("Copilot-Vision-Request")
+		}
 		markStarted()
 		diagnostic.attempt()
 		resp, err := state.client.Do(request)
@@ -850,6 +855,9 @@ func (p *Plugin) uploadImage(ctx context.Context, endpoint string, cfg plugincon
 		return "", errors.New("附件表单编码失败")
 	}
 	if _, err := part.Write(data); err != nil {
+		return "", errors.New("附件表单编码失败")
+	}
+	if err := writer.WriteField("purpose", "vision"); err != nil {
 		return "", errors.New("附件表单编码失败")
 	}
 	if err := writer.Close(); err != nil {

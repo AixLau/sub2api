@@ -75,7 +75,7 @@ func TestNativeRouteSelection(t *testing.T) {
 
 	tools := json.RawMessage(`[{"type":"function","name":"get_weather","parameters":{"type":"object"}}]`)
 
-	// Case A: an input_image part routes to NATIVE and is forwarded byte-identical
+	// Case A: a caller-provided file_id routes to NATIVE and is forwarded byte-identical
 	// (no wire-shape rewrite, no tool bridging, no metadata injection).
 	apply(true, false)
 	imageBody, err := json.Marshal(map[string]any{
@@ -83,7 +83,7 @@ func TestNativeRouteSelection(t *testing.T) {
 		"input": []any{map[string]any{
 			"type": "message", "role": "user",
 			"content": []any{
-				map[string]any{"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="},
+				map[string]any{"type": "input_image", "file_id": "file-native"},
 			},
 		}},
 		"tools": tools,
@@ -357,7 +357,7 @@ func TestRecentCompletedRequestHistory(t *testing.T) {
 	imageBody, _ := json.Marshal(map[string]any{
 		"model": "gpt-6-astra",
 		"input": []any{map[string]any{"type": "message", "role": "user", "content": []any{
-			map[string]any{"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo="},
+			map[string]any{"type": "input_image", "file_id": "file-native"},
 		}}},
 	})
 	_, _, failure = forwardForTest(t, c, imageBody, ctx)

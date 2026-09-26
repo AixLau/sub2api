@@ -15,11 +15,11 @@ func TestNeedsNativeUpstream(t *testing.T) {
 		body string
 		want string
 	}{
-		// ---- image_input triggers: an input_image part anywhere in input ----
+		// Inline images stay on BPS; external references still require native.
 		{
 			name: "image_input data URL in message content",
 			body: `{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"},{"type":"input_image","image_url":"data:image/png;base64,AAA"}]}]}`,
-			want: RouteImageInput,
+			want: "",
 		},
 		{
 			name: "image_input https URL in message content",
@@ -29,7 +29,7 @@ func TestNeedsNativeUpstream(t *testing.T) {
 		{
 			name: "image_input url dict form",
 			body: `{"input":[{"type":"message","role":"user","content":[{"type":"input_image","image_url":{"url":"data:image/png;base64,AAA"}}]}]}`,
-			want: RouteImageInput,
+			want: "",
 		},
 		{
 			name: "image_input file_id form",
@@ -39,7 +39,7 @@ func TestNeedsNativeUpstream(t *testing.T) {
 		{
 			name: "image_input nested in function_call_output output array",
 			body: `{"input":[{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_image","image_url":"data:image/png;base64,AAA"}]}]}`,
-			want: RouteImageInput,
+			want: "",
 		},
 		{
 			name: "image_input deep in nested content",
@@ -243,7 +243,7 @@ func TestNeedsNativeUpstreamPriority(t *testing.T) {
 		"tools": ` + routeClientTools + `,
 		"input": [{"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AAA"}]}]
 	}`
-	require.Equal(t, RouteImageInput, NeedsNativeUpstream([]byte(body)))
+	require.Equal(t, RouteHostedToolChoice, NeedsNativeUpstream([]byte(body)))
 }
 
 func TestEncryptedAgentMessageRoutesNative(t *testing.T) {
