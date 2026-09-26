@@ -33,13 +33,14 @@ describe('PluginAccountScopeDialog', () => {
     })
   })
 
-  it('loads only OpenAI OAuth accounts and confirms the exact selection', async () => {
+  it.each([false, true])('confirms account additions and removals (editing=%s)', async (editing) => {
     const wrapper = mount(PluginAccountScopeDialog, {
       props: {
         show: true,
         pluginName: 'Transport',
         initialAccountIds: [9],
         submitting: false,
+        editing,
       },
       global: {
         stubs: {
@@ -61,9 +62,15 @@ describe('PluginAccountScopeDialog', () => {
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
     expect(checkboxes).toHaveLength(3)
     expect((checkboxes[2].element as HTMLInputElement).checked).toBe(true)
+    const submit = wrapper.get('[data-test="confirm-plugin-accounts"]')
+    expect(submit.text()).toContain(editing ? 'admin.plugins.saveSelectedAccounts' : 'admin.plugins.enableSelectedAccounts')
+    await checkboxes[2].trigger('change')
+    expect(submit.attributes('disabled')).toBeDefined()
     await checkboxes[1].trigger('change')
+    expect(submit.attributes('disabled')).toBeUndefined()
     await wrapper.get('[data-test="confirm-plugin-accounts"]').trigger('click')
 
-    expect(wrapper.emitted('confirm')).toEqual([[[5, 9]]])
+    expect(wrapper.emitted('confirm')).toEqual([[[5]]])
+    wrapper.unmount()
   })
 })

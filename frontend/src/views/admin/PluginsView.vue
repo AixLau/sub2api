@@ -248,6 +248,16 @@
               v-if="hasEnabledBinding(plugin)"
               type="button"
               class="btn btn-secondary btn-sm"
+              :disabled="busyID === plugin.id || plugin.state === 'starting'"
+              @click="openEnablePlugin(plugin)"
+            >
+              <Icon name="users" size="sm" />
+              {{ t("admin.plugins.manageAccounts") }}
+            </button>
+            <button
+              v-if="hasEnabledBinding(plugin)"
+              type="button"
+              class="btn btn-secondary btn-sm"
               :disabled="busyID === plugin.id"
               @click="disablePlugin(plugin)"
             >
@@ -329,6 +339,7 @@
         :plugin-name="accountScopePlugin?.name || ''"
         :initial-account-ids="selectedAccountIDs(accountScopePlugin)"
         :submitting="busyID === accountScopePlugin?.id"
+        :editing="accountScopePlugin !== null && hasEnabledBinding(accountScopePlugin)"
         @close="closeAccountScope"
         @confirm="enableSelectedAccounts"
       />
@@ -457,7 +468,10 @@ function hasEnabledBinding(plugin: PluginInstallation): boolean {
 
 function openEnablePlugin(plugin: PluginInstallation): void {
   let acceptUntested = false;
-  if (!plugin.compatibility.tested) {
+  if (
+    !plugin.compatibility.tested &&
+    !(hasEnabledBinding(plugin) && plugin.runtime_healthy)
+  ) {
     acceptUntested = window.confirm(t("admin.plugins.confirmUntested"));
     if (!acceptUntested) return;
   }
@@ -483,7 +497,11 @@ async function enableSelectedAccounts(accountIDs: number[]): Promise<void> {
         acceptUntestedSelection.value,
       ),
     );
-    appStore.showSuccess(t("admin.plugins.enableSuccess"));
+    appStore.showSuccess(
+      t(hasEnabledBinding(plugin)
+        ? "admin.plugins.updateAccountsSuccess"
+        : "admin.plugins.enableSuccess"),
+    );
     accountScopePlugin.value = null;
     acceptUntestedSelection.value = false;
     await loadPlugins();

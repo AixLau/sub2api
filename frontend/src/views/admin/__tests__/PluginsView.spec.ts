@@ -7,6 +7,9 @@ const {
   listPlugins,
   uploadPlugin,
   enablePlugin,
+  disablePlugin,
+  showError,
+  showSuccess,
   savePluginConfig,
   createUISession,
   stepUpRun,
@@ -14,6 +17,9 @@ const {
   listPlugins: vi.fn(),
   uploadPlugin: vi.fn(),
   enablePlugin: vi.fn(),
+  disablePlugin: vi.fn(),
+  showError: vi.fn(),
+  showSuccess: vi.fn(),
   savePluginConfig: vi.fn(),
   createUISession: vi.fn(),
   stepUpRun: vi.fn((action: () => Promise<unknown>) => action()),
@@ -25,7 +31,7 @@ vi.mock('@/api/admin', () => ({
       list: listPlugins,
       upload: uploadPlugin,
       enable: enablePlugin,
-      disable: vi.fn(),
+      disable: disablePlugin,
       remove: vi.fn(),
       getConfig: vi.fn().mockResolvedValue({}),
       saveConfig: savePluginConfig,
@@ -37,8 +43,8 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/stores', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
     showInfo: vi.fn(),
   }),
 }))
@@ -116,7 +122,8 @@ function mountView() {
         AppLayout: { template: '<div><slot /></div>' },
         BaseDialog: { template: '<div><slot /></div>' },
         PluginAccountScopeDialog: {
-          props: ['show'],
+          name: 'PluginAccountScopeDialog',
+          props: ['show', 'editing', 'initialAccountIds'],
           emits: ['confirm', 'close'],
           template:
             '<button v-if="show" data-test="confirm-account-scope" @click="$emit(\'confirm\', [11, 17])">confirm</button>',
@@ -158,6 +165,59 @@ describe('管理员插件页二次验证', () => {
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)
     expect(enablePlugin).toHaveBeenCalledWith(7, [11, 17], false)
+  })
+
+  it('运行中通过二次验证更新账号绑定，不停用插件', async () => {
+    const running = {
+      ...plugin,
+      state: 'enabled',
+      runtime_healthy: true,
+      compatibility: { ...plugin.compatibility, tested: false },
+      bindings: [{ ...plugin.bindings[0], enabled: true, account_ids: [11] }],
+    }
+    listPlugins.mockResolvedValue([running])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const button = wrapper.findAll('button').find((item) => item.text().includes('admin.plugins.manageAccounts'))
+      expect(button).toBeDefined()
+      await button!.trigger('click')
+      await flushPromises()
+      const dialog = wrapper.findComponent({ name: 'PluginAccountScopeDialog' })
+      expect(dialog.props('editing')).toBe(true)
+      expect(dialog.props('initialAccountIds')).toEqual([11])
+      await wrapper.get('[data-test="confirm-account-scope"]').trigger('click')
+      await flushPromises()
+      expect(stepUpRun).toHaveBeenCalledTimes(1)
+      expect(enablePlugin).toHaveBeenCalledWith(7, [11, 17], false)
+      expect(disablePlugin).not.toHaveBeenCalled()
+      expect(confirm).not.toHaveBeenCalled()
+      expect(showSuccess).toHaveBeenCalledWith('admin.plugins.updateAccountsSuccess')
+      expect(dialog.props('show')).toBe(false)
+    } finally {
+      wrapper.unmount()
+      confirm.mockRestore()
+    }
+  })
+
+  it('绑定保存失败保留账号选择窗口', async () => {
+    listPlugins.mockResolvedValue([{
+      ...plugin, state: 'enabled', runtime_healthy: true,
+      bindings: [{ ...plugin.bindings[0], enabled: true, account_ids: [11] }],
+    }])
+    enablePlugin.mockRejectedValueOnce(new Error('binding save failed'))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find((item) => item.text().includes('admin.plugins.manageAccounts'))!.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="confirm-account-scope"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'PluginAccountScopeDialog' }).props('show')).toBe(true)
+    expect(showError).toHaveBeenCalledWith('binding save failed')
+    expect(showSuccess).not.toHaveBeenCalled()
+    expect(disablePlugin).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('上传插件通过 step-up 控制器执行', async () => {

@@ -9,6 +9,9 @@
       <p class="text-sm text-gray-600 dark:text-gray-300">
         {{ t('admin.plugins.accountScopeHint') }}
       </p>
+      <p v-if="editing" class="text-sm text-gray-600 dark:text-gray-300">
+        {{ t('admin.plugins.updateAccountsHint') }}
+      </p>
 
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="relative flex-1">
@@ -106,8 +109,8 @@
           @click="confirm"
         >
           <Icon v-if="submitting" name="refresh" size="sm" class="mr-2 animate-spin" />
-          <Icon v-else name="play" size="sm" />
-          {{ t('admin.plugins.enableSelectedAccounts', { count: selectedIds.size }) }}
+          <Icon v-else :name="editing ? 'check' : 'play'" size="sm" />
+          {{ t(editing ? 'admin.plugins.saveSelectedAccounts' : 'admin.plugins.enableSelectedAccounts', { count: selectedIds.size }) }}
         </button>
       </div>
     </template>
@@ -129,6 +132,7 @@ const props = defineProps<{
   pluginName: string
   initialAccountIds: number[]
   submitting: boolean
+  editing?: boolean
 }>()
 
 const emit = defineEmits<{

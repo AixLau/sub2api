@@ -317,7 +317,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	}
 	current := m.route.Load()
 	if current != nil && current.pluginID == enabled.ID && current.runtime != nil &&
-		!current.runtime.client.Exited() && samePluginAccountIDs(current.accountIDs, accountIDs) &&
+		!current.runtime.client.Exited() &&
 		current.runtime.installation.BinarySHA256 == enabled.BinarySHA256 &&
 		current.runtime.installation.ConfigEncrypted == enabled.ConfigEncrypted {
 		healthCtx, cancel := context.WithTimeout(ctx, pluginHealthTimeout)
@@ -329,6 +329,8 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 			}
 			return healthErr
 		}
+		// Account bindings only affect host routing; keep the running process.
+		m.updateRouteAccounts(enabled.ID, accountIDs)
 		if enabled.State == PluginStateError || (enabled.State == PluginStateStarting && m.startingStateExpired(enabled)) {
 			return m.repo.MarkRuntimeHealthy(ctx, enabled.ID, enabled.BinarySHA256, enabled.ConfigEncrypted)
 		}
@@ -584,16 +586,26 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 		return nil, errors.New("OpenAI OAuth 出站能力已有启用插件，请先停用当前插件")
 	}
 	if installation.State == PluginStateEnabled && hasEnabledOpenAIBinding(installation.Bindings) {
-		if !samePluginAccountIDs(pluginAccountIDSet(bindingAccountIDs(installation.Bindings)), accountIDs) {
-			return nil, errors.New("请先停用插件，再修改绑定账号")
-		}
 		installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
 		m.mu.Lock()
 		runtime := m.runtimes[id]
 		m.mu.Unlock()
 		installation.RuntimeHealthy = runtime != nil && !runtime.client.Exited()
 		if installation.RuntimeHealthy {
-			return installation, nil
+			if !samePluginAccountIDs(pluginAccountIDSet(bindingAccountIDs(installation.Bindings)), accountIDs) {
+				bindings := clonePluginBindings(installation.Bindings)
+				for index := range bindings {
+					if bindings[index].Capability == PluginCapabilityOpenAIOAuthOutbound {
+						bindings[index].AccountIDs = append([]int64(nil), accountIDs...)
+					}
+				}
+				// Publish only after persistence succeeds, preserving in-flight requests.
+				if err := m.repo.UpdateBindingsAndState(ctx, id, bindings, PluginStateEnabled, installation.LastError, installation.EnabledAt, PluginStateEnabled, installation.BinarySHA256); err != nil {
+					return nil, err
+				}
+			}
+			m.updateRouteAccounts(id, accountIDs)
+			return m.Get(ctx, id)
 		}
 	}
 	compatibility := EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
@@ -966,11 +978,11 @@ func (m *PluginManager) ReadUIAsset(ctx context.Context, id int64, relative stri
 }
 
 func (m *PluginManager) RoundTripOpenAIOAuth(ctx context.Context, request *http.Request, proxyURL string, account *Account) (*http.Response, bool, error) {
-	if !m.ShouldRouteOpenAIOAuth(account) {
+	if m == nil {
 		return nil, false, nil
 	}
 	route := m.route.Load()
-	if route == nil {
+	if !route.matchesAccount(account) {
 		return nil, false, nil
 	}
 	if route.runtime == nil {
@@ -1002,11 +1014,14 @@ func (m *PluginManager) RoundTripOpenAIOAuth(ctx context.Context, request *http.
 // ShouldRouteOpenAIOAuth 判断该账号是否命中当前 OpenAI OAuth 插件绑定。
 // WebSocket 入口用它把命中的账号切换到 HTTP Bridge，避免绕过 v1 HTTP 插件协议。
 func (m *PluginManager) ShouldRouteOpenAIOAuth(account *Account) bool {
-	if m == nil || account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+	if m == nil {
 		return false
 	}
-	route := m.route.Load()
-	if route == nil {
+	return m.route.Load().matchesAccount(account)
+}
+
+func (route *pluginRoute) matchesAccount(account *Account) bool {
+	if route == nil || account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
 		return false
 	}
 	if route.allAccounts {
@@ -1014,6 +1029,21 @@ func (m *PluginManager) ShouldRouteOpenAIOAuth(account *Account) bool {
 	}
 	_, selected := route.accountIDs[account.ID]
 	return selected
+}
+
+// updateRouteAccounts publishes an immutable binding snapshot without replacing
+// the runtime or reviving a route that became unavailable while saving.
+func (m *PluginManager) updateRouteAccounts(pluginID int64, accountIDs []int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.route.Load()
+	if current == nil || current.pluginID != pluginID || (!current.allAccounts && samePluginAccountIDs(current.accountIDs, accountIDs)) {
+		return
+	}
+	updated := *current
+	updated.accountIDs = pluginAccountIDSet(accountIDs)
+	updated.allAccounts = false
+	m.route.Store(&updated)
 }
 
 func (m *PluginManager) markRuntimeUnavailable(failedRoute *pluginRoute, message string) error {
