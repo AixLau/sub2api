@@ -64,6 +64,9 @@ type Config struct {
 	// missing value means disabled; enable only when the BPS executor suite
 	// lacks the run_officejs transport.
 	ToolsViaNative *bool `json:"tools_via_native"`
+	// AutoDisableOn403 stops sending an account through BPS after an upstream
+	// 403. The account remains available on the native channel.
+	AutoDisableOn403 *bool `json:"auto_disable_bps_on_403"`
 }
 
 // NativeFallbackEnabled reports whether the native-channel fallback is active.
@@ -76,6 +79,10 @@ func (c Config) NativeFallbackEnabled() bool {
 // An absent value means disabled: tool sessions stay on the BPS bridge.
 func (c Config) ToolsViaNativeEnabled() bool {
 	return c.ToolsViaNative != nil && *c.ToolsViaNative
+}
+
+func (c Config) AutoDisableOn403Enabled() bool {
+	return c.AutoDisableOn403 != nil && *c.AutoDisableOn403
 }
 
 // AllowsBPSModel is evaluated before capability routing and model mapping.
@@ -113,6 +120,7 @@ func Defaults() Config {
 		NativeFallback:               boolPtr(true),
 		NativeUpstreamBaseURL:        "",
 		ToolsViaNative:               boolPtr(false),
+		AutoDisableOn403:             boolPtr(true),
 	}
 }
 
@@ -203,6 +211,13 @@ func applyDefaults(cfg *Config, defaults Config) {
 			cfg.ToolsViaNative = boolPtr(*defaults.ToolsViaNative)
 		} else {
 			cfg.ToolsViaNative = boolPtr(false)
+		}
+	}
+	if cfg.AutoDisableOn403 == nil {
+		if defaults.AutoDisableOn403 != nil {
+			cfg.AutoDisableOn403 = boolPtr(*defaults.AutoDisableOn403)
+		} else {
+			cfg.AutoDisableOn403 = boolPtr(true)
 		}
 	}
 }

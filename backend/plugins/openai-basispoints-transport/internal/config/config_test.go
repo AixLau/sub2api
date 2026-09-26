@@ -104,6 +104,17 @@ func TestNativeFallbackDefaultAndOverrides(t *testing.T) {
 	}
 }
 
+func TestAutoDisableOn403DefaultAndOverride(t *testing.T) {
+	cfg, normalized, err := Parse([]byte(`{}`))
+	require.NoError(t, err)
+	require.True(t, cfg.AutoDisableOn403Enabled())
+	require.Contains(t, string(normalized), `"auto_disable_bps_on_403":true`)
+
+	cfg, _, err = Parse([]byte(`{"auto_disable_bps_on_403":false}`))
+	require.NoError(t, err)
+	require.False(t, cfg.AutoDisableOn403Enabled())
+}
+
 func TestNativeUpstreamBaseURL(t *testing.T) {
 	valid := []struct {
 		name string

@@ -55,13 +55,21 @@ type requestStats struct {
 	lastMs    atomic.Int64
 }
 
+const bps403StateNamespace = "basispoints-403-v1"
+
+type bps403State struct {
+	TriggeredAt time.Time `json:"triggered_at"`
+}
+
 // Plugin implements the public Sub2API transport protocol. It never accepts a
 // refresh token and never refreshes or stores an OAuth credential itself.
 type Plugin struct {
 	pluginv1.UnimplementedTransportPluginServer
 
-	state atomic.Pointer[runtimeState]
-	mu    sync.Mutex
+	state      atomic.Pointer[runtimeState]
+	mu         sync.Mutex
+	blockedMu  sync.RWMutex
+	blocked403 map[int64]time.Time
 
 	brokerMu sync.RWMutex
 	broker   *hcplugin.GRPCBroker
@@ -77,7 +85,7 @@ type Plugin struct {
 }
 
 func New() *Plugin {
-	p := &Plugin{diagnosticLogger: newDiagnosticLogger()}
+	p := &Plugin{diagnosticLogger: newDiagnosticLogger(), blocked403: make(map[int64]time.Time)}
 	state, err := buildRuntimeState(pluginconfig.Defaults())
 	if err != nil {
 		panic(err)
@@ -108,21 +116,22 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		return &pluginv1.HealthResponse{Healthy: false, Message: "传输配置未初始化"}, nil
 	}
 	statusJSON, _ := json.Marshal(map[string]any{
-		"upstream_base_url":    state.cfg.UpstreamBaseURL,
-		"proxy_mode":           state.cfg.ProxyMode,
-		"host_kv":              p.hostClient() != nil,
-		"tool_bridge":          "run_officejs-v3",
-		"requests_total":       p.stats.total.Load(),
-		"requests_succeeded":   p.stats.succeeded.Load(),
-		"requests_failed":      p.stats.failed.Load(),
-		"native_requests":      p.stats.native.Load(),
-		"last_status_code":     p.stats.lastCode.Load(),
-		"last_latency_ms":      p.stats.lastMs.Load(),
-		"last_bridge_error":    p.lastBridgeError.Load(),
-		"omitted_hosted_tools": p.omittedTools.Load(),
-		"recent_requests":      p.recentRequests.snapshot(),
-		"routing_policy":       routingPolicy(state),
-		"recent_diagnostics":   p.recentDiagnostics.snapshot(),
+		"upstream_base_url":        state.cfg.UpstreamBaseURL,
+		"proxy_mode":               state.cfg.ProxyMode,
+		"host_kv":                  p.hostClient() != nil,
+		"tool_bridge":              "run_officejs-v3",
+		"requests_total":           p.stats.total.Load(),
+		"requests_succeeded":       p.stats.succeeded.Load(),
+		"requests_failed":          p.stats.failed.Load(),
+		"native_requests":          p.stats.native.Load(),
+		"last_status_code":         p.stats.lastCode.Load(),
+		"last_latency_ms":          p.stats.lastMs.Load(),
+		"last_bridge_error":        p.lastBridgeError.Load(),
+		"omitted_hosted_tools":     p.omittedTools.Load(),
+		"recent_requests":          p.recentRequests.snapshot(),
+		"routing_policy":           routingPolicy(state),
+		"recent_diagnostics":       p.recentDiagnostics.snapshot(),
+		"bps_403_blocked_accounts": p.blocked403Snapshot(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
 }
@@ -262,6 +271,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		diagnostic.route("native", "model_not_selected")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
+	if state.cfg.AutoDisableOn403Enabled() && p.isBPS403Blocked(start.AccountId) {
+		diagnostic.route("native", "bps_403_auto_disabled")
+		return p.forwardNative(stream, start, state, body, headers)
+	}
 	// Capability routing: requests the Basis Points tool bridge cannot serve
 	// (images, image generation, hosted tool_choice, structured output) bypass
 	// the bridge entirely and are forwarded verbatim to the native Codex
@@ -383,6 +396,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return resp, adapted, "", err
 	}
 	response, adapted, code, err := execute(body, false)
+	if response != nil && response.StatusCode == http.StatusForbidden && state.cfg.AutoDisableOn403Enabled() {
+		p.markBPS403(start.AccountId)
+		diagnostic.fail("BPS_403_AUTO_DISABLED")
+	}
 	defer func() {
 		if adapted != nil && diagnostic.entry.Route == "bps" {
 			diagnostic.entry.ResponseID = safeLogID(adapted.ResponseID())
@@ -1009,6 +1026,73 @@ func (p *Plugin) hostClient() pluginv1.HostServiceClient {
 	p.brokerMu.RLock()
 	defer p.brokerMu.RUnlock()
 	return p.host
+}
+
+func (p *Plugin) isBPS403Blocked(accountID int64) bool {
+	if accountID <= 0 {
+		return false
+	}
+	p.blockedMu.RLock()
+	_, ok := p.blocked403[accountID]
+	p.blockedMu.RUnlock()
+	if ok {
+		return true
+	}
+	client := p.hostClient()
+	if client == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	resp, err := client.KVGet(ctx, &pluginv1.KVGetRequest{Namespace: bps403StateNamespace, Key: strconv.FormatInt(accountID, 10)})
+	if err != nil || !resp.Found {
+		return false
+	}
+	var state bps403State
+	if json.Unmarshal(resp.Value, &state) != nil || state.TriggeredAt.IsZero() {
+		return false
+	}
+	p.blockedMu.Lock()
+	p.blocked403[accountID] = state.TriggeredAt
+	p.blockedMu.Unlock()
+	return true
+}
+
+func (p *Plugin) markBPS403(accountID int64) {
+	if accountID <= 0 {
+		return
+	}
+	when := time.Now().UTC()
+	p.blockedMu.Lock()
+	if _, exists := p.blocked403[accountID]; exists {
+		p.blockedMu.Unlock()
+		return
+	}
+	p.blocked403[accountID] = when
+	p.blockedMu.Unlock()
+	client := p.hostClient()
+	if client == nil {
+		return
+	}
+	raw, _ := json.Marshal(bps403State{TriggeredAt: when})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = client.KVSet(ctx, &pluginv1.KVSetRequest{
+		Namespace:  bps403StateNamespace,
+		Key:        strconv.FormatInt(accountID, 10),
+		Value:      raw,
+		TtlSeconds: int64((30 * 24 * time.Hour) / time.Second),
+	})
+}
+
+func (p *Plugin) blocked403Snapshot() map[string]string {
+	p.blockedMu.RLock()
+	defer p.blockedMu.RUnlock()
+	out := make(map[string]string, len(p.blocked403))
+	for accountID, when := range p.blocked403 {
+		out[strconv.FormatInt(accountID, 10)] = when.UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 // Read the bounded JSON body before dialing upstream. This avoids an upload
