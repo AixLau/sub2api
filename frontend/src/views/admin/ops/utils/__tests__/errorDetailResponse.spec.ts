@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OpsErrorDetail } from '@/api/admin/ops'
-import { resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveUpstreamPayload } from '../errorDetailResponse'
+import { resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../errorDetailResponse'
 
 function makeDetail(overrides: Partial<OpsErrorDetail>): OpsErrorDetail {
   return {
@@ -29,6 +29,19 @@ function makeDetail(overrides: Partial<OpsErrorDetail>): OpsErrorDetail {
 }
 
 describe('errorDetailResponse', () => {
+  it('recognizes structured bridge codes without matching arbitrary message text', () => {
+    expect(resolveToolBridgeFailureCode(makeDetail({
+      upstream_error_detail: '{"response":{"error":{"code":"TOOL_BRIDGE_CALL_INVALID"}}}'
+    }))).toBe('TOOL_BRIDGE_CALL_INVALID')
+    expect(resolveToolBridgeFailureCode(makeDetail({
+      error_body: 'event: response.failed\ndata: {"response":{"error":{"code":"TOOL_BRIDGE_CALL_INVALID"}}}\n\n'
+    }))).toBe('TOOL_BRIDGE_CALL_INVALID')
+    expect(resolveToolBridgeFailureCode(makeDetail({
+      error_body: '{"error":{"code":"rate_limit_exceeded","message":"TOOL_BRIDGE_CALL_INVALID"}}'
+    }))).toBe('')
+    expect(resolveToolBridgeFailureCode(makeDetail({ error_body: 'not JSON TOOL_BRIDGE_CALL_INVALID' }))).toBe('')
+    expect(resolveToolBridgeFailureCode(null)).toBe('')
+  })
   it('prefers upstream payload for request modal when error_body is generic gateway wrapper', () => {
     const detail = makeDetail({
       error_body: JSON.stringify({

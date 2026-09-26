@@ -34,6 +34,26 @@ describe('OpsErrorDetailModal', () => {
     mocks.listRequestErrorUpstreamErrors.mockResolvedValue({ items: [] })
   })
 
+  it('identifies a bridge failure even when stored as provider HTTP 400', async () => {
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 480220,
+      created_at: '2026-09-26T13:29:13Z',
+      phase: 'upstream',
+      error_owner: 'provider',
+      status_code: 400,
+      upstream_status_code: 400,
+      message: '上游工具 code 不是有效 JSON 对象（字节偏移 94）',
+      error_body: 'event: response.failed\ndata: {"response":{"error":{"code":"TOOL_BRIDGE_CALL_INVALID"}}}\n\n'
+    })
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 480220, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.diagnosis.bridgeSummary')
+    expect(wrapper.text()).not.toContain('admin.ops.errorDetail.diagnosis.upstreamSummary')
+  })
+
   it('prioritizes upstream root cause and deduplicates diagnostic payloads', async () => {
     mocks.getRequestErrorDetail.mockResolvedValue({
       id: 1,

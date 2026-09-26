@@ -257,7 +257,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
-import { resolveEmbeddedUpstreamErrors, resolveUpstreamPayload } from '../utils/errorDetailResponse'
+import { resolveEmbeddedUpstreamErrors, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
 interface Props {
   show: boolean
@@ -305,6 +305,10 @@ const diagnosis = computed<Diagnosis>(() => {
   const phase = String(current?.phase || '').toLowerCase()
   const owner = String(current?.error_owner || '').toLowerCase()
   const message = String(rootCauseMessage.value || current?.message || '').toLowerCase()
+  const bridgeCode = resolveToolBridgeFailureCode(current)
+  if (bridgeCode) {
+    return { label: t('admin.ops.errorDetail.diagnosis.bridge'), summary: t('admin.ops.errorDetail.diagnosis.bridgeSummary'), evidence: t('admin.ops.errorDetail.diagnosis.bridgeEvidence', { code: bridgeCode }), action: t('admin.ops.errorDetail.diagnosis.bridgeAction'), className: 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100', badgeClass: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200' }
+  }
   const isCancellation = status === 499 || message.includes('context canceled') || message.includes('client disconnected') || message.includes('broken pipe')
   if (isCancellation) {
     return { label: t('admin.ops.errorDetail.diagnosis.external'), summary: t('admin.ops.errorDetail.diagnosis.clientSummary'), evidence: t('admin.ops.errorDetail.diagnosis.clientEvidence', { status }), action: t('admin.ops.errorDetail.diagnosis.clientAction'), className: 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100', badgeClass: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200' }

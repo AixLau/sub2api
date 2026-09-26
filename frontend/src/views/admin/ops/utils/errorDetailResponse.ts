@@ -1,5 +1,25 @@
 import type { OpsErrorDetail } from '@/api/admin/ops'
 
+// A bridge-generated failure may have been stored with provider ownership and
+// a synthesized 400. Prefer the structured code over that generic attribution.
+export function resolveToolBridgeFailureCode(detail: OpsErrorDetail | null): string {
+  if (!detail) return ''
+  for (const raw of [detail.error_body, detail.upstream_error_detail]) {
+    if (!raw) continue
+    const candidates = [raw, ...raw.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim())]
+    for (const candidate of candidates) {
+      try {
+        const payload = JSON.parse(candidate)
+        const code = payload?.response?.error?.code ?? payload?.error?.code
+        if (typeof code === 'string' && /^TOOL_BRIDGE_[A-Z_]+$/.test(code)) return code
+      } catch {
+        // Other diagnostic text is not a structured bridge failure.
+      }
+    }
+  }
+  return ''
+}
+
 const GENERIC_UPSTREAM_MESSAGES = new Set([
   'upstream request failed',
   'upstream request failed after retries',

@@ -356,6 +356,10 @@ export default {
         diagnosis: {
           title: '诊断结论', evidence: '判断依据', action: '建议操作', external: '外部服务 / 网络', input: '请求或配置', platform: '平台内部', unknown: '暂无法判断',
           upstreamSummary: '错误发生在上游服务或上游连接，当前日志不支持归因于平台代码。',
+          bridge: '插件工具桥接',
+          bridgeSummary: '插件在工具协议处理阶段返回失败。当前展示的状态码不能证明上游 HTTP 请求失败；需结合原始工具调用判断生成内容与桥接协议是否一致。',
+          bridgeEvidence: '结构化错误码：{code}',
+          bridgeAction: '按 request ID 检查工具路由、原始载荷和桥接版本，验证工具实际执行及结果回传。',
           upstreamEvidence: '上游状态码 {status} 或归属方为服务商', upstreamAction: '检查上游状态、账号健康与同一时间段的重试情况。',
           clientSummary: '请求在客户端或网络连接中断，服务端未能完成响应。', clientEvidence: '状态码 {status} 或连接取消信号', clientAction: '检查客户端超时、代理连接和网络稳定性。',
           routingSummary: '请求的模型或路由配置未匹配到可用目标。', routingEvidence: '状态码 {status} 或阶段为路由', routingAction: '检查模型名称、分组白名单和可用账号。',

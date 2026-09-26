@@ -356,6 +356,10 @@ export default {
         diagnosis: {
           title: 'Diagnosis', evidence: 'Evidence', action: 'Suggested action', external: 'External service / network', input: 'Request or configuration', platform: 'Platform internal', unknown: 'Unable to determine',
           upstreamSummary: 'The failure occurred in the upstream service or connection; the current evidence does not point to gateway code.',
+          bridge: 'Plugin tool bridge',
+          bridgeSummary: 'The plugin failed while processing the tool protocol. The displayed status does not establish an upstream HTTP failure; inspect the original call against the bridge contract.',
+          bridgeEvidence: 'Structured error code: {code}',
+          bridgeAction: 'Use the request ID to inspect tool routing, the original payload, and the bridge version. Verify actual tool execution and result replay.',
           upstreamEvidence: 'Upstream status {status} or provider ownership', upstreamAction: 'Check upstream status, account health, and retries in the same time window.',
           clientSummary: 'The client or network connection was interrupted before the response completed.', clientEvidence: 'Status {status} or cancellation signal', clientAction: 'Check client timeouts, proxy connection settings, and network stability.',
           routingSummary: 'The requested model or route did not match an available target.', routingEvidence: 'Status {status} or routing phase', routingAction: 'Check model name, group allowlists, and available accounts.',
