@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.3.5 是根据 BPS 实测协议实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.3.3 修复集中在插件内部；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
+0.3.6 是根据 BPS 实测协议实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.3.3 修复集中在插件内部；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -19,12 +19,12 @@
 
 SSE 中的普通文本保持流式输出；工具 envelope 等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效 envelope、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
 
-## 0.3.5 加密 agent 历史路由修复
+## 0.3.6 加密 agent 历史路由修复
 
 - 含非空 encrypted_content 的 agent_message 不进入 BPS 重写；插件将原始请求逐字节交给 native Codex 通道，由原生端保留并解密历史。
 - 只有明确由 input_text/text 构成的 agent_message 才进入 BPS，并按顺序转换为普通 user message。native_fallback: false 时仍安全返回 TOOL_BRIDGE_REQUEST_INVALID，不猜测密文。
-- 删除未经原始请求证据支持的 Run client tool 旧摘要兼容分支；custom 原文必须使用 sub2api.custom/<完整工具名> 标记，避免误截获 function JSON 信封。
-- 本版本针对错误 #477711 的 input[434].content[1] 路径增加了 native 原样转发测试。
+- 兼容旧会话中明确指向工具的 Run client tool 摘要，但仅当 code 不是 JSON 对象时把它视为 custom 原文；合法 function JSON 信封继续严格解析。新 custom 调用仍应使用 sub2api.custom/<完整工具名> 标记。
+- 本版本针对错误 #477711 的 input[434].content[1] 路径增加了 native 原样转发测试，并针对 #477994 增加旧 custom 摘要回放测试。
 
 ## 0.3.3 多 agent 与 custom 工具修复
 
@@ -150,12 +150,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.5.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.3.6.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.5.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.3.6.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -167,6 +167,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.3.5，保存配置并选择账号和 BPS 模型范围。该版本未声明完整线上联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。0.3.3 的本地测试和打包验证不等于真实 BPS 多 agent 联调通过。
+先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.3.6，保存配置并选择账号和 BPS 模型范围。该版本未声明完整线上联调通过，需要确认“未测试版本”提示。使用专用测试账号开始新会话，先验证普通文本，再验证一次工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。0.3.3 的本地测试和打包验证不等于真实 BPS 多 agent 联调通过。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。

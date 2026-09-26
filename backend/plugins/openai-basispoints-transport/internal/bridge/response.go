@@ -33,6 +33,9 @@ func clientEnvelope(item object) (object, error) {
 	if envelope, marked, err := customTransportEnvelope(outer); marked {
 		return envelope, err
 	}
+	if envelope, marked, err := legacyRawCustomTransportEnvelope(outer); marked {
+		return envelope, err
+	}
 	code := stringValue(outer["code"])
 	envelope, err := parseObject([]byte(code))
 	if err != nil {

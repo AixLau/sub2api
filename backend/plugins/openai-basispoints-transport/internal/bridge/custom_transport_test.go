@@ -128,10 +128,22 @@ func TestRawCustomTransportRejectsInvalidMarkersAndKinds(t *testing.T) {
 	}
 }
 
-func TestLegacyRawCustomTransportIsRejected(t *testing.T) {
+func TestLegacyRawCustomTransportAcceptsOnlyInvalidJSONCode(t *testing.T) {
 	r := customRequest(t)
 	source := "text(await tools.exec_command({cmd: \"pwd\"}));"
 	item := rawCustomItem(object{"summary": encoded("Run client tool functions.exec"), "code": encoded(source)})
-	_, err := r.convertCall(context.Background(), item)
-	require.ErrorContains(t, err, "code 不是有效 JSON 对象信封")
+	call, err := r.convertCall(context.Background(), item)
+	require.NoError(t, err)
+	out, _ := parseObject(call)
+	require.Equal(t, "custom_tool_call", stringValue(out["type"]))
+	require.Equal(t, source, stringValue(out["input"]))
+
+	jsonCode := `{"tool":"functions.read_file","args":{"path":"x"}}`
+	r = customRequest(t)
+	functionItem := rawCustomItem(object{"summary": encoded("Run client tool functions.read_file"), "code": encoded(jsonCode)})
+	converted, err := r.convertCall(context.Background(), functionItem)
+	require.NoError(t, err)
+	functionOut, _ := parseObject(converted)
+	require.Equal(t, "function_call", stringValue(functionOut["type"]))
+	require.JSONEq(t, `{"path":"x"}`, stringValue(functionOut["arguments"]))
 }
