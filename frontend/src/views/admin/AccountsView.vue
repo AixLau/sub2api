@@ -254,6 +254,18 @@
                 </template>
               </HelpTooltip>
               <span v-else class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <HelpTooltip
+                v-if="row.extra?.bps_403_suspected_at"
+                :content="t('admin.accounts.bps403SuspectedTooltip', { time: formatDateTime(row.extra.bps_403_suspected_at) })"
+                width-class="w-max max-w-sm"
+                class="self-start"
+              >
+                <template #trigger>
+                  <span class="mt-1 inline-flex w-fit items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                    {{ t('admin.accounts.bps403Suspected') }}
+                  </span>
+                </template>
+              </HelpTooltip>
               <span
                 v-if="accountDisplayEmail(row)"
                 class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]"

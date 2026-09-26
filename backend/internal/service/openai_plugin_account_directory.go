@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const bps403SuspectedAtExtraKey = "bps_403_suspected_at"
+
 // OpenAIGatewayService implements service.PluginAccountDirectory. The directory
 // itself is generic: it enumerates accounts and resolves outbound identities
 // strictly within the scope the host derived from the plugin's declared
@@ -164,4 +166,21 @@ func (s *OpenAIGatewayService) ResolvePluginOutboundIdentity(ctx context.Context
 		Token:       token,
 		Headers:     headers,
 	}, nil
+}
+
+// UpdatePluginAccountState is intentionally limited to the one state emitted
+// by the BPS transport. It validates scope and account type before touching
+// the account JSONB extra field.
+func (s *OpenAIGatewayService) UpdatePluginAccountState(ctx context.Context, scope PluginAccountScope, accountID int64, key string, value any) error {
+	if s == nil || s.accountRepo == nil || accountID <= 0 || key != bps403SuspectedAtExtraKey {
+		return nil
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || !scope.Contains(account.Platform, account.Type) {
+		return nil
+	}
+	return s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{key: value})
 }

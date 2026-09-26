@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -135,6 +137,12 @@ type PluginAccountDirectory interface {
 	ResolvePluginOutboundIdentity(ctx context.Context, scope PluginAccountScope, accountID int64) (*PluginOutboundIdentity, error)
 }
 
+// PluginAccountStateWriter persists a narrowly scoped, operator-visible state
+// emitted by an account-scoped plugin.
+type PluginAccountStateWriter interface {
+	UpdatePluginAccountState(ctx context.Context, scope PluginAccountScope, accountID int64, key string, value any) error
+}
+
 // pluginHostServiceServer 实现 pluginv1.HostServiceServer，是宿主经 go-plugin broker
 // 反向暴露给单个插件进程的服务端点。它绑定到具体插件的 pluginKey，因此每个运行时都有
 // 自己的实例；所有键值操作都被强制限定在该插件的命名空间内。
@@ -197,6 +205,23 @@ func (s *pluginHostServiceServer) KVSet(ctx context.Context, req *pluginv1.KVSet
 	ttl, err := pluginKVTTL(req.TtlSeconds)
 	if err != nil {
 		return nil, err
+	}
+	if req.Namespace == "basispoints-403-v1" && s.directory != nil {
+		var payload struct {
+			TriggeredAt string `json:"triggered_at"`
+		}
+		if err := json.Unmarshal(req.Value, &payload); err != nil || payload.TriggeredAt == "" {
+			return nil, status.Error(codes.InvalidArgument, "BPS 403 状态格式无效")
+		}
+		accountID, err := strconv.ParseInt(req.Key, 10, 64)
+		if err != nil || accountID <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "BPS 403 account_id 无效")
+		}
+		if writer, ok := s.directory.(PluginAccountStateWriter); ok {
+			if err := writer.UpdatePluginAccountState(ctx, s.scope, accountID, "bps_403_suspected_at", payload.TriggeredAt); err != nil {
+				return nil, status.Errorf(codes.Internal, "写入 BPS 403 状态失败: %v", err)
+			}
+		}
 	}
 	if err := s.store.Set(ctx, s.pluginKey, req.Namespace, req.Key, req.Value, ttl); err != nil {
 		return nil, status.Errorf(codes.Internal, "写入键值失败: %v", err)

@@ -2,6 +2,8 @@ export default {
     accounts: {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
+      bps403Suspected: 'BPS 403 suspected blocked (Excel)',
+      bps403SuspectedTooltip: 'BPS returned 403 at {time}; the system is bypassing the BPS protocol. Re-enabling the account protocol clears this marker.',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
       enableAutoRefresh: 'Enable auto refresh',

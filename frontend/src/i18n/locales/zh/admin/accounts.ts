@@ -2,6 +2,8 @@ export default {
     accounts: {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
+      bps403Suspected: 'BPS 403疑似被封excel',
+      bps403SuspectedTooltip: '该账号于 {time} 收到 BPS 403，系统已自动绕过 BPS 协议。重新启用账号协议后此标记会清除。',
       createAccount: '添加账号',
       autoRefresh: '自动刷新',
       enableAutoRefresh: '启用自动刷新',
