@@ -73,7 +73,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 				Entries []diagnosticEntry `json:"recent_diagnostics"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(health.StatusJson), &state))
-			require.Len(t, state.Entries, 1)
+			require.Len(t, state.Entries, 3) // rejection, feedback rejection, final failure
 			d := state.Entries[0]
 			require.Equal(t, "req_diagnostic_test", d.RequestID)
 			require.Equal(t, "client-diagnostic-session", d.SessionID)
@@ -83,14 +83,14 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Equal(t, "bps.tool_rejected", d.Event)
 			require.Equal(t, "upstream_tool_code", d.Tool.Stage)
 			require.Positive(t, d.Tool.JSONOffset)
-			require.Equal(t, "get_weather", d.Tool.TargetTool)
+			require.Empty(t, d.Tool.TargetTool) // malformed envelope has no trustworthy target
 			require.Equal(t, "test-model", d.Model)
 			require.Equal(t, stream, d.Stream)
 			require.Equal(t, 1, d.Attempt)
 			// Packaged processes deliver stderr asynchronously through go-plugin.
 			require.Eventually(t, func() bool { return strings.Contains(logs.text(), "bps.request_finished") }, 3*time.Second, 10*time.Millisecond)
 			text := logs.text()
-			require.Equal(t, 1, strings.Count(text, `"@message":"bps.tool_rejected"`))
+			require.Equal(t, 2, strings.Count(text, `"@message":"bps.tool_rejected"`))
 			require.Contains(t, text, `"request_id":"req_diagnostic_test"`)
 			require.Contains(t, text, `"session_id":"client-diagnostic-session"`)
 			require.Contains(t, text, `"stage":"upstream_tool_code"`)

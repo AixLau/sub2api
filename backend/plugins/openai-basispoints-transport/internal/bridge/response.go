@@ -46,6 +46,12 @@ func FailureResponse(code string, cause error, snapshot json.RawMessage) json.Ra
 	if errors.As(cause, &callErr) && callErr.diagnostics != nil {
 		detail["diagnostics"] = callErr.diagnostics
 	}
+	var feedbackErr *FeedbackFailure
+	if errors.As(cause, &feedbackErr) {
+		// The rejected tool batch remains the cause after repair fails.
+		// Keep it a non-retryable tool error, with the failed stage explicit.
+		detail["diagnostics"] = map[string]string{"stage": "upstream_tool_feedback", "reason": "continuation_failed"}
+	}
 	var replayErr *EncryptedReplayError
 	if errors.As(cause, &replayErr) {
 		detail["diagnostics"] = replayErr
@@ -58,7 +64,20 @@ func FailureResponse(code string, cause error, snapshot json.RawMessage) json.Ra
 // references, status, id and unknown future fields must survive in Original.
 // Every delivered call must resolve to a declared client tool. Invalid server
 // calls must not escape as unsupported Office tools and poison the next turn.
-func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (convertedItem json.RawMessage, resultErr error) {
+func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	converted, err := r.decodeCall(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.saveCall(ctx, raw, converted); err != nil {
+		return nil, err
+	}
+	return converted, nil
+}
+
+// Decode performs no persistence or execution. A whole batch must pass before
+// any client call is published, including streams with parallel tool calls.
+func (r *Request) decodeCall(ctx context.Context, raw json.RawMessage) (convertedItem json.RawMessage, resultErr error) {
 	item, err := parseObject(raw)
 	if err != nil {
 		return nil, err
@@ -168,12 +187,22 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (convert
 			}
 		}
 	}
-	if err := putState(ctx, r.store, stateKey(r.scope, "call", alias), callRecord{Original: raw, Client: converted, Turn: r.Turn}); err != nil {
-		return nil, err
+	return converted, nil
+}
+
+func (r *Request) saveCall(ctx context.Context, raw, converted json.RawMessage) error {
+	item, _ := parseObject(raw)
+	if !isToolCall(item) {
+		return nil
+	}
+	out, _ := parseObject(converted)
+	id, alias := stringValue(item["id"]), stringValue(out["call_id"])
+	if err := putState(ctx, r.store, stateKey(r.scope, "call", alias), callRecord{Original: raw, Client: converted, Turn: r.Turn, FeedbackID: r.feedbackID}); err != nil {
+		return err
 	}
 	r.converted[id] = converted
-	r.originals[id] = canonicalOriginal
-	return converted, nil
+	r.originals[id] = string(encoded(item))
+	return nil
 }
 
 func (r *Request) Response(ctx context.Context, raw []byte) ([]byte, error) {
@@ -182,24 +211,12 @@ func (r *Request) Response(ctx context.Context, raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	r.responseID = stringValue(root["id"])
+	root, err = r.resolveResponse(ctx, root)
+	if err != nil {
+		return nil, err
+	}
 	if status := stringValue(root["status"]); status == "failed" || status == "incomplete" {
 		r.Failed = true
-	}
-	var output []json.RawMessage
-	if len(root["output"]) > 0 {
-		if json.Unmarshal(root["output"], &output) != nil {
-			return nil, errors.New("上游 output 必须是数组")
-		}
-		for i, item := range output {
-			output[i], err = r.convertCall(ctx, item)
-			if err != nil {
-				return nil, err
-			}
-		}
-		root["output"] = encoded(output)
-	}
-	if stringValue(root["status"]) == "completed" && r.catalog.choice == "required" && len(r.converted) == 0 {
-		return nil, errors.New("上游未返回 required 工具调用")
 	}
 	if id := stringValue(root["id"]); id != "" && r.store != nil {
 		if err := putState(ctx, r.store, stateKey(r.scope, "response", id), r.Turn); err != nil {
@@ -207,4 +224,17 @@ func (r *Request) Response(ctx context.Context, raw []byte) ([]byte, error) {
 		}
 	}
 	return json.Marshal(root)
+}
+
+// FeedbackFailure is a terminal continuation failure, not a retryable account
+// or model-tool error. The native first response may already have emitted text.
+type FeedbackFailure struct{ Message string }
+
+func (e *FeedbackFailure) Error() string { return e.Message }
+
+func (r *Request) FailureSnapshot(fallback json.RawMessage) json.RawMessage {
+	if len(r.failureSnapshot) > 0 {
+		return r.failureSnapshot
+	}
+	return fallback
 }

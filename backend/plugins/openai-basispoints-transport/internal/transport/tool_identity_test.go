@@ -24,7 +24,7 @@ func TestForwardToolIdentityAndDiagnostics(t *testing.T) {
 					name = "functions.run_connector_action"
 				}
 				item := map[string]any{"type": "function_call", "name": name, "namespace": "functions", "id": "fc_test", "call_id": "call_test",
-					"arguments": map[string]any{"summary": "private_summary", "references": []string{"get_weather"}, "code": `{"city":"private_city"}`}}
+					"arguments": map[string]any{"summary": "private_summary", "references": []string{"get_weather"}, "code": `{"name":"get_weather","arguments":{"city":"private_city"}}`}}
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 					response := map[string]any{"id": "resp_identity", "status": "completed", "output": []any{item}}
 					if stream {

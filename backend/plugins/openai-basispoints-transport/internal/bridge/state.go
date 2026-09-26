@@ -14,7 +14,7 @@ import (
 const (
 	MaxBodyBytes    = 64 << 20
 	MaxItemBytes    = 240 << 10 // HostService KV values are limited to 256 KiB.
-	MaxIterations   = 512 // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
+	MaxIterations   = 512       // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
 	StateTTLSeconds = 24 * 60 * 60
 	callPrefix      = "call_bps_"
 )
@@ -32,9 +32,10 @@ type Turn struct {
 }
 
 type callRecord struct {
-	Original json.RawMessage `json:"original"`
-	Client   json.RawMessage `json:"client"`
-	Turn     Turn            `json:"turn"`
+	FeedbackID string          `json:"feedback_id,omitempty"`
+	Original   json.RawMessage `json:"original"`
+	Client     json.RawMessage `json:"client"`
+	Turn       Turn            `json:"turn"`
 }
 
 func digest(parts ...string) string {

@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.8"
+	PluginVersion = "0.5.0"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -329,6 +329,27 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		p.stats.total.Add(1)
 	}
 	diagnostic.route("bps", "selected")
+	sendPrepared := func(wireBody []byte) (*http.Response, error) {
+		request, err := p.buildRequest(requestCtx, start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(wireBody)))
+		if err != nil {
+			return nil, err
+		}
+		request.ContentLength = int64(len(wireBody))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept-Encoding", "identity")
+		if bridge.HasImageInput(wireBody) {
+			request.Header.Set("Copilot-Vision-Request", "true")
+		} else {
+			request.Header.Del("Copilot-Vision-Request")
+		}
+		markStarted()
+		diagnostic.attempt()
+		resp, err := state.client.Do(request)
+		if resp != nil {
+			diagnostic.upstream(resp)
+		}
+		return resp, err
+	}
 	// execute prepares and sends one BPS attempt. The code names the
 	// pre-upstream failure class for the error frame.
 	execute := func(rawBody []byte, stripEncrypted bool) (*http.Response, *bridge.Request, string, error) {
@@ -354,24 +375,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 				return nil, nil, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", err
 			}
 		}
-		request, err := p.buildRequest(requestCtx, start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(adapted.Body)))
-		if err != nil {
-			return nil, nil, "PLUGIN_REQUEST_INVALID", err
-		}
-		request.ContentLength = int64(len(adapted.Body))
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Accept-Encoding", "identity")
-		if bridge.HasImageInput(adapted.Body) {
-			request.Header.Set("Copilot-Vision-Request", "true")
-		} else {
-			request.Header.Del("Copilot-Vision-Request")
-		}
-		markStarted()
-		diagnostic.attempt()
-		resp, err := state.client.Do(request)
-		if resp != nil {
-			diagnostic.upstream(resp)
-		}
+		resp, err := sendPrepared(adapted.Body)
 		return resp, adapted, "", err
 	}
 	response, adapted, code, err := execute(body, false)
@@ -440,6 +444,32 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			return p.sendError(stream, code, "上游重试失败", true)
 		}
 	}
+	adapted.Feedback = func(ctx context.Context, wireBody []byte) ([]byte, error) {
+		// The initial response is terminal and no tool has been dispatched.
+		// This is a continuation with error outputs, never a blind retry or
+		// a channel fallback that could duplicate tool execution.
+		response.Body.Close()
+		diagnostic.toolFeedback()
+		next, err := sendPrepared(wireBody)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, &bridge.FeedbackFailure{Message: "工具错误反馈连接失败"}
+		}
+		defer next.Body.Close()
+		if next.StatusCode < 200 || next.StatusCode >= 300 {
+			return nil, &bridge.FeedbackFailure{Message: fmt.Sprintf("工具错误反馈被上游拒绝（HTTP %d）", next.StatusCode)}
+		}
+		raw, err := readFeedbackResponse(ctx, next)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, &bridge.FeedbackFailure{Message: "工具错误反馈响应不完整或无效"}
+		}
+		return raw, nil
+	}
 	defer response.Body.Close()
 	p.stats.lastCode.Store(int64(response.StatusCode))
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
@@ -455,7 +485,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			if convertErr != nil {
 				var toolErr *bridge.ToolCallError
 				if errors.As(convertErr, &toolErr) {
-					return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_CALL_INVALID", toolErr, raw)
+					return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_CALL_INVALID", toolErr, adapted.FailureSnapshot(raw))
+				}
+				var feedbackErr *bridge.FeedbackFailure
+				if errors.As(convertErr, &feedbackErr) {
+					return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_CALL_INVALID", feedbackErr, adapted.FailureSnapshot(raw))
 				}
 				return p.sendError(stream, upstreamResponseReadErrorCode(convertErr, "TOOL_BRIDGE_RESPONSE_FAILED"), convertErr.Error(), true)
 			}
@@ -505,7 +539,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		}
 	}
 	if adapted.Failed {
-		diagnostic.fail("UPSTREAM_RESPONSE_FAILED")
+		code := adapted.FailureCode
+		if code == "" {
+			code = "UPSTREAM_RESPONSE_FAILED"
+		}
+		diagnostic.fail(code)
 	}
 	succeeded = response.StatusCode >= 200 && response.StatusCode < 300 && !adapted.Failed
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})

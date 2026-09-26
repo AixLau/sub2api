@@ -32,11 +32,12 @@ func prepareWeather(t *testing.T, store Store) *Request {
 }
 
 func officeItem(name string, args any, objectArguments bool) json.RawMessage {
-	code, ok := args.(string)
-	if !ok {
-		code = string(encoded(args))
+	envelope := map[string]any{"name": name, "arguments": args}
+	if input, ok := args.(string); ok {
+		delete(envelope, "arguments")
+		envelope["input"] = input
 	}
-	outer := map[string]any{"summary": "Read weather", "references": []string{name}, "destructive": false, "code": code}
+	outer := map[string]any{"summary": "Read weather", "references": []string{}, "destructive": false, "code": string(encoded(envelope))}
 	var arguments any = string(encoded(outer))
 	if objectArguments {
 		arguments = outer
@@ -309,8 +310,8 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	require.Equal(t, "fc_call_old_1", stringValue(call["id"]))
 	var outer map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stringValue(call["arguments"])), &outer))
-	require.Equal(t, []any{"get_weather"}, outer["references"])
-	require.JSONEq(t, `{"city":"Tokyo"}`, outer["code"].(string))
+	require.Empty(t, outer["references"])
+	require.JSONEq(t, `{"name":"get_weather","arguments":{"city":"Tokyo"}}`, outer["code"].(string))
 	out, _ := parseObject(items[3])
 	require.Equal(t, "function_call_output", stringValue(out["type"]))
 	require.Equal(t, "call_old_1", stringValue(out["call_id"]))
@@ -514,21 +515,21 @@ type brokenStore struct{ memoryStore }
 func (brokenStore) Put(context.Context, string, []byte) error { return errors.New("storage down") }
 func TestStoreFailureNeverReleasesExecutableCall(t *testing.T) {
 	r := prepareWeather(t, brokenStore{memoryStore{}})
-	stream := event("response.output_item.done", map[string]any{"output_index": 0, "item": officeItem("get_weather", map[string]any{}, false)})
+	stream := event("response.completed", map[string]any{"response": map[string]any{"status": "completed", "output": []any{officeItem("get_weather", map[string]any{}, false)}}})
 	var emitted int
 	err := r.Stream(context.Background(), strings.NewReader(stream), func([]byte) error { emitted++; return nil })
 	require.ErrorContains(t, err, "保存")
 	require.Zero(t, emitted)
 }
 
-func TestReferenceTransportRequiresExactCatalogName(t *testing.T) {
+func TestEnvelopeTransportResolvesUnambiguousCatalogName(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(`{"input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec","description":"Run command"}]}]}`)
 	r, err := Prepare(ctx, raw, "s", memoryStore{}, nil)
 	require.NoError(t, err)
 
 	_, err = r.convertCall(ctx, officeItem("exec", "ls", false))
-	require.ErrorContains(t, err, "缺少命名空间")
+	require.NoError(t, err)
 	call, err := r.convertCall(ctx, officeItem("functions.exec", "ls", false))
 	require.NoError(t, err)
 	obj, _ := parseObject(call)

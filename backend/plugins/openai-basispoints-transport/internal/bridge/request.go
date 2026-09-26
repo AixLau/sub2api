@@ -18,13 +18,18 @@ type Request struct {
 	OmittedTools []string
 	Failed       bool
 	FailureCode  string
-	responseID   string
-	sourceEvent  string
-	originals    map[string]string
-	store        Store
-	scope        string
-	catalog      catalog
-	converted    map[string]json.RawMessage
+	// Feedback sends one continuation containing actual conversion error results.
+	Feedback        func(context.Context, []byte) ([]byte, error)
+	feedbackUsed    bool
+	feedbackID      string
+	failureSnapshot json.RawMessage
+	responseID      string
+	sourceEvent     string
+	originals       map[string]string
+	store           Store
+	scope           string
+	catalog         catalog
+	converted       map[string]json.RawMessage
 }
 
 // ResponseID returns only the response correlation identifier, never content.
@@ -108,12 +113,49 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		}
 		return nil
 	}
+	restoredFeedback := map[string]bool{}
+	restoreFeedback := func(id string, i int) error {
+		if id == "" || restoredFeedback[id] {
+			return nil
+		}
+		raw, found, err := store.Get(ctx, stateKey(scope, "feedback", id))
+		if err != nil || !found {
+			return errors.New("工具反馈回放状态不可用")
+		}
+		var record feedbackRecord
+		if json.Unmarshal(raw, &record) != nil || record.Turn.ID == "" || len(record.Items) == 0 {
+			return errors.New("工具反馈回放状态无效")
+		}
+		if err := trackTurn(&callRecord{Turn: record.Turn}, i); err != nil {
+			return err
+		}
+		restored = append(restored, record.Items...)
+		restoredFeedback[id] = true
+		return nil
+	}
 	for i, raw := range input {
 		item, err := parseObject(raw)
 		if err != nil {
 			return nil, err
 		}
+		// Tool aliases already carry their feedback anchor in callRecord.
+		// Only non-tool response items need this additional lookup.
 		typ, callID := stringValue(item["type"]), stringValue(item["call_id"])
+		if id := stringValue(item["id"]); id != "" && store != nil && !isToolCall(item) && typ != "function_call_output" && typ != "custom_tool_call_output" {
+			raw, found, err := store.Get(ctx, stateKey(scope, "feedback_item", id))
+			if err != nil {
+				return nil, errors.New("读取工具反馈锚点失败")
+			}
+			if found {
+				var feedbackID string
+				if json.Unmarshal(raw, &feedbackID) != nil {
+					return nil, errors.New("工具反馈锚点无效")
+				}
+				if err := restoreFeedback(feedbackID, i); err != nil {
+					return nil, err
+				}
+			}
+		}
 		switch typ {
 		case "agent_message":
 			if message := agentMessages[i]; len(message) > 0 {
@@ -130,6 +172,9 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 			case strings.HasPrefix(callID, callPrefix):
 				record, err := lookup(callID)
 				if err != nil {
+					return nil, err
+				}
+				if err := restoreFeedback(record.FeedbackID, i); err != nil {
 					return nil, err
 				}
 				if err := trackTurn(record, i); err != nil {
@@ -175,6 +220,9 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 				}
 				record, err := lookup(callID)
 				if err != nil {
+					return nil, err
+				}
+				if err := restoreFeedback(record.FeedbackID, i); err != nil {
 					return nil, err
 				}
 				if err := trackTurn(record, i); err != nil {
@@ -361,12 +409,12 @@ func messageItem(role, text string) map[string]any {
 // deterministic item id.
 func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error) {
 	callID := stringValue(item["call_id"])
-	var code string
+	envelope := object{"name": encoded(name)}
 	if typ == "custom_tool_call" {
 		if !isTextValue(item["input"]) {
 			return nil, errors.New("历史 custom 工具 input 必须是字符串")
 		}
-		code = stringValue(item["input"])
+		envelope["input"] = item["input"]
 	} else {
 		rawArgs := item["arguments"]
 		if isTextValue(rawArgs) {
@@ -375,13 +423,13 @@ func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error
 		if _, err := parseObject(rawArgs); err != nil {
 			return nil, errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 		}
-		code = string(rawArgs)
+		envelope["arguments"] = rawArgs
 	}
 	outer := map[string]any{
 		"summary":     "Run client tool " + name,
-		"code":        code,
+		"code":        string(encoded(envelope)),
 		"destructive": false,
-		"references":  []string{name},
+		"references":  []string{},
 	}
 	return encoded(object{
 		"type":      encoded("function_call"),

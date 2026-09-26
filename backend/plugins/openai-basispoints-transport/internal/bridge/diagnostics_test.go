@@ -17,8 +17,8 @@ func TestToolDiagnosticObserver(t *testing.T) {
 	}{
 		{"identity", "upstream_tool_identity", "undeclared_tool", object{"code": encoded("private_code")}, "functions.run_connector_action"},
 		{"arguments", "upstream_tool_arguments", "invalid_json", object{}, "run_officejs"},
-		{"references", "upstream_tool_references", "invalid_references", object{"references": encoded("private_reference")}, "run_officejs"},
-		{"unknown_target", "upstream_tool_references", "undeclared_target", object{"references": encoded([]string{"private_reference"})}, "run_officejs"},
+
+		{"unknown_target", "upstream_tool_envelope", "undeclared_target", object{"code": encoded(`{"name":"private_reference","input":"private_code"}`)}, "run_officejs"},
 		{"code_type", "upstream_tool_code", "code_not_string", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(map[string]string{"secret": "private_code"})}, "run_officejs"},
 		{"json", "upstream_tool_code", "invalid_json", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(`{"secret":"private\'code"}`)}, "run_officejs"},
 		{"array", "upstream_tool_code", "not_object", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(`["private_code"]`)}, "run_officejs"},
@@ -54,7 +54,7 @@ func TestToolDiagnosticObserver(t *testing.T) {
 					require.Positive(t, d.JSONOffset)
 					require.Equal(t, "code", d.Field)
 					require.Equal(t, "invalid", d.CodeJSONType)
-					require.Equal(t, "functions.read_file", d.TargetTool)
+					require.Empty(t, d.TargetTool, "malformed envelope cannot identify a target")
 				}
 				raw, err := json.Marshal(d)
 				require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestSuccessfulToolCallsDoNotProduceFailureDiagnostics(t *testing.T) {
 
 func TestReferenceFailureClassificationNeverAuthorizesUnknownTools(t *testing.T) {
 	for _, tc := range []struct{ ref, issue, suggestion string }{
-		{"exec", "missing_namespace", "functions.exec"},
+
 		{"run_officejs", "transport_executor", ""},
 		{"functions.run_officejs", "transport_executor", ""},
 		{"functions", "namespace_only", ""},
@@ -98,20 +98,20 @@ func TestReferenceFailureClassificationNeverAuthorizesUnknownTools(t *testing.T)
 			r := customRequest(t)
 			var observed Diagnostic
 			ctx := WithDiagnosticObserver(context.Background(), func(d Diagnostic) { observed = d })
-			raw := rawCustomItem(object{"references": encoded([]string{tc.ref}), "code": encoded("private executable source")})
+			raw := rawCustomItem(object{"code": encoded(string(encoded(object{"name": encoded(tc.ref), "input": encoded("private executable source")})))})
 			result, err := r.Response(ctx, encoded(map[string]any{"id": "resp_refs", "output": []json.RawMessage{raw}}))
 			require.Error(t, err)
 			require.Nil(t, result)
 			require.Empty(t, r.converted)
-			require.Equal(t, tc.issue, observed.ReferenceIssue)
+			require.Equal(t, tc.issue, observed.TargetIssue)
 			require.Equal(t, tc.suggestion, observed.SuggestedTool)
 			require.False(t, observed.TargetDeclared)
 			failed := string(FailureResponse("TOOL_BRIDGE_CALL_INVALID", err, nil))
-			require.Contains(t, failed, `"reference_issue":"`+tc.issue+`"`)
+			require.Contains(t, failed, `"target_issue":"`+tc.issue+`"`)
 			require.NotContains(t, failed, "private")
 			require.NotContains(t, string(encoded(observed)), "private")
 			// A new valid call may use the suggestion, but rejection never executes it.
-			valid, err := r.convertCall(ctx, rawCustomItem(object{"references": encoded([]string{"functions.exec"}), "code": encoded("text('ok')")}))
+			valid, err := r.convertCall(ctx, officeItem("functions.exec", "text('ok')", false))
 			require.NoError(t, err)
 			require.NotEmpty(t, valid)
 		})
@@ -121,7 +121,7 @@ func TestReferenceFailureClassificationNeverAuthorizesUnknownTools(t *testing.T)
 func TestReferenceFailureDoesNotSuggestAmbiguousName(t *testing.T) {
 	c, err := readCatalog(json.RawMessage(`[{"type":"namespace","name":"a","tools":[{"type":"function","name":"read"}]},{"type":"namespace","name":"b","tools":[{"type":"function","name":"read"}]}]`), nil, nil)
 	require.NoError(t, err)
-	issue, suggested := c.referenceIssue("read")
+	issue, suggested := c.targetIssue("read")
 	require.Equal(t, "ambiguous_bare_name", issue)
 	require.Empty(t, suggested)
 }

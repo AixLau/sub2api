@@ -95,9 +95,11 @@ func (p *Plugin) startDiagnostics(ctx context.Context, start *pluginv1.ForwardRe
 	}
 	ctx = context.WithValue(ctx, requestDiagnosticsKey{}, d)
 	ctx = bridge.WithDiagnosticObserver(ctx, func(tool bridge.Diagnostic) {
+		previous := d.entry.ErrorCode
 		d.entry.ErrorCode = "TOOL_BRIDGE_CALL_INVALID"
 		d.entry.Tool = &tool
 		d.write("bps.tool_rejected", hclog.Warn)
+		d.entry.ErrorCode = previous
 		d.entry.Tool = nil
 	})
 	return ctx, d
@@ -200,4 +202,8 @@ func safeLogID(value string) string {
 		return "<redacted>"
 	}
 	return value
+}
+
+func (d *requestDiagnostics) toolFeedback() {
+	d.write("bps.tool_feedback", hclog.Info)
 }

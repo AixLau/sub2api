@@ -4,7 +4,7 @@ set -euo pipefail
 plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 backend_dir="$(cd "${plugin_dir}/../.." && pwd)"
 targets="${TARGETS:-linux-amd64}"
-version="0.4.8"
+version="0.5.0"
 build_dir="${plugin_dir}/.build"
 dist_dir="${plugin_dir}/dist"
 

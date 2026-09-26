@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReferenceTransportSeparatesRoutingFromPayload(t *testing.T) {
+func TestEnvelopeTransportSeparatesRoutingFromPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name, payload, typ, field string
 	}{
@@ -21,7 +21,7 @@ func TestReferenceTransportSeparatesRoutingFromPayload(t *testing.T) {
 		t.Run(tc.name+"/"+tc.payload, func(t *testing.T) {
 			for _, finalOnly := range []bool{false, true} {
 				r := customRequest(t)
-				item := rawCustomItem(object{"summary": encoded("Inspect the repository"), "references": encoded([]string{tc.name}), "code": encoded(tc.payload)})
+				item := rawCustomItem(object{"summary": encoded("Inspect the repository"), "references": encoded([]string{"unrelated sheet address"}), "code": encoded(string(envelopeForTest(tc.name, tc.field, tc.payload)))})
 				response := map[string]any{"id": "resp_reference", "status": "completed", "output": []any{item}}
 				wire := event("response.completed", map[string]any{"response": response})
 				if !finalOnly {
@@ -50,10 +50,10 @@ func TestReferenceTransportSeparatesRoutingFromPayload(t *testing.T) {
 	}
 }
 
-func TestReferenceTransportSummaryIsNotRouting(t *testing.T) {
+func TestEnvelopeTransportSummaryIsNotRouting(t *testing.T) {
 	for _, summary := range []string{"", "sub2api.custom/functions.exec", "Run client tool functions.exec"} {
 		r := customRequest(t)
-		item := rawCustomItem(object{"summary": encoded(summary), "references": encoded([]string{"functions.read_file"}), "code": encoded(`{"path":"example.txt"}`)})
+		item := rawCustomItem(object{"summary": encoded(summary), "references": encoded([]string{"functions.exec"}), "code": encoded(string(envelopeForTest("functions.read_file", "arguments", `{"path":"example.txt"}`)))})
 		call, err := r.convertCall(context.Background(), item)
 		require.NoError(t, err)
 		obj, _ := parseObject(call)
@@ -62,7 +62,7 @@ func TestReferenceTransportSummaryIsNotRouting(t *testing.T) {
 	}
 }
 
-func TestReferenceTransportExecutorNames(t *testing.T) {
+func TestEnvelopeTransportExecutorNames(t *testing.T) {
 	for _, tc := range []struct {
 		name, namespace string
 		allowed         bool
@@ -99,7 +99,7 @@ func TestTransportDiagnosticsNeverIncludePayload(t *testing.T) {
 	}
 }
 
-func TestReferenceTransportHistoryPreservesJSONNumbers(t *testing.T) {
+func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 	const arguments = `{"id":9007199254740993,"amount":1.234567890123456789,"nested":{"code":"literal"}}`
 	for _, raw := range []json.RawMessage{encoded(arguments), json.RawMessage(arguments)} {
 		item := object{"call_id": encoded("call_history"), "arguments": raw}
@@ -107,8 +107,10 @@ func TestReferenceTransportHistoryPreservesJSONNumbers(t *testing.T) {
 		require.NoError(t, err)
 		native, _ := parseObject(rebuilt)
 		outer, _ := parseObject([]byte(stringValue(native["arguments"])))
-		require.Equal(t, arguments, stringValue(outer["code"]))
-		require.JSONEq(t, `["functions.read_file"]`, string(outer["references"]))
+		envelope, err := parseObject([]byte(stringValue(outer["code"])))
+		require.NoError(t, err)
+		require.Equal(t, arguments, string(envelope["arguments"]))
+		require.JSONEq(t, `[]`, string(outer["references"]))
 	}
 	for _, raw := range []json.RawMessage{nil, encoded("invalid private input"), encoded(nil), encoded([]any{}), encoded(42)} {
 		for _, typ := range []string{"function_call", "custom_tool_call"} {
@@ -123,26 +125,49 @@ func TestReferenceTransportHistoryPreservesJSONNumbers(t *testing.T) {
 	}
 }
 
-func TestCatalogAdvertisesOnlyReferenceTransport(t *testing.T) {
-	r := customRequest(t)
-	prompt := r.catalog.prompt()
-	require.Contains(t, prompt, "protocol v3")
-	require.Contains(t, prompt, `Set references to ["functions.exec"]`)
-	require.Contains(t, prompt, "only the arguments object")
-	require.Contains(t, prompt, "code is the exact raw input")
-	require.NotContains(t, prompt, "sub2api.custom/")
-	require.NotContains(t, prompt, "run_connector_action")
-	require.Contains(t, prompt, "do not copy those formats into new calls")
+func envelopeForTest(name, field, payload string) json.RawMessage {
+	value := encoded(payload)
+	if field == "arguments" {
+		value = json.RawMessage(payload)
+	}
+	return encoded(object{"name": encoded(name), field: value})
 }
 
-func TestCatalogUsesActualReferenceNamesWithoutInventedTools(t *testing.T) {
+func TestCatalogAdvertisesEnvelopeTransport(t *testing.T) {
 	r := customRequest(t)
 	prompt := r.catalog.prompt()
-	require.Contains(t, prompt, `complete set of valid references values is ["functions.exec","functions.read_file"]`)
-	require.Contains(t, prompt, `Set references to ["functions.read_file"]`)
-	require.Contains(t, prompt, "accessed through that parent tool")
+	require.Contains(t, prompt, "protocol v4")
+	require.Contains(t, prompt, "Set references=[]")
+	require.Contains(t, prompt, "references and summary do not select a tool")
+	require.Contains(t, prompt, `name="functions.exec"`)
+	require.Contains(t, prompt, `name="functions.read_file"`)
+	require.Contains(t, prompt, "through that parent tool")
 	require.NotContains(t, prompt, "example.exec")
-	require.NotContains(t, prompt, "example.read_file")
-	require.NotContains(t, prompt, "tools.exec_command")
-	require.Equal(t, prompt, r.catalog.prompt(), "stable order preserves prompt caching")
+	require.Equal(t, prompt, r.catalog.prompt())
+}
+
+func TestEnvelopeNamespaceAndKinds(t *testing.T) {
+	for _, payload := range []string{
+		`{"name":"exec","namespace":"functions","input":"text('ok')"}`,
+		`{"name":"functions.exec","input":"text('ok')"}`,
+		`{"name":"exec","input":"text('ok')"}`,
+	} {
+		call, err := customRequest(t).convertCall(context.Background(), rawCustomItem(object{"code": encoded(payload)}))
+		require.NoError(t, err)
+		item, _ := parseObject(call)
+		require.Equal(t, "functions", stringValue(item["namespace"]))
+	}
+	for _, payload := range []string{
+		`{"name":"functions.exec","arguments":{}}`,
+		`{"name":"functions.exec","input":null}`,
+		`{"name":"functions.read_file","arguments":"{}"}`,
+		`{"name":"functions.read_file","arguments":{},"input":"x"}`,
+		`{"name":"functions.exec","input":"x","tool":"other"}`,
+		`{"name":"run_officejs","arguments":{}}`,
+		`{"name":"exec","namespace":"missing","input":"x"}`,
+	} {
+		call, err := customRequest(t).convertCall(context.Background(), rawCustomItem(object{"code": encoded(payload)}))
+		require.Error(t, err, payload)
+		require.Nil(t, call)
+	}
 }

@@ -26,12 +26,12 @@ type Diagnostic struct {
 	ReferencesCount int    `json:"references_count,omitempty"`
 	TargetTool      string `json:"target_tool,omitempty"`
 	TargetDeclared  bool   `json:"target_declared"`
-	ReferenceIssue  string `json:"reference_issue,omitempty"`
+	TargetIssue     string `json:"target_issue,omitempty"`
 	SuggestedTool   string `json:"suggested_tool,omitempty"`
 	CodeType        string `json:"code_type,omitempty"`
 	CodeBytes       int    `json:"code_bytes,omitempty"`
 	CodeJSONType    string `json:"code_json_type,omitempty"`
-	LegacyEnvelope  bool   `json:"legacy_envelope"`
+	EnvelopePresent bool   `json:"envelope_present"`
 }
 
 type diagnosticObserverKey struct{}
@@ -69,7 +69,7 @@ func (r *Request) observeCallFailure(ctx context.Context, item object, err error
 		d.Reason = callErr.reason
 	}
 	if callErr.diagnostics != nil {
-		d.ReferenceIssue, d.SuggestedTool = callErr.diagnostics.ReferenceIssue, callErr.diagnostics.SuggestedTool
+		d.TargetIssue, d.SuggestedTool = callErr.diagnostics.TargetIssue, callErr.diagnostics.SuggestedTool
 	}
 	d.Field, d.JSONOffset = callErr.field, callErr.jsonOffset
 	args := item["arguments"]
@@ -86,21 +86,18 @@ func (r *Request) observeCallFailure(ctx context.Context, item object, err error
 			var refs []json.RawMessage
 			if json.Unmarshal(outer["references"], &refs) == nil {
 				d.ReferencesCount = len(refs)
-				if len(refs) == 1 && isTextValue(refs[0]) {
-					key := stringValue(refs[0])
-					// Unknown references can be a path or data, not a tool name.
-					_, d.TargetDeclared = r.catalog.tools[key]
-					if d.TargetDeclared {
-						d.TargetTool = diagnosticIdentifier(key)
-					}
-				}
 			}
 			d.CodeType = jsonKind(outer["code"])
 			if isTextValue(outer["code"]) {
 				code := []byte(stringValue(outer["code"]))
 				d.CodeBytes, d.CodeJSONType = len(code), jsonKind(code)
 				if obj, parseErr := parseObject(code); parseErr == nil {
-					d.LegacyEnvelope = (obj["tool"] != nil && obj["args"] != nil) || (obj["name"] != nil && obj["arguments"] != nil)
+					d.EnvelopePresent = obj["name"] != nil
+					_, key, ok := r.catalog.lookup(qualifiedCallName(obj))
+					d.TargetDeclared = ok
+					if ok {
+						d.TargetTool = diagnosticIdentifier(key)
+					}
 				}
 			}
 		}

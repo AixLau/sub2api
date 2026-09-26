@@ -35,7 +35,7 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		"",
 	} {
 		r := customRequest(t)
-		native := rawCustomItem(object{"summary": encoded("Run a client command"), "references": encoded([]string{"functions.exec"}), "code": encoded(source)})
+		native := rawCustomItem(object{"summary": encoded("Run a client command"), "references": encoded([]string{}), "code": encoded(string(encoded(object{"name": encoded("functions.exec"), "input": encoded(source)})))})
 		response := map[string]any{"id": "resp_raw", "status": "completed", "output": []any{native}}
 		assertCall := func(raw json.RawMessage, complete bool) object {
 			call, err := parseObject(raw)
@@ -103,8 +103,10 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		rebuilt, _ := parseObject(rebuiltRaw)
 		outer, err := parseObject([]byte(stringValue(rebuilt["arguments"])))
 		require.NoError(t, err)
-		require.JSONEq(t, `["functions.exec"]`, string(outer["references"]))
-		require.Equal(t, source, stringValue(outer["code"]))
+		require.JSONEq(t, `[]`, string(outer["references"]))
+		envelope, err := parseObject([]byte(stringValue(outer["code"])))
+		require.NoError(t, err)
+		require.Equal(t, source, stringValue(envelope["input"]))
 	}
 }
 
@@ -134,7 +136,7 @@ func TestObsoleteTransportFormatsCannotSelectTools(t *testing.T) {
 		for _, code := range []string{"text(await tools.exec_command({cmd: \"pwd\"}));", `{"tool":"functions.read_file","args":{"path":"x"}}`} {
 			r := customRequest(t)
 			call, err := r.convertCall(context.Background(), rawCustomItem(object{"summary": encoded(summary), "code": encoded(code)}))
-			require.ErrorContains(t, err, "references")
+			require.Error(t, err)
 			require.Nil(t, call)
 			require.Empty(t, r.converted)
 		}
