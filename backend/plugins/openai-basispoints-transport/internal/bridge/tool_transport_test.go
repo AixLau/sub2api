@@ -134,3 +134,15 @@ func TestCatalogAdvertisesOnlyReferenceTransport(t *testing.T) {
 	require.NotContains(t, prompt, "run_connector_action")
 	require.Contains(t, prompt, "do not copy those formats into new calls")
 }
+
+func TestCatalogUsesActualReferenceNamesWithoutInventedTools(t *testing.T) {
+	r := customRequest(t)
+	prompt := r.catalog.prompt()
+	require.Contains(t, prompt, `complete set of valid references values is ["functions.exec","functions.read_file"]`)
+	require.Contains(t, prompt, `Set references to ["functions.read_file"]`)
+	require.Contains(t, prompt, "accessed through that parent tool")
+	require.NotContains(t, prompt, "example.exec")
+	require.NotContains(t, prompt, "example.read_file")
+	require.NotContains(t, prompt, "tools.exec_command")
+	require.Equal(t, prompt, r.catalog.prompt(), "stable order preserves prompt caching")
+}

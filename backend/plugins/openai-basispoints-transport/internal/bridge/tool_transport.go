@@ -29,7 +29,7 @@ func (c catalog) transportPayload(item object) (object, error) {
 	key := stringValue(refs[0])
 	t, ok := c.tools[key]
 	if !ok || isTransportName(key) {
-		return nil, toolValidationError("upstream_tool_references", "undeclared_target", "上游工具 references 指定了客户端未声明的工具或传输执行器")
+		return nil, c.referenceError(item, key)
 	}
 	if !isTextValue(outer["code"]) {
 		return nil, toolValidationError("upstream_tool_code", "code_not_string", "上游工具 code 必须是字符串")

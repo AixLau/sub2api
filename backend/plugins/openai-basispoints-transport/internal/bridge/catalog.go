@@ -92,7 +92,7 @@ func readCatalog(raw, choice json.RawMessage, input []json.RawMessage) (catalog,
 					line += "Input format reference: " + string(format) + "\n"
 				}
 			} else {
-				line += "Its args must be a JSON object.\n"
+				line += "Set references to [\"" + key + "\"] and code to a JSON string containing only this tool's arguments object.\n"
 				if params := entry["parameters"]; len(params) > 0 {
 					line += "Argument reference (documentation only): " + string(params) + "\n"
 				}
@@ -161,9 +161,13 @@ func (c catalog) prompt() string {
 	b.WriteString("FUNCTION tools: code is a JSON string containing only the arguments object. Inside JSON strings, escape double quotes, backslashes and control characters; never backslash-escape a single quote. Invalid JSON is rejected before client execution.\n")
 	b.WriteString("CUSTOM/freeform tools: code is the exact raw input. Do not put a JSON envelope or an object such as {code: ...} or {input: ...} around custom input. Preserve all newlines, quotes and backslashes, even if the input looks like JSON. Only the outer executor arguments need JSON serialization. Never add Markdown fences unless they are part of the tool's required input.\n")
 	b.WriteString("Do not put a tool/args or name/arguments envelope or another executor call around the payload. Historical calls may use older formats; do not copy those formats into new calls.\n")
-	functionExample := map[string]any{"summary": "Read a file", "references": []string{"example.read_file"}, "code": string(encoded(map[string]any{"path": "example.txt"}))}
-	customExample := map[string]any{"summary": "Run a command", "references": []string{"example.exec"}, "code": "text(await tools.exec_command({cmd: \"printf 'hello'\"}));\n"}
-	fmt.Fprintf(&b, "Example outer arguments (example tool names are illustrative, not callable): function %s; custom %s. Use only actual names from the catalog below.\n", encoded(functionExample), encoded(customExample))
+	keys := make([]string, 0, len(c.tools))
+	for key := range c.tools {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	fmt.Fprintf(&b, "The complete set of valid references values is %s. Copy exactly one name from this set, retaining its namespace. Never put run_officejs itself in references.\n", encoded(keys))
+	b.WriteString("Tools mentioned inside another tool's description are accessed through that parent tool; they are not additional references targets. Namespaces, file paths and worksheet addresses are not references targets either.\n")
 	b.WriteString(c.description)
 	if len(c.omitted) > 0 {
 		b.WriteString("Other client hosted-tool declarations are unavailable through this bridge.\n")

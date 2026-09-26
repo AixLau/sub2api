@@ -26,6 +26,8 @@ type Diagnostic struct {
 	ReferencesCount int    `json:"references_count,omitempty"`
 	TargetTool      string `json:"target_tool,omitempty"`
 	TargetDeclared  bool   `json:"target_declared"`
+	ReferenceIssue  string `json:"reference_issue,omitempty"`
+	SuggestedTool   string `json:"suggested_tool,omitempty"`
 	CodeType        string `json:"code_type,omitempty"`
 	CodeBytes       int    `json:"code_bytes,omitempty"`
 	CodeJSONType    string `json:"code_json_type,omitempty"`
@@ -65,6 +67,9 @@ func (r *Request) observeCallFailure(ctx context.Context, item object, err error
 	}
 	if callErr.reason != "" {
 		d.Reason = callErr.reason
+	}
+	if callErr.diagnostics != nil {
+		d.ReferenceIssue, d.SuggestedTool = callErr.diagnostics.ReferenceIssue, callErr.diagnostics.SuggestedTool
 	}
 	d.Field, d.JSONOffset = callErr.field, callErr.jsonOffset
 	args := item["arguments"]

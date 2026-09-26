@@ -528,7 +528,7 @@ func TestReferenceTransportRequiresExactCatalogName(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = r.convertCall(ctx, officeItem("exec", "ls", false))
-	require.ErrorContains(t, err, "未声明")
+	require.ErrorContains(t, err, "缺少命名空间")
 	call, err := r.convertCall(ctx, officeItem("functions.exec", "ls", false))
 	require.NoError(t, err)
 	obj, _ := parseObject(call)
