@@ -23,7 +23,7 @@ import (
 
 const (
 	PluginID        = "local.sub2api.openai-codex-ticket"
-	PluginVersion   = "1.0.0"
+	PluginVersion   = "1.0.1"
 	Capability      = "openai.oauth.codex_ticket_hook.v1"
 	turnStateHeader = "x-codex-turn-state"
 )

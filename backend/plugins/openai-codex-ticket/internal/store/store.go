@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -68,7 +69,11 @@ type Store struct {
 
 func New(kv KV) *Store { return &Store{kv: kv, memory: map[string]*ticket.Ticket{}} }
 func key(accountID int64, model string) string {
-	return fmt.Sprintf("ticket:%d:%s", accountID, strings.TrimSpace(model))
+	// HostService KV keys allow only letters, digits, '.', '_' and '-'. Encode
+	// the model so names containing other punctuation cannot make harvesting
+	// fail after the ticket has already been obtained.
+	encodedModel := base64.RawURLEncoding.EncodeToString([]byte(strings.TrimSpace(model)))
+	return fmt.Sprintf("ticket.%d.%s", accountID, encodedModel)
 }
 func (s *Store) Get(ctx context.Context, accountID int64, model string) (*ticket.Ticket, error) {
 	k := key(accountID, model)
@@ -134,7 +139,7 @@ func (s *Store) List(ctx context.Context) ([]*ticket.Ticket, error) {
 		}
 		return out, nil
 	}
-	keys, err := s.kv.List(ctx, Namespace, "ticket:", 10000)
+	keys, err := s.kv.List(ctx, Namespace, "ticket.", 10000)
 	if err != nil {
 		return nil, err
 	}
