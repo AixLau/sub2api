@@ -18,10 +18,10 @@ func TestToolDiagnosticObserver(t *testing.T) {
 		{"identity", "upstream_tool_capability", "unsupported_native_tool", object{"code": encoded("private_code")}, "functions.run_connector_action"},
 		{"arguments", "upstream_tool_arguments", "invalid_json", object{}, "run_officejs"},
 
-		{"unknown_target", "upstream_tool_envelope", "undeclared_target", object{"code": encoded(`{"name":"private_reference","input":"private_code"}`)}, "run_officejs"},
-		{"code_type", "upstream_tool_code", "code_not_string", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(map[string]string{"secret": "private_code"})}, "run_officejs"},
-		{"json", "upstream_tool_code", "invalid_json", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(`{"secret":"private\'code"}`)}, "run_officejs"},
-		{"array", "upstream_tool_code", "not_object", object{"references": encoded([]string{"functions.read_file"}), "code": encoded(`["private_code"]`)}, "run_officejs"},
+		{"unknown_target", "upstream_tool_references", "undeclared_target", object{"references": encoded([]string{clientToolReferencePrefix + "private_reference"}), "code": encoded("private_code")}, "run_officejs"},
+		{"code_type", "upstream_tool_code", "code_not_string", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(map[string]string{"secret": "private_code"})}, "run_officejs"},
+		{"json", "upstream_tool_code", "invalid_json", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`{"secret":"private\'code"}`)}, "run_officejs"},
+		{"array", "upstream_tool_code", "not_object", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`["private_code"]`)}, "run_officejs"},
 	} {
 		for _, stream := range []bool{false, true} {
 			t.Run(tc.name+map[bool]string{true: "/sse", false: "/json"}[stream], func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestToolDiagnosticObserver(t *testing.T) {
 					require.Positive(t, d.JSONOffset)
 					require.Equal(t, "code", d.Field)
 					require.Equal(t, "invalid", d.CodeJSONType)
-					require.Empty(t, d.TargetTool, "malformed envelope cannot identify a target")
+					require.Equal(t, "functions.read_file", d.TargetTool, "routing survives invalid payload JSON")
 				}
 				raw, err := json.Marshal(d)
 				require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestReferenceFailureClassificationNeverAuthorizesUnknownTools(t *testing.T)
 			r := customRequest(t)
 			var observed Diagnostic
 			ctx := WithDiagnosticObserver(context.Background(), func(d Diagnostic) { observed = d })
-			raw := rawCustomItem(object{"code": encoded(string(encoded(object{"name": encoded(tc.ref), "input": encoded("private executable source")})))})
+			raw := rawCustomItem(object{"references": encoded([]string{clientToolReferencePrefix + tc.ref}), "code": encoded("private executable source")})
 			result, err := r.Response(ctx, encoded(map[string]any{"id": "resp_refs", "output": []json.RawMessage{raw}}))
 			require.Error(t, err)
 			require.Nil(t, result)

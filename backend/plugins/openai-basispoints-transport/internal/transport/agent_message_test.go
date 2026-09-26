@@ -49,7 +49,7 @@ func TestForwardAgentTaskAndFollowup(t *testing.T) {
 			args, err := json.Marshal(map[string]any{"message": task, "task_name": "worker"})
 			require.NoError(t, err)
 			native := map[string]any{"type": "function_call", "id": "fc_parent", "call_id": "call_parent", "name": "run_officejs",
-				"arguments": map[string]any{"references": []string{"collaboration.spawn_agent"}, "code": string(mustJSONForTest(map[string]any{"name": "collaboration.spawn_agent", "arguments": json.RawMessage(args)}))}, "encrypted_function_args": []string{"code"}}
+				"arguments": map[string]any{"references": []string{"client-tool:collaboration.spawn_agent"}, "code": string(args)}, "encrypted_function_args": []string{"code"}}
 			requests := make(chan map[string]json.RawMessage, 3)
 			var hits atomic.Int32
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

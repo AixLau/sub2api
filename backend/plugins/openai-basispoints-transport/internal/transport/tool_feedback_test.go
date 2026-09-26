@@ -44,8 +44,8 @@ func TestForwardToolFeedback(t *testing.T) {
 							name = "get_weather"
 							suffix = "fixed"
 						}
-						envelope, _ := json.Marshal(map[string]any{"name": name, "arguments": map[string]any{"city": "Tokyo"}})
-						outer, _ := json.Marshal(map[string]any{"references": []string{"A1"}, "code": string(envelope)})
+						payload, _ := json.Marshal(map[string]any{"city": "Tokyo"})
+						outer, _ := json.Marshal(map[string]any{"references": []string{"client-tool:" + name}, "code": string(payload)})
 						item := map[string]any{"type": "function_call", "id": "fc_" + suffix, "call_id": "call_" + suffix, "name": "run_officejs", "arguments": string(outer)}
 						response := map[string]any{"id": "resp_" + suffix, "status": "completed", "output": []any{item}, "usage": map[string]int{"input_tokens": 9, "output_tokens": 2, "total_tokens": 11}}
 						terminal := "response.completed"

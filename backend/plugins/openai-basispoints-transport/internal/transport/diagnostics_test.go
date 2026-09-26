@@ -47,7 +47,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("X-Request-ID", "upstream_diag_request")
 				item := map[string]any{"type": "function_call", "id": "private_item_id", "call_id": "private_call_id", "name": "functions.run_officejs", "namespace": "functions",
-					"arguments": map[string]any{"references": []string{"get_weather"}, "summary": "private_summary", "code": `{"city":"private\'city"}`}}
+					"arguments": map[string]any{"references": []string{"client-tool:get_weather"}, "summary": "private_summary", "code": `{"city":"private\'city"}`}}
 				response := map[string]any{"id": "resp_logs", "status": "completed", "output": []any{item}}
 				if stream {
 					w.Header().Set("Content-Type", "text/event-stream")
@@ -83,7 +83,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Equal(t, "bps.tool_rejected", d.Event)
 			require.Equal(t, "upstream_tool_code", d.Tool.Stage)
 			require.Positive(t, d.Tool.JSONOffset)
-			require.Empty(t, d.Tool.TargetTool) // malformed envelope has no trustworthy target
+			require.Equal(t, "get_weather", d.Tool.TargetTool) // routing is independent of payload syntax
 			require.Equal(t, "test-model", d.Model)
 			require.Equal(t, stream, d.Stream)
 			require.Equal(t, 1, d.Attempt)

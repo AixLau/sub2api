@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
-// Native Office metadata and the client call are separate protocols. Only
-// code carries our JSON envelope; references and summary never select tools.
+const clientToolReferencePrefix = "client-tool:"
+
+// Route and payload occupy separate native fields. The outer function arguments
+// are decoded once; custom code is never parsed or re-escaped as nested JSON.
 func (c catalog) transportPayload(item object) (object, error) {
 	name := qualifiedCallName(item)
 	if stringValue(item["type"]) != "function_call" || !isTransportName(name) {
@@ -22,40 +25,37 @@ func (c catalog) transportPayload(item object) (object, error) {
 		return nil, err
 	}
 	if !isTextValue(outer["code"]) {
-		return nil, toolValidationError("upstream_tool_code", "code_not_string", "传输 code 必须是工具信封的 JSON 字符串")
+		return nil, toolValidationError("upstream_tool_code", "code_not_string", "传输 code 必须是客户端工具的原始字符串载荷")
 	}
-	envelope, err := parseToolObject([]byte(stringValue(outer["code"])), "code")
+	t, key, err := c.transportTarget(item, outer)
 	if err != nil {
 		return nil, err
 	}
-	if !isTextValue(envelope["name"]) || (envelope["namespace"] != nil && !isTextValue(envelope["namespace"])) {
-		return nil, toolValidationError("upstream_tool_envelope", "invalid_name", "工具信封 name 和 namespace 必须是字符串")
-	}
-	name = qualifiedCallName(envelope)
-	t, key, ok := c.lookup(name)
-	if !ok || isTransportName(name) {
-		return nil, c.targetError(item, name)
-	}
-	for field := range envelope {
-		if field != "name" && field != "namespace" && field != "arguments" && field != "input" {
-			return nil, toolValidationError("upstream_tool_envelope", "unknown_field", "工具信封只允许 name、namespace 以及 arguments 或 input 字段")
-		}
-	}
-	payload := envelope["arguments"]
+	payload := outer["code"]
 	if t.Custom {
-		payload = envelope["input"]
-		if envelope["arguments"] != nil || !isTextValue(payload) {
-			return nil, toolValidationError("upstream_tool_envelope", "custom_input_not_string", "custom 工具信封必须使用原始字符串 input，不能使用 arguments")
-		}
-	} else {
-		if envelope["input"] != nil {
-			return nil, toolValidationError("upstream_tool_envelope", "unexpected_input", "function 工具信封必须使用 arguments 对象，不能使用 input")
-		}
-		if _, err := parseToolObject(payload, "envelope_arguments"); err != nil {
-			return nil, err
-		}
+		return object{"tool": encoded(key), "args": payload}, nil
+	}
+	payload = []byte(stringValue(payload))
+	if _, err := parseToolObject(payload, "code"); err != nil {
+		return nil, err
 	}
 	return object{"tool": encoded(key), "args": payload}, nil
+}
+
+func (c catalog) transportTarget(item, outer object) (tool, string, error) {
+	var refs []string
+	if json.Unmarshal(outer["references"], &refs) != nil || len(refs) != 1 {
+		return tool{}, "", toolValidationError("upstream_tool_references", "invalid_route", "references 必须仅包含一个 client-tool: 工具路由")
+	}
+	name, ok := strings.CutPrefix(refs[0], clientToolReferencePrefix)
+	if !ok || name == "" {
+		return tool{}, "", toolValidationError("upstream_tool_references", "invalid_route", "references 必须使用 client-tool: 加目录中的完整工具名")
+	}
+	t, ok := c.tools[name]
+	if !ok || isTransportName(name) {
+		return tool{}, "", c.targetError(item, name)
+	}
+	return t, name, nil
 }
 
 // Report only a fixed field name and byte offset, never parser error text,

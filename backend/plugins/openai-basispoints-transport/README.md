@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.5.0 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
+0.6.0 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -43,17 +43,25 @@
 1. 请求体只发送 Excel 加载项词汇表字段：`model`（见下方模型映射）、`model_selection: "explicit"`、`stream`、`store: false`、`input`、`prompt_cache_key`、`reasoning_effort`、`context_management`、`metadata`。`tools`、`tool_choice`、`parallel_tool_calls`、`reasoning` 对象、`instructions`、`include`、`text`、`max_output_tokens`、`temperature`、`top_p`、`previous_response_id` 等一律不发往上游。
 2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息或非空明文 agent_message 开启新 turn；同一正文发给不同子 agent 时保留独立身份。显式传入的 turn 与回放状态冲突时直接报错。
 3. `instructions` 与客户端工具目录都写入 developer 消息（带 `type: "message"`）。工具目录是普通文本，不是上游工具声明。
-4. 工具传输协议 v4：`run_officejs.code` 承载独立 JSON 信封。function 使用 `{"name":"functions.read_file","arguments":{"path":"README.md"}}`；custom/freeform 使用 `{"name":"functions.exec","input":"原始输入"}`。也接受独立的 `namespace` 字段。`references: []` 和 `summary` 是外层 Office 元数据，均不参与客户端工具路由。信封只允许 name、namespace 和该工具类型对应的 arguments 或 input。
-5. 仅 `run_officejs` / `functions.run_officejs` 承载传输协议（也支持独立 `namespace: "functions"`）。目标按客户端目录完整名称或唯一短名解析，歧义、未声明工具和递归执行器明确报错；function 参数必须为 JSON 对象，custom 原文通过 input 字符串精确保留。上游直接调用已声明的客户端工具时按标准 Responses 字段处理。插件不执行工具，不猜测嵌套工具、不修复坏 JSON、不接受旧 references 路由作为新调用入口。
+4. 工具传输协议 v5：references 必须为单元素 ["client-tool:目录完整工具名"]，code 只承载原始载荷。function 的 code 是参数对象的 JSON 文本；custom/freeform 的 code 是原始脚本或补丁，不再嵌套 name/input JSON 信封，也不预先转义。summary 只作描述。
+5. 仅 run_officejs / functions.run_officejs 承载传输协议（支持独立 namespace: "functions"）。路由必须精确匹配客户端目录的完整名称；不接受短名、未声明工具、递归执行器、无前缀的旧 references 或 code 内旧信封路由。function 参数必须为 JSON 对象；custom 原文不解析 JSON，不修补脚本。上游直接调用已声明的客户端工具仍按标准 Responses 字段处理。
 6. 通过宿主 HostService KV 保存完整上游 item，包含 `id`、`call_id`、`arguments` 内外的 `summary`、`references` 和未知字段。客户端收到不透明的 `call_bps_…` 标识，按正常流程决定是否执行工具。
 7. 客户端提交工具结果时，插件恢复原始调用 item 和原始 `call_id`（即使客户端只提交了工具结果也能回放），并为结果 item 补全 `fc_…` 形式的 `id`。相同调用 item 不重复插入。
-8. 非插件生成但结构有效的客户端工具历史，使用客户端自己的 name/arguments 按 v4 重建 `run_officejs` 调用继续回放，保留参数原始 JSON 和数字精度。无效参数或没有对应调用项的孤立工具结果明确报错。
+8. 非插件生成但结构有效的客户端工具历史，使用客户端自己的 name/arguments 按 v5 重建 `run_officejs` 调用继续回放，保留参数原始 JSON 和数字精度。无效参数或没有对应调用项的孤立工具结果明确报错。
 9. 输入项清洗：带 `encrypted_content` 的 reasoning 原样保留（仅保留加密内容），裸 reasoning 与 `item_reference` 丢弃（`store:false` 的上游拒绝它们）；`image_generation` 只保留仍带内联数据的 item，瘦身项（仅 `id`，`result: null`）丢弃——`store:false` 下上游不持久化 item，回放瘦身项会以 `Item with id 'ig_…' not found` 404 整个请求；各 item 上的 `internal_chat_message_metadata_passthrough` 会剥离。
 10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
 
-## 0.5.0 跨协议转换与错误反馈
+## 0.6.0 原始载荷传输与宿主限额
+
+- 删除 custom 输入内的二次 JSON 信封。路由放在带 client-tool: 前缀的 references，code 原文直接交给已声明的客户端工具。保留函数参数 JSON 校验、tool_choice、整批校验和原始 call_id 回放。
+- 采用 [OpenAI custom 工具的自由文本输入约定](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)，避免把脚本本身再次要求为 JSON 对象。这里只定义插件自己的传输协议，不把它视为 BPS 原生 schema。
+- 请求大小直接沿用宿主 gateway.max_body_size，宿主与插件必须同步更新。运营详情识别 TOOL_BRIDGE 错误码，避免仅凭保存的 400 错判为网络故障。
+- 本地回归包含超过 19 KiB 的脚本实际执行、文件内容逐字核对、JSON/SSE、结果回传和无内部纠错推理。授权实测使用同一环境变量运行 TestRawCustomTransportLiveBPS，目标模型固定 gpt-5.6-terra，最多三轮。
+- 2026-09-26 授权实测被上游 usage_limit_reached / HTTP 429 阻断，尚未验证本版在真实模型上的成功率，不宣称原线上故障已完全复现或解决。
+
+## 0.5.0 跨协议转换与错误反馈（历史）
 
 - 用独立 JSON 信封替换 references 路由，区分 Office 元数据与 Codex 的工具名称、命名空间、function arguments、custom input。保留完整原生调用与不透明客户端 call_id 映射，旧的已交付历史仍按 KV 原始 item 回放。
 - 对可转换且标识唯一的原生调用，整批预检失败时先拦住整批工具，以实际原生 call_id 生成工具错误结果。错误明确包含 `success:false`、`executed:false` 和转换阶段/原因；同批合法调用标记 `TOOL_BATCH_NOT_EXECUTED`，避免客户端先执行部分调用后再重复执行。
@@ -64,7 +72,7 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 
 2026-09-26 真实 BPS 联调：使用同一有效授权，13 个客户端工具的 v4 请求返回 HTTP 200，并转换为 functions.exec custom 调用；受控旧格式调用经一次原始 call_id 错误结果续接后再次返回 HTTP 200，修正结果通过同一转换器校验。两种情况下均未执行工具载荷。该实验验证转换和反馈链路，不代表已复现旧日志中未保存的具体错误调用。
 
-参考依据（2026-09-26 检视）：[Codex 工具路由](https://github.com/openai/codex/blob/e72da2b53805894878023d01949a25a082e0a5cb/codex-rs/core/src/tools/router.rs)、[错误作为工具结果返回](https://github.com/openai/codex/blob/e72da2b53805894878023d01949a25a082e0a5cb/codex-rs/core/src/tools/parallel.rs)、[ghcp_proxy 的 code 信封与空 references](https://github.com/Nonary/ghcp_proxy/blob/dfb758b181e5caa6c52183ef957232140c384dcb/excel_upstream.py)。这里只定义本插件协议；未取得完整的原生 Excel BPS 工具 schema，不能据插件校验失败断言上游违反了 BPS 原生协议。下方旧版本说明保留历史背景，当前规则以上述 v4 为准。
+参考依据（2026-09-26 检视）：[Codex 工具路由](https://github.com/openai/codex/blob/e72da2b53805894878023d01949a25a082e0a5cb/codex-rs/core/src/tools/router.rs)、[错误作为工具结果返回](https://github.com/openai/codex/blob/e72da2b53805894878023d01949a25a082e0a5cb/codex-rs/core/src/tools/parallel.rs)、[ghcp_proxy 的 code 信封与空 references](https://github.com/Nonary/ghcp_proxy/blob/dfb758b181e5caa6c52183ef957232140c384dcb/excel_upstream.py)。这里只定义本插件协议；未取得完整的原生 Excel BPS 工具 schema，不能据插件校验失败断言上游违反了 BPS 原生协议。下方旧版本说明保留历史背景，当前规则以上述 v5 为准。
 
 ## 0.4.8 工具 references 约束与诊断
 
@@ -126,7 +134,7 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 
 - 请求关联：入口 request_id、每次插件 Forward 独立 trace_id、账号 ID、模型、插件版本、BPS/native 路由及原因、上游尝试次数、流式标记、HTTP 状态、上游 X-Request-ID 和累计耗时。
 - 关键事件：bps.route_selected、bps.upstream_response、bps.upstream_retry、bps.tool_rejected、bps.request_failed、bps.request_finished。工具拒绝使用 WARN；一般成功流程使用 INFO，不逐个记录 token/delta。
-- 工具拒绝：记录源 SSE 事件（或 json_response）、已知的响应 ID、实际 name/namespace/qualified_name、客户端工具数量、校验阶段与固定原因、arguments/references/code 的类型及长度、references 数量、已声明的目标工具，以及 JSON 出错字段和字节偏移。未知 references 的值不记入日志。code_json_type 和 envelope_present 只描述结构，不记录正文，也不改变校验或恢复旧信封协议。
+- 工具拒绝：记录源 SSE 事件（或 json_response）、已知的响应 ID、实际 name/namespace/qualified_name、客户端工具数量、校验阶段与固定原因、arguments/references/code 的类型及长度、references 数量、已声明的目标工具，以及 JSON 出错字段和字节偏移。未知 references 的值不记入日志。code_json_type 对 custom 标记为 raw_custom_input；仅 function 检查 JSON 类型，不记录正文。
 - 元数据边界：身份字段限制为不超过 128 字节的 ASCII 字母、数字、下划线、连字符和点；不符合要求整体脱敏。不额外采集认证头、代理 URL、上游响应正文或任意原始异常文本。0.4.3 失败请求正文按上一节单独记录。
 - 流式语义失败即使正常结束 RPC，也会生成一条工具拒绝诊断；日志与已有失败响应分别处理。日志观察器不改写参数、重放状态或返回结果。
 - 插件配置页提供“最近故障诊断与请求正文”，每 10 秒刷新，显示最近 50 条故障，最新在前，可复制 JSON。数据来自 Health.status_json.recent_diagnostics，是有界内存快照，插件进程重启后清空；长期留存遵循宿主的日志保留策略。
@@ -163,7 +171,7 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 
 - 含非空 encrypted_content 的 agent_message 不进入 BPS 重写；插件将原始请求逐字节交给 native Codex 通道，由原生端保留并解密历史。
 - 只有明确由 input_text/text 构成的 agent_message 才进入 BPS，并按顺序转换为普通 user message。native_fallback: false 时仍安全返回 TOOL_BRIDGE_REQUEST_INVALID，不猜测密文。
-- 当时为旧摘要增加的 custom 回退解析已在 0.4.0 移除；当前协议见上方 v4 定义。
+- 当时为旧摘要增加的 custom 回退解析已在 0.4.0 移除；当前协议见上方 v5 定义。
 - 本版本针对错误 #477711 的 input[434].content[1] 路径增加了 native 原样转发测试，并针对 #477994 增加旧 custom 摘要回放测试。
 
 ## 0.3.3 多 agent 与 custom 工具修复
@@ -279,7 +287,7 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 - 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器载荷转换为实际客户端工具；客户端已声明的直接调用也接受校验。function 的无效 JSON、未知工具及错误参数类型返回 TOOL_BRIDGE_CALL_INVALID；custom 原文不解析为 JSON。不透传 Office 执行器、不猜测或修复可执行代码。
 - 当前支持 Responses 桥接和独立 alpha/search 原生转发；不支持 compact、图片专用接口或计数接口，不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片上传支持消息和工具结果中的内嵌图。
 - 工具结果（`function_call_output` / `custom_tool_call_output`）中的内嵌图片先迁移到后续用户消息，再附件化。工具结果保留文本及媒体位置标记，消息注明来源调用；不会把 file_id 图片直接留在工具 output 中。
-- 每个 HTTP 请求 JSON 上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
+- 请求体上限沿用宿主 gateway.max_body_size；响应缓冲上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
 - `tool_choice` 通过文本约定和返回校验表达，无法保证模型与原生 API 的行为完全一致。
 
 ## 构建与验证
@@ -290,12 +298,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.5.0.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.0.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.5.0.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.0.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 

@@ -88,12 +88,12 @@ func readCatalog(raw, choice json.RawMessage, input []json.RawMessage) (catalog,
 			}
 			line := fmt.Sprintf("Tool %q: %s\n", key, stringValue(entry["description"]))
 			if typ == "custom" {
-				line += "CUSTOM: code contains a JSON object with name=" + string(encoded(key)) + " and input equal to the exact raw string.\n"
+				line += "CUSTOM: references=" + string(encoded([]string{clientToolReferencePrefix + key})) + "; code is the exact raw input, including literal newlines, quotes and backslashes. Do not JSON-wrap or stringify it.\n"
 				if format := entry["format"]; len(format) > 0 {
 					line += "Input format reference: " + string(format) + "\n"
 				}
 			} else {
-				line += "FUNCTION: code contains a JSON object with name=" + string(encoded(key)) + " and arguments equal to the arguments object.\n"
+				line += "FUNCTION: references=" + string(encoded([]string{clientToolReferencePrefix + key})) + "; code is only the JSON arguments object as text.\n"
 				if params := entry["parameters"]; len(params) > 0 {
 					line += "Argument reference: " + string(params) + "\n"
 				}
@@ -147,7 +147,7 @@ func readCatalog(raw, choice json.RawMessage, input []json.RawMessage) (catalog,
 
 func (c catalog) prompt() string {
 	var b strings.Builder
-	b.WriteString("Client tool transport protocol v4. Call run_officejs (also displayed as functions.run_officejs) to carry exactly one client tool call as JSON text in code. For FUNCTION use {\"name\":\"catalog name\",\"arguments\":{...}}; for CUSTOM use {\"name\":\"catalog name\",\"input\":\"exact raw input\"}. A separate namespace string is also supported. Serialize the envelope as a whole; preserve custom input including newlines, quotes and backslashes. Set references=[]; references and summary do not select a tool. Keep other outer executor fields in their native format. The bridge converts the envelope; it never executes OfficeJS or client tools. Client permissions and approvals still apply. Do not invent tool results.\n")
+	b.WriteString("Client tool transport protocol v5. Call run_officejs (also displayed as functions.run_officejs) for exactly one client tool. Set references to exactly [\"client-tool:FULL_CATALOG_NAME\"]. Routing is separate from code. For CUSTOM, code is the exact raw input: write the actual script or patch with its real newlines; do not wrap it in a JSON envelope or JSON-stringify it. For FUNCTION, code is only the JSON arguments object as text. Do not put name, namespace, input or an arguments wrapper around the payload. The native tool serializes its outer arguments; do not pre-escape code. Summary is descriptive only. The bridge forwards the payload to the declared client tool and never executes OfficeJS or scripts. Client permissions and approvals still apply. Do not invent tool results.\n")
 	if c.choice == "none" || len(c.tools) == 0 {
 		b.WriteString("Do not call any tools for this response.\n")
 	}

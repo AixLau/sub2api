@@ -92,7 +92,7 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		item := map[string]any{"type": "function_call", "name": "run_officejs", "id": "fc_bad", "call_id": "call_bad", "arguments": map[string]any{"references": []string{"get_weather"}, "code": "malformed JSON"}}
+		item := map[string]any{"type": "function_call", "name": "run_officejs", "id": "fc_bad", "call_id": "call_bad", "arguments": map[string]any{"references": []string{"client-tool:get_weather"}, "code": "malformed JSON"}}
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			response := map[string]any{"status": "completed", "output": []any{item}}
 			if stream {

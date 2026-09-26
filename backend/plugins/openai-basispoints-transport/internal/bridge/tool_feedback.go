@@ -143,7 +143,7 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 		if !isToolCall(item) {
 			continue
 		}
-		detail := object{"code": encoded("TOOL_BATCH_NOT_EXECUTED"), "message": encoded("This call was not executed because another call in the same batch could not be converted. Submit any still-needed calls again using the client tool envelope.")}
+		detail := object{"code": encoded("TOOL_BATCH_NOT_EXECUTED"), "message": encoded("This call was not executed because another call in the same batch could not be converted. Submit any still-needed calls again with references=[\"client-tool:FULL_CATALOG_NAME\"] and the raw payload in code.")}
 		if failure := failures[i]; failure != nil {
 			detail = object{"code": encoded("TOOL_BRIDGE_CONVERSION_FAILED"), "stage": encoded(failure.stage), "reason": encoded(failure.reason), "message": encoded(failure.Error())}
 		}

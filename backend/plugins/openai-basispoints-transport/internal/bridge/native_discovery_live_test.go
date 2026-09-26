@@ -39,21 +39,7 @@ func TestNativeDiscoveryLiveBPS(t *testing.T) {
 	for round := 0; round < 5; round++ {
 		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-6-astra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": discoveryTools(), "input": input}), scope, store, nil, 256<<20)
 		require.NoError(t, err)
-		body := encoded(map[string]any{"email": email, "body": json.RawMessage(r.Body)})
-		// Single-quote shell escaping; credentials never enter this argument or stdin.
-		script := "'" + strings.ReplaceAll(liveDiscoveryTransport, "'", "'\"'\"'") + "'"
-		cmd := exec.CommandContext(ctx, "ssh", "-S", socket, "-o", "BatchMode=yes", target, "python3 -c "+script)
-		cmd.Stdin = strings.NewReader(string(body))
-		result, err := cmd.Output()
-		require.NoError(t, err, "remote probe failed without exposing authorization")
-		response, err := parseObject(result)
-		require.NoError(t, err)
-		require.Equal(t, "200", string(response["status"]), "upstream refused the authorized probe")
-		var wire strings.Builder
-		// Deliberately no Feedback: conversion must reach the client on this call.
-		require.NoError(t, r.Stream(ctx, strings.NewReader(stringValue(response["body"])), func(b []byte) error { wire.Write(b); return nil }))
-		final := streamSnapshot(t, wire.String())
-		require.False(t, r.Failed, "native tool conversion failed: %s", string(final["error"]))
+		final := liveBPSResponse(t, ctx, r, socket, target, email)
 		var output []json.RawMessage
 		require.NoError(t, json.Unmarshal(final["output"], &output))
 		count := 0
@@ -90,4 +76,31 @@ func TestNativeDiscoveryLiveBPS(t *testing.T) {
 		}
 	}
 	t.Fatal("probe exceeded its five-inference limit")
+}
+
+func liveBPSResponse(t *testing.T, ctx context.Context, r *Request, socket, target, email string) object {
+	t.Helper()
+	body := encoded(map[string]any{"email": email, "body": json.RawMessage(r.Body)})
+	script := "'" + strings.ReplaceAll(liveDiscoveryTransport, "'", "'\"'\"'") + "'"
+	cmd := exec.CommandContext(ctx, "ssh", "-S", socket, "-o", "BatchMode=yes", target, "python3 -c "+script)
+	cmd.Stdin = strings.NewReader(string(body))
+	result, err := cmd.Output()
+	require.NoError(t, err, "remote probe failed without exposing authorization")
+	response, err := parseObject(result)
+	require.NoError(t, err)
+	if string(response["status"]) != "200" {
+		// The remote probe redacts authorization before returning the error.
+		detail := stringValue(response["body"])
+		if len(detail) > 2048 {
+			detail = detail[:2048]
+		}
+		t.Logf("upstream rejection: %s", detail)
+	}
+	require.Equal(t, "200", string(response["status"]), "upstream refused the authorized probe")
+	var wire strings.Builder
+	// No Feedback handler: every successful call must reach the client directly.
+	require.NoError(t, r.Stream(ctx, strings.NewReader(stringValue(response["body"])), func(b []byte) error { wire.Write(b); return nil }))
+	final := streamSnapshot(t, wire.String())
+	require.False(t, r.Failed, "tool conversion failed: %s", string(final["error"]))
+	return final
 }

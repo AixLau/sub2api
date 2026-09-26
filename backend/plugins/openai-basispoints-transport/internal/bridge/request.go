@@ -418,12 +418,12 @@ func messageItem(role, text string) map[string]any {
 // deterministic item id.
 func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error) {
 	callID := stringValue(item["call_id"])
-	envelope := object{"name": encoded(name)}
+	var payload string
 	if typ == "custom_tool_call" {
 		if !isTextValue(item["input"]) {
 			return nil, errors.New("历史 custom 工具 input 必须是字符串")
 		}
-		envelope["input"] = item["input"]
+		payload = stringValue(item["input"])
 	} else {
 		rawArgs := item["arguments"]
 		if isTextValue(rawArgs) {
@@ -432,13 +432,13 @@ func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error
 		if _, err := parseObject(rawArgs); err != nil {
 			return nil, errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 		}
-		envelope["arguments"] = rawArgs
+		payload = string(rawArgs)
 	}
 	outer := map[string]any{
 		"summary":     "Run client tool " + name,
-		"code":        string(encoded(envelope)),
+		"code":        payload,
 		"destructive": false,
-		"references":  []string{},
+		"references":  []string{clientToolReferencePrefix + name},
 	}
 	return encoded(object{
 		"type":      encoded("function_call"),

@@ -21,7 +21,7 @@ func TestEnvelopeTransportSeparatesRoutingFromPayload(t *testing.T) {
 		t.Run(tc.name+"/"+tc.payload, func(t *testing.T) {
 			for _, finalOnly := range []bool{false, true} {
 				r := customRequest(t)
-				item := rawCustomItem(object{"summary": encoded("Inspect the repository"), "references": encoded([]string{"unrelated sheet address"}), "code": encoded(string(envelopeForTest(tc.name, tc.field, tc.payload)))})
+				item := rawCustomItem(object{"summary": encoded("Inspect the repository"), "references": encoded([]string{clientToolReferencePrefix + tc.name}), "code": encoded(tc.payload)})
 				response := map[string]any{"id": "resp_reference", "status": "completed", "output": []any{item}}
 				wire := event("response.completed", map[string]any{"response": response})
 				if !finalOnly {
@@ -53,7 +53,7 @@ func TestEnvelopeTransportSeparatesRoutingFromPayload(t *testing.T) {
 func TestEnvelopeTransportSummaryIsNotRouting(t *testing.T) {
 	for _, summary := range []string{"", "sub2api.custom/functions.exec", "Run client tool functions.exec"} {
 		r := customRequest(t)
-		item := rawCustomItem(object{"summary": encoded(summary), "references": encoded([]string{"functions.exec"}), "code": encoded(string(envelopeForTest("functions.read_file", "arguments", `{"path":"example.txt"}`)))})
+		item := rawCustomItem(object{"summary": encoded(summary), "references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`{"path":"example.txt"}`)})
 		call, err := r.convertCall(context.Background(), item)
 		require.NoError(t, err)
 		obj, _ := parseObject(call)
@@ -107,10 +107,8 @@ func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 		require.NoError(t, err)
 		native, _ := parseObject(rebuilt)
 		outer, _ := parseObject([]byte(stringValue(native["arguments"])))
-		envelope, err := parseObject([]byte(stringValue(outer["code"])))
-		require.NoError(t, err)
-		require.Equal(t, arguments, string(envelope["arguments"]))
-		require.JSONEq(t, `[]`, string(outer["references"]))
+		require.Equal(t, arguments, stringValue(outer["code"]))
+		require.Equal(t, string(encoded([]string{clientToolReferencePrefix + "functions.read_file"})), string(outer["references"]))
 	}
 	for _, raw := range []json.RawMessage{nil, encoded("invalid private input"), encoded(nil), encoded([]any{}), encoded(42)} {
 		for _, typ := range []string{"function_call", "custom_tool_call"} {
@@ -125,38 +123,20 @@ func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 	}
 }
 
-func envelopeForTest(name, field, payload string) json.RawMessage {
-	value := encoded(payload)
-	if field == "arguments" {
-		value = json.RawMessage(payload)
-	}
-	return encoded(object{"name": encoded(name), field: value})
-}
-
 func TestCatalogAdvertisesEnvelopeTransport(t *testing.T) {
 	r := customRequest(t)
 	prompt := r.catalog.prompt()
-	require.Contains(t, prompt, "protocol v4")
-	require.Contains(t, prompt, "Set references=[]")
-	require.Contains(t, prompt, "references and summary do not select a tool")
-	require.Contains(t, prompt, `name="functions.exec"`)
-	require.Contains(t, prompt, `name="functions.read_file"`)
+	require.Contains(t, prompt, "protocol v5")
+	require.Contains(t, prompt, "Routing is separate from code")
+	require.Contains(t, prompt, "do not wrap it in a JSON envelope")
+	require.Contains(t, prompt, "client-tool:functions.exec")
+	require.Contains(t, prompt, "client-tool:functions.read_file")
 	require.Contains(t, prompt, "through that parent tool")
 	require.NotContains(t, prompt, "example.exec")
 	require.Equal(t, prompt, r.catalog.prompt())
 }
 
-func TestEnvelopeNamespaceAndKinds(t *testing.T) {
-	for _, payload := range []string{
-		`{"name":"exec","namespace":"functions","input":"text('ok')"}`,
-		`{"name":"functions.exec","input":"text('ok')"}`,
-		`{"name":"exec","input":"text('ok')"}`,
-	} {
-		call, err := customRequest(t).convertCall(context.Background(), rawCustomItem(object{"code": encoded(payload)}))
-		require.NoError(t, err)
-		item, _ := parseObject(call)
-		require.Equal(t, "functions", stringValue(item["namespace"]))
-	}
+func TestNestedEnvelopesCannotSelectTools(t *testing.T) {
 	for _, payload := range []string{
 		`{"name":"functions.exec","arguments":{}}`,
 		`{"name":"functions.exec","input":null}`,

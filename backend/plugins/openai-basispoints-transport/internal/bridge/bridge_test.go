@@ -32,12 +32,11 @@ func prepareWeather(t *testing.T, store Store) *Request {
 }
 
 func officeItem(name string, args any, objectArguments bool) json.RawMessage {
-	envelope := map[string]any{"name": name, "arguments": args}
+	payload := string(encoded(args))
 	if input, ok := args.(string); ok {
-		delete(envelope, "arguments")
-		envelope["input"] = input
+		payload = input
 	}
-	outer := map[string]any{"summary": "Read weather", "references": []string{}, "destructive": false, "code": string(encoded(envelope))}
+	outer := map[string]any{"summary": "Read weather", "references": []string{clientToolReferencePrefix + name}, "destructive": false, "code": payload}
 	var arguments any = string(encoded(outer))
 	if objectArguments {
 		arguments = outer
@@ -310,8 +309,8 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	require.Equal(t, "fc_call_old_1", stringValue(call["id"]))
 	var outer map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stringValue(call["arguments"])), &outer))
-	require.Empty(t, outer["references"])
-	require.JSONEq(t, `{"name":"get_weather","arguments":{"city":"Tokyo"}}`, outer["code"].(string))
+	require.Equal(t, []any{"client-tool:get_weather"}, outer["references"])
+	require.JSONEq(t, `{"city":"Tokyo"}`, outer["code"].(string))
 	out, _ := parseObject(items[3])
 	require.Equal(t, "function_call_output", stringValue(out["type"]))
 	require.Equal(t, "call_old_1", stringValue(out["call_id"]))
@@ -522,14 +521,14 @@ func TestStoreFailureNeverReleasesExecutableCall(t *testing.T) {
 	require.Zero(t, emitted)
 }
 
-func TestEnvelopeTransportResolvesUnambiguousCatalogName(t *testing.T) {
+func TestTransportRequiresExactCatalogName(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(`{"input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec","description":"Run command"}]}]}`)
 	r, err := Prepare(ctx, raw, "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 
 	_, err = r.convertCall(ctx, officeItem("exec", "ls", false))
-	require.NoError(t, err)
+	require.Error(t, err)
 	call, err := r.convertCall(ctx, officeItem("functions.exec", "ls", false))
 	require.NoError(t, err)
 	obj, _ := parseObject(call)

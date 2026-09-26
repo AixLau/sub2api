@@ -49,12 +49,12 @@ func (c catalog) targetIssue(key string) (issue, suggested string) {
 
 func (c catalog) targetError(item object, key string) error {
 	issue, suggested := c.targetIssue(key)
-	message := "上游工具 信封 name 指定了未声明的工具；必须使用客户端目录中的完整名称（含命名空间），不能直接引用工具描述中的嵌套工具"
+	message := "上游工具 references 路由指定了未声明的工具；必须使用客户端目录中的完整名称（含命名空间），不能直接引用工具描述中的嵌套工具"
 	if issue == "missing_namespace" && suggested != "<redacted>" {
-		message = "上游工具 信封 name 缺少命名空间；应使用客户端已声明的完整名称 " + suggested
+		message = "上游工具 references 路由缺少命名空间；应使用客户端已声明的完整名称 " + suggested
 	}
-	return &ToolCallError{message: message, stage: "upstream_tool_envelope", reason: "undeclared_target",
-		diagnostics: &toolCallDiagnostics{Stage: "upstream_tool_envelope", CallType: diagnosticIdentifier(stringValue(item["type"])),
+	return &ToolCallError{message: message, stage: "upstream_tool_references", reason: "undeclared_target",
+		diagnostics: &toolCallDiagnostics{Stage: "upstream_tool_references", CallType: diagnosticIdentifier(stringValue(item["type"])),
 			Name: diagnosticIdentifier(stringValue(item["name"])), Namespace: diagnosticIdentifier(stringValue(item["namespace"])),
 			QualifiedName: diagnosticIdentifier(qualifiedCallName(item)), CatalogTools: len(c.tools), TargetIssue: issue, SuggestedTool: suggested}}
 }

@@ -35,7 +35,7 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		"",
 	} {
 		r := customRequest(t)
-		native := rawCustomItem(object{"summary": encoded("Run a client command"), "references": encoded([]string{}), "code": encoded(string(encoded(object{"name": encoded("functions.exec"), "input": encoded(source)})))})
+		native := rawCustomItem(object{"summary": encoded("Run a client command"), "references": encoded([]string{clientToolReferencePrefix + "functions.exec"}), "code": encoded(source)})
 		response := map[string]any{"id": "resp_raw", "status": "completed", "output": []any{native}}
 		assertCall := func(raw json.RawMessage, complete bool) object {
 			call, err := parseObject(raw)
@@ -103,10 +103,8 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		rebuilt, _ := parseObject(rebuiltRaw)
 		outer, err := parseObject([]byte(stringValue(rebuilt["arguments"])))
 		require.NoError(t, err)
-		require.JSONEq(t, `[]`, string(outer["references"]))
-		envelope, err := parseObject([]byte(stringValue(outer["code"])))
-		require.NoError(t, err)
-		require.Equal(t, source, stringValue(envelope["input"]))
+		require.Equal(t, string(encoded([]string{clientToolReferencePrefix + "functions.exec"})), string(outer["references"]))
+		require.Equal(t, source, stringValue(outer["code"]))
 	}
 }
 

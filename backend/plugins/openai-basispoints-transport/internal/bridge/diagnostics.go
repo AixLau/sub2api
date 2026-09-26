@@ -31,7 +31,6 @@ type Diagnostic struct {
 	CodeType        string `json:"code_type,omitempty"`
 	CodeBytes       int    `json:"code_bytes,omitempty"`
 	CodeJSONType    string `json:"code_json_type,omitempty"`
-	EnvelopePresent bool   `json:"envelope_present"`
 }
 
 type diagnosticObserverKey struct{}
@@ -90,13 +89,14 @@ func (r *Request) observeCallFailure(ctx context.Context, item object, err error
 			d.CodeType = jsonKind(outer["code"])
 			if isTextValue(outer["code"]) {
 				code := []byte(stringValue(outer["code"]))
-				d.CodeBytes, d.CodeJSONType = len(code), jsonKind(code)
-				if obj, parseErr := parseObject(code); parseErr == nil {
-					d.EnvelopePresent = obj["name"] != nil
-					_, key, ok := r.catalog.lookup(qualifiedCallName(obj))
-					d.TargetDeclared = ok
-					if ok {
-						d.TargetTool = diagnosticIdentifier(key)
+				d.CodeBytes = len(code)
+				if target, key, targetErr := r.catalog.transportTarget(item, outer); targetErr == nil {
+					d.TargetDeclared = true
+					d.TargetTool = diagnosticIdentifier(key)
+					if target.Custom {
+						d.CodeJSONType = "raw_custom_input"
+					} else {
+						d.CodeJSONType = jsonKind(code)
 					}
 				}
 			}
