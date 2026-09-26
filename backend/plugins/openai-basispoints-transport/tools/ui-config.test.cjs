@@ -7,7 +7,7 @@ const { JSDOM } = createRequire(path.resolve(__dirname, '../../../../frontend/pa
 const newline = String.fromCharCode(10);
 const uiDir = path.join(__dirname, '../ui');
 
-async function mount(t, config = {}) {
+async function mount(t, config = {}, statusDetails = {}) {
   const dom = new JSDOM(readFileSync(path.join(uiDir, 'index.html'), 'utf8'), { runScripts: 'outside-only' });
   const calls = [];
   dom.window.sub2apiPluginBridge = {
@@ -16,7 +16,7 @@ async function mount(t, config = {}) {
       calls.push({ method, params });
       if (method === 'config.load') return { config };
       if (method === 'config.save') return { config: params.config };
-      return { result: { healthy: true, status_json: '{}' } };
+      return { result: { healthy: true, status_json: JSON.stringify(statusDetails) } };
     }
   };
   dom.window.eval(readFileSync(path.join(uiDir, 'assets/app.js'), 'utf8'));
@@ -41,6 +41,21 @@ test('model selection defaults to all and round trips exact selected names', asy
   assert.equal(saved.native_fallback, true);
   assert.equal(field('bps_models').value, ['model-a-excel', 'Model-B'].join(newline));
   assert.equal(field('message').textContent, '配置已保存');
+});
+
+test('diagnostics show newest bounded entries as text without executing HTML', async t => {
+  const entries = Array.from({ length: 60 }, (_, n) => ({ request_id: 'req-' + n, tool: { name: '<img src=x onerror=alert(1)>' } }));
+  const { field } = await mount(t, {}, { recent_diagnostics: entries });
+  const diagnostics = JSON.parse(field('diagnostics-detail').textContent);
+  assert.equal(diagnostics.length, 50);
+  assert.equal(diagnostics[0].request_id, 'req-59');
+  assert.equal(diagnostics[49].request_id, 'req-10');
+  assert.equal(field('diagnostics-detail').querySelector('img'), null);
+});
+
+test('empty diagnostics show an explicit empty state', async t => {
+  const { field } = await mount(t);
+  assert.equal(field('diagnostics-detail').textContent, '暂无故障诊断');
 });
 
 test('selected empty list is retained and all mode preserves the editable list', async t => {

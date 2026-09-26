@@ -18,6 +18,8 @@ type Request struct {
 	OmittedTools []string
 	Failed       bool
 	FailureCode  string
+	responseID   string
+	sourceEvent  string
 	originals    map[string]string
 	store        Store
 	scope        string

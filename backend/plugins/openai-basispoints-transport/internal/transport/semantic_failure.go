@@ -12,6 +12,7 @@ import (
 // Called before response headers. Semantic failures end normally at the RPC
 // transport layer so they cannot masquerade as a network disconnect.
 func (p *Plugin) sendSemanticFailure(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], body []byte, code string, cause error, snapshot json.RawMessage) error {
+	diagnosticsFrom(stream.Context()).fail(code)
 	p.lastBridgeError.Store(code)
 	var request struct {
 		Stream bool `json:"stream"`

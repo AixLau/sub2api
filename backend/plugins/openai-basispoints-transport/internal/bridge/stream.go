@@ -115,8 +115,13 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		return errors.New("上游 SSE data 不是 JSON 对象")
 	}
 	typ := stringValue(event["type"])
+	s.request.sourceEvent = diagnosticIdentifier(typ)
 	if response, err := parseObject(event["response"]); err == nil {
 		s.snapshot = encoded(response)
+		s.request.responseID = stringValue(response["id"])
+	}
+	if id := stringValue(event["response_id"]); id != "" {
+		s.request.responseID = id
 	}
 	if typ == "" {
 		return errors.New("上游 SSE 缺少事件类型")

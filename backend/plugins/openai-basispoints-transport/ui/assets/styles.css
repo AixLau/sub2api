@@ -20,6 +20,9 @@ button.secondary { background: #e5e7eb; color: #1f2937; }
 button:disabled { opacity: .55; cursor: wait; }
 #message { color: #2563eb; }
 .status { display: flex; gap: 12px; margin-top: 24px; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; }
+.diagnostics { margin-top: 16px; }
+.diagnostics summary { cursor: pointer; font-weight: 600; }
+#diagnostics-detail { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
   body { background: #111827; color: #f3f4f6; }
   input, select, textarea { border-color: #4b5563; background: #1f2937; }

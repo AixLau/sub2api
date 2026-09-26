@@ -63,7 +63,12 @@
       statusDetail.textContent = health.healthy ? "请求 " + (details.requests_total || 0) + " · 成功 " + (details.requests_succeeded || 0) + " · 失败 " + (details.requests_failed || 0) + " · 最近 HTTP " + (details.last_status_code || "—") + " · 工具回放存储：" + (details.host_kv ? "已连接" : "未连接") + (details.last_bridge_error ? " · 最近桥接错误：" + details.last_bridge_error : "") + (details.omitted_hosted_tools ? " · 未支持的托管工具：" + details.omitted_hosted_tools : "") : "";
       var recent = (details.recent_paths || []).slice(-5).reverse().map(function (s) { return s.path + ":" + s.model; }).join(", ");
       if (recent) { statusDetail.textContent += " · 最近通路: " + recent; }
-    } catch (error) { status.textContent = error.message; }
+      var diagnostics = (details.recent_diagnostics || []).slice(-50).reverse();
+      document.getElementById("diagnostics-detail").textContent = diagnostics.length ? JSON.stringify(diagnostics, null, 2) : "暂无故障诊断";
+    } catch (error) {
+      status.textContent = error.message;
+      document.getElementById("diagnostics-detail").textContent = "无法刷新诊断：" + error.message;
+    }
   }
   async function run(action) {
     if (busy) return;

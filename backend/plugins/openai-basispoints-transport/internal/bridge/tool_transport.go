@@ -24,15 +24,15 @@ func (c catalog) transportPayload(item object) (object, error) {
 	}
 	var refs []json.RawMessage
 	if json.Unmarshal(outer["references"], &refs) != nil || len(refs) != 1 || !isTextValue(refs[0]) {
-		return nil, toolCallError("上游工具 references 必须是只含一个完整客户端工具名的字符串数组")
+		return nil, toolValidationError("upstream_tool_references", "invalid_references", "上游工具 references 必须是只含一个完整客户端工具名的字符串数组")
 	}
 	key := stringValue(refs[0])
 	t, ok := c.tools[key]
 	if !ok || isTransportName(key) {
-		return nil, toolCallError("上游工具 references 指定了客户端未声明的工具或传输执行器")
+		return nil, toolValidationError("upstream_tool_references", "undeclared_target", "上游工具 references 指定了客户端未声明的工具或传输执行器")
 	}
 	if !isTextValue(outer["code"]) {
-		return nil, toolCallError("上游工具 code 必须是字符串")
+		return nil, toolValidationError("upstream_tool_code", "code_not_string", "上游工具 code 必须是字符串")
 	}
 	payload := outer["code"]
 	if !t.Custom {
@@ -47,16 +47,21 @@ func (c catalog) transportPayload(item object) (object, error) {
 // Report only a fixed field name and byte offset, never parser error text,
 // which may include a private argument, source fragment or credential.
 func parseToolObject(raw []byte, field string) (object, error) {
+	failure := &ToolCallError{stage: "upstream_tool_" + field, reason: "not_object", field: field}
 	var obj object
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		var syntax *json.SyntaxError
 		if errors.As(err, &syntax) {
-			return nil, toolCallError(fmt.Sprintf("上游工具 %s 不是有效 JSON 对象（字节偏移 %d）", field, syntax.Offset))
+			failure.message = fmt.Sprintf("上游工具 %s 不是有效 JSON 对象（字节偏移 %d）", field, syntax.Offset)
+			failure.reason, failure.jsonOffset = "invalid_json", syntax.Offset
+			return nil, failure
 		}
-		return nil, toolCallError("上游工具 " + field + " 必须是 JSON 对象")
+		failure.message = "上游工具 " + field + " 必须是 JSON 对象"
+		return nil, failure
 	}
 	if obj == nil {
-		return nil, toolCallError("上游工具 " + field + " 必须是 JSON 对象，不能为 null")
+		failure.message = "上游工具 " + field + " 必须是 JSON 对象，不能为 null"
+		return nil, failure
 	}
 	return obj, nil
 }

@@ -95,6 +95,11 @@
         <span id="status">加载中…</span>
       </section>
       <p id="status-detail" aria-live="polite"></p>
+      <details class="diagnostics">
+        <summary>最近故障诊断（脱敏）</summary>
+        <p>保留本次插件进程最近 50 条故障，重启后清空。可复制请求 ID 或完整诊断用于排查；每 10 秒刷新。</p>
+        <pre id="diagnostics-detail">暂无故障诊断</pre>
+      </details>
     </main>
     <script src="assets/bridge-v1.js"></script>
     <script src="assets/app.js"></script>

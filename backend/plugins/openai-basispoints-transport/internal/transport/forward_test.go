@@ -43,15 +43,28 @@ func (s *testHostKV) KVSet(_ context.Context, r *pluginv1.KVSetRequest) (*plugin
 
 // Test through the public gRPC contract, optionally using a packaged executable.
 // The only HTTP endpoint contacted is httptest; all credentials are synthetic.
-func clientForTest(t *testing.T, store *testHostKV, binary string) *pluginv1.TransportClient {
+type testClientOptions struct {
+	plugin *Plugin
+	logger hclog.Logger
+}
+
+func clientForTest(t *testing.T, store *testHostKV, binary string, options ...testClientOptions) *pluginv1.TransportClient {
 	t.Helper()
+	opts := testClientOptions{logger: hclog.NewNullLogger()}
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	var rpc hcplugin.ClientProtocol
 	if binary == "" {
-		client, _ := hcplugin.TestPluginGRPCConn(t, false, map[string]hcplugin.Plugin{pluginv1.TransportPluginName: &pluginv1.GRPCPlugin{Impl: New()}})
+		if opts.plugin == nil {
+			opts.plugin = New()
+			opts.plugin.diagnosticLogger = hclog.NewNullLogger()
+		}
+		client, _ := hcplugin.TestPluginGRPCConn(t, false, map[string]hcplugin.Plugin{pluginv1.TransportPluginName: &pluginv1.GRPCPlugin{Impl: opts.plugin}})
 		rpc = client
 		t.Cleanup(func() { _ = client.Close() })
 	} else {
-		client := hcplugin.NewClient(&hcplugin.ClientConfig{HandshakeConfig: pluginv1.HandshakeConfig, Plugins: pluginv1.ClientPluginMap(), Cmd: exec.Command(binary), AllowedProtocols: []hcplugin.Protocol{hcplugin.ProtocolGRPC}, StartTimeout: 10 * time.Second, Logger: hclog.NewNullLogger(), SyncStdout: io.Discard, SyncStderr: io.Discard, UnixSocketConfig: &hcplugin.UnixSocketConfig{TempDir: os.TempDir()}})
+		client := hcplugin.NewClient(&hcplugin.ClientConfig{HandshakeConfig: pluginv1.HandshakeConfig, Plugins: pluginv1.ClientPluginMap(), Cmd: exec.Command(binary), AllowedProtocols: []hcplugin.Protocol{hcplugin.ProtocolGRPC}, StartTimeout: 10 * time.Second, Logger: opts.logger, SyncStdout: io.Discard, SyncStderr: io.Discard, UnixSocketConfig: &hcplugin.UnixSocketConfig{TempDir: os.TempDir()}})
 		var err error
 		rpc, err = client.Client()
 		require.NoError(t, err)
@@ -80,6 +93,7 @@ func forwardForTest(t *testing.T, c *pluginv1.TransportClient, body []byte, ctx 
 	stream, err := c.Forward(ctx)
 	require.NoError(t, err)
 	start := &pluginv1.ForwardRequestStart{AccountId: 7, Platform: "openai", AccountType: "oauth", Method: "POST", Url: "https://chatgpt.com/backend-api/codex/responses", Host: "chatgpt.com", HasBody: true, ContentLength: int64(len(body)), Headers: map[string]*pluginv1.HeaderValues{"authorization": {Values: []string{"Bearer synthetic"}}, "chatgpt-account-id": {Values: []string{"synthetic-account"}}, "session_id": {Values: []string{"isolated-session"}}}}
+	start.RequestId = "req_diagnostic_test"
 	require.NoError(t, stream.Send(&pluginv1.ForwardRequest{Frame: &pluginv1.ForwardRequest_Start{Start: start}}))
 	for len(body) > 0 {
 		n := min(17, len(body))
@@ -324,4 +338,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	}
 	require.True(t, found)
 	testForwardReplay(t, binary)
+	testForwardDiagnosticLogs(t, binary)
 }

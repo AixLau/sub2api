@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
-	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -54,7 +54,7 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 			Checksum: checksum,
 			Hash:     sha256.New(),
 		},
-		Logger:           hclog.NewNullLogger(),
+		Logger:           newPluginRuntimeLogger(installation),
 		SyncStdout:       io.Discard,
 		SyncStderr:       io.Discard,
 		UnixSocketConfig: &hcplugin.UnixSocketConfig{TempDir: socketDir},
@@ -281,7 +281,10 @@ func (r *pluginRuntime) roundTrip(ctx context.Context, request *http.Request, pr
 		cancel()
 		return nil, normalizePluginRPCError(ctx, "创建插件转发流", err, false)
 	}
-	requestID := strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatInt(account.ID, 36)
+	requestID, _ := ctx.Value(ctxkey.RequestID).(string)
+	if requestID == "" {
+		requestID = strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatInt(account.ID, 36)
+	}
 	if err := stream.Send(&pluginv1.ForwardRequest{Frame: &pluginv1.ForwardRequest_Start{Start: &pluginv1.ForwardRequestStart{
 		RequestId:          requestID,
 		Method:             request.Method,

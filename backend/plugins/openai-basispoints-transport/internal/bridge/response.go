@@ -17,12 +17,18 @@ func isTransportName(name string) bool {
 
 // ToolCallError contains only safe diagnostic text, never executable input.
 type ToolCallError struct {
-	message     string
-	diagnostics *toolCallDiagnostics
+	message              string
+	diagnostics          *toolCallDiagnostics
+	stage, reason, field string
+	jsonOffset           int64
 }
 
 func (e *ToolCallError) Error() string   { return e.message }
 func toolCallError(message string) error { return &ToolCallError{message: message} }
+
+func toolValidationError(stage, reason, message string) error {
+	return &ToolCallError{message: message, stage: stage, reason: reason}
+}
 
 // FailureResponse carries a semantic rejection without breaking the transport.
 // Only response identity and usage are copied; executable output never escapes.
@@ -52,7 +58,7 @@ func FailureResponse(code string, cause error, snapshot json.RawMessage) json.Ra
 // references, status, id and unknown future fields must survive in Original.
 // Every delivered call must resolve to a declared client tool. Invalid server
 // calls must not escape as unsupported Office tools and poison the next turn.
-func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (convertedItem json.RawMessage, resultErr error) {
 	item, err := parseObject(raw)
 	if err != nil {
 		return nil, err
@@ -61,9 +67,14 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	if typ != "function_call" && typ != "custom_tool_call" {
 		return raw, nil
 	}
+	defer func() {
+		if resultErr != nil {
+			r.observeCallFailure(ctx, item, resultErr)
+		}
+	}()
 	callID := stringValue(item["call_id"])
 	if callID == "" {
-		return nil, toolCallError("上游工具 item 缺少 call_id")
+		return nil, toolValidationError("upstream_tool_identity", "missing_call_id", "上游工具 item 缺少 call_id")
 	}
 	name := qualifiedCallName(item)
 	var envelope object
@@ -85,11 +96,11 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		}
 	}
 	if r.catalog.choice == "none" {
-		return nil, toolCallError("上游违反 tool_choice=none")
+		return nil, toolValidationError("upstream_tool_choice", "tool_choice_none", "上游违反 tool_choice=none")
 	}
 	id := stringValue(item["id"])
 	if id == "" {
-		return nil, toolCallError("上游工具 item 缺少 id 或 call_id，无法完整回放")
+		return nil, toolValidationError("upstream_tool_identity", "missing_item_id", "上游工具 item 缺少 id 或 call_id，无法完整回放")
 	}
 	canonicalOriginal := string(encoded(item))
 	if r.originals[id] == canonicalOriginal {
@@ -104,7 +115,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		return nil, toolCallError("上游工具信封指定了客户端未声明的工具")
 	}
 	if r.catalog.forced != "" && r.catalog.forced != toolKey && r.catalog.forced != tool {
-		return nil, toolCallError("上游未遵循指定工具的 tool_choice")
+		return nil, toolValidationError("upstream_tool_choice", "forced_tool_mismatch", "上游未遵循指定工具的 tool_choice")
 	}
 	alias := callPrefix + digest(r.scope, r.Turn.ID, id, callID)[:32]
 	out := object{"type": encoded("function_call"), "id": item["id"], "call_id": encoded(alias), "name": encoded(t.Name)}
@@ -117,13 +128,13 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	if t.Custom {
 		var input string
 		if !isTextValue(envelope["args"]) || json.Unmarshal(envelope["args"], &input) != nil {
-			return nil, toolCallError("上游 custom 工具的 args 必须是 JSON 字符串")
+			return nil, toolValidationError("upstream_tool_arguments", "custom_input_not_string", "上游 custom 工具的 args 必须是 JSON 字符串")
 		}
 		out["type"] = encoded("custom_tool_call")
 		out["input"] = encoded(input)
 	} else {
 		if _, err := parseObject(envelope["args"]); err != nil {
-			return nil, toolCallError("上游 function 工具的 args 必须是 JSON 对象")
+			return nil, toolValidationError("upstream_tool_arguments", "function_arguments_not_object", "上游 function 工具的 args 必须是 JSON 对象")
 		}
 		out["arguments"] = encoded(string(envelope["args"]))
 		// An absent/null list lets Codex infer encryption from tool schemas.
@@ -170,6 +181,7 @@ func (r *Request) Response(ctx context.Context, raw []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.responseID = stringValue(root["id"])
 	if status := stringValue(root["status"]); status == "failed" || status == "incomplete" {
 		r.Failed = true
 	}

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -25,13 +24,14 @@ import (
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/bridge"
 	pluginconfig "github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/config"
+	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 )
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.1"
+	PluginVersion = "0.4.2"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -60,8 +60,6 @@ type pathRing struct {
 }
 
 func (r *pathRing) add(model, path string) {
-	// stderr only: the plugin's stdout carries the RPC protocol.
-	log.Printf("sub2api-bps-transport: path=%s model=%s", path, model)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.samples = append(r.samples, pathSample{At: time.Now().UnixMilli(), Model: model, Path: path})
@@ -98,14 +96,16 @@ type Plugin struct {
 	hostConn *grpc.ClientConn
 	host     pluginv1.HostServiceClient
 
-	stats           requestStats
-	recentPaths     pathRing
-	lastBridgeError atomic.Value
-	omittedTools    atomic.Value
+	stats             requestStats
+	recentPaths       pathRing
+	lastBridgeError   atomic.Value
+	omittedTools      atomic.Value
+	diagnosticLogger  hclog.Logger
+	recentDiagnostics diagnosticRing
 }
 
 func New() *Plugin {
-	p := &Plugin{}
+	p := &Plugin{diagnosticLogger: newDiagnosticLogger()}
 	state, err := buildRuntimeState(pluginconfig.Defaults())
 	if err != nil {
 		panic(err)
@@ -139,7 +139,7 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		"upstream_base_url":    state.cfg.UpstreamBaseURL,
 		"proxy_mode":           state.cfg.ProxyMode,
 		"host_kv":              p.hostClient() != nil,
-		"tool_bridge":          "run_officejs-v1",
+		"tool_bridge":          "run_officejs-v3",
 		"requests_total":       p.stats.total.Load(),
 		"requests_succeeded":   p.stats.succeeded.Load(),
 		"requests_failed":      p.stats.failed.Load(),
@@ -149,6 +149,7 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		"last_bridge_error":    p.lastBridgeError.Load(),
 		"omitted_hosted_tools": p.omittedTools.Load(),
 		"recent_paths":         p.recentPaths.snapshot(),
+		"recent_diagnostics":   p.recentDiagnostics.snapshot(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
 }
@@ -234,7 +235,7 @@ func (p *Plugin) InitHostServices(ctx context.Context, request *pluginv1.InitHos
 	return &pluginv1.InitHostServicesResponse{Ready: true, Message: "宿主 KV 服务已连接"}, nil
 }
 
-func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse]) error {
+func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse]) (resultErr error) {
 	first, err := stream.Recv()
 	if err != nil {
 		return err
@@ -243,6 +244,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if start == nil {
 		return p.sendError(stream, "PLUGIN_INVALID_REQUEST", "缺少请求元数据", false)
 	}
+	ctx, diagnostic := p.startDiagnostics(stream.Context(), start)
+	stream = diagnosticStream{BidiStreamingServer: stream, ctx: ctx}
+	defer func() { diagnostic.finish(resultErr) }()
 	if err := validateStart(start); err != nil {
 		return p.sendError(stream, "PLUGIN_INVALID_REQUEST", err.Error(), false)
 	}
@@ -260,6 +264,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_REQUEST_BODY_FAILED", err.Error(), false)
 	}
+	diagnostic.body(body)
 	headers := headersFromProto(start.Headers)
 	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
@@ -268,6 +273,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// keep their original body, tools and model name on the native channel.
 	model := requestModel(body)
 	if !state.cfg.AllowsBPSModel(model) {
+		diagnostic.route("native", "model_not_selected")
 		p.recentPaths.add(model, "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
@@ -277,7 +283,8 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// upstream. The decision is made on the original body before any bridge
 	// rewriting so the native path sees the request exactly as the host built
 	// it. Encrypted history is not guaranteed to be portable across channels.
-	if state.cfg.NativeFallbackEnabled() && bridge.NeedsNativeUpstream(body) != "" {
+	if reason := bridge.NeedsNativeUpstream(body); state.cfg.NativeFallbackEnabled() && reason != "" {
+		diagnostic.route("native", reason)
 		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
@@ -286,6 +293,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// often has no run_officejs transport), so tool-carrying requests go native
 	// where exec_command and friends are plain model tools.
 	if state.cfg.ToolsViaNativeEnabled() && bridge.RequestsClientTools(body) {
+		diagnostic.route("native", "client_tools")
 		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
@@ -342,6 +350,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		p.stats.total.Add(1)
 	}
 	p.recentPaths.add(requestModel(body), "bps")
+	diagnostic.route("bps", "selected")
 	// execute prepares and sends one BPS attempt. The code names the
 	// pre-upstream failure class for the error frame.
 	execute := func(rawBody []byte, stripEncrypted bool) (*http.Response, *bridge.Request, string, error) {
@@ -375,7 +384,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept-Encoding", "identity")
 		markStarted()
+		diagnostic.attempt()
 		resp, err := state.client.Do(request)
+		if resp != nil {
+			diagnostic.upstream(resp)
+		}
 		return resp, adapted, "", err
 	}
 	response, adapted, code, err := execute(body, false)
@@ -403,18 +416,21 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			if cleanErr != nil {
 				response.Body.Close()
 				if errors.Is(cleanErr, bridge.ErrUnsafeEncryptedReplay) {
+					diagnostic.route("native", "unsafe_encrypted_replay")
 					p.recentPaths.add(requestModel(body), "native")
 					return p.forwardNative(stream, start, state, body, headers)
 				}
 				return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", cleanErr, nil)
 			}
 			if bytes.Equal(cleaned, adapted.Body) {
+				diagnostic.route("native", "encrypted_replay_unchanged")
 				response.Body.Close()
 				p.recentPaths.add(requestModel(body), "native")
 				return p.forwardNative(stream, start, state, body, headers)
 			}
 			encryptedRetried = true
 		} else if errorCode == "invalid_encrypted_content" {
+			diagnostic.route("native", "encrypted_retry_rejected")
 			response.Body.Close()
 			p.recentPaths.add(requestModel(body), "native")
 			return p.forwardNative(stream, start, state, body, headers)
@@ -430,6 +446,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			break
 		}
 		response.Body.Close()
+		diagnostic.entry.Reason = safeLogID(errorCode)
+		diagnostic.write("bps.upstream_retry", hclog.Info)
+		diagnostic.entry.Reason = ""
 		response, adapted, code, err = execute(body, encryptedRetried)
 		if err != nil {
 			if code == "" {
@@ -502,6 +521,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			}
 		}
 	}
+	if adapted.Failed {
+		diagnostic.fail("UPSTREAM_RESPONSE_FAILED")
+	}
 	succeeded = response.StatusCode >= 200 && response.StatusCode < 300 && !adapted.Failed
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})
 }
@@ -542,9 +564,16 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 			p.stats.failed.Add(1)
 		}
 	}()
+	diagnostic := diagnosticsFrom(stream.Context())
+	if diagnostic != nil {
+		diagnostic.attempt()
+	}
 	response, err := state.client.Do(request)
 	if err != nil {
 		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游连接失败或超时", true)
+	}
+	if diagnostic != nil {
+		diagnostic.upstream(response)
 	}
 	defer response.Body.Close()
 	p.stats.lastCode.Store(int64(response.StatusCode))
@@ -1037,6 +1066,11 @@ func responseStart(response *http.Response) *pluginv1.ForwardResponseStart {
 }
 
 func (p *Plugin) sendError(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], code, message string, requestSent bool) error {
+	logCode := code
+	if logCode == "" {
+		logCode = "UPSTREAM_REQUEST_FAILED"
+	}
+	diagnosticsFrom(stream.Context()).fail(logCode)
 	p.lastBridgeError.Store(code)
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_Error{Error: &pluginv1.ForwardResponseError{
 		Code: code, Message: message, RequestSent: requestSent,

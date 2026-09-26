@@ -27,6 +27,7 @@ type toolCallDiagnostics struct {
 func toolIdentityError(item object, catalogTools int) error {
 	return &ToolCallError{
 		message: "上游调用不是客户端已声明的工具或 run_officejs 传输执行器",
+		stage:   "upstream_tool_identity", reason: "undeclared_tool",
 		diagnostics: &toolCallDiagnostics{
 			Stage:         "upstream_tool_identity",
 			CallType:      diagnosticIdentifier(stringValue(item["type"])),
