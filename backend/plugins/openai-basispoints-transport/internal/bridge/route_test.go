@@ -246,6 +246,11 @@ func TestNeedsNativeUpstreamPriority(t *testing.T) {
 	require.Equal(t, RouteImageInput, NeedsNativeUpstream([]byte(body)))
 }
 
+func TestEncryptedAgentMessageRoutesNative(t *testing.T) {
+	body := []byte(`{"input":[{"type":"agent_message","content":[{"type":"input_text","text":"task"},{"type":"encrypted_content","encrypted_content":"gAAAAopaque"}]}]}`)
+	require.Equal(t, RouteEncryptedAgent, NeedsNativeUpstream(body))
+}
+
 func TestAdditionalToolsCarrierRouting(t *testing.T) {
 	cases := []struct {
 		name string

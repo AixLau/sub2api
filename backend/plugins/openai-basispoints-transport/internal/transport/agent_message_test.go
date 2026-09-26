@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -152,7 +153,11 @@ func TestForwardEncryptedAgentMessageFailsBeforeNetwork(t *testing.T) {
 				w.WriteHeader(http.StatusBadGateway)
 			}))
 			defer upstream.Close()
-			c := recoveryClient(t, ctx, upstream.URL)
+			c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+			cfg, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled", "native_fallback": false})
+			applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+			require.NoError(t, err)
+			require.True(t, applied.Applied)
 			body, err := json.Marshal(map[string]any{"stream": stream, "input": []any{map[string]any{"type": "agent_message", "content": []any{
 				map[string]any{"type": "input_text", "text": "private task envelope"},
 				map[string]any{"type": "encrypted_content", "encrypted_content": "private readable task"},
@@ -172,4 +177,38 @@ func TestForwardEncryptedAgentMessageFailsBeforeNetwork(t *testing.T) {
 			require.Zero(t, hits.Load())
 		})
 	}
+}
+
+func TestForwardEncryptedAgentMessageUsesNativeVerbatim(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	bpsHits := atomic.Int32{}
+	var nativeBody []byte
+	bps := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		bpsHits.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer bps.Close()
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		nativeBody, _ = io.ReadAll(req.Body)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, "{\"id\":\"resp_native\",\"status\":\"completed\",\"output\":[]}")
+	}))
+	defer native.Close()
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	cfg, _ := json.Marshal(map[string]any{"upstream_base_url": bps.URL, "native_upstream_base_url": native.URL, "proxy_mode": "disabled"})
+	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	body, _ := json.Marshal(map[string]any{"model": "gpt-6-astra", "stream": false, "input": []any{
+		map[string]any{"type": "agent_message", "content": []any{
+			map[string]any{"type": "input_text", "text": "task"},
+			map[string]any{"type": "encrypted_content", "encrypted_content": "gAAAAopaque"},
+		}},
+	}})
+	_, out, failure := forwardForTest(t, c, body, ctx)
+	require.Nil(t, failure)
+	require.Contains(t, string(out), "resp_native")
+	require.Zero(t, bpsHits.Load())
+	require.Equal(t, body, nativeBody)
 }

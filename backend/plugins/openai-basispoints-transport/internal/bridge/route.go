@@ -12,6 +12,7 @@ const (
 	RouteImageGeneration  = "image_generation"
 	RouteHostedToolChoice = "hosted_tool_choice"
 	RouteStructuredOutput = "structured_output"
+	RouteEncryptedAgent   = "encrypted_agent_message"
 )
 
 // NeedsNativeUpstream reports whether a raw Responses request must bypass
@@ -40,8 +41,36 @@ func NeedsNativeUpstream(body []byte) (reason string) {
 		reason = RouteHostedToolChoice
 	case hasStructuredOutput(root):
 		reason = RouteStructuredOutput
+	case hasEncryptedAgentMessage(root):
+		reason = RouteEncryptedAgent
 	}
 	return reason
+}
+
+// hasEncryptedAgentMessage routes opaque agent history to the native Codex
+// endpoint, which can preserve and decrypt the original item. The BPS bridge
+// must never guess whether an encrypted_content part is plaintext.
+func hasEncryptedAgentMessage(root object) bool {
+	for _, raw := range inputItems(root) {
+		item, err := parseObject(raw)
+		if err != nil || stringValue(item["type"]) != "agent_message" {
+			continue
+		}
+		if hasCiphertext(item["encrypted_content"]) {
+			return true
+		}
+		var parts []json.RawMessage
+		if json.Unmarshal(item["content"], &parts) != nil {
+			continue
+		}
+		for _, rawPart := range parts {
+			part, err := parseObject(rawPart)
+			if err == nil && stringValue(part["type"]) == "encrypted_content" && hasCiphertext(part["encrypted_content"]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hasImageInput reports whether an input_image content part appears anywhere
