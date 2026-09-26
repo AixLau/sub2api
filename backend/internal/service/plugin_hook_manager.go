@@ -174,6 +174,7 @@ func (m *PluginManager) reconcileHookRoutes(ctx context.Context, installations [
 			return healthErr
 		}
 		m.updateHookRouteAccounts(enabled.ID, accountIDs)
+		current.runtime.updateAccountScope(accountIDs)
 		return nil
 	}
 	if enabled.State == PluginStateStarting && !m.startingStateExpired(enabled) {

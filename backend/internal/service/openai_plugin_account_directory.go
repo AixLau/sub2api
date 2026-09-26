@@ -49,6 +49,9 @@ func (s *OpenAIGatewayService) ListPluginAccounts(ctx context.Context, scope Plu
 		}
 		for i := range accounts {
 			account := accounts[i]
+			if !scope.AllowsAccountID(account.ID) {
+				continue
+			}
 			if account.IsShadow() {
 				continue
 			}
@@ -132,7 +135,7 @@ func (s *OpenAIGatewayService) ResolvePluginOutboundIdentity(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	if account == nil || account.IsShadow() {
+	if account == nil || account.IsShadow() || !scope.AllowsAccountID(account.ID) {
 		return nil, nil
 	}
 	// Scope is the authoritative permission boundary: refuse any account the
@@ -179,7 +182,7 @@ func (s *OpenAIGatewayService) UpdatePluginAccountState(ctx context.Context, sco
 	if err != nil {
 		return err
 	}
-	if account == nil || !scope.Contains(account.Platform, account.Type) {
+	if account == nil || !scope.AllowsAccountID(account.ID) || !scope.Contains(account.Platform, account.Type) {
 		return nil
 	}
 	return s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{key: value})

@@ -30,6 +30,7 @@ type pluginRuntime struct {
 	installation *PluginInstallation
 	client       *hcplugin.Client
 	api          pluginv1.TransportPluginClient
+	hostServices pluginv1.HostServiceServer
 	inFlight     atomic.Int64
 	draining     atomic.Bool
 	done         chan struct{}
@@ -81,6 +82,7 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 		installation: installation,
 		client:       client,
 		api:          api,
+		hostServices: hostServices,
 		done:         make(chan struct{}),
 	}
 	infoCtx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -107,6 +109,15 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 	// 老插件不实现 InitHostServices（返回 Unimplemented），此处静默跳过，绝不阻断启动。
 	offerPluginHostServices(ctx, installation, api, transportClient.Broker, hostServices, startTimeout)
 	return runtime, nil
+}
+
+func (r *pluginRuntime) updateAccountScope(accountIDs []int64) {
+	if r == nil || r.hostServices == nil {
+		return
+	}
+	if updater, ok := r.hostServices.(interface{ SetAccountIDs([]int64) }); ok {
+		updater.SetAccountIDs(accountIDs)
+	}
 }
 
 // offerPluginHostServices 在 go-plugin broker 上启动一个宿主服务实例，并通过

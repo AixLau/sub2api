@@ -317,6 +317,21 @@ func TestScopedPluginAccountDirectoryRestrictsEnumerationAndIdentity(t *testing.
 	assert.Equal(t, "allowed", identity.Token)
 }
 
+func TestPluginHostServiceFiltersUnselectedBindingAccounts(t *testing.T) {
+	dir := &fakeAccountDirectory{infos: []PluginAccountInfo{
+		{ID: 3, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
+		{ID: 7, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
+	}}
+	scope := newPluginAccountScope(pluginAccountScopeEntry{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}).WithAccountIDs([]int64{7})
+	server := newPluginHostServiceServer("local.ticket", newFakePluginKVStore(), dir, scope)
+	list, err := server.ListAccounts(context.Background(), &pluginv1.ListAccountsRequest{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{7}, list.AccountIds)
+	identity, err := server.ResolveOutboundIdentity(context.Background(), &pluginv1.ResolveOutboundIdentityRequest{AccountId: 3})
+	require.NoError(t, err)
+	assert.False(t, identity.Found)
+}
+
 // 无目录时账号目录 RPC 必须返回 Unavailable（KV 仍可用），保证未授权插件拿不到凭据。
 func TestPluginHostServiceServer_DirectoryUnavailableWithoutDirectory(t *testing.T) {
 	server := newPluginHostServiceServer("local.example.plugin", newFakePluginKVStore(), nil, PluginAccountScope{})

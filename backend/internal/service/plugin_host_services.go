@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
@@ -81,7 +82,8 @@ type pluginAccountScopeEntry struct {
 // （见 PluginManager.buildHostServices）。它是权限边界的唯一事实来源：插件永远无法
 // 越过它枚举或解析范围外账号，也无法自行扩大范围。
 type PluginAccountScope struct {
-	entries []pluginAccountScopeEntry
+	entries    []pluginAccountScopeEntry
+	accountIDs map[int64]struct{}
 }
 
 func newPluginAccountScope(entries ...pluginAccountScopeEntry) PluginAccountScope {
@@ -97,6 +99,28 @@ func newPluginAccountScope(entries ...pluginAccountScopeEntry) PluginAccountScop
 
 // Empty 报告范围是否为空。空范围表示插件不具备任何账号目录能力。
 func (s PluginAccountScope) Empty() bool { return len(s.entries) == 0 }
+
+// WithAccountIDs narrows a capability scope to the account binding selected by
+// the administrator. A non-nil, empty set intentionally means no accounts;
+// nil means the legacy unrestricted capability scope.
+func (s PluginAccountScope) WithAccountIDs(ids []int64) PluginAccountScope {
+	selected := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			selected[id] = struct{}{}
+		}
+	}
+	s.accountIDs = selected
+	return s
+}
+
+func (s PluginAccountScope) AllowsAccountID(id int64) bool {
+	if s.accountIDs == nil {
+		return true
+	}
+	_, ok := s.accountIDs[id]
+	return ok
+}
 
 // Contains 报告某 (platform, accountType) 是否落在范围内。AccountType 为空的范围条目
 // 匹配该平台下任意类型。
@@ -151,8 +175,24 @@ type pluginHostServiceServer struct {
 	pluginKey string
 	store     PluginKVStore
 	directory PluginAccountDirectory
+	scopeMu   sync.RWMutex
 	// scope 是宿主授予本插件的账号可见范围。账号目录的两个 RPC 都以它为权限边界。
 	scope PluginAccountScope
+}
+
+func (s *pluginHostServiceServer) accountScope() PluginAccountScope {
+	if s == nil {
+		return PluginAccountScope{}
+	}
+	s.scopeMu.RLock()
+	defer s.scopeMu.RUnlock()
+	return s.scope
+}
+
+func (s *pluginHostServiceServer) SetAccountIDs(ids []int64) {
+	s.scopeMu.Lock()
+	s.scope = s.scope.WithAccountIDs(ids)
+	s.scopeMu.Unlock()
 }
 
 func newPluginHostServiceServer(pluginKey string, store PluginKVStore, directory PluginAccountDirectory, scope PluginAccountScope) *pluginHostServiceServer {
@@ -218,7 +258,7 @@ func (s *pluginHostServiceServer) KVSet(ctx context.Context, req *pluginv1.KVSet
 			return nil, status.Error(codes.InvalidArgument, "BPS 403 account_id 无效")
 		}
 		if writer, ok := s.directory.(PluginAccountStateWriter); ok {
-			if err := writer.UpdatePluginAccountState(ctx, s.scope, accountID, "bps_403_suspected_at", payload.TriggeredAt); err != nil {
+			if err := writer.UpdatePluginAccountState(ctx, s.accountScope(), accountID, "bps_403_suspected_at", payload.TriggeredAt); err != nil {
 				return nil, status.Errorf(codes.Internal, "写入 BPS 403 状态失败: %v", err)
 			}
 		}
@@ -278,13 +318,14 @@ func (s *pluginHostServiceServer) KVList(ctx context.Context, req *pluginv1.KVLi
 }
 
 func (s *pluginHostServiceServer) ListAccounts(ctx context.Context, req *pluginv1.ListAccountsRequest) (*pluginv1.ListAccountsResponse, error) {
-	if s == nil || s.directory == nil || s.scope.Empty() {
+	scope := s.accountScope()
+	if s == nil || s.directory == nil || scope.Empty() {
 		return nil, status.Error(codes.Unavailable, "账号目录不可用")
 	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "请求为空")
 	}
-	infos, err := s.directory.ListPluginAccounts(ctx, s.scope, req.Platform, req.AccountType)
+	infos, err := s.directory.ListPluginAccounts(ctx, scope, req.Platform, req.AccountType)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "列举账号失败: %v", err)
 	}
@@ -293,6 +334,9 @@ func (s *pluginHostServiceServer) ListAccounts(ctx context.Context, req *pluginv
 		Accounts:   make([]*pluginv1.AccountInfo, 0, len(infos)),
 	}
 	for i := range infos {
+		if !scope.AllowsAccountID(infos[i].ID) {
+			continue
+		}
 		resp.AccountIds = append(resp.AccountIds, infos[i].ID)
 		resp.Accounts = append(resp.Accounts, accountInfoToPlugin(infos[i]))
 	}
@@ -300,13 +344,17 @@ func (s *pluginHostServiceServer) ListAccounts(ctx context.Context, req *pluginv
 }
 
 func (s *pluginHostServiceServer) ResolveOutboundIdentity(ctx context.Context, req *pluginv1.ResolveOutboundIdentityRequest) (*pluginv1.ResolveOutboundIdentityResponse, error) {
-	if s == nil || s.directory == nil || s.scope.Empty() {
+	scope := s.accountScope()
+	if s == nil || s.directory == nil || scope.Empty() {
 		return nil, status.Error(codes.Unavailable, "账号目录不可用")
 	}
 	if req == nil || req.AccountId <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "account_id 无效")
 	}
-	identity, err := s.directory.ResolvePluginOutboundIdentity(ctx, s.scope, req.AccountId)
+	if !scope.AllowsAccountID(req.AccountId) {
+		return &pluginv1.ResolveOutboundIdentityResponse{Found: false}, nil
+	}
+	identity, err := s.directory.ResolvePluginOutboundIdentity(ctx, scope, req.AccountId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "解析账号出站身份失败: %v", err)
 	}

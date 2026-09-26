@@ -367,6 +367,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		}
 		// Account bindings only affect host routing; keep the running process.
 		m.updateRouteAccounts(enabled.ID, accountIDs)
+		current.runtime.updateAccountScope(accountIDs)
 		if enabled.State == PluginStateError || (enabled.State == PluginStateStarting && m.startingStateExpired(enabled)) {
 			return m.repo.MarkRuntimeHealthy(ctx, enabled.ID, enabled.BinarySHA256, enabled.ConfigEncrypted)
 		}
@@ -654,6 +655,7 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 			} else {
 				m.updateHookRouteAccounts(id, accountIDs)
 			}
+			runtime.updateAccountScope(accountIDs)
 			return m.Get(ctx, id)
 		}
 	}
@@ -1207,6 +1209,10 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 		return nil
 	}
 	scope := pluginAccountScopeFromManifest(installation.Manifest)
+	// Capability scope grants the platform/type boundary; binding account IDs
+	// provide the second, administrator-selected boundary. The plugin worker
+	// must see exactly the same account set that the request hook can match.
+	scope = scope.WithAccountIDs(enabledPluginBindingAccountIDs(installation.Bindings))
 	var directory PluginAccountDirectory
 	if !scope.Empty() {
 		m.mu.Lock()
@@ -1237,6 +1243,26 @@ func pluginAccountScopeFromManifest(manifest PluginManifest) PluginAccountScope 
 		entries = append(entries, grant)
 	}
 	return newPluginAccountScope(entries...)
+}
+
+func enabledPluginBindingAccountIDs(bindings []PluginBinding) []int64 {
+	seen := make(map[int64]struct{})
+	for _, binding := range bindings {
+		if !binding.Enabled || (binding.Capability != PluginCapabilityOpenAIOAuthOutbound && binding.Capability != PluginCapabilityOpenAICodexTicketHook) {
+			continue
+		}
+		for _, id := range binding.AccountIDs {
+			if id > 0 {
+				seen[id] = struct{}{}
+			}
+		}
+	}
+	ids := make([]int64, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 func (m *PluginManager) removeRuntimeLocked(id int64) *pluginRuntime {
