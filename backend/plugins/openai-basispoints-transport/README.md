@@ -36,7 +36,16 @@
 
     go test ./plugins/openai-basispoints-transport/internal/bridge -run '^TestNativeDiscoveryLiveBPS$' -count=1 -v
 
-实测最多五次推理，验证 BPS 发现调用、客户端读取随机文件标记、回传及最终回答。账号授权只在远程测试进程内存中读取并发送到官方 BPS 端点，不输出令牌，不修改生产账号、配置或服务。测试关闭 HTTP 重定向。该测试验证客户端执行合约，不能代替用户设备上的安装验证。
+也可直接使用本地 Sub2API 授权导出文件，设置 BPS_DISCOVERY_LIVE_AUTH_FILE，且不设置 SSH_SOCKET / SSH_TARGET：
+
+    BPS_DISCOVERY_LIVE_AUTH_FILE='/path/to/authorization-export.json' \
+      go test ./plugins/openai-basispoints-transport/internal/bridge -run '^TestRawCustomTransportLiveBPS$' -count=1 -v
+
+文件须不包含代理配置，并且恰好有一个 OpenAI OAuth 账号；多账号文件另设 BPS_DISCOVERY_LIVE_EMAIL 精确选择一个账号。本地文件只用于测试请求，不导入生产数据库。
+
+发现实测最多五次推理，验证 BPS 发现调用、客户端读取随机文件标记、回传及最终回答。账号授权只在选定的本地或远程测试进程内存中读取并发送到官方 BPS 端点，不输出令牌，不修改生产账号、配置或服务。测试关闭 HTTP 重定向。该测试验证客户端执行合约，不能代替用户设备上的安装验证。
+
+2026-09-26 本地导出授权实测通过：gpt-6-astra 四轮均为 HTTP 200，list_skills、list_connectors、read_skills 各实际执行一次，读取临时文件的随机标记并在结果回传后正确作答；未启用内部纠错推理。
 
 ### 通用工具传输
 
@@ -59,7 +68,7 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 - 采用 [OpenAI custom 工具的自由文本输入约定](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)，避免把脚本本身再次要求为 JSON 对象。这里只定义插件自己的传输协议，不把它视为 BPS 原生 schema。
 - 请求大小直接沿用宿主 gateway.max_body_size，宿主与插件必须同步更新。运营详情识别 TOOL_BRIDGE 错误码，避免仅凭保存的 400 错判为网络故障。
 - 本地回归包含超过 19 KiB 的脚本实际执行、文件内容逐字核对、JSON/SSE、结果回传和无内部纠错推理。授权实测使用同一环境变量运行 TestRawCustomTransportLiveBPS，目标模型固定 gpt-5.6-terra，最多三轮。
-- 2026-09-26 授权实测被上游 usage_limit_reached / HTTP 429 阻断，尚未验证本版在真实模型上的成功率，不宣称原线上故障已完全复现或解决。
+- 2026-09-26 使用另一份明确授权的本地导出文件完成真实 BPS 实测：gpt-5.6-terra 两轮均为 HTTP 200；24,552 字节脚本逐字一致，客户端实际写入文件并核对全文，回传随机标记后模型正确返回该标记；未启用内部纠错推理。此前账号的 HTTP 429 属于用量限制。该结果验证此用例的执行与回传，不代表已复现原线上未保存的完整工具内容，也不代表已部署到生产。
 
 ## 0.5.0 跨协议转换与错误反馈（历史）
 

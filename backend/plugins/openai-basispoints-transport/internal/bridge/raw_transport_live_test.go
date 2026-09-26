@@ -18,10 +18,7 @@ import (
 // This regression uses the failing request's model and a long script with
 // quotes, Unicode, backslashes and newlines. Only an exact fixture may execute.
 func TestRawCustomTransportLiveBPS(t *testing.T) {
-	socket, target, email := os.Getenv("BPS_DISCOVERY_LIVE_SSH_SOCKET"), os.Getenv("BPS_DISCOVERY_LIVE_SSH_TARGET"), os.Getenv("BPS_DISCOVERY_LIVE_EMAIL")
-	if socket == "" || target == "" || email == "" {
-		t.Skip("live account test is opt-in")
-	}
+	account := liveBPSAccountFromEnv(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	source, expected := longScriptFixture()
@@ -34,7 +31,7 @@ func TestRawCustomTransportLiveBPS(t *testing.T) {
 	for round := 0; round < 3; round++ {
 		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-5.6-terra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": tools, "input": input}), scope, store, nil, 256<<20)
 		require.NoError(t, err)
-		final := liveBPSResponse(t, ctx, r, socket, target, email)
+		final := liveBPSResponse(t, ctx, r, account)
 		var output []json.RawMessage
 		require.NoError(t, json.Unmarshal(final["output"], &output))
 		count := 0

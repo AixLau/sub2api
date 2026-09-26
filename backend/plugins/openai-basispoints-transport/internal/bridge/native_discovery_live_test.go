@@ -20,13 +20,9 @@ import (
 var liveDiscoveryTransport string
 
 // Explicit opt-in: a bounded inference test, not a production deployment.
-// The SSH host reads only the named account's authorization into memory.
+// Authorization comes from an explicitly selected local export or SSH account.
 func TestNativeDiscoveryLiveBPS(t *testing.T) {
-	socket, email := os.Getenv("BPS_DISCOVERY_LIVE_SSH_SOCKET"), os.Getenv("BPS_DISCOVERY_LIVE_EMAIL")
-	target := os.Getenv("BPS_DISCOVERY_LIVE_SSH_TARGET")
-	if socket == "" || email == "" || target == "" {
-		t.Skip("live account test is opt-in")
-	}
+	account := liveBPSAccountFromEnv(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 	file := filepath.Join(t.TempDir(), "SKILL.md")
@@ -39,7 +35,7 @@ func TestNativeDiscoveryLiveBPS(t *testing.T) {
 	for round := 0; round < 5; round++ {
 		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-6-astra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": discoveryTools(), "input": input}), scope, store, nil, 256<<20)
 		require.NoError(t, err)
-		final := liveBPSResponse(t, ctx, r, socket, target, email)
+		final := liveBPSResponse(t, ctx, r, account)
 		var output []json.RawMessage
 		require.NoError(t, json.Unmarshal(final["output"], &output))
 		count := 0
@@ -78,18 +74,44 @@ func TestNativeDiscoveryLiveBPS(t *testing.T) {
 	t.Fatal("probe exceeded its five-inference limit")
 }
 
-func liveBPSResponse(t *testing.T, ctx context.Context, r *Request, socket, target, email string) object {
+type liveBPSAccount struct {
+	authFile, socket, target, email string
+}
+
+func liveBPSAccountFromEnv(t *testing.T) liveBPSAccount {
 	t.Helper()
-	body := encoded(map[string]any{"email": email, "body": json.RawMessage(r.Body)})
-	script := "'" + strings.ReplaceAll(liveDiscoveryTransport, "'", "'\"'\"'") + "'"
-	cmd := exec.CommandContext(ctx, "ssh", "-S", socket, "-o", "BatchMode=yes", target, "python3 -c "+script)
+	account := liveBPSAccount{
+		authFile: os.Getenv("BPS_DISCOVERY_LIVE_AUTH_FILE"),
+		socket:   os.Getenv("BPS_DISCOVERY_LIVE_SSH_SOCKET"),
+		target:   os.Getenv("BPS_DISCOVERY_LIVE_SSH_TARGET"),
+		email:    os.Getenv("BPS_DISCOVERY_LIVE_EMAIL"),
+	}
+	if account.authFile != "" {
+		require.Empty(t, account.socket, "select only one authorization source")
+		require.Empty(t, account.target, "select only one authorization source")
+	} else if account.socket == "" || account.target == "" || account.email == "" {
+		t.Skip("live account test is opt-in")
+	}
+	return account
+}
+
+func liveBPSResponse(t *testing.T, ctx context.Context, r *Request, account liveBPSAccount) object {
+	t.Helper()
+	body := encoded(map[string]any{"email": account.email, "auth_file": account.authFile, "body": json.RawMessage(r.Body)})
+	var cmd *exec.Cmd
+	if account.authFile != "" {
+		cmd = exec.CommandContext(ctx, "python3", "-c", liveDiscoveryTransport)
+	} else {
+		script := "'" + strings.ReplaceAll(liveDiscoveryTransport, "'", "'\"'\"'") + "'"
+		cmd = exec.CommandContext(ctx, "ssh", "-S", account.socket, "-o", "BatchMode=yes", account.target, "python3 -c "+script)
+	}
 	cmd.Stdin = strings.NewReader(string(body))
 	result, err := cmd.Output()
-	require.NoError(t, err, "remote probe failed without exposing authorization")
+	require.NoError(t, err, "authorized probe transport failed")
 	response, err := parseObject(result)
 	require.NoError(t, err)
 	if string(response["status"]) != "200" {
-		// The remote probe redacts authorization before returning the error.
+		// The probe redacts authorization before returning the error.
 		detail := stringValue(response["body"])
 		if len(detail) > 2048 {
 			detail = detail[:2048]
