@@ -137,6 +137,14 @@ func TestEffectiveSameAccountRetryLimitHonorsErrorCapAndDisabledAccount(t *testi
 	require.Equal(t, 0, effectiveSameAccountRetryLimit(&service.UpstreamFailoverError{SameAccountRetryMax: 1}, account))
 }
 
+func TestEffectiveSameAccountRetryLimitResponseProtectionOverridesAccountMode(t *testing.T) {
+	account := &service.Account{Type: service.AccountTypeOAuth}
+	err := &service.UpstreamFailoverError{
+		Reason: service.OpenAIResponseProtectionUnavailableReason,
+	}
+	require.Equal(t, 5, effectiveSameAccountRetryLimit(err, account))
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------

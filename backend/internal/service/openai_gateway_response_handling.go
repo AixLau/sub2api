@@ -199,10 +199,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 
 	keepaliveInterval := time.Duration(0)
+	keepalivePayload := openAISSEKeepalivePayload(c, ":\n\n")
 	if s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
 		keepaliveInterval = time.Duration(s.cfg.Gateway.StreamKeepaliveInterval) * time.Second
 	}
-	// 下游 keepalive 仅用于防止代理空闲断开
+	// Keepalives protect both proxy read deadlines and Codex's parsed-event deadline.
 	var keepaliveTicker *time.Ticker
 	if keepaliveInterval > 0 {
 		keepaliveTicker = time.NewTicker(keepaliveInterval)
@@ -1009,13 +1010,18 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if eventInProgress {
 				continue
 			}
-			if time.Since(lastDownstreamWriteAt) < keepaliveInterval {
+			// Upstream comments may keep writes active without dispatching a client
+			// SSE event. Codex pings therefore use the ticker cadence regardless of
+			// comment traffic; this never resets the upstream inactivity deadline.
+			if keepalivePayload != openAISSEPingEvent && time.Since(lastDownstreamWriteAt) < keepaliveInterval {
 				continue
 			}
 			if guardFirstOutput {
 				// Bypass attempt-local buffered frames. The stable SSE headers may be
 				// committed here, but account headers remain private until semantic output.
-				if _, err := w.Write([]byte(":\n\n")); err != nil {
+				n, err := w.Write([]byte(keepalivePayload))
+				recordOpenAIStreamKeepaliveBytes(c, n)
+				if err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 					continue
@@ -1024,7 +1030,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				lastDownstreamWriteAt = time.Now()
 				continue
 			}
-			if _, err := writePendingString(":\n\n"); err != nil {
+			if _, err := writePendingString(keepalivePayload); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 				continue
@@ -1033,6 +1039,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "Client disconnected during keepalive flush, continuing to drain upstream for billing")
 			} else {
+				recordOpenAIStreamKeepaliveBytes(c, len(keepalivePayload))
 				lastDownstreamWriteAt = time.Now()
 			}
 		}

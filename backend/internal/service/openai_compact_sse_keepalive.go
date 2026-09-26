@@ -14,12 +14,12 @@ import (
 // openAICompactSSEKeepaliveKey 存放 body-signal compact 请求的下游 SSE 心跳器。
 const openAICompactSSEKeepaliveKey = "openai_compact_sse_keepalive"
 
-// openAICompactSSEKeepalive 在 compact 上游 unary 等待期间向下游写 SSE 注释行
+// openAICompactSSEKeepalive 在 compact 上游 unary 等待期间向下游写 SSE
 // 心跳。上游 /responses/compact 在模型处理期间不发送任何字节（大上下文可长达
 // 数分钟），下游若经过反向代理（Nginx/Cloudflare Tunnel 等），零字节静默会触发
 // 代理的空闲/读超时并掐断连接，Codex 只会盲目重连并重复消耗上游 compact
-// 配额（#3887）。SSE 注释行在 eventsource 解析层被直接忽略，不会进入客户端
-// 事件流。
+// 配额（#3887）。Codex 需要带 data 的 ping 事件来刷新解析器空闲超时；其他
+// 客户端使用 SSE 注释。两者都不表示模型已产出内容。
 //
 // 首拍延迟一个 interval：绝大多数硬错误（鉴权/参数/限流）在此之前返回，仍走
 // 原 JSON+状态码链路（Codex 按 HTTP 状态码重试）；首拍之后状态码固化为 200，
@@ -29,11 +29,12 @@ type openAICompactSSEKeepalive struct {
 	writer  gin.ResponseWriter
 	started bool
 	stopped bool
-	// bytes 是心跳已写出的注释字节数。心跳不构成语义响应，handler 的
+	// bytes 是心跳已写出的字节数。心跳不构成语义响应，handler 的
 	// "Forward 期间是否已写响应"判定（failover 放弃换号的依据）必须扣除
 	// 这部分字节，见 OpenAICompactKeepaliveAdjustedWrittenSize。
-	bytes int
-	stop  chan struct{}
+	bytes   int
+	payload string
+	stop    chan struct{}
 }
 
 // StartOpenAICompactSSEKeepalive 为已标记 body-signal 客户端流式的 compact
@@ -61,8 +62,9 @@ func startOpenAISSEKeepalive(c *gin.Context, interval time.Duration) func() {
 	}
 	originalWriter := c.Writer
 	k := &openAICompactSSEKeepalive{
-		writer: originalWriter,
-		stop:   make(chan struct{}),
+		writer:  originalWriter,
+		payload: openAISSEKeepalivePayload(c, ": keepalive\n\n"),
+		stop:    make(chan struct{}),
 	}
 	c.Set(openAICompactSSEKeepaliveKey, k)
 	wrappedWriter := &openAICompactKeepaliveWriter{ResponseWriter: originalWriter, k: k}
@@ -99,7 +101,7 @@ func startOpenAISSEKeepalive(c *gin.Context, interval time.Duration) func() {
 	}
 }
 
-// beat 在锁内提交（首次）响应头并写出一条 SSE 注释行；返回 false 表示心跳已
+// beat 在锁内提交（首次）响应头并写出一条 SSE 心跳；返回 false 表示心跳已
 // 停止或下游写入失败，goroutine 应退出。
 func (k *openAICompactSSEKeepalive) beat() bool {
 	k.mu.Lock()
@@ -116,7 +118,7 @@ func (k *openAICompactSSEKeepalive) beat() bool {
 		k.writer.WriteHeader(http.StatusOK)
 		k.started = true
 	}
-	n, err := k.writer.Write([]byte(": keepalive\n\n"))
+	n, err := k.writer.Write([]byte(k.payload))
 	k.bytes += n
 	if err != nil {
 		k.stopped = true

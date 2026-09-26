@@ -430,6 +430,20 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientStatusCode = http.StatusRequestEntityTooLarge
 		failoverErr.ClientMessage = OpenAIRequestBodyTooLargeClientMessage
 	}
+	if isOpenAIResponseProtectionUnavailable(statusCode, upstreamMsg, responseBody) {
+		// The provider's response-protection dependency returned a transient
+		// 502. It is independent of the selected credential, so retry the same
+		// request before rotating accounts; the handler applies the bounded
+		// five-retry budget for this typed reason.
+		failoverErr.RetryableOnSameAccount = true
+		failoverErr.RequestScopedTransient = true
+		failoverErr.SameAccountRetryMax = openAIResponseProtectionRetryLimit
+		failoverErr.Scope = GatewayFailureScopeRequest
+		failoverErr.Reason = OpenAIResponseProtectionUnavailableReason
+		failoverErr.NextAccountAction = NextAccountRetry
+		failoverErr.ClientStatusCode = http.StatusBadGateway
+		failoverErr.ClientMessage = upstreamMsg
+	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false
 		failoverErr.RequestScopedTransient = false
@@ -446,6 +460,31 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientMessage = openAICapacityShedClientMessage(upstreamMsg, responseBody)
 	}
 	return failoverErr
+}
+
+const (
+	// OpenAIResponseProtectionUnavailableReason identifies the provider-side
+	// response protection dependency outage. It is deliberately exact: generic
+	// 5xx responses retain the existing account failover policy.
+	OpenAIResponseProtectionUnavailableReason = GatewayFailureReason("openai_response_protection_unavailable")
+	openAIResponseProtectionRetryLimit        = 5
+)
+
+func isOpenAIResponseProtectionUnavailable(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadGateway {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(upstreamMsg), "response protection is unavailable") {
+		return true
+	}
+	for _, path := range []string{"error.message", "response.error.message", "message"} {
+		if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(upstreamBody, path).String()), "response protection is unavailable") {
+			return true
+		}
+	}
+	// Some upstreams return HTTP 502 with an SSE response.failed envelope rather
+	// than a JSON error body. Match only the exact provider phrase in that body.
+	return strings.Contains(strings.ToLower(string(upstreamBody)), "response protection is unavailable")
 }
 
 func (s *OpenAIGatewayService) newOpenAIAccountFailoverError(

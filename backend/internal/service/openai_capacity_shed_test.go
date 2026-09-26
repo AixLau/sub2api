@@ -108,6 +108,37 @@ func TestOpenAIHTTPCapacityShedIsRequestScopedForOAuthAccounts(t *testing.T) {
 	require.Zero(t, repo.tempUnschedCalls)
 }
 
+func TestOpenAIResponseProtectionUnavailableUsesBoundedSameAccountRetry(t *testing.T) {
+	payload := []byte(`{"response":{"error":{"code":"upstream_error","message":"response protection is unavailable","type":"internal_error"}}}`)
+	failoverErr := newOpenAIUpstreamFailoverError(
+		http.StatusBadGateway,
+		http.Header{"X-Request-Id": []string{"rid-protection"}},
+		payload,
+		"response protection is unavailable",
+		false,
+	)
+
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.Equal(t, 5, failoverErr.SameAccountRetryMax)
+	require.Equal(t, OpenAIResponseProtectionUnavailableReason, failoverErr.Reason)
+	require.Equal(t, http.StatusBadGateway, failoverErr.ClientStatusCode)
+
+	other := newOpenAIUpstreamFailoverError(
+		http.StatusBadGateway,
+		http.Header{},
+		[]byte(`{"error":{"message":"a different provider failure"}}`),
+		"a different provider failure",
+		false,
+	)
+	require.NotEqual(t, OpenAIResponseProtectionUnavailableReason, other.Reason)
+	require.Zero(t, other.SameAccountRetryMax)
+	require.True(t, openAIStreamFailedEventShouldFailover(payload, "response protection is unavailable"))
+	require.True(t, openAIStreamFailedEventRetryableOnSameAccount(&Account{ID: 1, Platform: PlatformOpenAI}, payload, "response protection is unavailable"))
+	ssePayload := []byte("event: response.failed\ndata: {\"response\":{\"error\":{\"message\":\"response protection is unavailable\"}}}\n\n")
+	require.True(t, isOpenAIResponseProtectionUnavailable(http.StatusBadGateway, "", ssePayload))
+}
+
 // 上游降载的真实序列是「event: error → event: response.failed」。error 帧不算
 // 客户端输出：若把它当首输出 flush，clientOutputStarted 被固化，随后的 failed
 // 事件就进不了 pre-output failover 分支，只能把致命错误原样转发给客户端。
