@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.4.6 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
+0.4.7 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -15,9 +15,15 @@
 7. 客户端提交工具结果时，插件恢复原始调用 item 和原始 `call_id`（即使客户端只提交了工具结果也能回放），并为结果 item 补全 `fc_…` 形式的 `id`。相同调用 item 不重复插入。
 8. 非插件生成但结构有效的客户端工具历史，使用客户端自己的 name/arguments 按 v3 重建 `run_officejs` 调用继续回放，保留参数原始 JSON 和数字精度。无效参数或没有对应调用项的孤立工具结果明确报错。
 9. 输入项清洗：带 `encrypted_content` 的 reasoning 原样保留（仅保留加密内容），裸 reasoning 与 `item_reference` 丢弃（`store:false` 的上游拒绝它们）；`image_generation` 只保留仍带内联数据的 item，瘦身项（仅 `id`，`result: null`）丢弃——`store:false` 下上游不持久化 item，回放瘦身项会以 `Item with id 'ig_…' not found` 404 整个请求；各 item 上的 `internal_chat_message_metadata_passthrough` 会剥离。
-10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。递归处理 `input` 中的消息及工具结果，将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
+10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本保持流式输出；工具调用等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效载荷、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
+
+## 0.4.7 工具截图请求体修复
+
+- 真实 BPS 对同一合成图片的验证：用户消息内 file_id 返回 200，工具结果 output 数组内 file_id 返回 422；工具结果保留文本、图片迁移到后续用户消息后返回 200，并正确识别图片颜色。
+- 复用宿主 apicompat.LiftResponsesToolOutputMedia，在 Prepare 完成调用身份恢复和 turn 计算之后、附件上传之前迁移图片。并行工具结果保持连续，图片保留调用归属及 detail；工具文本、JSON 数字精度、task_id、turn_id 和 agent_iteration 保持不变。
+- 增加模拟真实 BPS 422 约束的 gRPC/HTTP 回归，避免仅验证 file_id 替换却忽略图片所在位置。0.4.6 因此问题已回滚，不应重新部署。
 
 ## 0.4.6 内嵌图片 BPS 路由
 
@@ -219,7 +225,7 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 - 仅桥接客户端 function/custom 工具。`image_generation`、`web_search` 等托管工具声明会移除，不会被转成并不存在的客户端函数；被移除的类型可在插件状态页查看。
 - 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器载荷转换为实际客户端工具；客户端已声明的直接调用也接受校验。function 的无效 JSON、未知工具及错误参数类型返回 TOOL_BRIDGE_CALL_INVALID；custom 原文不解析为 JSON。不透传 Office 执行器、不猜测或修复可执行代码。
 - 当前支持 Responses 桥接和独立 alpha/search 原生转发；不支持 compact、图片专用接口或计数接口，不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片上传支持消息和工具结果中的内嵌图。
-- 工具结果（`function_call_output` / `custom_tool_call_output`）中的内嵌图片递归附件化；宿主已抬升到用户消息中的图片也走同一路径，保持调用 ID 和文本不变。
+- 工具结果（`function_call_output` / `custom_tool_call_output`）中的内嵌图片先迁移到后续用户消息，再附件化。工具结果保留文本及媒体位置标记，消息注明来源调用；不会把 file_id 图片直接留在工具 output 中。
 - 每个 HTTP 请求 JSON 上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
 - `tool_choice` 通过文本约定和返回校验表达，无法保证模型与原生 API 的行为完全一致。
 
@@ -231,12 +237,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.4.6.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.4.7.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.4.6.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.4.7.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -248,6 +254,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.4.6，保存配置并选择账号和 BPS 模型范围。当前工具传输协议不接受旧格式的新调用。使用专用测试账号开始新会话，先验证普通文本，再验证 function/custom 工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。若仍遇到工具身份拒绝，可通过 error.diagnostics 区分真实的未知执行器与名称问题。该版本未声明完整线上联调通过，需要确认“未测试版本”提示；本地测试和打包验证不等于真实 BPS 联调通过。
+先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.4.7，保存配置并选择账号和 BPS 模型范围。当前工具传输协议不接受旧格式的新调用。使用专用测试账号开始新会话，先验证普通文本，再验证 function/custom 工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。若仍遇到工具身份拒绝，可通过 error.diagnostics 区分真实的未知执行器与名称问题。该版本未声明完整线上联调通过，需要确认“未测试版本”提示；本地测试和打包验证不等于真实 BPS 联调通过。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。

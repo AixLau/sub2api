@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 )
 
 // Basis Points rejects inline data-URL images in user messages. Images must be
@@ -115,19 +117,32 @@ func CanonicalImageType(mediaType string) (string, string, bool) {
 	return canonical, extension, ok
 }
 
-// RewriteInlineImages uploads inline input_image parts throughout input,
-// including nested tool results. Remote URLs and existing file IDs are kept
-// unchanged. cacheNamespace isolates uploads per endpoint and credential.
+// RewriteInlineImages lifts tool-output images into user messages before
+// uploading them. BPS rejects image parts in function_call_output.output,
+// including uploaded file references. Run after Prepare to preserve turn IDs
+// and native call identities. cacheNamespace isolates uploads per credential.
 func RewriteInlineImages(ctx context.Context, body []byte, cacheNamespace string, upload UploadFunc) ([]byte, error) {
 	root, err := parseObject(body)
 	if err != nil {
 		return nil, err
 	}
+	// Reuse the host's media adaptation, including contiguous parallel outputs
+	// and call attribution. UseNumber preserves opaque numeric tool results.
+	var originalInput any
+	decoder := json.NewDecoder(bytes.NewReader(root["input"]))
+	decoder.UseNumber()
+	lifted := false
+	if decoder.Decode(&originalInput) == nil {
+		if input, changed := apicompat.LiftResponsesToolOutputMedia(originalInput); changed {
+			root["input"] = encoded(input)
+			lifted = true
+		}
+	}
 	input, changed, err := rewriteImageParts(ctx, root["input"], cacheNamespace, upload)
 	if err != nil {
 		return nil, err
 	}
-	if !changed {
+	if !changed && !lifted {
 		return body, nil
 	}
 	root["input"] = input

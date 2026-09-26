@@ -754,10 +754,15 @@ func rewriteToolOutputMediaValue(value any) (any, []ChatContentPart, bool) {
 		return typed, media, changed
 	case map[string]any:
 		if imageURL, ok := recognizedToolOutputImageURL(typed); ok {
+			part := toolOutputImagePart(imageURL)
+			part.ImageURL.Detail, _ = typed["detail"].(string)
+			if nested, ok := typed["image_url"].(map[string]any); ok && part.ImageURL.Detail == "" {
+				part.ImageURL.Detail, _ = nested["detail"].(string)
+			}
 			return map[string]any{
 				"type": "input_text",
 				"text": toolOutputMediaMarker,
-			}, []ChatContentPart{toolOutputImagePart(imageURL)}, true
+			}, []ChatContentPart{part}, true
 		}
 
 		content, ok := typed["content"]
@@ -1349,7 +1354,6 @@ func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model str
 	if createdAt <= 0 {
 		createdAt = time.Now().Unix()
 	}
-
 
 	out := &ResponsesResponse{
 		ID:          id,

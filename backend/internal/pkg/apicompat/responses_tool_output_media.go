@@ -9,6 +9,7 @@ import (
 type responsesToolOutputMedia struct {
 	callID   string
 	imageURL string
+	detail   string
 }
 
 // LiftResponsesToolOutputMedia moves image parts out of Responses tool outputs
@@ -114,6 +115,7 @@ func liftResponsesToolOutputMediaItem(item map[string]any) (any, []responsesTool
 		lifted = append(lifted, responsesToolOutputMedia{
 			callID:   callID,
 			imageURL: imageURL,
+			detail:   part.ImageURL.Detail,
 		})
 	}
 	return item, lifted, true
@@ -134,10 +136,14 @@ func buildResponsesToolOutputMediaMessage(pending []responsesToolOutputMedia) ma
 			})
 			lastCallID = media.callID
 		}
-		content = append(content, map[string]any{
+		image := map[string]any{
 			"type":      "input_image",
 			"image_url": media.imageURL,
-		})
+		}
+		if media.detail != "" {
+			image["detail"] = media.detail
+		}
+		content = append(content, image)
 	}
 
 	return map[string]any{

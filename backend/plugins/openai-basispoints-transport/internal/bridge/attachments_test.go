@@ -124,7 +124,18 @@ func TestInlineImagesInNestedToolResults(t *testing.T) {
 	require.NotContains(t, string(out), "image_url")
 	require.Equal(t, 2, strings.Count(string(out), "file-nested"))
 	require.Contains(t, string(out), `"call_id":"call_1"`)
-	require.Contains(t, string(out), `"text":"screenshot"`)
+	var result struct {
+		Input []map[string]json.RawMessage `json:"input"`
+	}
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Len(t, result.Input, 3)
+	var outputText string
+	require.NoError(t, json.Unmarshal(result.Input[0]["output"], &outputText))
+	require.Contains(t, outputText, `"text":"screenshot"`)
+	require.NotContains(t, outputText, "input_image")
+	require.Equal(t, `"user"`, string(result.Input[1]["role"]))
+	require.Contains(t, string(result.Input[1]["content"]), "call_1")
+	require.Contains(t, string(result.Input[1]["content"]), `"detail":"high"`)
 	require.Contains(t, string(out), `"detail":"high"`)
 	// Replaying the original data URLs must reuse the IDs, too.
 	again, err := RewriteInlineImages(context.Background(), raw, "ns-nested", upload)
@@ -296,4 +307,37 @@ func TestStripEncryptedContentDeep(t *testing.T) {
 	out, err := StripEncryptedContent(clean)
 	require.NoError(t, err)
 	require.JSONEq(t, string(clean), string(out))
+}
+
+func TestToolImageLiftingPreservesReplayMetadataAndNumbers(t *testing.T) {
+	raw := mustJSON(t, map[string]any{
+		"metadata": map[string]string{"task_id": "task", "turn_id": "turn", "agent_iteration": "4"},
+		"input": []any{
+			map[string]any{"type": "function_call_output", "call_id": "call_original", "id": "fc_original", "output": []any{
+				map[string]any{"type": "input_text", "text": "screen captured", "sequence": json.Number("9007199254740993")},
+				map[string]any{"type": "input_image", "image_url": imageDataURL()},
+			}},
+		},
+	})
+	out, err := RewriteInlineImages(context.Background(), raw, "ns-replay-metadata", func(context.Context, string, []byte) (string, error) { return "file-replay", nil })
+	require.NoError(t, err)
+	var result struct {
+		Metadata map[string]string            `json:"metadata"`
+		Input    []map[string]json.RawMessage `json:"input"`
+	}
+	require.NoError(t, json.Unmarshal(out, &result))
+	require.Equal(t, map[string]string{"task_id": "task", "turn_id": "turn", "agent_iteration": "4"}, result.Metadata)
+	require.Len(t, result.Input, 2)
+	require.Equal(t, `"call_original"`, string(result.Input[0]["call_id"]))
+	require.Equal(t, `"fc_original"`, string(result.Input[0]["id"]))
+	var output string
+	require.NoError(t, json.Unmarshal(result.Input[0]["output"], &output))
+	require.Contains(t, output, "9007199254740993")
+	require.Contains(t, output, "screen captured")
+	require.NotContains(t, output, "file-replay")
+	require.Contains(t, string(result.Input[1]["content"]), "file-replay")
+	// The transformed request is idempotent; it must not add another user turn.
+	again, err := RewriteInlineImages(context.Background(), out, "ns-replay-metadata", func(context.Context, string, []byte) (string, error) { t.Fatal("unexpected reupload"); return "", nil })
+	require.NoError(t, err)
+	require.Equal(t, string(out), string(again))
 }

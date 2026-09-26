@@ -168,6 +168,24 @@ func TestVisionRoutingPreservesCapabilities(t *testing.T) {
 			return
 		}
 		raw, _ := io.ReadAll(req.Body)
+		// Match the live BPS restriction: tool image arrays are rejected even
+		// when data URLs have already become file IDs.
+		var request struct {
+			Input []map[string]json.RawMessage `json:"input"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &request))
+		for _, item := range request.Input {
+			if string(item["type"]) != `"function_call_output"` {
+				continue
+			}
+			var output string
+			if json.Unmarshal(item["output"], &output) != nil {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				io.WriteString(w, `{"error":{"message":"422: Invalid request body."}}`)
+				return
+			}
+			require.NotContains(t, output, "input_image")
+		}
 		hits <- hit{body: raw, vision: req.Header.Get("Copilot-Vision-Request")}
 		io.WriteString(w, `{"id":"resp_bps","status":"completed","output":[]}`)
 	}))
@@ -215,8 +233,9 @@ func TestVisionRoutingPreservesCapabilities(t *testing.T) {
 			}
 			raw, err := json.Marshal(body)
 			require.NoError(t, err)
-			_, _, failure := forwardForTest(t, c, raw, ctx)
+			start, _, failure := forwardForTest(t, c, raw, ctx)
 			require.Nil(t, failure)
+			require.Equal(t, int32(http.StatusOK), start.StatusCode)
 			got := <-hits
 			require.Equal(t, tc.native, got.native)
 			if tc.native {

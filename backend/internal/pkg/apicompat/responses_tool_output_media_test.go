@@ -114,3 +114,20 @@ func TestLiftResponsesToolOutputMediaKeepsParallelBatchContiguous(t *testing.T) 
 		require.Equal(t, text, contentPart["text"])
 	}
 }
+
+func TestLiftResponsesToolOutputMediaPreservesImageDetail(t *testing.T) {
+	for _, raw := range []string{
+		`{"type":"input_image","image_url":"data:image/png;base64,AQID","detail":"high"}`,
+		`{"type":"image_url","image_url":{"url":"data:image/png;base64,AQID","detail":"high"}}`,
+	} {
+		var part any
+		require.NoError(t, json.Unmarshal([]byte(raw), &part))
+		output := map[string]any{"type": "custom_tool_call_output", "call_id": "call_screenshot", "output": []any{part}}
+		result, changed := LiftResponsesToolOutputMedia([]any{output})
+		require.True(t, changed)
+		items := result.([]any)
+		parts := items[1].(map[string]any)["content"].([]map[string]any)
+		require.Equal(t, "high", parts[1]["detail"])
+		require.Equal(t, "data:image/png;base64,AQID", parts[1]["image_url"])
+	}
+}
