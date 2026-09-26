@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -19,19 +20,20 @@ type Request struct {
 	Failed       bool
 	FailureCode  string
 	// Feedback sends one continuation containing actual conversion error results.
-	Feedback        func(context.Context, []byte) ([]byte, error)
-	feedbackUsed    bool
-	feedbackID      string
-	failureSnapshot json.RawMessage
-	responseID      string
-	sourceEvent     string
-	originals       map[string]string
-	store           Store
-	scope           string
-	catalog         catalog
-	skills          []clientSkill
-	skillsKnown     bool
-	converted       map[string]json.RawMessage
+	Feedback            func(context.Context, []byte) ([]byte, error)
+	feedbackUsed        bool
+	feedbackID          string
+	failureSnapshot     json.RawMessage
+	responseID          string
+	sourceEvent         string
+	originals           map[string]string
+	store               Store
+	scope               string
+	catalog             catalog
+	skills              []clientSkill
+	skillsKnown         bool
+	maxRequestBodyBytes int64
+	converted           map[string]json.RawMessage
 }
 
 // ResponseID returns only the response correlation identifier, never content.
@@ -43,9 +45,12 @@ func (r *Request) ResponseID() string { return r.responseID }
 // fields only instead of deleting a denylist from the caller's body.
 // modelMapping translates requested models to upstream slugs; unmapped models
 // keep the default pass-through with the -excel alias suffix removed.
-func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMapping map[string]string) (*Request, error) {
-	if len(raw) > MaxBodyBytes {
-		return nil, errors.New("请求体超过桥接大小限制")
+func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMapping map[string]string, maxRequestBodyBytes int64) (*Request, error) {
+	if maxRequestBodyBytes <= 0 {
+		return nil, errors.New("宿主 gateway.max_body_size 请求体限制无效")
+	}
+	if int64(len(raw)) > maxRequestBodyBytes {
+		return nil, fmt.Errorf("请求体超过宿主 gateway.max_body_size 限制（%d 字节）", maxRequestBodyBytes)
 	}
 	root, err := parseObject(raw)
 	if err != nil {
@@ -88,6 +93,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 	}
 	r := &Request{store: store, scope: scope, catalog: cat, converted: map[string]json.RawMessage{}, OmittedTools: cat.omitted, originals: map[string]string{}}
 	r.skills, r.skillsKnown = readClientSkills(root["instructions"], input)
+	r.maxRequestBodyBytes = maxRequestBodyBytes
 	var continuation *Turn
 	records := map[string]*callRecord{}
 	lookup := func(id string) (*callRecord, error) {
@@ -392,8 +398,8 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 	if err != nil {
 		return nil, err
 	}
-	if len(r.Body) > MaxBodyBytes {
-		return nil, errors.New("转换后请求体超过桥接大小限制")
+	if int64(len(r.Body)) > maxRequestBodyBytes {
+		return nil, fmt.Errorf("转换后请求体超过宿主 gateway.max_body_size 限制（%d 字节）", maxRequestBodyBytes)
 	}
 	return r, nil
 }

@@ -57,7 +57,7 @@ func TestQualifiedCallsKeepStreamAndReplayIdentity(t *testing.T) {
 				require.Equal(t, wantType, stringValue(call["type"]))
 				require.Equal(t, payload, stringValue(call[payloadField]))
 				follow := encoded(map[string]any{"input": []any{map[string]any{"type": wantType + "_output", "call_id": stringValue(call["call_id"]), "output": "result"}}})
-				replayed, err := Prepare(ctx, follow, "custom-session", r.store, nil)
+				replayed, err := Prepare(ctx, follow, "custom-session", r.store, nil, 256<<20)
 				require.NoError(t, err)
 				require.JSONEq(t, string(original), string(preparedInput(t, replayed)[1]))
 			}
@@ -80,7 +80,7 @@ func TestQualifiedForeignHistoryAndToolChoice(t *testing.T) {
 		tools := []any{map[string]any{"type": "namespace", "name": "functions", "tools": []any{map[string]any{"type": "custom", "name": "exec"}}}}
 		input := []any{map[string]any{"type": "custom_tool_call", "name": name, "namespace": "functions", "call_id": "call_original", "input": "text('hello')"}}
 		body := encoded(map[string]any{"tools": tools, "input": input, "tool_choice": map[string]any{"type": "custom", "name": name, "namespace": "functions"}})
-		r, err := Prepare(ctx, body, "session", memoryStore{}, nil)
+		r, err := Prepare(ctx, body, "session", memoryStore{}, nil, 256<<20)
 		require.NoError(t, err)
 		require.Equal(t, "functions.exec", r.catalog.forced)
 		native, _ := parseObject(preparedInput(t, r)[1])

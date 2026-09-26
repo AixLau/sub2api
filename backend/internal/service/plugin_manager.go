@@ -995,6 +995,13 @@ func (m *PluginManager) RoundTripOpenAIOAuth(ctx context.Context, request *http.
 		}
 		return nil, true, runtimeErr
 	}
+	if m.cfg == nil {
+		return nil, true, errors.New("插件转发缺少宿主网关配置")
+	}
+	ctx, err := pluginv1.WithRequestBodyLimit(ctx, m.cfg.Gateway.MaxBodySize)
+	if err != nil {
+		return nil, true, err
+	}
 	if !route.runtime.beginRequest() {
 		return nil, true, errors.New("OpenAI OAuth 插件正在停止")
 	}

@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	MaxBodyBytes    = 64 << 20
-	MaxItemBytes    = 240 << 10 // HostService KV values are limited to 256 KiB.
-	MaxIterations   = 512       // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
-	StateTTLSeconds = 24 * 60 * 60
-	callPrefix      = "call_bps_"
+	MaxResponseBytes = 64 << 20  // Response buffering is independent of the host request policy.
+	MaxItemBytes     = 240 << 10 // HostService KV values are limited to 256 KiB.
+	MaxIterations    = 512       // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
+	StateTTLSeconds  = 24 * 60 * 60
+	callPrefix       = "call_bps_"
 )
 
 // Store must be shared across plugin processes and restarts. Production uses

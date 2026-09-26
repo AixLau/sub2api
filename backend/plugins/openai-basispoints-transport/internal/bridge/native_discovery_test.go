@@ -51,7 +51,7 @@ func TestNativeDiscoveryExecutesAndReplaysWithoutFeedback(t *testing.T) {
 			store := memoryStore{}
 			tools := discoveryTools()
 			input := []any{messageItem("developer", skillInstructions(file)), messageItem("user", "Use the skill"), map[string]any{"type": "additional_tools", "tools": tools}}
-			request, err := Prepare(ctx, encoded(map[string]any{"input": input}), "discovery", store, nil)
+			request, err := Prepare(ctx, encoded(map[string]any{"input": input}), "discovery", store, nil, 256<<20)
 			require.NoError(t, err)
 			require.Len(t, request.skills, 1)
 			request.Feedback = func(context.Context, []byte) ([]byte, error) {
@@ -101,7 +101,7 @@ func TestNativeDiscoveryExecutesAndReplaysWithoutFeedback(t *testing.T) {
 				case "run_connector_action": // TextContent is emitted as the real tool's text.
 					require.Contains(t, string(encoded(result)), "real-action:123")
 				}
-				next, err := Prepare(ctx, encoded(map[string]any{"tools": tools, "input": []any{map[string]any{"type": "custom_tool_call_output", "call_id": stringValue(call["call_id"]), "output": string(encoded(result))}}}), "discovery", store, nil)
+				next, err := Prepare(ctx, encoded(map[string]any{"tools": tools, "input": []any{map[string]any{"type": "custom_tool_call_output", "call_id": stringValue(call["call_id"]), "output": string(encoded(result))}}}), "discovery", store, nil, 256<<20)
 				require.NoError(t, err)
 				restored := preparedInput(t, next)
 				require.JSONEq(t, string(native), string(restored[1]))
@@ -150,7 +150,7 @@ func TestNativeDiscoveryRuntimeValidation(t *testing.T) {
 
 func TestNativeDiscoveryMixedBatchAndForeignNamespace(t *testing.T) {
 	ctx := context.Background()
-	r, err := Prepare(ctx, encoded(map[string]any{"tools": discoveryTools(), "input": "test"}), "mixed", memoryStore{}, nil)
+	r, err := Prepare(ctx, encoded(map[string]any{"tools": discoveryTools(), "input": "test"}), "mixed", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	r.Feedback = func(context.Context, []byte) ([]byte, error) { t.Fatal("unexpected feedback"); return nil, nil }
 	response, err := r.Response(ctx, encoded(feedbackResponse("mixed", nativeDiscoveryItem("functions.list_connectors", map[string]any{}, "discover"), feedbackCall("functions.exec", "text('normal sibling')", "normal"))))
@@ -198,7 +198,7 @@ func TestNativeDiscoveryDoesNotInventRuntimeOrIgnoreToolChoice(t *testing.T) {
 	require.Equal(t, "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", FailureCode(err))
 	for _, choice := range []any{"none", map[string]string{"type": "function", "name": "other"}} {
 		tools := append(discoveryTools(), map[string]any{"type": "function", "name": "other"})
-		r, err := Prepare(context.Background(), encoded(map[string]any{"input": "test", "tools": tools, "tool_choice": choice}), "scope", memoryStore{}, nil)
+		r, err := Prepare(context.Background(), encoded(map[string]any{"input": "test", "tools": tools, "tool_choice": choice}), "scope", memoryStore{}, nil, 256<<20)
 		require.NoError(t, err)
 		_, err = r.Response(context.Background(), encoded(feedbackResponse("r", native)))
 		require.Error(t, err)

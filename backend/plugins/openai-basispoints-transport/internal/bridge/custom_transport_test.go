@@ -16,7 +16,7 @@ func customRequest(t *testing.T) *Request {
 			map[string]any{"type": "custom", "name": "exec"},
 			map[string]any{"type": "function", "name": "read_file"},
 		}},
-	}}), "custom-session", memoryStore{}, nil)
+	}}), "custom-session", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	return r
 }
@@ -57,7 +57,7 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		call := assertCall(calls[0], true)
 		replayed, err := Prepare(ctx, encoded(map[string]any{"input": []any{map[string]any{
 			"type": "custom_tool_call_output", "call_id": stringValue(call["call_id"]), "output": "tool result",
-		}}}), "custom-session", r.store, nil)
+		}}}), "custom-session", r.store, nil, 256<<20)
 		require.NoError(t, err)
 		require.JSONEq(t, string(native), string(preparedInput(t, replayed)[1]))
 

@@ -153,7 +153,7 @@ func TestReadRequestBodyRetainsIncompletePrefix(t *testing.T) {
 			if tc.tail != nil {
 				stream.frames = append(stream.frames, tc.tail)
 			}
-			body, err := readRequestBody(stream, &pluginv1.ForwardRequestStart{HasBody: true, ContentLength: int64(len(prefix) + 1)})
+			body, err := readRequestBody(stream, &pluginv1.ForwardRequestStart{HasBody: true, ContentLength: int64(len(prefix) + 1)}, 256<<20)
 			require.Error(t, err)
 			require.Equal(t, prefix, body)
 		})

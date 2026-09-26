@@ -17,7 +17,7 @@ import (
 func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) error) error {
 	s := &streamBridge{request: r, emit: emit, pending: map[int]string{}, delivered: map[string]bool{}, indices: map[int]int{}, items: map[string]int{}, completed: map[int]json.RawMessage{}}
 	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 32<<10), MaxBodyBytes)
+	scanner.Buffer(make([]byte, 32<<10), MaxResponseBytes)
 	var data []string
 	size := 0
 	flush := func() error {
@@ -60,7 +60,7 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 			part := strings.TrimPrefix(line, "data:")
 			part = strings.TrimPrefix(part, " ")
 			size += len(part)
-			if size > MaxBodyBytes {
+			if size > MaxResponseBytes {
 				return errors.New("上游 SSE 事件超过大小限制")
 			}
 			data = append(data, part)

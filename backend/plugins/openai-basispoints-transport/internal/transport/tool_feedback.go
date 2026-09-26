@@ -17,17 +17,17 @@ import (
 // not EOF, and apply a total byte limit as well as the request deadline.
 func readFeedbackResponse(ctx context.Context, response *http.Response) ([]byte, error) {
 	if !strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
-		raw, err := io.ReadAll(io.LimitReader(response.Body, bridge.MaxBodyBytes+1))
+		raw, err := io.ReadAll(io.LimitReader(response.Body, bridge.MaxResponseBytes+1))
 		if err != nil {
 			return nil, err
 		}
-		if len(raw) > bridge.MaxBodyBytes {
+		if len(raw) > bridge.MaxResponseBytes {
 			return nil, errors.New("工具反馈响应超过大小限制")
 		}
 		return validateFeedbackSnapshot(raw, "")
 	}
-	scanner := bufio.NewScanner(io.LimitReader(response.Body, bridge.MaxBodyBytes+1))
-	scanner.Buffer(make([]byte, 32<<10), bridge.MaxBodyBytes)
+	scanner := bufio.NewScanner(io.LimitReader(response.Body, bridge.MaxResponseBytes+1))
+	scanner.Buffer(make([]byte, 32<<10), bridge.MaxResponseBytes)
 	var data []string
 	size := 0
 	flush := func() ([]byte, error) {
@@ -60,7 +60,7 @@ func readFeedbackResponse(ctx context.Context, response *http.Response) ([]byte,
 		}
 		line := scanner.Text()
 		size += len(line) + 1
-		if size > bridge.MaxBodyBytes {
+		if size > bridge.MaxResponseBytes {
 			return nil, errors.New("工具反馈响应超过大小限制")
 		}
 		if line == "" {

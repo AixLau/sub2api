@@ -129,7 +129,7 @@ func TestToolFeedbackRepairsBatchWithoutDispatchingRejectedCalls(t *testing.T) {
 					call, _ := parseObject(output[1])
 					replayInput = append(replayInput, encoded(object{"type": encoded("custom_tool_call_output"), "call_id": call["call_id"], "output": encoded("client result")}))
 				}
-				next, err := Prepare(context.Background(), encoded(map[string]any{"input": replayInput}), "custom-session", r.store, nil)
+				next, err := Prepare(context.Background(), encoded(map[string]any{"input": replayInput}), "custom-session", r.store, nil, 256<<20)
 				require.NoError(t, err)
 				require.Equal(t, 2, next.Turn.Iteration)
 				replay := preparedInput(t, next)
@@ -152,7 +152,7 @@ func TestToolFeedbackRepairsBatchWithoutDispatchingRejectedCalls(t *testing.T) {
 					require.Equal(t, 1, calls["call_fixed"])
 					require.Equal(t, 1, results["call_fixed"])
 					// Compact clients may send only the last tool result.
-					onlyResult, err := Prepare(context.Background(), encoded(map[string]any{"input": replayInput[len(replayInput)-1:]}), "custom-session", r.store, nil)
+					onlyResult, err := Prepare(context.Background(), encoded(map[string]any{"input": replayInput[len(replayInput)-1:]}), "custom-session", r.store, nil, 256<<20)
 					require.NoError(t, err)
 					require.Equal(t, 2, onlyResult.Turn.Iteration)
 					compact := string(encoded(preparedInput(t, onlyResult)))

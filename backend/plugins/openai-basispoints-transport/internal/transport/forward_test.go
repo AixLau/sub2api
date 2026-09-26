@@ -20,6 +20,7 @@ import (
 	hcplugin "github.com/hashicorp/go-plugin"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type testHostKV struct {
@@ -90,6 +91,12 @@ func clientForTest(t *testing.T, store *testHostKV, binary string, options ...te
 
 func forwardForTest(t *testing.T, c *pluginv1.TransportClient, body []byte, ctx context.Context, starts ...*pluginv1.ForwardRequestStart) (*pluginv1.ForwardResponseStart, []byte, *pluginv1.ForwardResponseError) {
 	t.Helper()
+	md, _ := metadata.FromOutgoingContext(ctx)
+	if len(md.Get(pluginv1.RequestBodyLimitMetadataKey)) == 0 {
+		var err error
+		ctx, err = pluginv1.WithRequestBodyLimit(ctx, 256<<20)
+		require.NoError(t, err)
+	}
 	stream, err := c.Forward(ctx)
 	require.NoError(t, err)
 	start := &pluginv1.ForwardRequestStart{AccountId: 7, Platform: "openai", AccountType: "oauth", Method: "POST", Url: "https://chatgpt.com/backend-api/codex/responses", Host: "chatgpt.com", HasBody: true, ContentLength: int64(len(body)), Headers: map[string]*pluginv1.HeaderValues{"authorization": {Values: []string{"Bearer synthetic"}}, "chatgpt-account-id": {Values: []string{"synthetic-account"}}, "session_id": {Values: []string{"isolated-session"}}}}
@@ -277,6 +284,8 @@ func TestForwardCancellationClosesUpstream(t *testing.T) {
 	require.NoError(t, err)
 	requestCtx, stop := context.WithCancel(ctx)
 	defer stop()
+	requestCtx, err = pluginv1.WithRequestBodyLimit(requestCtx, 256<<20)
+	require.NoError(t, err)
 	stream, err := c.Forward(requestCtx)
 	require.NoError(t, err)
 	body := []byte(`{"input":"hello","stream":true}`)

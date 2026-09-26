@@ -37,7 +37,7 @@ func TestNativeDiscoveryLiveBPS(t *testing.T) {
 	scope := "live-discovery-" + uuid.NewString()
 	seen := map[string]int{}
 	for round := 0; round < 5; round++ {
-		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-6-astra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": discoveryTools(), "input": input}), scope, store, nil)
+		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-6-astra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": discoveryTools(), "input": input}), scope, store, nil, 256<<20)
 		require.NoError(t, err)
 		body := encoded(map[string]any{"email": email, "body": json.RawMessage(r.Body)})
 		// Single-quote shell escaping; credentials never enter this argument or stdin.

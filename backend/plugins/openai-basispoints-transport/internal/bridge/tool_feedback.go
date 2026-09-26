@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 )
 
@@ -170,8 +171,8 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 	meta["agent_iteration"] = encoded(strconv.Itoa(r.Turn.Iteration))
 	body["metadata"] = encoded(meta)
 	nextBody := encoded(body)
-	if len(nextBody) > MaxBodyBytes {
-		return nil, errors.New("工具反馈请求超过大小限制")
+	if int64(len(nextBody)) > r.maxRequestBodyBytes {
+		return nil, fmt.Errorf("工具反馈请求超过宿主 gateway.max_body_size 限制（%d 字节）", r.maxRequestBodyBytes)
 	}
 	r.feedbackUsed = true
 	nextRaw, err := r.Feedback(ctx, nextBody)

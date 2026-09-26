@@ -26,7 +26,7 @@ const weatherTool = `[{"type":"function","name":"get_weather","description":"Wea
 
 func prepareWeather(t *testing.T, store Store) *Request {
 	t.Helper()
-	r, err := Prepare(context.Background(), []byte(`{"model":"gpt-6-astra","tools":`+weatherTool+`,"tool_choice":"auto","input":"Weather in Tokyo?"}`), "session-a", store, nil)
+	r, err := Prepare(context.Background(), []byte(`{"model":"gpt-6-astra","tools":`+weatherTool+`,"tool_choice":"auto","input":"Weather in Tokyo?"}`), "session-a", store, nil, 256<<20)
 	require.NoError(t, err)
 	return r
 }
@@ -69,7 +69,7 @@ func TestRoundTripFullNativeItemAndStableTurn(t *testing.T) {
 			require.NotContains(t, call, "provider_extension")
 			// Simulate a new plugin process. The downstream sends ONLY the result.
 			follow := encoded(map[string]any{"tools": json.RawMessage(weatherTool), "previous_response_id": "resp_first", "input": []any{map[string]any{"type": "function_call_output", "call_id": stringValue(call["call_id"]), "output": "18°C"}}})
-			r2, err := Prepare(ctx, follow, "session-a", store, nil)
+			r2, err := Prepare(ctx, follow, "session-a", store, nil, 256<<20)
 			require.NoError(t, err)
 			require.Equal(t, r.Turn.ID, r2.Turn.ID)
 			require.Equal(t, r.Turn.Iteration+1, r2.Turn.Iteration)
@@ -86,12 +86,12 @@ func TestRoundTripFullNativeItemAndStableTurn(t *testing.T) {
 			require.Equal(t, "call_native_1", stringValue(result["call_id"]))
 			require.Equal(t, "18°C", stringValue(result["output"]))
 			require.Equal(t, "fc_call_native_1", stringValue(result["id"]))
-			retry, err := Prepare(ctx, follow, "session-a", store, nil)
+			retry, err := Prepare(ctx, follow, "session-a", store, nil, 256<<20)
 			require.NoError(t, err)
 			require.Equal(t, r2.Turn, retry.Turn, "network retry must not advance iteration")
-			_, err = Prepare(ctx, follow, "session-b", store, nil)
+			_, err = Prepare(ctx, follow, "session-b", store, nil, 256<<20)
 			require.ErrorContains(t, err, "不存在")
-			_, err = Prepare(ctx, follow, "session-a", memoryStore{}, nil)
+			_, err = Prepare(ctx, follow, "session-a", memoryStore{}, nil, 256<<20)
 			require.ErrorContains(t, err, "不存在")
 		})
 	}
@@ -106,7 +106,7 @@ func TestHistoryRestorationDeduplicatesCallAndResetsForNewUser(t *testing.T) {
 	require.NoError(t, err)
 	obj, _ := parseObject(call)
 	input := []any{map[string]any{"role": "user", "content": "Weather in Tokyo?"}, json.RawMessage(call), map[string]any{"type": "function_call_output", "call_id": stringValue(obj["call_id"]), "output": "18°C"}}
-	r2, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input}), "session-a", store, nil)
+	r2, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input}), "session-a", store, nil, 256<<20)
 	require.NoError(t, err)
 	require.Equal(t, r.Turn.ID, r2.Turn.ID)
 	root, _ := parseObject(r2.Body)
@@ -114,7 +114,7 @@ func TestHistoryRestorationDeduplicatesCallAndResetsForNewUser(t *testing.T) {
 	require.NoError(t, json.Unmarshal(root["input"], &restored))
 	require.Len(t, restored, 4)
 	input = append(input, map[string]any{"role": "user", "content": "Now Osaka"})
-	r3, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input}), "session-a", store, nil)
+	r3, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input}), "session-a", store, nil, 256<<20)
 	require.NoError(t, err)
 	require.NotEqual(t, r.Turn.ID, r3.Turn.ID)
 	require.Zero(t, r3.Turn.Iteration)
@@ -124,7 +124,7 @@ func TestNamespaceCustomAndUndeclaredOrExecutablePayload(t *testing.T) {
 	ctx := context.Background()
 	store := memoryStore{}
 	raw := []byte(`{"input":"hello","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"patch","description":"Apply patch"}]}]}`)
-	r, err := Prepare(ctx, raw, "scope", store, nil)
+	r, err := Prepare(ctx, raw, "scope", store, nil, 256<<20)
 	require.NoError(t, err)
 	call, err := r.convertCall(ctx, officeItem("functions.patch", "line 1\nline 2", false))
 	require.NoError(t, err)
@@ -169,7 +169,7 @@ func TestNativeHistoryPassesThroughUnchanged(t *testing.T) {
 	}
 	raw, err := json.Marshal(map[string]any{"model": "gpt-5.6-sol", "input": input})
 	require.NoError(t, err)
-	r, err := Prepare(context.Background(), raw, "s", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), raw, "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	var items []json.RawMessage
@@ -212,13 +212,13 @@ func TestRequestBoundaries(t *testing.T) {
 		`{"tools":[],"input":[{"type":"function_call_output","call_id":"foreign","output":"x"}]}`,
 		`{"tools":[],"input":[],"reasoning":{"effort":"banana"}}`,
 	} {
-		_, err := Prepare(context.Background(), []byte(raw), "x", memoryStore{}, nil)
+		_, err := Prepare(context.Background(), []byte(raw), "x", memoryStore{}, nil, 256<<20)
 		require.Error(t, err, raw)
 	}
-	_, err := Prepare(context.Background(), []byte(`{"tools":`+weatherTool+`,"input":[]}`), "x", nil, nil)
+	_, err := Prepare(context.Background(), []byte(`{"tools":`+weatherTool+`,"input":[]}`), "x", nil, nil, 256<<20)
 	require.ErrorContains(t, err, "KV")
 	for _, choice := range []string{`"none"`, `{"type":"function","name":"get_weather"}`} {
-		r, err := Prepare(context.Background(), []byte(`{"tools":`+weatherTool+`,"input":[],"tool_choice":`+choice+`}`), "x", memoryStore{}, nil)
+		r, err := Prepare(context.Background(), []byte(`{"tools":`+weatherTool+`,"input":[],"tool_choice":`+choice+`}`), "x", memoryStore{}, nil, 256<<20)
 		require.NoError(t, err)
 		root, _ := parseObject(r.Body)
 		require.NotContains(t, root, "tools")
@@ -252,7 +252,7 @@ func TestWireShapeMatchesExcelAddIn(t *testing.T) {
 		"metadata": {"client":"codex","n":3},
 		"user": "u1"
 	}`)
-	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	for _, field := range []string{"tools", "tool_choice", "parallel_tool_calls", "max_output_tokens", "temperature", "top_p", "text", "include", "previous_response_id", "reasoning", "instructions", "user", "turn_id", "agent_iteration"} {
@@ -282,7 +282,7 @@ func TestWireShapeMatchesExcelAddIn(t *testing.T) {
 	require.Equal(t, "3", meta["n"])
 
 	withCompaction := []byte(`{"input":"hi","context_management":[{"type":"compaction","compact_threshold":1000}]}`)
-	r2, err := Prepare(context.Background(), withCompaction, "scope-1", memoryStore{}, nil)
+	r2, err := Prepare(context.Background(), withCompaction, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root2, _ := parseObject(r2.Body)
 	require.JSONEq(t, `[{"type":"compaction","compact_threshold":1000}]`, string(root2["context_management"]))
@@ -297,7 +297,7 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	}
 	raw, err := json.Marshal(map[string]any{"model": "gpt-5.6-luna", "tools": json.RawMessage(weatherTool), "input": input})
 	require.NoError(t, err)
-	r, err := Prepare(ctx, raw, "scope-1", memoryStore{}, nil)
+	r, err := Prepare(ctx, raw, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	require.Equal(t, 1, r.Turn.Iteration)
 	root, _ := parseObject(r.Body)
@@ -318,7 +318,7 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	require.Equal(t, "18°C", stringValue(out["output"]))
 	require.Equal(t, "fc_call_old_1", stringValue(out["id"]))
 
-	retry, err := Prepare(ctx, raw, "scope-1", memoryStore{}, nil)
+	retry, err := Prepare(ctx, raw, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	require.Equal(t, r.Turn, retry.Turn, "network retry must not advance iteration")
 
@@ -329,7 +329,7 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	)
 	raw2, err := json.Marshal(map[string]any{"model": "gpt-5.6-luna", "tools": json.RawMessage(weatherTool), "input": more})
 	require.NoError(t, err)
-	r2, err := Prepare(ctx, raw2, "scope-1", memoryStore{}, nil)
+	r2, err := Prepare(ctx, raw2, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	require.Equal(t, r.Turn.ID, r2.Turn.ID)
 	require.Equal(t, 2, r2.Turn.Iteration)
@@ -346,7 +346,7 @@ func TestReasoningAndItemReferenceHygiene(t *testing.T) {
 	}
 	raw, err := json.Marshal(map[string]any{"model": "gpt-5.6-luna", "input": input})
 	require.NoError(t, err)
-	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	var items []json.RawMessage
@@ -370,16 +370,16 @@ func TestReasoningEffortPolicy(t *testing.T) {
 		"max": "xhigh", "x-high": "xhigh", "extra-high": "xhigh",
 	} {
 		raw := []byte(`{"input":"hi","reasoning":{"effort":"` + requested + `"}}`)
-		r, err := Prepare(ctx, raw, "s", memoryStore{}, nil)
+		r, err := Prepare(ctx, raw, "s", memoryStore{}, nil, 256<<20)
 		require.NoError(t, err)
 		root, _ := parseObject(r.Body)
 		require.Equal(t, expected, stringValue(root["reasoning_effort"]), requested)
 	}
-	r, err := Prepare(ctx, []byte(`{"input":"hi"}`), "s", memoryStore{}, nil)
+	r, err := Prepare(ctx, []byte(`{"input":"hi"}`), "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	require.Equal(t, "medium", stringValue(root["reasoning_effort"]))
-	_, err = Prepare(ctx, []byte(`{"input":"hi","reasoning":{"effort":"banana"}}`), "s", memoryStore{}, nil)
+	_, err = Prepare(ctx, []byte(`{"input":"hi","reasoning":{"effort":"banana"}}`), "s", memoryStore{}, nil, 256<<20)
 	require.ErrorContains(t, err, "reasoning effort")
 }
 
@@ -397,13 +397,13 @@ func TestModelMapping(t *testing.T) {
 		"gpt-5.6-terra-excel":     "gpt-5.6-terra",
 	} {
 		raw := []byte(`{"model":"` + requested + `","input":"hi"}`)
-		r, err := Prepare(context.Background(), raw, "s", memoryStore{}, mapping)
+		r, err := Prepare(context.Background(), raw, "s", memoryStore{}, mapping, 256<<20)
 		require.NoError(t, err)
 		root, _ := parseObject(r.Body)
 		require.Equal(t, want, stringValue(root["model"]), requested)
 	}
 	// Without a mapping the default pass-through keeps working.
-	r, err := Prepare(context.Background(), []byte(`{"model":"gpt-5.6-luna-excel","input":"hi"}`), "s", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), []byte(`{"model":"gpt-5.6-luna-excel","input":"hi"}`), "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	require.Equal(t, "gpt-5.6-luna", stringValue(root["model"]))
@@ -420,7 +420,7 @@ func TestResponsesLiteAdditionalToolsBuildCatalog(t *testing.T) {
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"check git status"}]}
 		]
 	}`)
-	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), raw, "scope-1", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	root, _ := parseObject(r.Body)
 	var items []json.RawMessage
@@ -525,7 +525,7 @@ func TestStoreFailureNeverReleasesExecutableCall(t *testing.T) {
 func TestEnvelopeTransportResolvesUnambiguousCatalogName(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(`{"input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec","description":"Run command"}]}]}`)
-	r, err := Prepare(ctx, raw, "s", memoryStore{}, nil)
+	r, err := Prepare(ctx, raw, "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 
 	_, err = r.convertCall(ctx, officeItem("exec", "ls", false))

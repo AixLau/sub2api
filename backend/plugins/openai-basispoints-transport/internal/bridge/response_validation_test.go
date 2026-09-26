@@ -45,7 +45,7 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 	source := "text(await tools.exec_command({cmd: \"printf 'hello'\"}));\n"
 	for _, direct := range []bool{false, true} {
 		store := memoryStore{}
-		r, err := Prepare(ctx, raw, "s", store, nil)
+		r, err := Prepare(ctx, raw, "s", store, nil, 256<<20)
 		require.NoError(t, err)
 		item := officeItem("functions.exec", source, false)
 		if direct {
@@ -66,7 +66,7 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 			call, _ := parseObject(converted)
 			require.Equal(t, source, stringValue(call["input"]))
 			follow := encoded(map[string]any{"tools": json.RawMessage("[{\"type\":\"namespace\",\"name\":\"functions\",\"tools\":[{\"type\":\"custom\",\"name\":\"exec\"}]}]"), "input": []any{map[string]any{"type": "custom_tool_call_output", "call_id": stringValue(call["call_id"]), "output": "ok"}}})
-			restored, err := Prepare(ctx, follow, "s", store, nil)
+			restored, err := Prepare(ctx, follow, "s", store, nil, 256<<20)
 			require.NoError(t, err)
 			require.Equal(t, r.Turn.ID, restored.Turn.ID)
 		}
@@ -74,7 +74,7 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 }
 
 func TestInvalidCustomCallAfterTextPreservesIdentityAndSequence(t *testing.T) {
-	r, err := Prepare(context.Background(), []byte(`{"input":"hi","tools":[{"type":"custom","name":"exec"}]}`), "session", memoryStore{}, nil)
+	r, err := Prepare(context.Background(), []byte(`{"input":"hi","tools":[{"type":"custom","name":"exec"}]}`), "session", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	item := rawCustomItem(object{"references": encoded([]string{"exec"}), "code": encoded(map[string]any{"code": "private executable input"})})
 	input := event("response.created", map[string]any{"response": map[string]any{"id": "resp_partial", "model": "model"}}) +

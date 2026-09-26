@@ -82,11 +82,16 @@ func TestPluginRuntimeForwardsIngressCorrelation(t *testing.T) {
 		request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, "https://example.com/responses", http.NoBody)
 		require.NoError(t, err)
 		request.Header.Set("session_id", "rewritten-upstream-session")
+		ctx, err = pluginv1.WithRequestBodyLimit(ctx, 173<<20)
+		require.NoError(t, err)
 		_, err = runtime.roundTrip(ctx, request, "", &Account{ID: 275})
 		require.Error(t, err)
 		select {
 		case start := <-capture.starts:
 			md := <-capture.metadata
+			limit, limitErr := pluginv1.RequestBodyLimit(metadata.NewIncomingContext(context.Background(), md))
+			require.NoError(t, limitErr)
+			require.Equal(t, int64(173<<20), limit)
 			require.Equal(t, []string{sanitizeSessionID(tc.sessionID)}, md.Get(pluginv1.ClientSessionIDMetadataKey))
 			require.Equal(t, []string{"preserved"}, md.Get("test-marker"))
 			require.Equal(t, "rewritten-upstream-session", request.Header.Get("session_id"))

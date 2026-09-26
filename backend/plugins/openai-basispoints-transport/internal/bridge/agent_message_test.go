@@ -40,7 +40,7 @@ func TestPrepareAgentMessagesPreservesTextAndOrder(t *testing.T) {
 		agentMessage("/root/worker", "/root", "Message Type: FINAL_ANSWER\nPayload:\ndone")}
 	raw := encoded(map[string]any{"input": input})
 	original := append([]byte(nil), raw...)
-	r, err := Prepare(context.Background(), raw, "s", nil, nil)
+	r, err := Prepare(context.Background(), raw, "s", nil, nil, 256<<20)
 	require.NoError(t, err)
 	require.Equal(t, original, []byte(raw))
 	got := preparedInput(t, r)
@@ -65,7 +65,7 @@ func TestPrepareAgentMessagesNeverGuessCiphertext(t *testing.T) {
 		})
 		raw := encoded(map[string]any{"input": []any{item}})
 		original := append([]byte(nil), raw...)
-		r, err := Prepare(context.Background(), raw, "s", nil, nil)
+		r, err := Prepare(context.Background(), raw, "s", nil, nil, 256<<20)
 		require.Nil(t, r)
 		require.ErrorContains(t, err, "input[0].content[1]")
 		require.ErrorContains(t, err, "encrypted_payload")
@@ -76,7 +76,7 @@ func TestPrepareAgentMessagesNeverGuessCiphertext(t *testing.T) {
 		require.Equal(t, original, []byte(raw))
 	}
 	// The protocol type, not the appearance of text, is authoritative.
-	r, err := Prepare(context.Background(), encoded(map[string]any{"input": []any{agentMessage("/root", "/root/worker", "gAAAAABliteral test data")}}), "s", nil, nil)
+	r, err := Prepare(context.Background(), encoded(map[string]any{"input": []any{agentMessage("/root", "/root/worker", "gAAAAABliteral test data")}}), "s", nil, nil, 256<<20)
 	require.NoError(t, err)
 	require.Contains(t, string(r.Body), "gAAAAABliteral test data")
 }
@@ -89,7 +89,7 @@ func TestPrepareAgentMessagesRejectIncompleteContent(t *testing.T) {
 	} {
 		item := agentMessage("/root", "/root/worker", "")
 		item["content"] = encoded(content)
-		_, err := Prepare(context.Background(), encoded(map[string]any{"input": []any{item}}), "s", nil, nil)
+		_, err := Prepare(context.Background(), encoded(map[string]any{"input": []any{item}}), "s", nil, nil, 256<<20)
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "private")
 	}
@@ -105,7 +105,7 @@ func TestPrepareAgentMessagesTrackNewTurnsAndToolContinuations(t *testing.T) {
 		map[string]any{"type": "function_call_output", "call_id": stringValue(parentItem["call_id"]), "output": "18 C"},
 		agentMessage("/root", "/root/worker", "new task")}
 	prepare := func() *Request {
-		r, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input, "previous_response_id": "not-in-store"}), "session-a", store, nil)
+		r, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input, "previous_response_id": "not-in-store"}), "session-a", store, nil, 256<<20)
 		require.NoError(t, err)
 		return r
 	}
@@ -140,7 +140,7 @@ func collaborationRequest(t *testing.T, name string) *Request {
 				"type": "object", "properties": map[string]any{"message": map[string]any{"type": "string", "encrypted": true}},
 			},
 		}},
-	}}}), "parent", memoryStore{}, nil)
+	}}}), "parent", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
 	return r
 }
@@ -179,7 +179,7 @@ func TestCollaborationCallsDeclarePlaintextInJSONAndSSE(t *testing.T) {
 			clientCall, _ := parseObject(calls[0])
 			replayed, err := Prepare(ctx, encoded(map[string]any{"input": []any{map[string]any{
 				"type": "function_call_output", "call_id": stringValue(clientCall["call_id"]), "output": "delivered",
-			}}}), "parent", r.store, nil)
+			}}}), "parent", r.store, nil, 256<<20)
 			require.NoError(t, err)
 			require.JSONEq(t, string(encoded(native)), string(preparedInput(t, replayed)[1]))
 			r = collaborationRequest(t, name)

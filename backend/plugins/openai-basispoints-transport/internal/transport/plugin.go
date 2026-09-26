@@ -238,7 +238,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if !nativeSearch && (start.Method != http.MethodPost || !strings.HasSuffix(target.Path, "/responses")) {
 		return p.sendError(stream, "PLUGIN_UNSUPPORTED_ENDPOINT", "此插件目前仅支持 POST /responses 和 POST /alpha/search", false)
 	}
-	body, err := readRequestBody(stream, start)
+	maxRequestBodyBytes, err := pluginv1.RequestBodyLimit(ctx)
+	if err != nil {
+		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", err.Error(), false)
+	}
+	body, err := readRequestBody(stream, start, maxRequestBodyBytes)
 	diagnostic.body(body, err == nil)
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_REQUEST_BODY_FAILED", err.Error(), false)
@@ -353,7 +357,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// execute prepares and sends one BPS attempt. The code names the
 	// pre-upstream failure class for the error frame.
 	execute := func(rawBody []byte, stripEncrypted bool) (*http.Response, *bridge.Request, string, error) {
-		adapted, err := bridge.Prepare(requestCtx, rawBody, scope, store, state.cfg.ModelMapping)
+		adapted, err := bridge.Prepare(requestCtx, rawBody, scope, store, state.cfg.ModelMapping, maxRequestBodyBytes)
 		if err != nil {
 			return nil, nil, "TOOL_BRIDGE_REQUEST_INVALID", err
 		}
@@ -477,8 +481,8 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		response.Header.Del("ETag")
 		response.ContentLength = -1
 		if !strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
-			raw, readErr := io.ReadAll(io.LimitReader(response.Body, bridge.MaxBodyBytes+1))
-			if readErr != nil || len(raw) > bridge.MaxBodyBytes {
+			raw, readErr := io.ReadAll(io.LimitReader(response.Body, bridge.MaxResponseBytes+1))
+			if readErr != nil || len(raw) > bridge.MaxResponseBytes {
 				return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "上游响应读取失败或过大", true)
 			}
 			converted, convertErr := adapted.Response(requestCtx, raw)
@@ -1004,9 +1008,12 @@ func (p *Plugin) hostClient() pluginv1.HostServiceClient {
 
 // Read the bounded JSON body before dialing upstream. This avoids an upload
 // goroutine blocked in Recv when an upstream rejects a request before body_end.
-func readRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], start *pluginv1.ForwardRequestStart) ([]byte, error) {
-	if start.ContentLength > bridge.MaxBodyBytes {
-		return nil, errors.New("请求体超过桥接大小限制")
+func readRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], start *pluginv1.ForwardRequestStart, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, errors.New("宿主 gateway.max_body_size 请求体限制无效")
+	}
+	if start.ContentLength > limit {
+		return nil, fmt.Errorf("请求体超过宿主 gateway.max_body_size 限制（%d 字节）", limit)
 	}
 	var body bytes.Buffer
 	for {
@@ -1016,8 +1023,11 @@ func readRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pl
 		}
 		switch value := frame.Frame.(type) {
 		case *pluginv1.ForwardRequest_BodyChunk:
-			if !start.HasBody || len(value.BodyChunk) > bridge.MaxBodyBytes-body.Len() {
-				return body.Bytes(), errors.New("请求体帧无效或超过大小限制")
+			if !start.HasBody {
+				return body.Bytes(), errors.New("请求体帧与 HasBody 不一致")
+			}
+			if int64(len(value.BodyChunk)) > limit-int64(body.Len()) {
+				return body.Bytes(), fmt.Errorf("请求体超过宿主 gateway.max_body_size 限制（%d 字节）", limit)
 			}
 			body.Write(value.BodyChunk)
 		case *pluginv1.ForwardRequest_BodyEnd:

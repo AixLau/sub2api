@@ -82,7 +82,7 @@ func TestEncryptedReplayCleansRestoredKVItem(t *testing.T) {
 	require.NoError(t, err)
 	call, _ := parseObject(converted)
 	raw := mustJSON(t, map[string]any{"tools": json.RawMessage(weatherTool), "input": []any{map[string]any{"type": "function_call_output", "call_id": stringValue(call["call_id"]), "output": "sunny"}}})
-	prepared, err := Prepare(ctx, raw, "session-a", store, nil)
+	prepared, err := Prepare(ctx, raw, "session-a", store, nil, 256<<20)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "restored secret")
 	require.Contains(t, string(prepared.Body), "restored secret")
