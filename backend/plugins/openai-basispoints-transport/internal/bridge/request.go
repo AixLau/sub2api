@@ -147,7 +147,10 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 					// History the plugin never minted: pre-plugin client tool
 					// calls. Rebuild a transport envelope from the client's own
 					// item so the turn can continue.
-					native = rebuildTransportCall(item, typ, catalogName)
+					native, err = rebuildTransportCall(item, typ, catalogName)
+					if err != nil {
+						return nil, err
+					}
 				} else {
 					// Server-injected native tool (run_connector_action,
 					// update_plan, ...) in history: replay unchanged.
@@ -355,32 +358,29 @@ func messageItem(role, text string) map[string]any {
 // run_officejs transport envelope. Only the client's own name/arguments are
 // used; no code is executed and no upstream identity is invented beyond a
 // deterministic item id.
-func rebuildTransportCall(item object, typ, name string) json.RawMessage {
+func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error) {
 	callID := stringValue(item["call_id"])
-	var summary, code string
+	var code string
 	if typ == "custom_tool_call" {
-		summary = customTransportPrefix + name
+		if !isTextValue(item["input"]) {
+			return nil, errors.New("历史 custom 工具 input 必须是字符串")
+		}
 		code = stringValue(item["input"])
 	} else {
-		var args any
 		rawArgs := item["arguments"]
-		if s := stringValue(rawArgs); s != "" {
-			rawArgs = []byte(s)
+		if isTextValue(rawArgs) {
+			rawArgs = []byte(stringValue(rawArgs))
 		}
-		if len(rawArgs) == 0 || json.Unmarshal(rawArgs, &args) != nil {
-			args = map[string]any{}
+		if _, err := parseObject(rawArgs); err != nil {
+			return nil, errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 		}
-		if _, ok := args.(map[string]any); !ok {
-			args = map[string]any{}
-		}
-		summary = "Run client tool " + name
-		code = string(encoded(map[string]any{"tool": name, "args": args}))
+		code = string(rawArgs)
 	}
 	outer := map[string]any{
-		"summary":     summary,
+		"summary":     "Run client tool " + name,
 		"code":        code,
 		"destructive": false,
-		"references":  []string{},
+		"references":  []string{name},
 	}
 	return encoded(object{
 		"type":      encoded("function_call"),
@@ -389,7 +389,7 @@ func rebuildTransportCall(item object, typ, name string) json.RawMessage {
 		"name":      encoded("run_officejs"),
 		"arguments": encoded(string(encoded(outer))),
 		"status":    encoded("completed"),
-	})
+	}), nil
 }
 
 // cleanItem drops caller transport metadata that destabilizes prompt caching

@@ -32,7 +32,11 @@ func prepareWeather(t *testing.T, store Store) *Request {
 }
 
 func officeItem(name string, args any, objectArguments bool) json.RawMessage {
-	outer := map[string]any{"summary": "Read weather", "references": []string{"Tokyo weather"}, "destructive": false, "code": string(encoded(map[string]any{"tool": name, "args": args}))}
+	code, ok := args.(string)
+	if !ok {
+		code = string(encoded(args))
+	}
+	outer := map[string]any{"summary": "Read weather", "references": []string{name}, "destructive": false, "code": code}
 	var arguments any = string(encoded(outer))
 	if objectArguments {
 		arguments = outer
@@ -131,15 +135,13 @@ func TestNamespaceCustomAndUndeclaredOrExecutablePayload(t *testing.T) {
 	_, err = r.convertCall(ctx, officeItem("not_declared", map[string]any{}, true))
 	require.ErrorContains(t, err, "未声明")
 
-	// A valid envelope stuffed into another server executor is still a client call.
+	// An unrelated server executor cannot carry the client transport.
 	foreign, _ := parseObject(officeItem("functions.patch", "line 1", false))
 	foreign["name"] = encoded("run_connector_action")
 	foreign["id"] = encoded("fc_foreign_exec")
 	converted, err := r.convertCall(ctx, encoded(foreign))
-	require.NoError(t, err)
-	convertedObj, _ := parseObject(converted)
-	require.Equal(t, "custom_tool_call", stringValue(convertedObj["type"]))
-	require.Equal(t, "patch", stringValue(convertedObj["name"]))
+	require.ErrorContains(t, err, "传输执行器")
+	require.Nil(t, converted)
 
 	// Undeclared server tools must never reach the client executor.
 	jsCode, _ := parseObject(officeItem("functions.patch", "text", false))
@@ -307,10 +309,8 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	require.Equal(t, "fc_call_old_1", stringValue(call["id"]))
 	var outer map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stringValue(call["arguments"])), &outer))
-	var envelope map[string]any
-	require.NoError(t, json.Unmarshal([]byte(outer["code"].(string)), &envelope))
-	require.Equal(t, "get_weather", envelope["tool"])
-	require.Equal(t, map[string]any{"city": "Tokyo"}, envelope["args"])
+	require.Equal(t, []any{"get_weather"}, outer["references"])
+	require.JSONEq(t, `{"city":"Tokyo"}`, outer["code"].(string))
 	out, _ := parseObject(items[3])
 	require.Equal(t, "function_call_output", stringValue(out["type"]))
 	require.Equal(t, "call_old_1", stringValue(out["call_id"]))
@@ -521,27 +521,18 @@ func TestStoreFailureNeverReleasesExecutableCall(t *testing.T) {
 	require.Zero(t, emitted)
 }
 
-func TestEnvelopeSpellingVariantsAndBareNameLookup(t *testing.T) {
+func TestReferenceTransportRequiresExactCatalogName(t *testing.T) {
 	ctx := context.Background()
 	raw := []byte(`{"input":"hi","tools":[{"type":"namespace","name":"functions","tools":[{"type":"custom","name":"exec","description":"Run command"}]}]}`)
 	r, err := Prepare(ctx, raw, "s", memoryStore{}, nil)
 	require.NoError(t, err)
 
-	for _, code := range []string{
-		`{"tool":"exec","args":"ls"}`,
-		`{"name":"exec","arguments":"ls"}`,
-		`{"tool":"functions.exec","args":"ls"}`,
-		`{"tool":"exec","args":"ls","note":"extra key tolerated"}`,
-	} {
-		native := officeItem("run_officejs", map[string]any{}, false)
-		item, _ := parseObject(native)
-		item["arguments"] = encoded(string(encoded(map[string]any{"code": code})))
-		item["id"] = encoded("fc_variant_" + code[:16])
-		call, err := r.convertCall(ctx, encoded(item))
-		require.NoError(t, err, code)
-		obj, _ := parseObject(call)
-		require.Equal(t, "custom_tool_call", stringValue(obj["type"]), code)
-		require.Equal(t, "exec", stringValue(obj["name"]), code)
-		require.Equal(t, "ls", stringValue(obj["input"]), code)
-	}
+	_, err = r.convertCall(ctx, officeItem("exec", "ls", false))
+	require.ErrorContains(t, err, "未声明")
+	call, err := r.convertCall(ctx, officeItem("functions.exec", "ls", false))
+	require.NoError(t, err)
+	obj, _ := parseObject(call)
+	require.Equal(t, "custom_tool_call", stringValue(obj["type"]))
+	require.Equal(t, "exec", stringValue(obj["name"]))
+	require.Equal(t, "ls", stringValue(obj["input"]))
 }

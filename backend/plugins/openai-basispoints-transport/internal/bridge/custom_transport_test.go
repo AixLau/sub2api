@@ -35,7 +35,7 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 		"",
 	} {
 		r := customRequest(t)
-		native := rawCustomItem(object{"summary": encoded(customTransportPrefix + "functions.exec"), "code": encoded(source)})
+		native := rawCustomItem(object{"summary": encoded("Run a client command"), "references": encoded([]string{"functions.exec"}), "code": encoded(source)})
 		response := map[string]any{"id": "resp_raw", "status": "completed", "output": []any{native}}
 		assertCall := func(raw json.RawMessage, complete bool) object {
 			call, err := parseObject(raw)
@@ -98,23 +98,24 @@ func TestRawCustomTransportPreservesInputAndReplay(t *testing.T) {
 
 		// A client call without a KV record uses the same raw protocol.
 		call["call_id"] = encoded("foreign_call")
-		rebuilt, _ := parseObject(rebuildTransportCall(call, "custom_tool_call", "functions.exec"))
+		rebuiltRaw, err := rebuildTransportCall(call, "custom_tool_call", "functions.exec")
+		require.NoError(t, err)
+		rebuilt, _ := parseObject(rebuiltRaw)
 		outer, err := parseObject([]byte(stringValue(rebuilt["arguments"])))
 		require.NoError(t, err)
-		require.Equal(t, customTransportPrefix+"functions.exec", stringValue(outer["summary"]))
+		require.JSONEq(t, `["functions.exec"]`, string(outer["references"]))
 		require.Equal(t, source, stringValue(outer["code"]))
 	}
 }
 
-func TestRawCustomTransportRejectsInvalidMarkersAndKinds(t *testing.T) {
-	for _, summary := range []string{customTransportPrefix, customTransportPrefix + "functions.exec extra",
-		customTransportPrefix + "functions.exec/extra", customTransportPrefix + "functions.exec\\extra",
-		customTransportPrefix + "functions.exec\x00", customTransportPrefix + "functions.exec\u00a0",
-		customTransportPrefix + "undeclared", customTransportPrefix + "functions.read_file", "no marker",
+func TestRawCustomTransportRejectsInvalidReferencesAndKinds(t *testing.T) {
+	for _, refs := range []any{nil, "functions.exec", []string{}, []string{"functions.exec", "functions.read_file"},
+		[]any{nil}, []any{42}, []string{"functions.exec extra"}, []string{"undeclared"}, []string{"functions.read_file"},
+		[]string{"run_officejs"}, []string{"functions.run_officejs"}, []string{""},
 	} {
 		r := customRequest(t)
-		call, err := r.convertCall(context.Background(), rawCustomItem(object{"summary": encoded(summary), "code": encoded("private raw source")}))
-		require.Error(t, err, summary)
+		call, err := r.convertCall(context.Background(), rawCustomItem(object{"references": encoded(refs), "code": encoded("private raw source")}))
+		require.Error(t, err, refs)
 		var failure *ToolCallError
 		require.ErrorAs(t, err, &failure)
 		require.Nil(t, call)
@@ -123,27 +124,19 @@ func TestRawCustomTransportRejectsInvalidMarkersAndKinds(t *testing.T) {
 	}
 	for _, code := range []any{nil, 42, map[string]any{"input": "private"}} {
 		r := customRequest(t)
-		_, err := r.convertCall(context.Background(), rawCustomItem(object{"summary": encoded(customTransportPrefix + "functions.exec"), "code": encoded(code)}))
+		_, err := r.convertCall(context.Background(), rawCustomItem(object{"references": encoded([]string{"functions.exec"}), "code": encoded(code)}))
 		require.Error(t, err)
 	}
 }
 
-func TestLegacyRawCustomTransportAcceptsOnlyInvalidJSONCode(t *testing.T) {
-	r := customRequest(t)
-	source := "text(await tools.exec_command({cmd: \"pwd\"}));"
-	item := rawCustomItem(object{"summary": encoded("Run client tool functions.exec"), "code": encoded(source)})
-	call, err := r.convertCall(context.Background(), item)
-	require.NoError(t, err)
-	out, _ := parseObject(call)
-	require.Equal(t, "custom_tool_call", stringValue(out["type"]))
-	require.Equal(t, source, stringValue(out["input"]))
-
-	jsonCode := `{"tool":"functions.read_file","args":{"path":"x"}}`
-	r = customRequest(t)
-	functionItem := rawCustomItem(object{"summary": encoded("Run client tool functions.read_file"), "code": encoded(jsonCode)})
-	converted, err := r.convertCall(context.Background(), functionItem)
-	require.NoError(t, err)
-	functionOut, _ := parseObject(converted)
-	require.Equal(t, "function_call", stringValue(functionOut["type"]))
-	require.JSONEq(t, `{"path":"x"}`, stringValue(functionOut["arguments"]))
+func TestObsoleteTransportFormatsCannotSelectTools(t *testing.T) {
+	for _, summary := range []string{"Run client tool functions.exec", "sub2api.custom/functions.exec", "Run a command"} {
+		for _, code := range []string{"text(await tools.exec_command({cmd: \"pwd\"}));", `{"tool":"functions.read_file","args":{"path":"x"}}`} {
+			r := customRequest(t)
+			call, err := r.convertCall(context.Background(), rawCustomItem(object{"summary": encoded(summary), "code": encoded(code)}))
+			require.ErrorContains(t, err, "references")
+			require.Nil(t, call)
+			require.Empty(t, r.converted)
+		}
+	}
 }

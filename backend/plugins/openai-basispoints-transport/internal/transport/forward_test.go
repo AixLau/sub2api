@@ -111,7 +111,7 @@ func testForwardReplay(t *testing.T, binary string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	store := &testHostKV{values: map[string][]byte{}}
-	native := json.RawMessage(`{"type":"function_call","id":"fc_server","call_id":"call_server","name":"run_officejs","arguments":{"summary":"Weather","code":"{\"tool\":\"get_weather\",\"args\":{\"city\":\"Tokyo\"}}","destructive":false,"references":["Tokyo weather"]},"status":"completed"}`)
+	native := json.RawMessage(`{"type":"function_call","id":"fc_server","call_id":"call_server","name":"run_officejs","arguments":{"summary":"Weather","code":"{\"city\":\"Tokyo\"}","destructive":false,"references":["get_weather"]},"status":"completed"}`)
 	requests := make(chan map[string]json.RawMessage, 2)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		raw, err := io.ReadAll(req.Body)

@@ -15,51 +15,7 @@ func isTransportName(name string) bool {
 	return name == "run_officejs" || name == "functions.run_officejs"
 }
 
-// clientEnvelope decodes the transport payload out of a native call. The model
-// sometimes stuffs the client-tool envelope into another server executor (e.g.
-// run_connector_action), and drifts on the envelope spelling: the canonical
-// shape is {"tool":…,"args":…} but {"name":…,"arguments":…} and extra keys are
-// accepted the same way, so a format drift degrades into a normal client call
-// instead of an "unknown tool" failure.
-func clientEnvelope(item object) (object, error) {
-	args := item["arguments"]
-	if s := stringValue(args); s != "" {
-		args = []byte(s)
-	}
-	outer, err := parseObject(args)
-	if err != nil {
-		return nil, toolCallError("上游工具 arguments 不是有效 JSON 对象")
-	}
-	if envelope, marked, err := customTransportEnvelope(outer); marked {
-		return envelope, err
-	}
-	if envelope, marked, err := legacyRawCustomTransportEnvelope(outer); marked {
-		return envelope, err
-	}
-	code := stringValue(outer["code"])
-	envelope, err := parseObject([]byte(code))
-	if err != nil {
-		return nil, toolCallError("上游工具 code 不是有效 JSON 对象信封；请使用 JSON 序列化生成完整信封")
-	}
-	tool := stringValue(envelope["tool"])
-	if tool == "" {
-		tool = stringValue(envelope["name"])
-	}
-	if tool == "" {
-		return nil, toolCallError("上游工具信封缺少 tool 名称")
-	}
-	callArgs, ok := envelope["args"]
-	if !ok {
-		callArgs, ok = envelope["arguments"]
-	}
-	if !ok {
-		return nil, toolCallError("上游工具信封缺少 args")
-	}
-	normalized := object{"tool": encoded(tool), "args": callArgs}
-	return normalized, nil
-}
-
-// ToolCallError contains only fixed diagnostic text, never executable input.
+// ToolCallError contains only safe diagnostic text, never executable input.
 type ToolCallError struct{ message string }
 
 func (e *ToolCallError) Error() string   { return e.message }
@@ -119,7 +75,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 		}
 		envelope = object{"tool": encoded(key), "args": args}
 	} else {
-		envelope, err = clientEnvelope(item)
+		envelope, err = r.catalog.transportPayload(item)
 		if err != nil {
 			return nil, err
 		}

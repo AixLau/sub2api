@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// Stream leaves text/reasoning incremental. Function envelopes are held until
-// output_item.done, because code is nested JSON and the complete native item is
-// required for replay. It then emits a consistent standard tool event sequence.
+// Stream leaves text/reasoning incremental. Tool payloads are held until
+// output_item.done so routing and arguments can be validated together and the
+// complete native item saved for replay before any executable output is sent.
 func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) error) error {
 	s := &streamBridge{request: r, emit: emit, pending: map[int]string{}, delivered: map[string]bool{}}
 	scanner := bufio.NewScanner(src)

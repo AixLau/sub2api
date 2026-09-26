@@ -46,10 +46,10 @@ func TestForwardAgentTaskAndFollowup(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			task := "核对任务\n保留 \"quotes\", \\ 和 tabs\t"
-			args, err := json.Marshal(map[string]any{"tool": "collaboration.spawn_agent", "args": map[string]any{"message": task, "task_name": "worker"}})
+			args, err := json.Marshal(map[string]any{"message": task, "task_name": "worker"})
 			require.NoError(t, err)
 			native := map[string]any{"type": "function_call", "id": "fc_parent", "call_id": "call_parent", "name": "run_officejs",
-				"arguments": map[string]any{"code": string(args)}, "encrypted_function_args": []string{"code"}}
+				"arguments": map[string]any{"references": []string{"collaboration.spawn_agent"}, "code": string(args)}, "encrypted_function_args": []string{"code"}}
 			requests := make(chan map[string]json.RawMessage, 3)
 			var hits atomic.Int32
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

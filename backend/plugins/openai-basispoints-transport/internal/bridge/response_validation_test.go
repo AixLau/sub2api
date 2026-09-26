@@ -11,15 +11,17 @@ import (
 
 func TestInvalidEnvelopeNeverEscapesToClient(t *testing.T) {
 	for _, code := range []string{
-		"{\"tool\":\"get_weather\",\"args\":{\"city\":\"Tokyo\\'s\"}}",
-		"{\"tool\":\"missing\",\"args\":{}}",
-		"{\"tool\":\"get_weather\",\"args\":\"wrong type\"}",
+		"{\"city\":\"Tokyo\\'s\"}",
+		"null",
+		"[]",
+		"\"wrong type\"",
+		"{} trailing",
 		"Excel.run(() => doSomething())",
 	} {
 		for _, finalOnly := range []bool{false, true} {
 			r := prepareWeather(t, memoryStore{})
 			item, _ := parseObject(officeItem("get_weather", map[string]any{}, false))
-			item["arguments"] = encoded(string(encoded(object{"code": encoded(code)})))
+			item["arguments"] = encoded(string(encoded(object{"references": encoded([]string{"get_weather"}), "code": encoded(code)})))
 			frame := event("response.output_item.done", map[string]any{"item": item})
 			if finalOnly {
 				frame = event("response.completed", map[string]any{"response": map[string]any{"output": []any{item}}})
@@ -74,7 +76,7 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 func TestInvalidCustomCallAfterTextPreservesIdentityAndSequence(t *testing.T) {
 	r, err := Prepare(context.Background(), []byte(`{"input":"hi","tools":[{"type":"custom","name":"exec"}]}`), "session", memoryStore{}, nil)
 	require.NoError(t, err)
-	item := officeItem("exec", map[string]any{"code": "private executable input"}, false)
+	item := rawCustomItem(object{"references": encoded([]string{"exec"}), "code": encoded(map[string]any{"code": "private executable input"})})
 	input := event("response.created", map[string]any{"response": map[string]any{"id": "resp_partial", "model": "model"}}) +
 		event("response.output_text.delta", map[string]any{"delta": "visible text"}) +
 		event("response.output_item.done", map[string]any{"item": json.RawMessage(item)}) +

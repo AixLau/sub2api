@@ -92,7 +92,7 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		item := map[string]any{"type": "function_call", "name": "run_officejs", "id": "fc_bad", "call_id": "call_bad", "arguments": map[string]any{"code": "malformed JSON"}}
+		item := map[string]any{"type": "function_call", "name": "run_officejs", "id": "fc_bad", "call_id": "call_bad", "arguments": map[string]any{"references": []string{"get_weather"}, "code": "malformed JSON"}}
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			response := map[string]any{"status": "completed", "output": []any{item}}
 			if stream {
@@ -104,7 +104,7 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 			json.NewEncoder(w).Encode(response)
 		}))
 		c := recoveryClient(t, ctx, upstream.URL)
-		body, _ := json.Marshal(map[string]any{"input": "hi", "stream": stream})
+		body, _ := json.Marshal(map[string]any{"input": "hi", "stream": stream, "tools": []any{map[string]any{"type": "function", "name": "get_weather"}}})
 		start, out, failure := forwardForTest(t, c, body, ctx)
 		require.Nil(t, failure, "semantic failures must not use RPC error frames")
 		require.Contains(t, string(out), "TOOL_BRIDGE_CALL_INVALID")
