@@ -97,6 +97,9 @@ func (p *Plugin) startDiagnostics(ctx context.Context, start *pluginv1.ForwardRe
 	ctx = bridge.WithDiagnosticObserver(ctx, func(tool bridge.Diagnostic) {
 		previous := d.entry.ErrorCode
 		d.entry.ErrorCode = "TOOL_BRIDGE_CALL_INVALID"
+		if tool.Stage == "upstream_tool_capability" {
+			d.entry.ErrorCode = "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE"
+		}
 		d.entry.Tool = &tool
 		d.write("bps.tool_rejected", hclog.Warn)
 		d.entry.ErrorCode = previous

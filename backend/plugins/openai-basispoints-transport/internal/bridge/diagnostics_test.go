@@ -15,7 +15,7 @@ func TestToolDiagnosticObserver(t *testing.T) {
 		outer               object
 		executor            string
 	}{
-		{"identity", "upstream_tool_identity", "undeclared_tool", object{"code": encoded("private_code")}, "functions.run_connector_action"},
+		{"identity", "upstream_tool_capability", "unsupported_native_tool", object{"code": encoded("private_code")}, "functions.run_connector_action"},
 		{"arguments", "upstream_tool_arguments", "invalid_json", object{}, "run_officejs"},
 
 		{"unknown_target", "upstream_tool_envelope", "undeclared_target", object{"code": encoded(`{"name":"private_reference","input":"private_code"}`)}, "run_officejs"},

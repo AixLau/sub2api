@@ -485,7 +485,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			if convertErr != nil {
 				var toolErr *bridge.ToolCallError
 				if errors.As(convertErr, &toolErr) {
-					return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_CALL_INVALID", toolErr, adapted.FailureSnapshot(raw))
+					return p.sendSemanticFailure(stream, body, bridge.FailureCode(toolErr), toolErr, adapted.FailureSnapshot(raw))
 				}
 				var feedbackErr *bridge.FeedbackFailure
 				if errors.As(convertErr, &feedbackErr) {

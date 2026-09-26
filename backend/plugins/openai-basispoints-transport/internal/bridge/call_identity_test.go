@@ -109,7 +109,7 @@ func TestUnknownToolIdentityDiagnosticsAreSafe(t *testing.T) {
 		failed, _ := parseObject(FailureResponse("TOOL_BRIDGE_CALL_INVALID", fmt.Errorf("wrapped: %w", err), nil))
 		failure, _ := parseObject(failed["error"])
 		diagnostics, _ := parseObject(failure["diagnostics"])
-		require.Equal(t, "upstream_tool_identity", stringValue(diagnostics["stage"]))
+		require.Equal(t, "upstream_tool_capability", stringValue(diagnostics["stage"]))
 		require.Equal(t, diagnosticIdentifier(name), stringValue(diagnostics["name"]))
 		require.Equal(t, "functions", stringValue(diagnostics["namespace"]))
 		require.Equal(t, "2", string(diagnostics["catalog_tools"]))
@@ -118,7 +118,7 @@ func TestUnknownToolIdentityDiagnosticsAreSafe(t *testing.T) {
 		require.NoError(t, r.Stream(ctx, strings.NewReader(wire), func(b []byte) error { out.Write(b); return nil }))
 		require.True(t, r.Failed)
 		require.Equal(t, 1, strings.Count(out.String(), "event: response.failed"))
-		require.Contains(t, out.String(), "upstream_tool_identity")
+		require.Contains(t, out.String(), "upstream_tool_capability")
 		require.NotContains(t, out.String(), "event: response.output_item.done")
 		for _, sensitive := range []string{"private input", "secret", "private_summary", "private_code", "private_reference", "private_id", "private_call_id"} {
 			require.NotContains(t, string(encoded(failure)), sensitive)

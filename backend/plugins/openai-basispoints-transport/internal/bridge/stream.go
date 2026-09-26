@@ -32,7 +32,7 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 		var feedbackErr *FeedbackFailure
 		if errors.As(err, &toolErr) || errors.As(err, &feedbackErr) {
 			s.request.Failed = true
-			s.request.FailureCode = "TOOL_BRIDGE_CALL_INVALID"
+			s.request.FailureCode = FailureCode(err)
 			s.terminal = true
 			return s.send(object{"type": encoded("response.failed"), "response": FailureResponse(s.request.FailureCode, err, s.request.FailureSnapshot(s.snapshot))})
 		}

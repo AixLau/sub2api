@@ -44,7 +44,7 @@ func TestPluginSemanticFailureStreamDoesNotFailoverOrQuarantine(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, passthrough := range []bool{false, true} {
 		for _, partial := range []bool{false, true} {
-			for _, code := range []string{"TOOL_BRIDGE_CALL_INVALID", "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE"} {
+			for _, code := range []string{"TOOL_BRIDGE_CALL_INVALID", "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE"} {
 				t.Run(fmt.Sprintf("passthrough=%t/partial=%t/%s", passthrough, partial, code), func(t *testing.T) {
 					proxyID := int64(42)
 					account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, ProxyID: &proxyID}
@@ -97,7 +97,7 @@ func TestPluginSemanticClassificationPreservesNetworkFailures(t *testing.T) {
 		require.False(t, matched)
 	}
 	require.True(t, shouldClassifyOpenAIUpstreamStreamReadError(io.ErrUnexpectedEOF))
-	for _, code := range []string{"TOOL_BRIDGE_CALL_INVALID", "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", "invalid_encrypted_content"} {
+	for _, code := range []string{"TOOL_BRIDGE_CALL_INVALID", "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", "invalid_encrypted_content"} {
 		payload := []byte(fmt.Sprintf("{\"response\":{\"error\":{\"code\":%q,\"message\":\"please retry\"}}}", code))
 		require.False(t, openAIStreamFailedEventShouldFailover(payload, "please retry"))
 		require.False(t, openAIStreamErrorEventShouldFailover(payload, "please retry"))

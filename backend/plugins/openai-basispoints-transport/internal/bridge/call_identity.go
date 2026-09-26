@@ -61,10 +61,10 @@ func (c catalog) targetError(item object, key string) error {
 
 func toolIdentityError(item object, catalogTools int) error {
 	return &ToolCallError{
-		message: "上游调用不是客户端已声明的工具或 run_officejs 传输执行器",
-		stage:   "upstream_tool_identity", reason: "undeclared_tool",
+		message: "上游工具既不是传输执行器，也没有匹配本轮客户端工具或已支持的发现适配",
+		stage:   "upstream_tool_capability", reason: "unsupported_native_tool",
 		diagnostics: &toolCallDiagnostics{
-			Stage:         "upstream_tool_identity",
+			Stage:         "upstream_tool_capability",
 			CallType:      diagnosticIdentifier(stringValue(item["type"])),
 			Name:          diagnosticIdentifier(stringValue(item["name"])),
 			Namespace:     diagnosticIdentifier(stringValue(item["namespace"])),

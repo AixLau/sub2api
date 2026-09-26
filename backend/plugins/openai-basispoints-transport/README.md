@@ -6,6 +6,34 @@
 
 ## 请求与回放协议
 
+### Codex 原生发现调用
+
+当本轮目录声明了带有 ALL_TOOLS、tools、text() 合约的 functions.exec custom 工具时，桥接支持四个 BPS 原生调用：
+
+- list_skills：读取客户端最后一份 developer/system skills_instructions 目录，返回真实名称、说明和展开根别名后的路径。只使用客户端声明；不扫描网关文件，不把 user/tool 文本当作目录。缺少或无法完整解析目录时返回明确的客户端结果，不伪造空列表。
+- read_skills：根据目录中的精确 skill_ids，经 functions.exec 调用客户端 exec_command 读取文件。Windows 使用 PowerShell 的文件读取，POSIX 使用有界字节读取；返回 offset_unit 和下一窗口位置。引用文件必须是 Skill 目录内的相对路径，不接受绝对路径或父目录跳转。客户端仍负责权限、审批、运行中的命令和错误处理。
+- list_connectors：在客户端读取实时 ALL_TOOLS，分页返回可实际调用的 action_ref 与完整参数声明。结果明确标记为 enabled_tools；它不是所有已安装 App、已连接账号或只读连接器的完整清单。
+- run_connector_action：只调用当前 ALL_TOOLS 中精确匹配的 action_ref，参数由客户端工具按原合约验证，权限和审批仍由客户端控制。
+
+这四种调用转换为客户端 functions.exec；完整的原始 BPS item 和 call_id 继续保存在已有 KV 中。客户端返回结果时恢复原始调用身份，然后正常继续推理。发现调用不会为了改名或补目录额外触发内部反馈推理。已声明客户端工具优先直通；tool_choice=none、指定工具限制、整批校验和未知工具拒绝仍生效。没有上述执行合约的客户端不会被假定拥有这些能力。
+
+客户端目录提示会说明这套适配。其他原生工具没有实际执行路径时才返回 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE；宿主将其按语义失败处理，不换号重试。
+
+验证命令：
+
+    cd backend
+    go test ./plugins/openai-basispoints-transport/internal/bridge ./plugins/openai-basispoints-transport/internal/transport
+
+原生发现测试在 Node 中执行实际生成的程序，并读取临时 Skill 文件，覆盖 JSON/SSE、目录来源、分页、路径限制、混合工具批次及重启后的结果回放。Node 仅是测试环境要求，插件运行时不依赖 Node。
+
+授权实测显式设置 BPS_DISCOVERY_LIVE_SSH_SOCKET、BPS_DISCOVERY_LIVE_SSH_TARGET、BPS_DISCOVERY_LIVE_EMAIL 后运行：
+
+    go test ./plugins/openai-basispoints-transport/internal/bridge -run '^TestNativeDiscoveryLiveBPS$' -count=1 -v
+
+实测最多五次推理，验证 BPS 发现调用、客户端读取随机文件标记、回传及最终回答。账号授权只在远程测试进程内存中读取并发送到官方 BPS 端点，不输出令牌，不修改生产账号、配置或服务。测试关闭 HTTP 重定向。该测试验证客户端执行合约，不能代替用户设备上的安装验证。
+
+### 通用工具传输
+
 1. 请求体只发送 Excel 加载项词汇表字段：`model`（见下方模型映射）、`model_selection: "explicit"`、`stream`、`store: false`、`input`、`prompt_cache_key`、`reasoning_effort`、`context_management`、`metadata`。`tools`、`tool_choice`、`parallel_tool_calls`、`reasoning` 对象、`instructions`、`include`、`text`、`max_output_tokens`、`temperature`、`top_p`、`previous_response_id` 等一律不发往上游。
 2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息或非空明文 agent_message 开启新 turn；同一正文发给不同子 agent 时保留独立身份。显式传入的 turn 与回放状态冲突时直接报错。
 3. `instructions` 与客户端工具目录都写入 developer 消息（带 `type: "message"`）。工具目录是普通文本，不是上游工具声明。

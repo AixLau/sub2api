@@ -23,7 +23,18 @@ type ToolCallError struct {
 	jsonOffset           int64
 }
 
-func (e *ToolCallError) Error() string   { return e.message }
+func (e *ToolCallError) Error() string { return e.message }
+
+// Capability failures have no executor on this path. Asking the model again
+// cannot provision one; callers must not retry them as malformed envelopes.
+func FailureCode(err error) string {
+	var callErr *ToolCallError
+	if errors.As(err, &callErr) && callErr.stage == "upstream_tool_capability" {
+		return "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE"
+	}
+	return "TOOL_BRIDGE_CALL_INVALID"
+}
+
 func toolCallError(message string) error { return &ToolCallError{message: message} }
 
 func toolValidationError(stage, reason, message string) error {
@@ -108,6 +119,11 @@ func (r *Request) decodeCall(ctx context.Context, raw json.RawMessage) (converte
 			args = []byte(text)
 		}
 		envelope = object{"tool": encoded(key), "args": args}
+	} else if adapted, matched, adaptErr := r.nativeDiscovery(item); matched {
+		if adaptErr != nil {
+			return nil, adaptErr
+		}
+		envelope = adapted
 	} else {
 		envelope, err = r.catalog.transportPayload(item)
 		if err != nil {

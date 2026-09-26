@@ -16,6 +16,7 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 	converted := make([]json.RawMessage, len(output))
 	failures := map[int]*ToolCallError{}
 	var first *ToolCallError
+	var capabilityFailure *ToolCallError
 	calls := 0
 	ids, callIDs := map[string]bool{}, map[string]bool{}
 	for i, raw := range output {
@@ -41,10 +42,18 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 				return nil, err
 			}
 			failures[i] = failure
+			if failure.stage == "upstream_tool_capability" {
+				capabilityFailure = failure
+			}
 			if first == nil {
 				first = failure
 			}
 		}
+	}
+	// Preflight the full batch: even a later unsupported native tool rules out
+	// repairing the earlier malformed call. No sibling may escape for execution.
+	if capabilityFailure != nil {
+		return nil, capabilityFailure
 	}
 	if first != nil {
 		if r.Feedback == nil || r.feedbackUsed || stringValue(root["status"]) != "completed" {

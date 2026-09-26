@@ -64,8 +64,8 @@ func TestForwardToolIdentityAndDiagnostics(t *testing.T) {
 					}
 				}
 				require.NoError(t, json.Unmarshal(response["error"], &detail))
-				require.Equal(t, "TOOL_BRIDGE_CALL_INVALID", detail.Code)
-				require.Equal(t, "upstream_tool_identity", detail.Diagnostics.Stage)
+				require.Equal(t, "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", detail.Code)
+				require.Equal(t, "upstream_tool_capability", detail.Diagnostics.Stage)
 				require.Equal(t, name, detail.Diagnostics.Name)
 				require.Equal(t, "functions", detail.Diagnostics.Namespace)
 				require.NotContains(t, string(out), "private_city")

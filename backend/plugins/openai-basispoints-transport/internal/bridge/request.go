@@ -29,6 +29,8 @@ type Request struct {
 	store           Store
 	scope           string
 	catalog         catalog
+	skills          []clientSkill
+	skillsKnown     bool
 	converted       map[string]json.RawMessage
 }
 
@@ -85,6 +87,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		}
 	}
 	r := &Request{store: store, scope: scope, catalog: cat, converted: map[string]json.RawMessage{}, OmittedTools: cat.omitted, originals: map[string]string{}}
+	r.skills, r.skillsKnown = readClientSkills(root["instructions"], input)
 	var continuation *Turn
 	records := map[string]*callRecord{}
 	lookup := func(id string) (*callRecord, error) {
