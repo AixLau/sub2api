@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -345,6 +346,7 @@ func truncateOpenAIAlphaSearchPromptJSON(value string, limit int) string {
 }
 
 func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string) (*http.Request, error) {
+	ctx = context.WithValue(ctx, ctxkey.ClientSessionID, ExtractClientSessionID(c))
 	targetURL, err := s.openAIAlphaSearchURL(account)
 	if err != nil {
 		return nil, err

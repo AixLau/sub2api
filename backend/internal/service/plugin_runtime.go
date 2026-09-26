@@ -22,6 +22,7 @@ import (
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -275,7 +276,12 @@ func (r *pluginRuntime) roundTrip(ctx context.Context, request *http.Request, pr
 	if request == nil || request.URL == nil || account == nil {
 		return nil, errors.New("插件出站请求参数不完整")
 	}
-	streamCtx, cancel := context.WithCancel(ctx)
+	// Keep the original client session separate from rewritten upstream headers.
+	md, _ := metadata.FromOutgoingContext(ctx)
+	md = md.Copy()
+	sessionID, _ := request.Context().Value(ctxkey.ClientSessionID).(string)
+	md.Set(pluginv1.ClientSessionIDMetadataKey, sanitizeSessionID(sessionID))
+	streamCtx, cancel := context.WithCancel(metadata.NewOutgoingContext(ctx, md))
 	stream, err := r.api.Forward(streamCtx)
 	if err != nil {
 		cancel()

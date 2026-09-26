@@ -16,6 +16,7 @@ import (
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 type lockedLogBuffer struct {
@@ -37,6 +38,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 		t.Run(fmt.Sprintf("diagnostics/stream=%v", stream), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+			ctx = metadata.AppendToOutgoingContext(ctx, pluginv1.ClientSessionIDMetadataKey, "client-diagnostic-session")
 			var logs lockedLogBuffer
 			logger := hclog.New(&hclog.LoggerOptions{JSONFormat: true, Output: &logs, Level: hclog.Info})
 			p := New()
@@ -74,6 +76,9 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Len(t, state.Entries, 1)
 			d := state.Entries[0]
 			require.Equal(t, "req_diagnostic_test", d.RequestID)
+			require.Equal(t, "client-diagnostic-session", d.SessionID)
+			require.Equal(t, "selected", d.Reason)
+			require.NotEmpty(t, d.ConfigRevision)
 			require.Equal(t, "upstream_diag_request", d.UpstreamRequestID)
 			require.Equal(t, "bps.tool_rejected", d.Event)
 			require.Equal(t, "upstream_tool_code", d.Tool.Stage)
@@ -87,6 +92,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			text := logs.text()
 			require.Equal(t, 1, strings.Count(text, `"@message":"bps.tool_rejected"`))
 			require.Contains(t, text, `"request_id":"req_diagnostic_test"`)
+			require.Contains(t, text, `"session_id":"client-diagnostic-session"`)
 			require.Contains(t, text, `"stage":"upstream_tool_code"`)
 			require.Contains(t, text, "private_prompt")
 			require.Contains(t, text, "private_schema")

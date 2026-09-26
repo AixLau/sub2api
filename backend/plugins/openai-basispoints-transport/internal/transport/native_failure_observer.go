@@ -13,10 +13,11 @@ type nativeFailureObserver struct {
 	line, data          []byte
 	skipLine, skipEvent bool
 	failed              bool
+	responseID          string
 }
 
 func (o *nativeFailureObserver) feed(chunk []byte) {
-	if o.failed {
+	if o.failed && o.responseID != "" {
 		return
 	}
 	if !o.sse {
@@ -86,12 +87,17 @@ func (o *nativeFailureObserver) finish() bool {
 
 func (o *nativeFailureObserver) inspect(raw []byte) {
 	var value struct {
-		Type, Status string
-		Error        json.RawMessage
-		Response     struct{ Status string }
+		Type, Status, ID, Object string
+		Error                    json.RawMessage
+		Response                 struct{ Status, ID string }
 	}
 	if json.Unmarshal(raw, &value) != nil {
 		return
+	}
+	if value.Response.ID != "" {
+		o.responseID = value.Response.ID
+	} else if value.ID != "" && (value.Object == "response" || value.Status != "") {
+		o.responseID = value.ID
 	}
 	o.failed = o.failed || value.Type == "error" || value.Type == "response.failed" || value.Type == "response.incomplete" ||
 		value.Status == "failed" || value.Status == "incomplete" || value.Response.Status == "failed" || value.Response.Status == "incomplete" ||

@@ -41,3 +41,22 @@ func TestNativeFailureObserver(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeObserverRetainsResponseIDAcrossChunkedFailure(t *testing.T) {
+	for _, sse := range []bool{false, true} {
+		body := `{"id":"resp_failed","object":"response","status":"failed"}`
+		if sse {
+			body = wireEvent("response.failed", map[string]any{"response": map[string]any{"id": "resp_failed", "status": "failed"}})
+		}
+		o := nativeFailureObserver{sse: sse}
+		for _, b := range []byte(body) {
+			o.feed([]byte{b})
+		}
+		require.True(t, o.finish())
+		require.Equal(t, "resp_failed", o.responseID)
+	}
+	o := nativeFailureObserver{}
+	o.inspect([]byte(`{"id":"resp_success","status":"completed"}`))
+	o.inspect([]byte(`{"status":"completed"}`))
+	require.Equal(t, "resp_success", o.responseID)
+}

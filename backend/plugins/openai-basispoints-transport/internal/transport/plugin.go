@@ -24,6 +24,7 @@ import (
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/bridge"
 	pluginconfig "github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/config"
+	"github.com/google/uuid"
 	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -31,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.4"
+	PluginVersion = "0.4.5"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -39,39 +40,10 @@ const (
 type proxyContextKey struct{}
 
 type runtimeState struct {
+	revision  string
 	cfg       pluginconfig.Config
 	client    *http.Client
 	transport *http.Transport
-}
-
-// pathSample records which upstream a request took, for the status page.
-type pathSample struct {
-	At    int64  `json:"at"`
-	Model string `json:"model"`
-	Path  string `json:"path"`
-}
-
-const recentPathSamples = 20
-
-// pathRing keeps the most recent request paths (newest last).
-type pathRing struct {
-	mu      sync.Mutex
-	samples []pathSample
-}
-
-func (r *pathRing) add(model, path string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.samples = append(r.samples, pathSample{At: time.Now().UnixMilli(), Model: model, Path: path})
-	if len(r.samples) > recentPathSamples {
-		r.samples = r.samples[len(r.samples)-recentPathSamples:]
-	}
-}
-
-func (r *pathRing) snapshot() []pathSample {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]pathSample(nil), r.samples...)
 }
 
 type requestStats struct {
@@ -97,7 +69,7 @@ type Plugin struct {
 	host     pluginv1.HostServiceClient
 
 	stats             requestStats
-	recentPaths       pathRing
+	recentRequests    requestRing
 	lastBridgeError   atomic.Value
 	omittedTools      atomic.Value
 	diagnosticLogger  hclog.Logger
@@ -148,7 +120,8 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		"last_latency_ms":      p.stats.lastMs.Load(),
 		"last_bridge_error":    p.lastBridgeError.Load(),
 		"omitted_hosted_tools": p.omittedTools.Load(),
-		"recent_paths":         p.recentPaths.snapshot(),
+		"recent_requests":      p.recentRequests.snapshot(),
+		"routing_policy":       routingPolicy(state),
 		"recent_diagnostics":   p.recentDiagnostics.snapshot(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
@@ -180,6 +153,8 @@ func (p *Plugin) ApplyConfig(_ context.Context, request *pluginv1.ApplyConfigReq
 	p.mu.Lock()
 	old := p.state.Swap(state)
 	p.mu.Unlock()
+	p.diagnosticLogger.Info("bps.config_applied", "plugin_id", PluginID, "plugin_version", PluginVersion,
+		"config_revision", state.revision, "routing_policy", routingPolicy(state))
 	if old != nil && old.transport != nil {
 		old.transport.CloseIdleConnections()
 	}
@@ -251,6 +226,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return p.sendError(stream, "PLUGIN_INVALID_REQUEST", err.Error(), false)
 	}
 	state := p.state.Load()
+	diagnostic.entry.ConfigRevision = state.revision
 	target, err := resolveTarget(start.Url, state.cfg)
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_TARGET_INVALID", err.Error(), false)
@@ -273,7 +249,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	if nativeSearch {
 		diagnostic.route("native", "alpha_search")
-		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Model selection is independent of capability fallback. Unselected models
@@ -281,7 +256,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	model := requestModel(body)
 	if !state.cfg.AllowsBPSModel(model) {
 		diagnostic.route("native", "model_not_selected")
-		p.recentPaths.add(model, "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Capability routing: requests the Basis Points tool bridge cannot serve
@@ -292,7 +266,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// it. Encrypted history is not guaranteed to be portable across channels.
 	if reason := bridge.NeedsNativeUpstream(body); state.cfg.NativeFallbackEnabled() && reason != "" {
 		diagnostic.route("native", reason)
-		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Client tools are first-class on the native Codex upstream. The BPS
@@ -301,7 +274,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// where exec_command and friends are plain model tools.
 	if state.cfg.ToolsViaNativeEnabled() && bridge.RequestsClientTools(body) {
 		diagnostic.route("native", "client_tools")
-		p.recentPaths.add(requestModel(body), "native")
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	var inputMeta struct {
@@ -356,7 +328,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		started = time.Now()
 		p.stats.total.Add(1)
 	}
-	p.recentPaths.add(requestModel(body), "bps")
 	diagnostic.route("bps", "selected")
 	// execute prepares and sends one BPS attempt. The code names the
 	// pre-upstream failure class for the error frame.
@@ -399,6 +370,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return resp, adapted, "", err
 	}
 	response, adapted, code, err := execute(body, false)
+	defer func() {
+		if adapted != nil && diagnostic.entry.Route == "bps" {
+			diagnostic.entry.ResponseID = safeLogID(adapted.ResponseID())
+		}
+	}()
 	if err != nil {
 		if code == "TOOL_BRIDGE_REQUEST_INVALID" {
 			return p.sendSemanticFailure(stream, body, code, err, nil)
@@ -424,7 +400,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 				response.Body.Close()
 				if errors.Is(cleanErr, bridge.ErrUnsafeEncryptedReplay) {
 					diagnostic.route("native", "unsafe_encrypted_replay")
-					p.recentPaths.add(requestModel(body), "native")
 					return p.forwardNative(stream, start, state, body, headers)
 				}
 				return p.sendSemanticFailure(stream, body, "TOOL_BRIDGE_ENCRYPTED_REPLAY_UNSAFE", cleanErr, nil)
@@ -432,14 +407,12 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			if bytes.Equal(cleaned, adapted.Body) {
 				diagnostic.route("native", "encrypted_replay_unchanged")
 				response.Body.Close()
-				p.recentPaths.add(requestModel(body), "native")
 				return p.forwardNative(stream, start, state, body, headers)
 			}
 			encryptedRetried = true
 		} else if errorCode == "invalid_encrypted_content" {
 			diagnostic.route("native", "encrypted_retry_rejected")
 			response.Body.Close()
-			p.recentPaths.add(requestModel(body), "native")
 			return p.forwardNative(stream, start, state, body, headers)
 		} else if response.StatusCode >= 400 && errorCode == "server_error" && strings.Contains(message, "An error occurred while processing") && transientRetries < maxTransientRetries {
 			transientRetries++
@@ -453,9 +426,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			break
 		}
 		response.Body.Close()
-		diagnostic.entry.Reason = safeLogID(errorCode)
-		diagnostic.write("bps.upstream_retry", hclog.Info)
-		diagnostic.entry.Reason = ""
+		diagnostic.retry(errorCode)
 		response, adapted, code, err = execute(body, encryptedRetried)
 		if err != nil {
 			if code == "" {
@@ -609,6 +580,9 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	// chunk without bridge.Stream() so no SSE events are rewritten here.
 	observeSemanticFailure := response.StatusCode >= 200 && response.StatusCode < 300
 	observer := nativeFailureObserver{sse: strings.Contains(response.Header.Get("Content-Type"), "text/event-stream")}
+	if diagnostic != nil {
+		defer func() { diagnostic.entry.ResponseID = safeLogID(observer.responseID) }()
+	}
 	buffer := make([]byte, chunkSize)
 	for {
 		n, err := response.Body.Read(buffer)
@@ -973,7 +947,7 @@ func buildRuntimeState(cfg pluginconfig.Config) (*runtimeState, error) {
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 	}
-	return &runtimeState{cfg: cfg, transport: transport, client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &runtimeState{revision: uuid.NewString(), cfg: cfg, transport: transport, client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 func (p *Plugin) hostClient() pluginv1.HostServiceClient {

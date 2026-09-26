@@ -61,12 +61,17 @@
       status.textContent = health.healthy ? (health.message || "运行中") : (health.message || "未运行");
       var details = health.status_json ? JSON.parse(health.status_json) : {};
       statusDetail.textContent = health.healthy ? "请求 " + (details.requests_total || 0) + " · 成功 " + (details.requests_succeeded || 0) + " · 失败 " + (details.requests_failed || 0) + " · 最近 HTTP " + (details.last_status_code || "—") + " · 工具回放存储：" + (details.host_kv ? "已连接" : "未连接") + (details.last_bridge_error ? " · 最近桥接错误：" + details.last_bridge_error : "") + (details.omitted_hosted_tools ? " · 未支持的托管工具：" + details.omitted_hosted_tools : "") : "";
-      var recent = (details.recent_paths || []).slice(-5).reverse().map(function (s) { return s.path + ":" + s.model; }).join(", ");
+      var recent = (details.recent_requests || []).slice(-5).reverse().map(function (s) { return (s.route || "未路由") + ":" + (s.model || "未知模型") + " (" + (s.reason || s.error_code || "未选择") + ")"; }).join(", ");
       if (recent) { statusDetail.textContent += " · 最近通路: " + recent; }
+      var requests = (details.recent_requests || []).slice(-100).reverse();
+      document.getElementById("requests-detail").textContent = requests.length ? JSON.stringify(requests, null, 2) : "暂无已完成请求";
+      document.getElementById("routing-policy").textContent = details.routing_policy ? JSON.stringify(details.routing_policy, null, 2) : "暂无路由配置";
       var diagnostics = (details.recent_diagnostics || []).slice(-50).reverse();
       document.getElementById("diagnostics-detail").textContent = diagnostics.length ? JSON.stringify(diagnostics, null, 2) : "暂无故障诊断";
     } catch (error) {
       status.textContent = error.message;
+      document.getElementById("requests-detail").textContent = "无法刷新请求记录：" + error.message;
+      document.getElementById("routing-policy").textContent = "无法刷新路由配置：" + error.message;
       document.getElementById("diagnostics-detail").textContent = "无法刷新诊断：" + error.message;
     }
   }

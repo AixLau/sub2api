@@ -96,6 +96,14 @@
       </section>
       <p id="status-detail" aria-live="polite"></p>
       <details class="diagnostics">
+        <summary>最近 100 条已完成请求链路</summary>
+        <p>每个请求一条，含请求/会话/响应 ID、最终通道、原因、重试及完整通道切换历史；不包含正文。按完成时间保留，重启后清空。未进入插件的宿主直连请求不计入；跨重启记录请查询宿主日志 bps.request_finished。</p>
+        <p>通道按每次请求判断，不按会话锁定；历史图片和图片工具声明也可能触发原生通道。</p>
+        <pre id="requests-detail">暂无已完成请求</pre>
+        <strong>当前路由配置</strong>
+        <pre id="routing-policy">暂无路由配置</pre>
+      </details>
+      <details class="diagnostics">
         <summary>最近故障诊断与请求正文</summary>
         <p>保留最近 50 条故障及请求正文前 8 KiB，包含用户输入；重启后清空，每 10 秒刷新。完整正文在宿主日志的 bps.failed_request_body 中，按 trace_id 关联、part 顺序拼接。</p>
         <pre id="diagnostics-detail">暂无故障诊断</pre>

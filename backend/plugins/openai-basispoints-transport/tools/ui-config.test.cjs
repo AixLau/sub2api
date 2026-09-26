@@ -79,3 +79,36 @@ test('selected empty list is retained and all mode preserves the editable list',
   assert.equal(saved.bps_model_mode, 'all');
   assert.equal(JSON.stringify(saved.bps_models), JSON.stringify(['model-a']));
 });
+
+
+test('completed request history is bounded, newest first, and rendered as text', async t => {
+  const entries = Array.from({ length: 110 }, (_, n) => ({
+    request_id: 'req-' + n, session_id: 'client-session', route: 'native',
+    reason: 'image_input', config_revision: 'revision-one',
+    route_history: [{ route: 'bps', reason: 'selected' }, { route: 'native', reason: 'image_input' }]
+  }));
+  entries[109].response_id = '<img src=x onerror=alert(1)>';
+  const policy = { config_revision: 'revision-two', bps_model_mode: 'all', native_fallback: true, tools_via_native: false };
+  const { field } = await mount(t, {}, { recent_requests: entries, routing_policy: policy });
+  const history = JSON.parse(field('requests-detail').textContent);
+  assert.equal(history.length, 100);
+  assert.equal(history[0].request_id, 'req-109');
+  assert.equal(history[99].request_id, 'req-10');
+  assert.equal(history[0].session_id, 'client-session');
+  assert.equal(history[0].route_history.length, 2);
+  assert.equal(field('requests-detail').querySelector('img'), null);
+  assert.deepEqual(JSON.parse(field('routing-policy').textContent), policy);
+});
+
+test('empty completed request history shows an explicit empty state', async t => {
+  const { field } = await mount(t);
+  assert.equal(field('requests-detail').textContent, '暂无已完成请求');
+});
+
+
+test('local rejections have an explicit route summary', async t => {
+  const { field } = await mount(t, {}, { recent_requests: [{ request_id: 'req-rejected', error_code: 'PLUGIN_INVALID_REQUEST' }] });
+  assert.match(field('status-detail').textContent, /未路由:未知模型/);
+  assert.match(field('status-detail').textContent, /PLUGIN_INVALID_REQUEST/);
+  assert.doesNotMatch(field('status-detail').textContent, /undefined/);
+});

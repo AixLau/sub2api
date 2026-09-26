@@ -327,7 +327,7 @@ func TestTransientRetriesAreBounded(t *testing.T) {
 	require.Equal(t, int32(11), hits.Load(), "initial attempt plus at most 10 retries")
 }
 
-func TestRecentRequestPathRing(t *testing.T) {
+func TestRecentCompletedRequestHistory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	bps := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -363,19 +363,14 @@ func TestRecentRequestPathRing(t *testing.T) {
 	_, _, failure = forwardForTest(t, c, imageBody, ctx)
 	require.Nil(t, failure)
 
-	health, err := c.Health(ctx, &pluginv1.HealthRequest{})
-	require.NoError(t, err)
-	var status struct {
-		RecentPaths []struct {
-			At    int64  `json:"at"`
-			Model string `json:"model"`
-			Path  string `json:"path"`
-		} `json:"recent_paths"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(health.StatusJson), &status))
-	require.Len(t, status.RecentPaths, 2)
-	require.Equal(t, "bps", status.RecentPaths[0].Path)
-	require.Equal(t, "gpt-6-astra", status.RecentPaths[0].Model)
-	require.Greater(t, status.RecentPaths[0].At, int64(0))
-	require.Equal(t, "native", status.RecentPaths[1].Path)
+	entries := completedRequestsForTest(t, c, ctx, 2)
+	require.Equal(t, "bps", entries[0].Route)
+	require.Equal(t, "selected", entries[0].Reason)
+	require.Equal(t, "gpt-6-astra", entries[0].Model)
+	require.Equal(t, "resp_bps", entries[0].ResponseID)
+	require.NotEmpty(t, entries[0].Time)
+	require.Equal(t, "native", entries[1].Route)
+	require.Equal(t, "image_input", entries[1].Reason)
+	require.Equal(t, "resp_native", entries[1].ResponseID)
+	require.Equal(t, entries[0].ConfigRevision, entries[1].ConfigRevision)
 }

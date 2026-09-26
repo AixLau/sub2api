@@ -27,6 +27,9 @@ type Request struct {
 	converted    map[string]json.RawMessage
 }
 
+// ResponseID returns only the response correlation identifier, never content.
+func (r *Request) ResponseID() string { return r.responseID }
+
 // Prepare rebuilds the client body into the Basis Points / Excel add-in wire
 // shape. The upstream rejects client-supplied tools and any field outside that
 // vocabulary with a bare 422, so the outgoing body is assembled from known

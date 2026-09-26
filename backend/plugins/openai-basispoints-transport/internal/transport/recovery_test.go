@@ -159,4 +159,15 @@ func TestOpaqueEncryptedHistoryFallsBackToNativeWithOriginalBody(t *testing.T) {
 	mu.Lock()
 	require.Equal(t, body, nativeBody, "native fallback must preserve opaque encrypted history verbatim")
 	mu.Unlock()
+	entries := completedRequestsForTest(t, c, ctx, 1)
+	d := entries[0]
+	require.Equal(t, "native", d.Route)
+	require.Equal(t, "unsafe_encrypted_replay", d.Reason)
+	require.Equal(t, 2, d.Attempt)
+	require.Equal(t, "resp_native", d.ResponseID)
+	require.Len(t, d.RouteHistory, 2)
+	require.Equal(t, "bps", d.RouteHistory[0].Route)
+	require.Equal(t, "selected", d.RouteHistory[0].Reason)
+	require.Equal(t, "native", d.RouteHistory[1].Route)
+	require.Empty(t, d.ErrorCode, "recovered attempts do not fail the completed request")
 }

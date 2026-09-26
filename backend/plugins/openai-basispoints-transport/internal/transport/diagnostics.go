@@ -13,11 +13,18 @@ import (
 	"github.com/google/uuid"
 	hclog "github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const recentDiagnosticLimit = 50
 
 type diagnosticEntry struct {
+	StartedAt         string               `json:"started_at"`
+	SessionID         string               `json:"session_id,omitempty"`
+	ResponseID        string               `json:"response_id,omitempty"`
+	ConfigRevision    string               `json:"config_revision,omitempty"`
+	RetryReason       string               `json:"retry_reason,omitempty"`
+	RouteHistory      []routeDecision      `json:"route_history,omitempty"`
 	Time              string               `json:"time"`
 	Event             string               `json:"event"`
 	RequestID         string               `json:"request_id"`
@@ -82,6 +89,10 @@ func (s diagnosticStream) Context() context.Context { return s.ctx }
 
 func (p *Plugin) startDiagnostics(ctx context.Context, start *pluginv1.ForwardRequestStart) (context.Context, *requestDiagnostics) {
 	d := &requestDiagnostics{p: p, started: time.Now(), entry: diagnosticEntry{RequestID: safeLogID(start.RequestId), TraceID: uuid.NewString(), AccountID: start.AccountId}}
+	d.entry.StartedAt = d.started.UTC().Format(time.RFC3339Nano)
+	if values := metadata.ValueFromIncomingContext(ctx, pluginv1.ClientSessionIDMetadataKey); len(values) > 0 {
+		d.entry.SessionID = safeLogID(values[0])
+	}
 	ctx = context.WithValue(ctx, requestDiagnosticsKey{}, d)
 	ctx = bridge.WithDiagnosticObserver(ctx, func(tool bridge.Diagnostic) {
 		d.entry.ErrorCode = "TOOL_BRIDGE_CALL_INVALID"
@@ -112,8 +123,15 @@ func (d *requestDiagnostics) body(body []byte, complete bool) {
 
 func (d *requestDiagnostics) route(route, reason string) {
 	d.entry.Route, d.entry.Reason = route, reason
+	d.entry.RouteHistory = append(d.entry.RouteHistory, routeDecision{
+		Time: time.Now().UTC().Format(time.RFC3339Nano), Route: route, Reason: reason, Attempt: d.entry.Attempt + 1,
+	})
 	d.write("bps.route_selected", hclog.Info)
-	d.entry.Reason = ""
+}
+
+func (d *requestDiagnostics) retry(reason string) {
+	d.entry.RetryReason = safeLogID(reason)
+	d.write("bps.upstream_retry", hclog.Info)
 }
 
 func (d *requestDiagnostics) attempt() {
@@ -150,13 +168,19 @@ func (d *requestDiagnostics) write(event string, level hclog.Level) {
 		d.captureRequestBody()
 	}
 	entry := d.entry
+	entry.RouteHistory = append([]routeDecision(nil), entry.RouteHistory...)
 	entry.Event, entry.Time, entry.DurationMS = event, time.Now().UTC().Format(time.RFC3339Nano), time.Since(d.started).Milliseconds()
+	if event == "bps.request_finished" {
+		d.p.recentRequests.add(entry)
+	}
 	if level >= hclog.Warn {
 		d.p.recentDiagnostics.add(entry)
 	}
 	// Fields remain structured through go-plugin into the host's slog sink.
 	d.p.diagnosticLogger.Log(level, event, "plugin_id", PluginID, "plugin_version", PluginVersion,
 		"request_id", entry.RequestID, "trace_id", entry.TraceID, "account_id", entry.AccountID,
+		"session_id", entry.SessionID, "response_id", entry.ResponseID, "started_at", entry.StartedAt,
+		"config_revision", entry.ConfigRevision, "route_history", entry.RouteHistory, "retry_reason", entry.RetryReason,
 		"model", entry.Model, "route", entry.Route, "reason", entry.Reason, "attempt", entry.Attempt,
 		"stream", entry.Stream, "upstream_status", entry.Status, "upstream_request_id", entry.UpstreamRequestID,
 		"duration_ms", entry.DurationMS, "error_code", entry.ErrorCode, "tool", entry.Tool)

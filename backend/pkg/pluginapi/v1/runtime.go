@@ -7,6 +7,9 @@ import (
 	"google.golang.org/grpc"
 )
 
+// ClientSessionIDMetadataKey carries audit identity only, never an upstream header.
+const ClientSessionIDMetadataKey = "sub2api-client-session-id-bin"
+
 const (
 	// ProtocolVersion 是宿主与插件进程握手协议版本。
 	ProtocolVersion = 1
