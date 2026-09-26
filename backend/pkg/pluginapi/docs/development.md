@@ -31,11 +31,29 @@ plugin/
 | `ValidateConfig` | 严格解析并返回完整规范化 JSON |
 | `ApplyConfig` | 原子应用配置；失败时保留旧配置 |
 | `TestConfig` | 验证当前环境和已保存配置，返回简短诊断 |
+| `PrepareOutbound` | （可选）在宿主发送上游请求前返回受策略保护的 Header 增删和继续/拒绝决定 |
+| `ObserveOutboundResponse` | （可选）接收上游响应元数据和响应头，用于轮换 ticket、Cookie 等插件状态 |
 | `Forward` | 双向流式传输请求与原始 HTTP 响应 |
 
 请求帧顺序：`start`、零到多个 `body_chunk`、`body_end`。响应帧顺序：`start`、零到多个 `body_chunk`、`end`。不能继续处理的错误使用 `error` 帧。
 
 `request_sent` 必须如实表示请求是否可能已经到达上游。值为 `true` 时宿主禁止自动切换账号重放；只有能确认尚未调用上游 Transport 时才能返回 `false`。
+
+### 出站 Header Hook
+
+Header Hook 是与 `Forward` 并列的可选 unary RPC。它让状态型插件参与已有传输路径，避免
+复制 HTTP、SSE 或 WebSocket 转发实现。
+
+- `PrepareOutbound` 只接收请求元数据和宿主允许暴露的 Header 快照，不接收请求体。插件
+  返回 `CONTINUE` 表示继续发送，返回 `REJECT` 表示拒绝当前请求；`UNSPECIFIED` 由宿主
+  按 `CONTINUE` 处理。宿主必须重新校验 `headers_to_set` / `headers_to_delete`，插件
+  不能改变 Authorization、Cookie、代理、模型或计费相关 Header。
+- `ObserveOutboundResponse` 只接收响应状态、Header 和请求上下文，不接收响应体。插件可
+  在此记录上游返回的短期 ticket 或 Set-Cookie，并通过自身的 HostService KV 做原子更新。
+  返回值仅用于诊断，不改变宿主已经收到的响应。
+- 老插件没有实现这两个 RPC 时会返回 gRPC `Unimplemented`；宿主应跳过该 Hook 并继续原
+  有传输。插件实现也应把 Hook 视为幂等调用，因为宿主可能在连接重建或响应重试路径上
+  再次发送同一请求 ID。
 
 ## 配置
 

@@ -1,6 +1,6 @@
 # Sub2API 插件开发教程
 
-本文面向希望为 Sub2API 开发、打包和发布插件的团队。插件是独立进程和静态 UI 组成的 `.s2plugin` 包，宿主通过稳定的 gRPC 协议调用它。本文以当前宿主已经定义的 `openai.oauth.outbound_transport.v1` 能力作为协议示例，说明开发者需要准备什么、哪些职责属于插件、哪些职责仍由 Sub2API 负责。
+本文面向希望为 Sub2API 开发、打包和发布插件的团队。插件是独立进程和静态 UI 组成的 `.s2plugin` 包，宿主通过稳定的 gRPC 协议调用它。本文以当前宿主已经定义的 `openai.oauth.outbound_transport.v1` 和 `openai.oauth.codex_ticket_hook.v1` 能力作为协议示例，说明开发者需要准备什么、哪些职责属于插件、哪些职责仍由 Sub2API 负责。
 
 本文不是一个可直接安装的完整插件，也不代表 Sub2API 已经发布对应的官方插件包。当前文档主要描述公开协议、宿主边界和开发流程。后续是否发布可安装包、支持哪些 Provider，以及如何提供示例仓库，都需要另行公告。
 
@@ -60,6 +60,8 @@ my-plugin/
 | `ValidateConfig` | 严格解析 JSON，拒绝未知字段和非法范围，并返回完整的规范化配置。 |
 | `ApplyConfig` | 成功后原子切换配置；失败时保留旧配置和旧连接。 |
 | `TestConfig` | 针对已保存配置进行快速诊断，返回简短、可展示的结果。 |
+| `PrepareOutbound` | 在宿主发出 HTTP、SSE 或 WebSocket 请求前参与一次元数据检查，并仅返回清单能力允许的请求头变更。 |
+| `ObserveOutboundResponse` | 接收响应头和状态元数据，用于记录轮换后的短期凭据；不得修改宿主响应正文。 |
 | `Forward` | 按协议接收请求流，发出上游请求，再按顺序返回响应流。 |
 
 请求帧顺序为 `start`、零到多个 `body_chunk`、`body_end`；响应帧顺序为 `start`、零到多个 `body_chunk`、`end`。不能继续处理时发送 `error` 帧。
@@ -139,7 +141,9 @@ UI 是插件包内的静态页面，不需要修改 Sub2API 前端源码。宿�
 }
 ```
 
-打包器会自动填充目标平台运行时、UI 和运行时文件的 SHA-256。清单中的 `requires.sub2api` 是硬兼容范围；`tested_sub2api_versions` 应只填写真实验证过的版本；`recommended_sub2api_version` 用于管理页面展示。当前宿主仅处理 `openai.oauth.outbound_transport.v1`，声明其他能力不会自动产生新路由。后续增加 Provider 支持时，会在协议、能力清单和宿主路由完成适配后，再补充对应的清单示例。
+打包器会自动填充目标平台运行时、UI 和运行时文件的 SHA-256。清单中的 `requires.sub2api` 是硬兼容范围；`tested_sub2api_versions` 应只填写真实验证过的版本；`recommended_sub2api_version` 用于管理页面展示。当前宿主处理 `openai.oauth.outbound_transport.v1` 和 `openai.oauth.codex_ticket_hook.v1`。后者是独立的出站 Header Hook：插件维护短期 Codex ticket，宿主继续负责账号调度、业务代理、HTTP/SSE/WebSocket 传输和计费。清单声明其它能力不会自动产生新路由；必须先完成协议、能力匹配和宿主生命周期适配。
+
+Codex ticket 插件的完整实现位于 `backend/plugins/openai-codex-ticket/`。它支持 292/780 ticket、按账号和模型保存、TTL 刷新、身份绑定、Cookie/Gateway 校验、备用票、独立采票代理和只读状态摘要。该插件的 `README.md` 记录字段、构建、真实部署验证边界和敏感数据处理规则。
 
 ## 7. 生成密钥并签名
 

@@ -16,6 +16,11 @@ import (
 
 const (
 	PluginCapabilityOpenAIOAuthOutbound = "openai.oauth.outbound_transport.v1"
+	// PluginCapabilityOpenAICodexTicketHook decorates the host's native OpenAI
+	// HTTP/SSE/WebSocket request with a short-lived Codex ticket. It is kept
+	// separate from the outbound transport capability so both plugins can run
+	// concurrently for the same account set.
+	PluginCapabilityOpenAICodexTicketHook = "openai.oauth.codex_ticket_hook.v1"
 	PluginStateDisabled                 = "disabled"
 	PluginStateStarting                 = "starting"
 	PluginStateEnabled                  = "enabled"
@@ -171,8 +176,8 @@ func (m PluginManifest) Validate() error {
 		return errors.New("插件必须声明至少一个能力")
 	}
 	for _, capability := range m.Capabilities {
-		if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
-			return fmt.Errorf("初期仅支持能力 %s", PluginCapabilityOpenAIOAuthOutbound)
+		if (capability.ID != PluginCapabilityOpenAIOAuthOutbound && capability.ID != PluginCapabilityOpenAICodexTicketHook) || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
+			return fmt.Errorf("当前仅支持 OpenAI OAuth 能力 %s 和 %s", PluginCapabilityOpenAIOAuthOutbound, PluginCapabilityOpenAICodexTicketHook)
 		}
 	}
 	runtimeEntry, ok := m.Runtimes[m.RuntimeKey()]

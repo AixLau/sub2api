@@ -42,6 +42,17 @@ type pluginRoute struct {
 	unavailable string
 }
 
+// pluginHookRoute is the independent route for lifecycle hooks that decorate
+// the host's native transport. It intentionally lives beside pluginRoute:
+// enabling a ticket/header hook must not replace the BPS/OpenAI transport.
+type pluginHookRoute struct {
+	pluginID    int64
+	runtime     *pluginRuntime
+	accountIDs  map[int64]struct{}
+	allAccounts bool
+	unavailable string
+}
+
 // PluginManager 管理插件安装、配置、进程生命周期和 OpenAI OAuth 能力绑定。
 type PluginManager struct {
 	repo      PluginRepository
@@ -58,11 +69,13 @@ type PluginManager struct {
 	operationMu        sync.Mutex
 	mu                 sync.Mutex
 	runtimes           map[int64]*pluginRuntime
+	hookRuntimes       map[int64]*pluginRuntime
 	localInstallations map[int64]*PluginInstallation
 	started            bool
 	reconcileCancel    context.CancelFunc
 	reconcileDone      chan struct{}
 	route              atomic.Pointer[pluginRoute]
+	hookRoute          atomic.Pointer[pluginHookRoute]
 }
 
 func NewPluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kvStore PluginKVStore) *PluginManager {
@@ -74,6 +87,7 @@ func NewPluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *con
 		installer:          NewPluginPackageInstaller(cfg, hostInfo),
 		kvStore:            kvStore,
 		runtimes:           make(map[int64]*pluginRuntime),
+		hookRuntimes:       make(map[int64]*pluginRuntime),
 		localInstallations: make(map[int64]*PluginInstallation),
 	}
 }
@@ -128,12 +142,17 @@ func (m *PluginManager) Stop() {
 	}
 	m.operationMu.Lock()
 	m.mu.Lock()
-	runtimes := make([]*pluginRuntime, 0, len(m.runtimes))
+	runtimes := make([]*pluginRuntime, 0, len(m.runtimes)+len(m.hookRuntimes))
 	for _, runtime := range m.runtimes {
 		runtimes = append(runtimes, runtime)
 	}
+	for _, runtime := range m.hookRuntimes {
+		runtimes = append(runtimes, runtime)
+	}
 	m.runtimes = make(map[int64]*pluginRuntime)
+	m.hookRuntimes = make(map[int64]*pluginRuntime)
 	m.route.Store(nil)
+	m.hookRoute.Store(nil)
 	m.started = false
 	m.mu.Unlock()
 	m.operationMu.Unlock()
@@ -150,9 +169,14 @@ func (m *PluginManager) List(ctx context.Context) ([]*PluginInstallation, error)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	route := m.route.Load()
+	hookRoute := m.hookRoute.Load()
 	for _, installation := range plugins {
 		installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
-		if runtime := m.runtimes[installation.ID]; runtime != nil && !runtime.client.Exited() {
+		runtime := m.runtimes[installation.ID]
+		if runtime == nil {
+			runtime = m.hookRuntimes[installation.ID]
+		}
+		if runtime != nil && !runtime.client.Exited() {
 			installation.RuntimeHealthy = true
 			installation.RuntimeMessage = "插件进程运行中"
 		} else if installation.State == PluginStateEnabled {
@@ -160,6 +184,9 @@ func (m *PluginManager) List(ctx context.Context) ([]*PluginInstallation, error)
 		}
 		if route != nil && route.pluginID == installation.ID && route.runtime == nil {
 			installation.RuntimeMessage = route.unavailable
+		}
+		if hookRoute != nil && hookRoute.pluginID == installation.ID && hookRoute.runtime == nil {
+			installation.RuntimeMessage = hookRoute.unavailable
 		}
 	}
 	return plugins, nil
@@ -173,6 +200,9 @@ func (m *PluginManager) Get(ctx context.Context, id int64) (*PluginInstallation,
 	installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
 	m.mu.Lock()
 	runtime := m.runtimes[id]
+	if runtime == nil {
+		runtime = m.hookRuntimes[id]
+	}
 	m.mu.Unlock()
 	installation.RuntimeHealthy = runtime != nil && !runtime.client.Exited()
 	if installation.RuntimeHealthy {
@@ -275,9 +305,15 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	if err != nil {
 		// 无法读取权威绑定状态时不能假设插件未启用，否则会把 OAuth 请求静默回落到旧直连路径。
 		m.publishUnavailableRoute(0, nil, true, "插件启用状态暂时无法读取")
+		m.publishUnavailableHookRoute(0, nil, true, "插件启用状态暂时无法读取")
 		return fmt.Errorf("读取插件启用状态: %w", err)
 	}
 	m.cleanupStaleLocalInstallations(installations)
+	// Ticket/header hook plugins have an independent runtime and route. They
+	// must reconcile alongside (and never replace) the OpenAI transport route.
+	if hookErr := m.reconcileHookRoutes(ctx, installations); hookErr != nil {
+		slog.Warn("plugin_hook_reconcile_failed", "error", hookErr)
+	}
 	var enabled *PluginInstallation
 	for _, installation := range installations {
 		if !hasEnabledOpenAIBinding(installation.Bindings) {
@@ -582,20 +618,29 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err := m.repo.ValidateOpenAIOAuthAccounts(ctx, accountIDs); err != nil {
 		return nil, err
 	}
-	if active := m.route.Load(); active != nil && active.pluginID != id {
+	if active := m.route.Load(); hasEnabledOpenAIBinding(installation.Bindings) && active != nil && active.pluginID != id {
 		return nil, errors.New("OpenAI OAuth 出站能力已有启用插件，请先停用当前插件")
 	}
-	if installation.State == PluginStateEnabled && hasEnabledOpenAIBinding(installation.Bindings) {
+	transportBinding := hasEnabledOpenAIBinding(installation.Bindings)
+	hookBinding := hasEnabledOpenAIHookBinding(installation.Bindings)
+	if installation.State == PluginStateEnabled && (transportBinding || hookBinding) {
 		installation.Compatibility = EvaluatePluginCompatibility(installation.Manifest, m.hostInfo)
 		m.mu.Lock()
 		runtime := m.runtimes[id]
+		if runtime == nil && hookBinding {
+			runtime = m.hookRuntimes[id]
+		}
 		m.mu.Unlock()
 		installation.RuntimeHealthy = runtime != nil && !runtime.client.Exited()
 		if installation.RuntimeHealthy {
-			if !samePluginAccountIDs(pluginAccountIDSet(bindingAccountIDs(installation.Bindings)), accountIDs) {
+			boundIDs := bindingAccountIDs(installation.Bindings)
+			if !transportBinding {
+				boundIDs = hookBindingAccountIDs(installation.Bindings)
+			}
+			if !samePluginAccountIDs(pluginAccountIDSet(boundIDs), accountIDs) {
 				bindings := clonePluginBindings(installation.Bindings)
 				for index := range bindings {
-					if bindings[index].Capability == PluginCapabilityOpenAIOAuthOutbound {
+					if bindings[index].Capability == PluginCapabilityOpenAIOAuthOutbound || bindings[index].Capability == PluginCapabilityOpenAICodexTicketHook {
 						bindings[index].AccountIDs = append([]int64(nil), accountIDs...)
 					}
 				}
@@ -604,7 +649,11 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 					return nil, err
 				}
 			}
-			m.updateRouteAccounts(id, accountIDs)
+			if transportBinding {
+				m.updateRouteAccounts(id, accountIDs)
+			} else {
+				m.updateHookRouteAccounts(id, accountIDs)
+			}
 			return m.Get(ctx, id)
 		}
 	}
@@ -638,6 +687,11 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 				pluginID: id, accountIDs: pluginAccountIDSet(bindingAccountIDs(originalBindings)), unavailable: err.Error(),
 			})
 		}
+		if hasEnabledOpenAIHookBinding(originalBindings) {
+			m.hookRoute.Store(&pluginHookRoute{
+				pluginID: id, accountIDs: pluginAccountIDSet(hookBindingAccountIDs(originalBindings)), unavailable: err.Error(),
+			})
+		}
 		return nil, errors.Join(err, stateErr)
 	}
 	now := time.Now()
@@ -652,7 +706,13 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 		return nil, errors.Join(err, stateErr)
 	}
 	m.mu.Lock()
-	m.publishRuntimeLocked(installation, runtime)
+	if hasEnabledOpenAIBinding(installation.Bindings) {
+		m.publishRuntimeLocked(installation, runtime)
+	} else if hasEnabledOpenAIHookBinding(installation.Bindings) {
+		m.publishHookRuntimeLocked(installation, runtime)
+	} else {
+		runtime.kill()
+	}
 	m.mu.Unlock()
 	result, err := m.repo.GetByID(ctx, id)
 	if err != nil {
@@ -681,9 +741,13 @@ func (m *PluginManager) Disable(ctx context.Context, id int64) (*PluginInstallat
 		return nil, err
 	}
 	runtime := m.removeRuntimeLocked(id)
+	hookRuntime := m.removeHookRuntimeLocked(id)
 	m.mu.Unlock()
 	if runtime != nil {
 		runtime.drain(10 * time.Second)
+	}
+	if hookRuntime != nil && hookRuntime != runtime {
+		hookRuntime.drain(10 * time.Second)
 	}
 	return m.Get(ctx, id)
 }
@@ -706,11 +770,15 @@ func (m *PluginManager) Delete(ctx context.Context, id int64) error {
 		return err
 	}
 	runtime := m.removeRuntimeLocked(id)
+	hookRuntime := m.removeHookRuntimeLocked(id)
 	local := m.localInstallations[id]
 	delete(m.localInstallations, id)
 	m.mu.Unlock()
 	if runtime != nil {
 		runtime.drain(10 * time.Second)
+	}
+	if hookRuntime != nil && hookRuntime != runtime {
+		hookRuntime.drain(10 * time.Second)
 	}
 	cleanupErr := m.cleanupInstallationFiles(installation)
 	if local != nil && (local.InstallPath != installation.InstallPath || local.ArtifactPath != installation.ArtifactPath) {
@@ -757,6 +825,9 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 	}
 	m.mu.Lock()
 	runtime := m.runtimes[id]
+	if runtime == nil {
+		runtime = m.hookRuntimes[id]
+	}
 	m.mu.Unlock()
 	temporary := false
 	if runtime == nil {
@@ -828,6 +899,9 @@ func (m *PluginManager) Test(ctx context.Context, id int64) (*pluginv1.TestConfi
 	}
 	m.mu.Lock()
 	runtime := m.runtimes[id]
+	if runtime == nil {
+		runtime = m.hookRuntimes[id]
+	}
 	m.mu.Unlock()
 	temporary := false
 	if runtime == nil {
@@ -863,6 +937,9 @@ func (m *PluginManager) Status(ctx context.Context, id int64) (*pluginv1.HealthR
 	}
 	m.mu.Lock()
 	runtime := m.runtimes[id]
+	if runtime == nil {
+		runtime = m.hookRuntimes[id]
+	}
 	m.mu.Unlock()
 	if runtime == nil {
 		return &pluginv1.HealthResponse{Healthy: false, Message: "插件未运行"}, nil
@@ -1144,7 +1221,8 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 // RPC 或按插件定制目录实现。授予的范围以能力 id 为准并被固定，清单无法通过声明不同的
 // platform/account_type 来扩大它。
 var pluginCapabilityAccountScopeGrants = map[string]pluginAccountScopeEntry{
-	PluginCapabilityOpenAIOAuthOutbound: {Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
+	PluginCapabilityOpenAIOAuthOutbound:   {Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
+	PluginCapabilityOpenAICodexTicketHook: {Platform: PlatformOpenAI, AccountType: AccountTypeOAuth},
 }
 
 // pluginAccountScopeFromManifest 从（安装期已校验的）清单声明能力推导出账号可见范围

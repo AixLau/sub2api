@@ -10,12 +10,25 @@ service TransportPlugin {
   rpc ValidateConfig(ValidateConfigRequest) returns (ValidateConfigResponse);
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
   rpc TestConfig(TestConfigRequest) returns (TestConfigResponse);
+  // PrepareOutbound lets a stateful plugin participate in the host's
+  // outbound request immediately before the host sends it upstream. The
+  // plugin may add or remove an explicitly allowed set of headers (for
+  // example, a short-lived Codex turn-state ticket) without taking over the
+  // HTTP/SSE/WebSocket transport itself. Plugins that do not implement the
+  // hook return UNIMPLEMENTED and the host continues the normal path.
+  rpc PrepareOutbound(PrepareOutboundRequest) returns (PrepareOutboundResponse);
   rpc Forward(stream ForwardRequest) returns (stream ForwardResponse);
   // InitHostServices hands the plugin a go-plugin broker stream id it can dial
   // back to reach the host-provided HostService. It is an optional, generic
   // lifecycle hook: plugins built against an older contract leave it
   // Unimplemented and the host simply runs without offering host services.
   rpc InitHostServices(InitHostServicesRequest) returns (InitHostServicesResponse);
+  // ObserveOutboundResponse gives stateful plugins a response-header feedback
+  // point after the host receives upstream headers. It is intentionally
+  // separate from PrepareOutbound: a plugin may learn a rotated ticket or
+  // cookie without becoming part of the response transport. The response is
+  // advisory and never changes the bytes returned to the client.
+  rpc ObserveOutboundResponse(ObserveOutboundResponseRequest) returns (ObserveOutboundResponseResponse);
 }
 
 // HostService is implemented by the host and dialed by the plugin over the
@@ -93,8 +106,79 @@ message TestConfigResponse {
   string status_json = 4;
 }
 
+// HeaderHookAction controls whether the host should proceed with the
+// prepared outbound request. CONTINUE is also used for a plugin no-op. A
+// REJECT response is authoritative for the current request and includes a
+// machine-readable reason_code for host diagnostics.
+enum HeaderHookAction {
+  HEADER_HOOK_ACTION_UNSPECIFIED = 0;
+  HEADER_HOOK_ACTION_CONTINUE = 1;
+  HEADER_HOOK_ACTION_REJECT = 2;
+}
+
 message HeaderValues {
   repeated string values = 1;
+}
+
+// PrepareOutboundRequest is a metadata-only snapshot. The host owns the
+// actual connection and request body. `headers` contains the headers visible
+// to the hook; hosts SHOULD omit credentials and other secrets unless a
+// declared plugin capability explicitly needs them. Plugins MUST NOT persist
+// this snapshot or use it to alter account identity.
+message PrepareOutboundRequest {
+  string request_id = 1;
+  string method = 2;
+  string url = 3;
+  string host = 4;
+  map<string, HeaderValues> headers = 5;
+  string proxy_url = 6;
+  int64 account_id = 7;
+  string model = 8;
+  // http, sse, websocket, or another host-defined outbound transport label.
+  string transport = 9;
+  string platform = 10;
+  string account_type = 11;
+  int64 content_length = 12;
+  bool has_body = 13;
+}
+
+message PrepareOutboundResponse {
+  HeaderHookAction action = 1;
+  // The host validates these against its protected-header policy before
+  // applying them. A plugin cannot use this map to replace authorization,
+  // cookies, proxy settings, or billing headers.
+  map<string, HeaderValues> headers_to_set = 2;
+  repeated string headers_to_delete = 3;
+  string reason_code = 4;
+  string message = 5;
+  // Optional hint for a host retry or cooldown. It does not itself trigger a
+  // retry and is ignored when action is CONTINUE.
+  int64 retry_after_ms = 6;
+}
+
+// ObserveOutboundResponse carries response metadata only. `headers` may
+// include Set-Cookie and other sensitive values when the plugin capability
+// explicitly declares that it needs them; plugins MUST apply their own
+// redaction and persistence policy. The host owns the response body and does
+// not send it through this hook.
+message ObserveOutboundResponseRequest {
+  string request_id = 1;
+  int64 account_id = 2;
+  string model = 3;
+  string transport = 4;
+  int32 status_code = 5;
+  string status = 6;
+  map<string, HeaderValues> headers = 7;
+  bool request_sent = 8;
+  string sent_ticket_state = 9;
+  string platform = 10;
+  string account_type = 11;
+}
+
+message ObserveOutboundResponseResponse {
+  bool observed = 1;
+  string reason_code = 2;
+  string message = 3;
 }
 
 message ForwardRequestStart {
@@ -110,6 +194,9 @@ message ForwardRequestStart {
   string account_type = 10;
   int64 content_length = 11;
   bool has_body = 12;
+  // Host can receive trusted per-inference usage frames. Plugins must not
+  // combine multiple billable inferences when the host lacks this facility.
+  bool accepts_usage_attempts = 13;
 }
 
 message ForwardRequest {
@@ -141,12 +228,26 @@ message ForwardResponseError {
   bool request_sent = 3;
 }
 
+// One actual upstream inference, before any aggregation or protocol rewrite.
+// These frames are private to the host/plugin transport, never HTTP content.
+message ForwardResponseUsage {
+  int32 attempt = 1;
+  string request_id = 2;
+  string response_id = 3;
+  string model = 4;
+  string service_tier = 5;
+  int64 started_at_unix_ms = 6;
+  int64 duration_ms = 7;
+  bytes usage_json = 8;
+}
+
 message ForwardResponse {
   oneof frame {
     ForwardResponseStart start = 1;
     bytes body_chunk = 2;
     ForwardResponseEnd end = 3;
     ForwardResponseError error = 4;
+    ForwardResponseUsage usage = 5;
   }
 }
 

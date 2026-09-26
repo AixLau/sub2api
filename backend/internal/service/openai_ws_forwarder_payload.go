@@ -191,6 +191,20 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		strings.TrimSpace(headers.Get(openAICodexRoutingHintHeader)) != "",
 		"soft_routing_hint",
 	)
+	// WebSocket handshakes do not pass through doOpenAIUpstream. Run the same
+	// native outbound hook against the handshake headers so a ticket plugin can
+	// inject the admitted turn state without taking ownership of the socket.
+	if s.pluginManager != nil && account != nil && account.Type == AccountTypeOAuth {
+		hookReq, hookErr := http.NewRequestWithContext(ctx, http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+		if hookErr != nil {
+			return nil, sessionResolution, hookErr
+		}
+		hookReq.Header = headers.Clone()
+		if _, hookErr = s.pluginManager.PrepareOpenAIOutbound(ctx, hookReq, "", account, routingModel, "websocket"); hookErr != nil {
+			return nil, sessionResolution, hookErr
+		}
+		headers = hookReq.Header
+	}
 
 	return headers, sessionResolution, nil
 }

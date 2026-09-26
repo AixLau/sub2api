@@ -21,7 +21,15 @@
 
 ## 初期能力边界
 
-当前只接受 `openai.oauth.outbound_transport.v1`：
+当前支持两类 OpenAI OAuth 能力，二者可以由不同插件独立声明：
+
+- `openai.oauth.outbound_transport.v1`：接管一次完整的上游 HTTP 传输（例如 BPS transport）。
+- `openai.oauth.codex_ticket_hook.v1`：通过 `PrepareOutbound` 和
+  `ObserveOutboundResponse` 参与请求前 Header 准备与响应头反馈，但不接管 HTTP、SSE
+  或 WebSocket 传输。该能力适合维护短期 Codex ticket、Cookie 或其它需要按账号和模型
+  绑定的上游状态。
+
+`openai.oauth.outbound_transport.v1` 的行为仍为：
 
 - 仅匹配 `platform=openai` 且 `account_type=oauth` 的上游 HTTP 请求。
 - API Key 账号、其他 provider、OAuth 登录与 Token 刷新流程不进入插件。
@@ -29,6 +37,13 @@
 - 命中插件的 OAuth WebSocket 账号会使用 Sub2API 现有 HTTP Bridge，不直接建立上游 WebSocket，避免绕过 v1 HTTP 插件协议。
 - Sub2API 继续负责响应状态处理、SSE 解析、错误映射、用量统计、计费和下游输出。
 - 启用时必须明确选择 OpenAI OAuth 账号。只有白名单账号进入插件，其他 OAuth 账号继续使用原有内置路径。
+
+Header Hook 插件的调用顺序是：宿主选定账号和模型后调用 `PrepareOutbound`，校验并应用
+插件返回的允许 Header；宿主收到上游响应头后调用 `ObserveOutboundResponse`，随后继续原有
+响应处理。Hook 插件返回 `UNIMPLEMENTED` 时按未声明该能力处理。Hook 返回的 Header 只能
+修改宿主显式允许的字段（例如 `x-codex-turn-state`），不能替换 Authorization、Cookie、
+代理或计费身份。Hook 的失败策略由宿主按插件能力和部署配置决定；插件不应假定宿主会自动
+重试请求。
 
 ## 宿主服务（HostService）
 

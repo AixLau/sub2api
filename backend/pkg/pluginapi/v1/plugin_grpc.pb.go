@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TransportPlugin_GetInfo_FullMethodName          = "/sub2api.plugin.v1.TransportPlugin/GetInfo"
-	TransportPlugin_Health_FullMethodName           = "/sub2api.plugin.v1.TransportPlugin/Health"
-	TransportPlugin_ValidateConfig_FullMethodName   = "/sub2api.plugin.v1.TransportPlugin/ValidateConfig"
-	TransportPlugin_ApplyConfig_FullMethodName      = "/sub2api.plugin.v1.TransportPlugin/ApplyConfig"
-	TransportPlugin_TestConfig_FullMethodName       = "/sub2api.plugin.v1.TransportPlugin/TestConfig"
-	TransportPlugin_Forward_FullMethodName          = "/sub2api.plugin.v1.TransportPlugin/Forward"
-	TransportPlugin_InitHostServices_FullMethodName = "/sub2api.plugin.v1.TransportPlugin/InitHostServices"
+	TransportPlugin_GetInfo_FullMethodName                 = "/sub2api.plugin.v1.TransportPlugin/GetInfo"
+	TransportPlugin_Health_FullMethodName                  = "/sub2api.plugin.v1.TransportPlugin/Health"
+	TransportPlugin_ValidateConfig_FullMethodName          = "/sub2api.plugin.v1.TransportPlugin/ValidateConfig"
+	TransportPlugin_ApplyConfig_FullMethodName             = "/sub2api.plugin.v1.TransportPlugin/ApplyConfig"
+	TransportPlugin_TestConfig_FullMethodName              = "/sub2api.plugin.v1.TransportPlugin/TestConfig"
+	TransportPlugin_PrepareOutbound_FullMethodName         = "/sub2api.plugin.v1.TransportPlugin/PrepareOutbound"
+	TransportPlugin_Forward_FullMethodName                 = "/sub2api.plugin.v1.TransportPlugin/Forward"
+	TransportPlugin_InitHostServices_FullMethodName        = "/sub2api.plugin.v1.TransportPlugin/InitHostServices"
+	TransportPlugin_ObserveOutboundResponse_FullMethodName = "/sub2api.plugin.v1.TransportPlugin/ObserveOutboundResponse"
 )
 
 // TransportPluginClient is the client API for TransportPlugin service.
@@ -37,12 +39,14 @@ type TransportPluginClient interface {
 	ValidateConfig(ctx context.Context, in *ValidateConfigRequest, opts ...grpc.CallOption) (*ValidateConfigResponse, error)
 	ApplyConfig(ctx context.Context, in *ApplyConfigRequest, opts ...grpc.CallOption) (*ApplyConfigResponse, error)
 	TestConfig(ctx context.Context, in *TestConfigRequest, opts ...grpc.CallOption) (*TestConfigResponse, error)
+	PrepareOutbound(ctx context.Context, in *PrepareOutboundRequest, opts ...grpc.CallOption) (*PrepareOutboundResponse, error)
 	Forward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardRequest, ForwardResponse], error)
 	// InitHostServices hands the plugin a go-plugin broker stream id it can dial
 	// back to reach the host-provided HostService. It is an optional, generic
 	// lifecycle hook: plugins built against an older contract leave it
 	// Unimplemented and the host simply runs without offering host services.
 	InitHostServices(ctx context.Context, in *InitHostServicesRequest, opts ...grpc.CallOption) (*InitHostServicesResponse, error)
+	ObserveOutboundResponse(ctx context.Context, in *ObserveOutboundResponseRequest, opts ...grpc.CallOption) (*ObserveOutboundResponseResponse, error)
 }
 
 type transportPluginClient struct {
@@ -103,6 +107,16 @@ func (c *transportPluginClient) TestConfig(ctx context.Context, in *TestConfigRe
 	return out, nil
 }
 
+func (c *transportPluginClient) PrepareOutbound(ctx context.Context, in *PrepareOutboundRequest, opts ...grpc.CallOption) (*PrepareOutboundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareOutboundResponse)
+	err := c.cc.Invoke(ctx, TransportPlugin_PrepareOutbound_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *transportPluginClient) Forward(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ForwardRequest, ForwardResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &TransportPlugin_ServiceDesc.Streams[0], TransportPlugin_Forward_FullMethodName, cOpts...)
@@ -126,6 +140,16 @@ func (c *transportPluginClient) InitHostServices(ctx context.Context, in *InitHo
 	return out, nil
 }
 
+func (c *transportPluginClient) ObserveOutboundResponse(ctx context.Context, in *ObserveOutboundResponseRequest, opts ...grpc.CallOption) (*ObserveOutboundResponseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ObserveOutboundResponseResponse)
+	err := c.cc.Invoke(ctx, TransportPlugin_ObserveOutboundResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TransportPluginServer is the server API for TransportPlugin service.
 // All implementations must embed UnimplementedTransportPluginServer
 // for forward compatibility.
@@ -135,12 +159,14 @@ type TransportPluginServer interface {
 	ValidateConfig(context.Context, *ValidateConfigRequest) (*ValidateConfigResponse, error)
 	ApplyConfig(context.Context, *ApplyConfigRequest) (*ApplyConfigResponse, error)
 	TestConfig(context.Context, *TestConfigRequest) (*TestConfigResponse, error)
+	PrepareOutbound(context.Context, *PrepareOutboundRequest) (*PrepareOutboundResponse, error)
 	Forward(grpc.BidiStreamingServer[ForwardRequest, ForwardResponse]) error
 	// InitHostServices hands the plugin a go-plugin broker stream id it can dial
 	// back to reach the host-provided HostService. It is an optional, generic
 	// lifecycle hook: plugins built against an older contract leave it
 	// Unimplemented and the host simply runs without offering host services.
 	InitHostServices(context.Context, *InitHostServicesRequest) (*InitHostServicesResponse, error)
+	ObserveOutboundResponse(context.Context, *ObserveOutboundResponseRequest) (*ObserveOutboundResponseResponse, error)
 	mustEmbedUnimplementedTransportPluginServer()
 }
 
@@ -166,11 +192,17 @@ func (UnimplementedTransportPluginServer) ApplyConfig(context.Context, *ApplyCon
 func (UnimplementedTransportPluginServer) TestConfig(context.Context, *TestConfigRequest) (*TestConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestConfig not implemented")
 }
+func (UnimplementedTransportPluginServer) PrepareOutbound(context.Context, *PrepareOutboundRequest) (*PrepareOutboundResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PrepareOutbound not implemented")
+}
 func (UnimplementedTransportPluginServer) Forward(grpc.BidiStreamingServer[ForwardRequest, ForwardResponse]) error {
 	return status.Error(codes.Unimplemented, "method Forward not implemented")
 }
 func (UnimplementedTransportPluginServer) InitHostServices(context.Context, *InitHostServicesRequest) (*InitHostServicesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method InitHostServices not implemented")
+}
+func (UnimplementedTransportPluginServer) ObserveOutboundResponse(context.Context, *ObserveOutboundResponseRequest) (*ObserveOutboundResponseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ObserveOutboundResponse not implemented")
 }
 func (UnimplementedTransportPluginServer) mustEmbedUnimplementedTransportPluginServer() {}
 func (UnimplementedTransportPluginServer) testEmbeddedByValue()                         {}
@@ -283,6 +315,21 @@ func _TransportPlugin_TestConfig_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TransportPlugin_PrepareOutbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareOutboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransportPluginServer).PrepareOutbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: TransportPlugin_PrepareOutbound_FullMethodName}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransportPluginServer).PrepareOutbound(ctx, req.(*PrepareOutboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TransportPlugin_Forward_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(TransportPluginServer).Forward(&grpc.GenericServerStream[ForwardRequest, ForwardResponse]{ServerStream: stream})
 }
@@ -304,6 +351,21 @@ func _TransportPlugin_InitHostServices_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TransportPluginServer).InitHostServices(ctx, req.(*InitHostServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TransportPlugin_ObserveOutboundResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ObserveOutboundResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransportPluginServer).ObserveOutboundResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: TransportPlugin_ObserveOutboundResponse_FullMethodName}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransportPluginServer).ObserveOutboundResponse(ctx, req.(*ObserveOutboundResponseRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -336,8 +398,16 @@ var TransportPlugin_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TransportPlugin_TestConfig_Handler,
 		},
 		{
+			MethodName: "PrepareOutbound",
+			Handler:    _TransportPlugin_PrepareOutbound_Handler,
+		},
+		{
 			MethodName: "InitHostServices",
 			Handler:    _TransportPlugin_InitHostServices_Handler,
+		},
+		{
+			MethodName: "ObserveOutboundResponse",
+			Handler:    _TransportPlugin_ObserveOutboundResponse_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

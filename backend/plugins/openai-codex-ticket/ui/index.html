@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenAI Codex Ticket Hook</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header>
+        <h1>OpenAI Codex Ticket</h1>
+        <p>通过独立采票出口维护 x-codex-turn-state，并在 OpenAI OAuth 请求发送前安全注入。采票代理不会覆盖账号业务代理。</p>
+      </header>
+
+      <form id="config-form">
+        <label class="checkbox"><input id="enabled" type="checkbox" /> <span>启用 Codex ticket 采集和请求注入</span></label>
+
+        <div class="grid">
+          <label><span>Ticket 长度</span><select id="target_length"><option value="292">292（个人）</option><option value="780">780（含 Cookie / Gateway）</option></select></label>
+          <label><span>传输协议</span><select id="transport"><option value="sse">SSE</option><option value="websocket">WebSocket</option></select></label>
+          <label><span>目标 Gateway</span><input id="target_gateway" type="text" maxlength="128" /></label>
+        </div>
+
+        <label>
+          <span>采集模型（每行一个）</span>
+          <textarea id="models" rows="4" spellcheck="false"></textarea>
+          <small>按账号和模型分别保存 ticket。留空时使用插件默认模型列表。</small>
+        </label>
+
+        <div class="grid">
+          <label><span>Ticket 有效期（秒）</span><input id="ttl_seconds" type="number" min="60" max="604800" /></label>
+          <label><span>提前刷新（秒）</span><input id="refresh_before_seconds" type="number" min="0" /></label>
+          <label><span>探测间隔（秒）</span><input id="harvest_probe_interval_seconds" type="number" min="30" /></label>
+          <label><span>失败冷却（秒）</span><input id="harvest_cooldown_seconds" type="number" min="0" /></label>
+          <label><span>每轮最大探测数</span><input id="max_probes_per_round" type="number" min="1" max="1000" /></label>
+          <label><span>单次采集超时（秒）</span><input id="harvest_attempt_timeout_seconds" type="number" min="1" /></label>
+        </div>
+
+        <label>
+          <span>采票代理</span>
+          <input id="harvest_proxy_url" type="text" placeholder="socks5h://user:pass@host:port 或 ip-pool" autocomplete="off" />
+          <small>支持 HTTP、HTTPS、SOCKS5/SOCKS5H 或 ip-pool。仅采票使用；业务请求仍使用账号代理。凭据不会显示在状态摘要中。</small>
+        </label>
+        <div class="grid">
+          <label><span>Ticket 接口 URL</span><input id="ticket_url" type="url" required /></label>
+          <label><span>采集接口 URL</span><input id="harvest_url" type="url" required /></label>
+        </div>
+
+        <div class="checks">
+          <label class="checkbox"><input id="fail_closed" type="checkbox" /> <span>无有效 ticket 时阻止目标模型调度（fail-closed）</span></label>
+          <label class="checkbox"><input id="cookie_validation" type="checkbox" /> <span>校验 780 ticket 的 Cookie 新鲜度</span></label>
+          <label class="checkbox"><input id="gateway_validation" type="checkbox" /> <span>校验 780 ticket 的 Gateway</span></label>
+          <label class="checkbox"><input id="team_plan_blocked" type="checkbox" /> <span>阻止 Team / Business / Enterprise 账号采票</span></label>
+        </div>
+
+        <div class="actions">
+          <button id="save" type="submit">保存配置</button>
+          <button id="test" type="button" class="secondary">校验配置</button>
+          <span id="message" role="status"></span>
+        </div>
+      </form>
+
+      <section class="status">
+        <strong>运行状态</strong><span id="status">加载中…</span>
+      </section>
+      <p id="status-detail" aria-live="polite"></p>
+      <details class="diagnostics">
+        <summary>Ticket 摘要</summary>
+        <p>这里只显示长度、模型、出口、协议和剩余时间等摘要，绝不展示 ticket state、Cookie 或 OAuth 凭据。</p>
+        <pre id="tickets-detail">暂无 ticket 摘要</pre>
+      </details>
+    </main>
+    <script src="assets/bridge-v1.js"></script>
+    <script src="assets/app.js"></script>
+  </body>
+</html>
