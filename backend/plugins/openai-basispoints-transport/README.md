@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.0 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
+0.6.1 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -62,12 +62,21 @@
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
 
+## 0.6.1 流缓冲期间保留上游活动
+
+- 工具批次和内部反馈响应仍在完整校验后交付；读取实际上游响应字节时，每五秒至多发送一条不包含工具内容的 SSE 注释，让宿主能够观察仍在进行的传输。普通推理、工具生成、反馈 SSE 和反馈 JSON 均使用实际读活动。
+- 不使用独立心跳定时器；上游停顿时不会继续制造活动，不修改宿主流空闲阈值或插件总超时。注释不计入语义事件，也不改变 Responses 事件序号。
+- 测试让上游等待宿主收到活动后才发送工具完成事件，验证缓冲期间不会假性断流、完整工具仍可交付、取消会关闭连接以及 RPC 接收字节统计正确。
+- 运营详情优先识别结构化 stream_timeout，说明上游停顿、网络中断、插件缓冲均可能导致超时，不再仅凭保存的 502 判定为服务商故障。
+- 2026-09-26 使用授权导出文件和 gpt-6-sol 完成两轮真实 BPS 调用，均为 HTTP 200；24,552 字节脚本逐字执行、文件全文验证及随机标记回传通过，未启用内部纠错推理。此用例不代替生产请求完整复现或实际部署验证。
+- 长脚本实测可通过 BPS_DISCOVERY_LIVE_MODEL 指定模型，默认 gpt-5.6-terra。
+
 ## 0.6.0 原始载荷传输与宿主限额
 
 - 删除 custom 输入内的二次 JSON 信封。路由放在带 client-tool: 前缀的 references，code 原文直接交给已声明的客户端工具。保留函数参数 JSON 校验、tool_choice、整批校验和原始 call_id 回放。
 - 采用 [OpenAI custom 工具的自由文本输入约定](https://developers.openai.com/api/docs/guides/function-calling#custom-tools)，避免把脚本本身再次要求为 JSON 对象。这里只定义插件自己的传输协议，不把它视为 BPS 原生 schema。
 - 请求大小直接沿用宿主 gateway.max_body_size，宿主与插件必须同步更新。运营详情识别 TOOL_BRIDGE 错误码，避免仅凭保存的 400 错判为网络故障。
-- 本地回归包含超过 19 KiB 的脚本实际执行、文件内容逐字核对、JSON/SSE、结果回传和无内部纠错推理。授权实测使用同一环境变量运行 TestRawCustomTransportLiveBPS，目标模型固定 gpt-5.6-terra，最多三轮。
+- 本地回归包含超过 19 KiB 的脚本实际执行、文件内容逐字核对、JSON/SSE、结果回传和无内部纠错推理。授权实测使用同一环境变量运行 TestRawCustomTransportLiveBPS，默认模型 gpt-5.6-terra，最多三轮。
 - 2026-09-26 使用另一份明确授权的本地导出文件完成真实 BPS 实测：gpt-5.6-terra 两轮均为 HTTP 200；24,552 字节脚本逐字一致，客户端实际写入文件并核对全文，回传随机标记后模型正确返回该标记；未启用内部纠错推理。此前账号的 HTTP 429 属于用量限制。该结果验证此用例的执行与回传，不代表已复现原线上未保存的完整工具内容，也不代表已部署到生产。
 
 ## 0.5.0 跨协议转换与错误反馈（历史）
@@ -307,12 +316,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.0.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.1.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.0.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.1.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 

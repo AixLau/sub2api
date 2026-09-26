@@ -297,9 +297,15 @@ func TestForwardCancellationClosesUpstream(t *testing.T) {
 	frame, err := stream.Recv()
 	require.NoError(t, err)
 	require.NotNil(t, frame.GetStart())
-	frame, err = stream.Recv()
-	require.NoError(t, err)
-	require.Contains(t, string(frame.GetBodyChunk()), "response.created")
+	for {
+		frame, err = stream.Recv()
+		require.NoError(t, err)
+		if string(frame.GetBodyChunk()) == upstreamActivityComment {
+			continue
+		}
+		require.Contains(t, string(frame.GetBodyChunk()), "response.created")
+		break
+	}
 	stop()
 	select {
 	case <-closed:

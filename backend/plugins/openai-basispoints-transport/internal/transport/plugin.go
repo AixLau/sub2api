@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.0"
+	PluginVersion = "0.6.1"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -448,6 +448,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			return p.sendError(stream, code, "上游重试失败", true)
 		}
 	}
+	var activity *streamActivity
 	adapted.Feedback = func(ctx context.Context, wireBody []byte) ([]byte, error) {
 		// The initial response is terminal and no tool has been dispatched.
 		// This is a continuation with error outputs, never a blind retry or
@@ -464,6 +465,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		defer next.Body.Close()
 		if next.StatusCode < 200 || next.StatusCode >= 300 {
 			return nil, &bridge.FeedbackFailure{Message: fmt.Sprintf("工具错误反馈被上游拒绝（HTTP %d）", next.StatusCode)}
+		}
+		if activity != nil {
+			next.Body = activity.wrap(next.Body)
 		}
 		raw, err := readFeedbackResponse(ctx, next)
 		if err != nil {
@@ -519,7 +523,8 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return nil
 	}
 	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
-		if err := adapted.Stream(requestCtx, response.Body, emit); err != nil {
+		activity = &streamActivity{emit: emit, now: time.Now}
+		if err := adapted.Stream(requestCtx, activity.wrap(response.Body), emit); err != nil {
 			return p.sendError(stream, upstreamResponseReadErrorCode(err, "TOOL_BRIDGE_STREAM_FAILED"), upstreamResponseReadErrorMessage(err), true)
 		}
 		if adapted.FailureCode != "" {

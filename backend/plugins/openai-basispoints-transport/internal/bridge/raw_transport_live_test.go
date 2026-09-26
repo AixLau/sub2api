@@ -19,6 +19,10 @@ import (
 // quotes, Unicode, backslashes and newlines. Only an exact fixture may execute.
 func TestRawCustomTransportLiveBPS(t *testing.T) {
 	account := liveBPSAccountFromEnv(t)
+	model := os.Getenv("BPS_DISCOVERY_LIVE_MODEL")
+	if model == "" {
+		model = "gpt-5.6-terra"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	source, expected := longScriptFixture()
@@ -29,7 +33,7 @@ func TestRawCustomTransportLiveBPS(t *testing.T) {
 	store := memoryStore{}
 	scope := "live-raw-" + uuid.NewString()
 	for round := 0; round < 3; round++ {
-		r, err := Prepare(ctx, encoded(map[string]any{"model": "gpt-5.6-terra", "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": tools, "input": input}), scope, store, nil, 256<<20)
+		r, err := Prepare(ctx, encoded(map[string]any{"model": model, "stream": true, "reasoning": map[string]string{"effort": "low"}, "tools": tools, "input": input}), scope, store, nil, 256<<20)
 		require.NoError(t, err)
 		final := liveBPSResponse(t, ctx, r, account)
 		var output []json.RawMessage
@@ -51,7 +55,7 @@ func TestRawCustomTransportLiveBPS(t *testing.T) {
 			input = append(input, map[string]any{"type": "custom_tool_call_output", "call_id": stringValue(item["call_id"]), "output": marker})
 			count++
 		}
-		t.Logf("round=%d http=200 client_calls=%d script_bytes=%d usage=%s", round+1, count, len(source), string(final["usage"]))
+		t.Logf("model=%s round=%d http=200 client_calls=%d script_bytes=%d usage=%s", model, round+1, count, len(source), string(final["usage"]))
 		if count == 0 {
 			require.Contains(t, finalText, marker)
 			actual, err := os.ReadFile(file)
