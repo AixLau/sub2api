@@ -88,7 +88,11 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Equal(t, 1, strings.Count(text, `"@message":"bps.tool_rejected"`))
 			require.Contains(t, text, `"request_id":"req_diagnostic_test"`)
 			require.Contains(t, text, `"stage":"upstream_tool_code"`)
-			for _, secret := range []string{"private", "Bearer synthetic", "synthetic-account", "isolated-session"} {
+			require.Contains(t, text, "private_prompt")
+			require.Contains(t, text, "private_schema")
+			require.Equal(t, string(body), d.RequestBody.Preview)
+			require.True(t, d.RequestBody.Complete)
+			for _, secret := range []string{"private_summary", "private_call_id", "private_item_id", "private\\'city", "Bearer synthetic", "synthetic-account", "isolated-session"} {
 				require.NotContains(t, text, secret)
 				require.NotContains(t, health.StatusJson, secret)
 			}
@@ -122,10 +126,15 @@ func TestDiagnosticCorrelationFieldsAreSanitized(t *testing.T) {
 	p := New()
 	p.diagnosticLogger = hclog.NewNullLogger()
 	ctx, d := p.startDiagnostics(context.Background(), &pluginv1.ForwardRequestStart{RequestId: "private\nrequest"})
-	d.body([]byte(`{"model":"private/url?token=secret"}`))
+	d.body([]byte(`{"model":"private/url?token=secret"}`), true)
 	d.upstream(&http.Response{StatusCode: 200, Header: http.Header{"X-Request-Id": []string{strings.Repeat("s", 129)}}})
 	diagnosticsFrom(ctx).fail("TOOL_BRIDGE_CALL_INVALID")
-	raw, err := json.Marshal(p.recentDiagnostics.snapshot())
+	entries := p.recentDiagnostics.snapshot()
+	require.Equal(t, `<redacted>`, entries[0].Model)
+	// The user explicitly requested the body. Identity fields remain redacted;
+	// body previews preserve the submitted bytes independently.
+	entries[0].RequestBody = nil
+	raw, err := json.Marshal(entries)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "private")
 	require.NotContains(t, string(raw), "secret")

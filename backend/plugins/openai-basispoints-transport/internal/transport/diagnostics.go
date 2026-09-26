@@ -18,24 +18,25 @@ import (
 const recentDiagnosticLimit = 50
 
 type diagnosticEntry struct {
-	Time              string             `json:"time"`
-	Event             string             `json:"event"`
-	RequestID         string             `json:"request_id"`
-	TraceID           string             `json:"trace_id"`
-	AccountID         int64              `json:"account_id"`
-	Model             string             `json:"model,omitempty"`
-	Route             string             `json:"route,omitempty"`
-	Reason            string             `json:"reason,omitempty"`
-	Attempt           int                `json:"attempt"`
-	Stream            bool               `json:"stream"`
-	Status            int                `json:"upstream_status,omitempty"`
-	UpstreamRequestID string             `json:"upstream_request_id,omitempty"`
-	DurationMS        int64              `json:"duration_ms"`
-	ErrorCode         string             `json:"error_code,omitempty"`
-	Tool              *bridge.Diagnostic `json:"tool,omitempty"`
+	Time              string               `json:"time"`
+	Event             string               `json:"event"`
+	RequestID         string               `json:"request_id"`
+	TraceID           string               `json:"trace_id"`
+	AccountID         int64                `json:"account_id"`
+	Model             string               `json:"model,omitempty"`
+	Route             string               `json:"route,omitempty"`
+	Reason            string               `json:"reason,omitempty"`
+	Attempt           int                  `json:"attempt"`
+	Stream            bool                 `json:"stream"`
+	Status            int                  `json:"upstream_status,omitempty"`
+	UpstreamRequestID string               `json:"upstream_request_id,omitempty"`
+	DurationMS        int64                `json:"duration_ms"`
+	ErrorCode         string               `json:"error_code,omitempty"`
+	Tool              *bridge.Diagnostic   `json:"tool,omitempty"`
+	RequestBody       *requestBodySnapshot `json:"request_body,omitempty"`
 }
 
-// Retain only bounded, sanitized failures. Health is passive: no file reads,
+// Retain bounded failures with request body previews. Health is passive: no file reads,
 // network calls or persistent writes are required to inspect recent failures.
 type diagnosticRing struct {
 	mu      sync.Mutex
@@ -65,9 +66,11 @@ func newDiagnosticLogger() hclog.Logger {
 }
 
 type requestDiagnostics struct {
-	p       *Plugin
-	started time.Time
-	entry   diagnosticEntry
+	p                                       *Plugin
+	started                                 time.Time
+	entry                                   diagnosticEntry
+	requestBody                             []byte
+	bodyAvailable, bodyComplete, bodyLogged bool
 }
 type requestDiagnosticsKey struct{}
 type diagnosticStream struct {
@@ -94,7 +97,11 @@ func diagnosticsFrom(ctx context.Context) *requestDiagnostics {
 	return d
 }
 
-func (d *requestDiagnostics) body(body []byte) {
+func (d *requestDiagnostics) body(body []byte, complete bool) {
+	// Forward owns these immutable original bytes until finish. Never replace
+	// them with the rewritten BPS request or a response/tool payload.
+	d.requestBody = body
+	d.bodyAvailable, d.bodyComplete = body != nil || complete, complete
 	var meta struct {
 		Model  string
 		Stream bool
@@ -139,6 +146,9 @@ func (d *requestDiagnostics) finish(err error) {
 }
 
 func (d *requestDiagnostics) write(event string, level hclog.Level) {
+	if level >= hclog.Warn {
+		d.captureRequestBody()
+	}
 	entry := d.entry
 	entry.Event, entry.Time, entry.DurationMS = event, time.Now().UTC().Format(time.RFC3339Nano), time.Since(d.started).Milliseconds()
 	if level >= hclog.Warn {
@@ -150,6 +160,9 @@ func (d *requestDiagnostics) write(event string, level hclog.Level) {
 		"model", entry.Model, "route", entry.Route, "reason", entry.Reason, "attempt", entry.Attempt,
 		"stream", entry.Stream, "upstream_status", entry.Status, "upstream_request_id", entry.UpstreamRequestID,
 		"duration_ms", entry.DurationMS, "error_code", entry.ErrorCode, "tool", entry.Tool)
+	if level >= hclog.Warn {
+		d.logRequestBody()
+	}
 }
 
 func safeLogID(value string) string {

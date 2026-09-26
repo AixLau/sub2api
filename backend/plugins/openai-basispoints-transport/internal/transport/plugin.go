@@ -31,7 +31,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.2"
+	PluginVersion = "0.4.3"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -261,10 +261,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return p.sendError(stream, "PLUGIN_UNSUPPORTED_ENDPOINT", "此插件目前仅支持 POST /responses", false)
 	}
 	body, err := readRequestBody(stream, start)
+	diagnostic.body(body, err == nil)
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_REQUEST_BODY_FAILED", err.Error(), false)
 	}
-	diagnostic.body(body)
 	headers := headersFromProto(start.Headers)
 	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
@@ -600,12 +600,17 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	}
 	// Forward the response body untouched. text/event-stream is copied chunk by
 	// chunk without bridge.Stream() so no SSE events are rewritten here.
+	observeSemanticFailure := response.StatusCode >= 200 && response.StatusCode < 300
+	observer := nativeFailureObserver{sse: strings.Contains(response.Header.Get("Content-Type"), "text/event-stream")}
 	buffer := make([]byte, chunkSize)
 	for {
 		n, err := response.Body.Read(buffer)
 		if n > 0 {
 			if sendErr := emit(buffer[:n]); sendErr != nil {
 				return sendErr
+			}
+			if observeSemanticFailure {
+				observer.feed(buffer[:n])
 			}
 		}
 		if err == io.EOF {
@@ -615,7 +620,11 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 			return p.sendError(stream, upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(err), true)
 		}
 	}
-	succeeded = response.StatusCode >= 200 && response.StatusCode < 300
+	semanticFailure := observeSemanticFailure && observer.finish()
+	if semanticFailure {
+		diagnostic.fail("UPSTREAM_RESPONSE_FAILED")
+	}
+	succeeded = response.StatusCode >= 200 && response.StatusCode < 300 && !semanticFailure
 	return stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_End{End: &pluginv1.ForwardResponseEnd{BytesReceived: received, DurationMs: time.Since(started).Milliseconds()}}})
 }
 
@@ -966,21 +975,21 @@ func readRequestBody(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pl
 	for {
 		frame, err := stream.Recv()
 		if err != nil {
-			return nil, errors.New("请求体在 body_end 前中断")
+			return body.Bytes(), errors.New("请求体在 body_end 前中断")
 		}
 		switch value := frame.Frame.(type) {
 		case *pluginv1.ForwardRequest_BodyChunk:
 			if !start.HasBody || len(value.BodyChunk) > bridge.MaxBodyBytes-body.Len() {
-				return nil, errors.New("请求体帧无效或超过大小限制")
+				return body.Bytes(), errors.New("请求体帧无效或超过大小限制")
 			}
 			body.Write(value.BodyChunk)
 		case *pluginv1.ForwardRequest_BodyEnd:
 			if !value.BodyEnd || (start.ContentLength > 0 && start.ContentLength != int64(body.Len())) {
-				return nil, errors.New("请求体长度或 body_end 无效")
+				return body.Bytes(), errors.New("请求体长度或 body_end 无效")
 			}
 			return body.Bytes(), nil
 		default:
-			return nil, errors.New("请求体帧顺序无效")
+			return body.Bytes(), errors.New("请求体帧顺序无效")
 		}
 	}
 }

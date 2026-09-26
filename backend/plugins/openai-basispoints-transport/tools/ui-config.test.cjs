@@ -44,12 +44,15 @@ test('model selection defaults to all and round trips exact selected names', asy
 });
 
 test('diagnostics show newest bounded entries as text without executing HTML', async t => {
-  const entries = Array.from({ length: 60 }, (_, n) => ({ request_id: 'req-' + n, tool: { name: '<img src=x onerror=alert(1)>' } }));
+  const preview = '<img src=x onerror=alert(1)>正文';
+  const entries = Array.from({ length: 60 }, (_, n) => ({ request_id: 'req-' + n, request_body: { preview, preview_truncated: true, bytes: 10000 } }));
   const { field } = await mount(t, {}, { recent_diagnostics: entries });
   const diagnostics = JSON.parse(field('diagnostics-detail').textContent);
   assert.equal(diagnostics.length, 50);
   assert.equal(diagnostics[0].request_id, 'req-59');
   assert.equal(diagnostics[49].request_id, 'req-10');
+  assert.equal(diagnostics[0].request_body.preview, preview);
+  assert.equal(diagnostics[0].request_body.preview_truncated, true);
   assert.equal(field('diagnostics-detail').querySelector('img'), null);
 });
 

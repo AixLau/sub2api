@@ -339,4 +339,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	require.True(t, found)
 	testForwardReplay(t, binary)
 	testForwardDiagnosticLogs(t, binary)
+	testForwardFailedRequestBodies(t, binary)
 }

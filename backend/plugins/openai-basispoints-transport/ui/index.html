@@ -96,8 +96,8 @@
       </section>
       <p id="status-detail" aria-live="polite"></p>
       <details class="diagnostics">
-        <summary>最近故障诊断（脱敏）</summary>
-        <p>保留本次插件进程最近 50 条故障，重启后清空。可复制请求 ID 或完整诊断用于排查；每 10 秒刷新。</p>
+        <summary>最近故障诊断与请求正文</summary>
+        <p>保留最近 50 条故障及请求正文前 8 KiB，包含用户输入；重启后清空，每 10 秒刷新。完整正文在宿主日志的 bps.failed_request_body 中，按 trace_id 关联、part 顺序拼接。</p>
         <pre id="diagnostics-detail">暂无故障诊断</pre>
       </details>
     </main>

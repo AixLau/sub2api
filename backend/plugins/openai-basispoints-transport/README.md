@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.4.2 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.2 增加结构化运行日志与最近故障诊断；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
+0.4.3 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，只接受 `POST /responses`。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.3 在结构化运行日志中增加失败请求原始正文；仍需使用已包含 0.3.2 插件语义错误分类的宿主，才能避免协议错误触发账号换号。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -19,21 +19,36 @@
 
 SSE 中的普通文本保持流式输出；工具调用等待 `response.output_item.done` 到齐、回放状态保存成功后，才输出对应的 added / delta / arguments.done / item.done。终结响应中的工具也同步转换，usage 保留。无效载荷、未知工具、KV 不可用或工具流截断都返回明确错误，不执行代码、不伪造结果。
 
-## 0.4.2 排障日志
+## 0.4.3 失败请求正文
+
+请求失败时，默认记录插件收到、尚未进行 BPS 改写的原始 body。保留提示词、对话历史、工具 schema、code/input/arguments、数字精度和空白，也保留无法解析的 JSON；宿主在调用插件之前做过的改写不属于本插件的捕获范围。成功请求和最终恢复成功的内部重试不记录正文。
+
+- 事件为 WARN 级别的 `bps.failed_request_body`，每次 Forward 最多记录一份，使用 `request_id` 和独立 `trace_id` 关联故障、路由和上游尝试。HTTP 4xx/5xx、工具桥接错误、请求解析错误、连接/读取错误，以及 BPS/native 的语义失败均进入现有失败诊断路径。
+- 正文按原始字节最多 8 KiB 分段，UTF-8 在字符边界切分，避免 JSON 转义后超过 go-plugin 的 64 KiB 单行限制。每段包含 `request_body`、`part`、`parts`、`request_body_bytes`、`request_body_sha256`、`request_body_complete` 和 `request_body_encoding`。
+- 按同一 `trace_id` 检索 `bps.failed_request_body`，按 `part` 升序拼接 `request_body`，确认段数、字节数和 SHA-256 一致。极少数非 UTF-8 请求使用 `base64`，应先逐段解码再拼接。宿主采样、日志级别、队列丢弃与保留策略仍可能影响留存；缺段不能视为完整请求。
+- 配置页只保留每条失败正文的前 8 KiB 预览，最多 50 条故障；可查看 `available`、`complete`、`preview_truncated`、总字节数和 SHA-256。完整正文只写入宿主日志，不在 Health 中积累。未读取到正文的早期拒绝标记 `available: false`；读取中断只保留已接收部分，`complete: false`。
+- native 响应观察器仅识别错误状态，不改写转发字节。JSON 响应和单个 SSE data 事件的检查上限为 256 KiB；超大事件独立跳过，不阻止识别后续错误事件，显式 `event: response.failed/error/response.incomplete` 不受 data 大小影响。
+- **正文包含用户提交的完整内容，不进行自动脱敏。** 不额外采集 HTTP Authorization/Cookie、OAuth 凭据、代理 URL 或上游响应正文；若用户把凭据写入 body，该内容也会按原文记录。客户端错误响应仍使用既有的脱敏结构，不附加日志正文。
+
+完整日志要求宿主已包含 0.4.2 配套的 `plugin_logger.go` / `plugin_runtime.go` 改动；旧宿主的空 logger 会丢弃日志，只能查看配置页中的有界预览。
+
+## 0.4.2 排障日志基础
+
+以下结构化诊断自 0.4.2 引入；0.4.3 的失败正文策略以上一节为准。
 
 默认开启脱敏结构化日志，无需打开 debug。使用已有的 go-hclog / go-plugin 日志协议，通过宿主 slog 接入现有控制台、日志文件及 Ops 系统日志管线；不会写入承载 RPC 握手的 stdout。
 
 - 请求关联：入口 request_id、每次插件 Forward 独立 trace_id、账号 ID、模型、插件版本、BPS/native 路由及原因、上游尝试次数、流式标记、HTTP 状态、上游 X-Request-ID 和累计耗时。
 - 关键事件：bps.route_selected、bps.upstream_response、bps.upstream_retry、bps.tool_rejected、bps.request_failed、bps.request_finished。工具拒绝使用 WARN；一般成功流程使用 INFO，不逐个记录 token/delta。
 - 工具拒绝：记录源 SSE 事件（或 json_response）、已知的响应 ID、实际 name/namespace/qualified_name、客户端工具数量、校验阶段与固定原因、arguments/references/code 的类型及长度、references 数量、已声明的目标工具，以及 JSON 出错字段和字节偏移。未知 references 的值不记入日志。code_json_type 和 legacy_envelope 只描述结构，不记录正文，也不改变校验或恢复旧信封协议。
-- 隐私边界：不记录 Authorization、Cookie、OAuth Token、代理 URL、请求/响应正文、提示词、工具 schema、code/input/arguments 内容、summary、工具调用 ID 或任意原始异常文本。身份字段限制为不超过 128 字节的 ASCII 字母、数字、下划线、连字符和点；不符合要求整体脱敏。
+- 元数据边界：身份字段限制为不超过 128 字节的 ASCII 字母、数字、下划线、连字符和点；不符合要求整体脱敏。不额外采集认证头、代理 URL、上游响应正文或任意原始异常文本。0.4.3 失败请求正文按上一节单独记录。
 - 流式语义失败即使正常结束 RPC，也会生成一条工具拒绝诊断；日志与已有失败响应分别处理。日志观察器不改写参数、重放状态或返回结果。
-- 插件配置页新增“最近故障诊断（脱敏）”，每 10 秒刷新，显示最近 50 条故障，最新在前，可复制 JSON。数据来自 Health.status_json.recent_diagnostics，是有界内存快照，插件进程重启后清空；长期留存遵循宿主的日志保留策略。
+- 插件配置页提供“最近故障诊断与请求正文”，每 10 秒刷新，显示最近 50 条故障，最新在前，可复制 JSON。数据来自 Health.status_json.recent_diagnostics，是有界内存快照，插件进程重启后清空；长期留存遵循宿主的日志保留策略。
 
 **查看方式与升级要求：**
 
-1. 只升级 0.4.2 插件，即可在插件配置页查看最近故障；不会为了记录诊断访问外部接口或额外写数据库。
-2. 要在宿主日志或 Ops 系统日志中检索 bps.tool_rejected，需要同时包含本次宿主 plugin_runtime.go / plugin_logger.go 改动。原宿主使用空 logger，会丢弃插件标准错误日志；只升级插件无法改变宿主行为。新宿主同时把入口 request_id 传给插件，关联错误详情中的请求 ID；缺少 HTTP 请求上下文时使用独立生成的 ID。旧宿主下可按故障时间、账号和可用的上游响应 ID 对照配置页诊断。
+1. 只升级 0.4.3 插件，即可在插件配置页查看最近故障；不会为了记录诊断访问外部接口或额外写数据库。
+2. 要在宿主日志或 Ops 系统日志中检索 bps.tool_rejected，需要同时包含 0.4.2 配套的宿主 plugin_runtime.go / plugin_logger.go 改动。原宿主使用空 logger，会丢弃插件标准错误日志；只升级插件无法改变宿主行为。新宿主同时把入口 request_id 传给插件，关联错误详情中的请求 ID；缺少 HTTP 请求上下文时使用独立生成的 ID。旧宿主下可按故障时间、账号和可用的上游响应 ID 对照配置页诊断。
 3. 在系统日志中按组件 plugin、事件 bps.tool_rejected 和 request_id 过滤；继续查看相同 trace_id 的路由、上游尝试及结束记录。Ops 展示仍遵循宿主当前日志级别、采样与留存配置。
 4. stage=upstream_tool_identity 表示执行器/工具身份不匹配；upstream_tool_arguments 表示外层或直接工具参数问题；upstream_tool_references 表示路由目标问题；upstream_tool_code 表示 code 类型或 JSON 语法问题；upstream_tool_choice 表示工具选择约束不一致。应先按阶段定位，不能仅凭 HTTP 400 推断为余额或 API Key 问题。
 
@@ -189,12 +204,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.4.2.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.4.3.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.4.2.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.4.3.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
@@ -206,6 +221,6 @@ SIGNING_KEY=/secure/path/publisher.private KEY_ID=my-publisher-v1 TARGETS=linux-
 
 ## 安装与观察
 
-先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.4.2，保存配置并选择账号和 BPS 模型范围。当前工具传输协议不接受旧格式的新调用。使用专用测试账号开始新会话，先验证普通文本，再验证 function/custom 工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。若仍遇到工具身份拒绝，可通过 error.diagnostics 区分真实的未知执行器与名称问题。该版本未声明完整线上联调通过，需要确认“未测试版本”提示；本地测试和打包验证不等于真实 BPS 联调通过。
+先确认宿主已包含 0.3.2 引入的插件语义错误分类，再停用已安装的同 ID 插件，上传 0.4.3，保存配置并选择账号和 BPS 模型范围。当前工具传输协议不接受旧格式的新调用。使用专用测试账号开始新会话，先验证普通文本，再验证 function/custom 工具调用及回放，随后验证子 agent 首轮、send_message 和 followup_task，再考虑扩大账号范围。若仍遇到工具身份拒绝，可通过 error.diagnostics 区分真实的未知执行器与名称问题。该版本未声明完整线上联调通过，需要确认“未测试版本”提示；本地测试和打包验证不等于真实 BPS 联调通过。
 
 配置页每 10 秒显示请求数、成功/失败数、最近 HTTP 状态、KV 连接情况及最近桥接错误码。请求数增加说明请求进入了本插件；成功数、工具调用和回放均成功才说明相应链路可用。“校验配置”仅检查配置，不调用模型。
