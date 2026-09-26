@@ -16,7 +16,10 @@ func isTransportName(name string) bool {
 }
 
 // ToolCallError contains only safe diagnostic text, never executable input.
-type ToolCallError struct{ message string }
+type ToolCallError struct {
+	message     string
+	diagnostics *toolCallDiagnostics
+}
 
 func (e *ToolCallError) Error() string   { return e.message }
 func toolCallError(message string) error { return &ToolCallError{message: message} }
@@ -33,6 +36,10 @@ func FailureResponse(code string, cause error, snapshot json.RawMessage) json.Ra
 		}
 	}
 	detail := map[string]any{"type": "invalid_request_error", "code": code, "message": cause.Error()}
+	var callErr *ToolCallError
+	if errors.As(cause, &callErr) && callErr.diagnostics != nil {
+		detail["diagnostics"] = callErr.diagnostics
+	}
 	var replayErr *EncryptedReplayError
 	if errors.As(cause, &replayErr) {
 		detail["diagnostics"] = replayErr
@@ -58,10 +65,7 @@ func (r *Request) convertCall(ctx context.Context, raw json.RawMessage) (json.Ra
 	if callID == "" {
 		return nil, toolCallError("上游工具 item 缺少 call_id")
 	}
-	name := stringValue(item["name"])
-	if ns := stringValue(item["namespace"]); ns != "" {
-		name = ns + "." + name
-	}
+	name := qualifiedCallName(item)
 	var envelope object
 	direct := false
 	if t, key, declared := r.catalog.lookup(name); declared {

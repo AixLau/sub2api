@@ -129,10 +129,7 @@ func readCatalog(raw, choice json.RawMessage, input []json.RawMessage) (catalog,
 			if err != nil {
 				return c, err
 			}
-			c.forced = stringValue(obj["name"])
-			if ns := stringValue(obj["namespace"]); ns != "" {
-				c.forced = ns + "." + c.forced
-			}
+			c.forced = qualifiedCallName(obj)
 			if _, ok := c.tools[c.forced]; !ok {
 				return c, errors.New("tool_choice 指定了未声明或不支持的工具")
 			}

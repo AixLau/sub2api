@@ -10,12 +10,9 @@ import (
 // catalog alone determines whether code is JSON arguments or custom raw text.
 // Only the declared native executor can carry this protocol.
 func (c catalog) transportPayload(item object) (object, error) {
-	name := stringValue(item["name"])
-	if ns := stringValue(item["namespace"]); ns != "" {
-		name = ns + "." + name
-	}
+	name := qualifiedCallName(item)
 	if stringValue(item["type"]) != "function_call" || !isTransportName(name) {
-		return nil, toolCallError("上游调用不是客户端已声明的工具或 run_officejs 传输执行器")
+		return nil, toolIdentityError(item, len(c.tools))
 	}
 	args := item["arguments"]
 	if isTextValue(args) {

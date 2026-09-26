@@ -70,6 +70,7 @@ func TestReferenceTransportExecutorNames(t *testing.T) {
 		{"run_officejs", "", true},
 		{"functions.run_officejs", "", true},
 		{"run_officejs", "functions", true},
+		{"functions.run_officejs", "functions", true},
 		{"run_officejs", "other", false},
 		{"run_connector_action", "", false},
 	} {

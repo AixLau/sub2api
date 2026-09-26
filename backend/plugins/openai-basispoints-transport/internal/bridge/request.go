@@ -118,11 +118,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 			if callID == "" {
 				return nil, errors.New("工具调用缺少 call_id")
 			}
-			name, namespace := stringValue(item["name"]), stringValue(item["namespace"])
-			catalogName := name
-			if namespace != "" {
-				catalogName = namespace + "." + name
-			}
+			catalogName := qualifiedCallName(item)
 			var native json.RawMessage
 			var nativeCallID string
 			switch {
@@ -136,11 +132,11 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 				}
 				original, _ := parseObject(record.Original)
 				native, nativeCallID = record.Original, stringValue(original["call_id"])
-			case isTransportName(name):
+			case isTransportName(catalogName):
 				// Already a native upstream item (e.g. captured from an Excel
 				// session); replay it verbatim instead of re-wrapping it.
 				native, nativeCallID = raw, callID
-			case name == "":
+			case catalogName == "":
 				return nil, errors.New("工具调用缺少名称")
 			default:
 				if _, declared := r.catalog.tools[catalogName]; declared {
