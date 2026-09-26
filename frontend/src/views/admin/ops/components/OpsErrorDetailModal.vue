@@ -257,7 +257,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
-import { resolveEmbeddedUpstreamErrors, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../utils/errorDetailResponse'
+import { isStreamTimeoutFailure, resolveEmbeddedUpstreamErrors, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
 interface Props {
   show: boolean
@@ -308,6 +308,9 @@ const diagnosis = computed<Diagnosis>(() => {
   const bridgeCode = resolveToolBridgeFailureCode(current)
   if (bridgeCode) {
     return { label: t('admin.ops.errorDetail.diagnosis.bridge'), summary: t('admin.ops.errorDetail.diagnosis.bridgeSummary'), evidence: t('admin.ops.errorDetail.diagnosis.bridgeEvidence', { code: bridgeCode }), action: t('admin.ops.errorDetail.diagnosis.bridgeAction'), className: 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100', badgeClass: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200' }
+  }
+  if (isStreamTimeoutFailure(current)) {
+    return { label: t('admin.ops.errorDetail.diagnosis.streamTimeout'), summary: t('admin.ops.errorDetail.diagnosis.streamTimeoutSummary'), evidence: t('admin.ops.errorDetail.diagnosis.streamTimeoutEvidence'), action: t('admin.ops.errorDetail.diagnosis.streamTimeoutAction'), className: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100', badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' }
   }
   const isCancellation = status === 499 || message.includes('context canceled') || message.includes('client disconnected') || message.includes('broken pipe')
   if (isCancellation) {

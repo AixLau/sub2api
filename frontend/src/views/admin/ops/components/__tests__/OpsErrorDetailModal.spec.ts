@@ -54,6 +54,26 @@ describe('OpsErrorDetailModal', () => {
     expect(wrapper.text()).not.toContain('admin.ops.errorDetail.diagnosis.upstreamSummary')
   })
 
+  it('does not attribute a stream timeout to the provider based on a synthesized 502', async () => {
+    mocks.getRequestErrorDetail.mockResolvedValue({
+      id: 480765,
+      created_at: '2026-09-26T15:35:46Z',
+      phase: 'upstream',
+      error_owner: 'provider',
+      status_code: 502,
+      upstream_status_code: 502,
+      message: 'stream_timeout',
+      error_body: 'event: response.failed\ndata: {"response":{"error":{"code":"stream_timeout"}}}\n\n'
+    })
+    const wrapper = shallowMount(OpsErrorDetailModal, {
+      props: { show: true, errorId: 480765, errorType: 'request' },
+      global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Icon: true } }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.diagnosis.streamTimeoutSummary')
+    expect(wrapper.text()).not.toContain('admin.ops.errorDetail.diagnosis.upstreamSummary')
+  })
+
   it('prioritizes upstream root cause and deduplicates diagnostic payloads', async () => {
     mocks.getRequestErrorDetail.mockResolvedValue({
       id: 1,

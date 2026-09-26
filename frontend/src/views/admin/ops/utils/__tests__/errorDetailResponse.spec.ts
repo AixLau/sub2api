@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OpsErrorDetail } from '@/api/admin/ops'
-import { resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../errorDetailResponse'
+import { isStreamTimeoutFailure, resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveToolBridgeFailureCode, resolveUpstreamPayload } from '../errorDetailResponse'
 
 function makeDetail(overrides: Partial<OpsErrorDetail>): OpsErrorDetail {
   return {
@@ -29,6 +29,21 @@ function makeDetail(overrides: Partial<OpsErrorDetail>): OpsErrorDetail {
 }
 
 describe('errorDetailResponse', () => {
+  it('recognizes stream timeout codes without inferring them from messages or HTTP status', () => {
+    expect(isStreamTimeoutFailure(makeDetail({
+      upstream_error_detail: '{"response":{"error":{"code":"stream_timeout"}}}'
+    }))).toBe(true)
+    expect(isStreamTimeoutFailure(makeDetail({
+      error_body: 'event: response.failed\ndata: {"response":{"error":{"code":"stream_timeout"}}}\n\n'
+    }))).toBe(true)
+    expect(isStreamTimeoutFailure(makeDetail({
+      error_body: '{"error":{"code":"rate_limit_exceeded","message":"stream_timeout"}}'
+    }))).toBe(false)
+    expect(isStreamTimeoutFailure(makeDetail({ error_body: 'not JSON stream_timeout' }))).toBe(false)
+    expect(isStreamTimeoutFailure(makeDetail({ status_code: 502 }))).toBe(false)
+    expect(isStreamTimeoutFailure(null)).toBe(false)
+  })
+
   it('recognizes structured bridge codes without matching arbitrary message text', () => {
     expect(resolveToolBridgeFailureCode(makeDetail({
       upstream_error_detail: '{"response":{"error":{"code":"TOOL_BRIDGE_CALL_INVALID"}}}'
