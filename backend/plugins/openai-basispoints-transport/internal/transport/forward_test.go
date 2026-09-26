@@ -88,12 +88,15 @@ func clientForTest(t *testing.T, store *testHostKV, binary string, options ...te
 	return c
 }
 
-func forwardForTest(t *testing.T, c *pluginv1.TransportClient, body []byte, ctx context.Context) (*pluginv1.ForwardResponseStart, []byte, *pluginv1.ForwardResponseError) {
+func forwardForTest(t *testing.T, c *pluginv1.TransportClient, body []byte, ctx context.Context, starts ...*pluginv1.ForwardRequestStart) (*pluginv1.ForwardResponseStart, []byte, *pluginv1.ForwardResponseError) {
 	t.Helper()
 	stream, err := c.Forward(ctx)
 	require.NoError(t, err)
 	start := &pluginv1.ForwardRequestStart{AccountId: 7, Platform: "openai", AccountType: "oauth", Method: "POST", Url: "https://chatgpt.com/backend-api/codex/responses", Host: "chatgpt.com", HasBody: true, ContentLength: int64(len(body)), Headers: map[string]*pluginv1.HeaderValues{"authorization": {Values: []string{"Bearer synthetic"}}, "chatgpt-account-id": {Values: []string{"synthetic-account"}}, "session_id": {Values: []string{"isolated-session"}}}}
 	start.RequestId = "req_diagnostic_test"
+	if len(starts) > 0 {
+		start = starts[0]
+	}
 	require.NoError(t, stream.Send(&pluginv1.ForwardRequest{Frame: &pluginv1.ForwardRequest_Start{Start: start}}))
 	for len(body) > 0 {
 		n := min(17, len(body))
@@ -340,4 +343,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	testForwardReplay(t, binary)
 	testForwardDiagnosticLogs(t, binary)
 	testForwardFailedRequestBodies(t, binary)
+	testAlphaSearchNativeForward(t, binary)
 }

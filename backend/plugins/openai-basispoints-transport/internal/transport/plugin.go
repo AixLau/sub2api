@@ -31,7 +31,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.4.3"
+	PluginVersion = "0.4.4"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -255,10 +255,12 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_TARGET_INVALID", err.Error(), false)
 	}
-	// This adapter implements only Responses creation. It must not silently
-	// send compact/images/count requests to an unverified endpoint.
-	if start.Method != http.MethodPost || !strings.HasSuffix(target.Path, "/responses") {
-		return p.sendError(stream, "PLUGIN_UNSUPPORTED_ENDPOINT", "此插件目前仅支持 POST /responses", false)
+	// Standalone search has its own native protocol, independent of Responses
+	// capability/model fallback settings. Other unverified endpoints stay closed.
+	incoming, _ := url.Parse(start.Url) // resolveTarget validated the URL above.
+	nativeSearch := start.Method == http.MethodPost && isAlphaSearchPath(incoming.Path)
+	if !nativeSearch && (start.Method != http.MethodPost || !strings.HasSuffix(target.Path, "/responses")) {
+		return p.sendError(stream, "PLUGIN_UNSUPPORTED_ENDPOINT", "此插件目前仅支持 POST /responses 和 POST /alpha/search", false)
 	}
 	body, err := readRequestBody(stream, start)
 	diagnostic.body(body, err == nil)
@@ -268,6 +270,11 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	headers := headersFromProto(start.Headers)
 	if value := headers.Get("Content-Encoding"); value != "" && value != "identity" {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", "桥接请求必须是未压缩 JSON", false)
+	}
+	if nativeSearch {
+		diagnostic.route("native", "alpha_search")
+		p.recentPaths.add(requestModel(body), "native")
+		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Model selection is independent of capability fallback. Unselected models
 	// keep their original body, tools and model name on the native channel.
@@ -539,10 +546,10 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 		return p.sendError(stream, "PLUGIN_TARGET_INVALID", err.Error(), false)
 	}
 	// The host has already authorized this exact outbound request. Reuse the
-	// same identity header assembly as the BPS path so OAuth/account headers are
-	// identical across both paths.
+	// host-authorized headers. BPS/Excel profiles and configured BPS extra headers
+	// must not be injected into native Responses or standalone search requests.
 	identity := outboundIdentity{headers: headers, proxy: start.ProxyUrl}
-	request, err := p.buildRequest(stream.Context(), start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(body)))
+	request, err := p.buildOutboundRequest(stream.Context(), start, target, state.cfg, identity, io.NopCloser(bytes.NewReader(body)))
 	if err != nil {
 		return p.sendError(stream, "PLUGIN_REQUEST_INVALID", err.Error(), false)
 	}
@@ -634,7 +641,36 @@ type outboundIdentity struct {
 	proxy   string
 }
 
+// buildRequest adds the BPS profile only on the Basis Points channel.
 func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardRequestStart, target *url.URL, cfg pluginconfig.Config, identity outboundIdentity, body io.ReadCloser) (*http.Request, error) {
+	request, err := p.buildOutboundRequest(ctx, start, target, cfg, identity, body)
+	if err != nil {
+		return nil, err
+	}
+	accountID := strings.TrimSpace(request.Header.Get("chatgpt-account-id"))
+	if accountID == "" {
+		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))
+	}
+	if accountID != "" {
+		request.Header.Set("chatgpt-account-id", accountID)
+		request.Header.Set("x-openai-account-id", accountID)
+	}
+	{
+		if request.Header.Get("Authorization") == "" || accountID == "" {
+			return nil, errors.New("Basis Points 上游需要 OAuth 授权和 ChatGPT 账号 ID")
+		}
+		request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
+	}
+	applyExcelClientProfile(request.Header)
+	ensureCodexIdentity(request.Header)
+	for key, value := range cfg.ExtraHeaders {
+		request.Header.Set(key, value)
+	}
+	return request, nil
+}
+
+// buildOutboundRequest preserves the host-authorized native request headers.
+func (p *Plugin) buildOutboundRequest(ctx context.Context, start *pluginv1.ForwardRequestStart, target *url.URL, cfg pluginconfig.Config, identity outboundIdentity, body io.ReadCloser) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(ctx, start.Method, target.String(), body)
 	if err != nil {
 		return nil, err
@@ -663,25 +699,6 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 	}
 	if strings.TrimSpace(identity.token) != "" {
 		request.Header.Set("Authorization", "Bearer "+identity.token)
-	}
-	accountID := strings.TrimSpace(request.Header.Get("chatgpt-account-id"))
-	if accountID == "" {
-		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))
-	}
-	if accountID != "" {
-		request.Header.Set("chatgpt-account-id", accountID)
-		request.Header.Set("x-openai-account-id", accountID)
-	}
-	{
-		if request.Header.Get("Authorization") == "" || accountID == "" {
-			return nil, errors.New("Basis Points 上游需要 OAuth 授权和 ChatGPT 账号 ID")
-		}
-		request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
-	}
-	applyExcelClientProfile(request.Header)
-	ensureCodexIdentity(request.Header)
-	for key, value := range cfg.ExtraHeaders {
-		request.Header.Set(key, value)
 	}
 	if cfg.ProxyMode == "account" {
 		proxy := strings.TrimSpace(identity.proxy)
@@ -1037,9 +1054,18 @@ func basisPointsPathSuffix(path string) string {
 	return path
 }
 
+func isAlphaSearchPath(path string) bool {
+	switch path {
+	case "/alpha/search", "/v1/alpha/search", "/backend-api/codex/alpha/search":
+		return true
+	default:
+		return false
+	}
+}
+
 // resolveNativeTarget resolves the native Codex endpoint. When
 // NativeUpstreamBaseURL is set it becomes the base with the incoming
-// /responses path suffix appended; otherwise the host-supplied request URL is
+// /responses or /alpha/search path suffix appended; otherwise the host URL is
 // forwarded verbatim (scheme/host/path/query exactly as the host built it).
 func resolveNativeTarget(raw string, cfg pluginconfig.Config) (*url.URL, error) {
 	incoming, err := url.Parse(raw)
@@ -1055,6 +1081,9 @@ func resolveNativeTarget(raw string, cfg pluginconfig.Config) (*url.URL, error) 
 		return nil, errors.New("原生上游 Base URL 无效")
 	}
 	suffix := basisPointsPathSuffix(incoming.Path)
+	if isAlphaSearchPath(incoming.Path) {
+		suffix = "/alpha/search"
+	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
 	parsed.RawPath = ""
 	parsed.RawQuery = incoming.RawQuery
