@@ -28,7 +28,7 @@ async function mount(t, config = {}, statusDetails = {}) {
 test('loads defaults and round trips ticket configuration', async t => {
   const { window, field, calls } = await mount(t);
   assert.equal(field('enabled').checked, false);
-  assert.equal(field('target_length').value, '292');
+  assert.equal(field('target_length').value, '780');
   field('enabled').checked = true;
   field('target_length').value = '780';
   field('models').value = ' model-a\n\nmodel-b ';
@@ -56,5 +56,20 @@ test('renders bounded status summaries as text and never exposes state', async t
 
 test('shows explicit empty state when worker has no tickets', async t => {
   const { field } = await mount(t, {}, { accounts_total: 0, ready_tickets: 0, blocked_tickets: 0, tickets: [] });
-  assert.equal(field('tickets-detail').textContent, '暂无 ticket 摘要');
+  assert.equal(field('tickets-detail').textContent, '暂无有效 ticket 摘要');
+});
+
+test('renders ticket cards and recent harvest events without exposing state', async t => {
+  const secretState = 'gAAAAA_secret_state_should_not_render';
+  const { field } = await mount(t, {}, {
+    accounts_total: 1,
+    ready_tickets: 1,
+    tickets: [{ account_id: 7, model: 'gpt-6-astra', length: 780, ready: true, remaining_seconds: 120, state: secretState }],
+    events: [{ account_id: 7, model: 'gpt-6-astra', phase: 'harvest', result: 'ready', attempt: 1, state_bytes: 780, duration_ms: 123 }]
+  });
+  assert.match(field('tickets-detail').textContent, /账号 #7/);
+  assert.match(field('tickets-detail').textContent, /可用/);
+  assert.doesNotMatch(field('tickets-detail').textContent, /secret_state/);
+  assert.match(field('events-detail').textContent, /成功 · ticket 可用/);
+  assert.match(field('events-detail').textContent, /123 ms/);
 });

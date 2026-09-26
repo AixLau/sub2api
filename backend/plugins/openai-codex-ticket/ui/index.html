@@ -68,7 +68,12 @@
       <details class="diagnostics">
         <summary>Ticket 摘要</summary>
         <p>这里只显示长度、模型、出口、协议和剩余时间等摘要，绝不展示 ticket state、Cookie 或 OAuth 凭据。</p>
-        <pre id="tickets-detail">暂无 ticket 摘要</pre>
+        <div id="tickets-detail" class="ticket-grid">暂无有效 ticket 摘要</div>
+      </details>
+      <details class="diagnostics" open>
+        <summary>最近采票流水</summary>
+        <p>显示最近 200 条采票事件，包含阶段、结果、耗时和安全摘要；不会显示 ticket state 或凭据。</p>
+        <div id="events-detail" class="event-list">暂无采票流水</div>
       </details>
     </main>
     <script src="assets/bridge-v1.js"></script>

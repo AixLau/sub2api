@@ -23,7 +23,7 @@ import (
 
 const (
 	PluginID        = "local.sub2api.openai-codex-ticket"
-	PluginVersion   = "1.0.1"
+	PluginVersion   = "1.0.2"
 	Capability      = "openai.oauth.codex_ticket_hook.v1"
 	turnStateHeader = "x-codex-turn-state"
 )
@@ -50,6 +50,36 @@ type Plugin struct {
 	failures  atomic.Uint64
 	lastError atomic.Value
 	lastProbe atomic.Value
+	events    probeEventRing
+}
+
+type probeEventRing struct {
+	mu      sync.Mutex
+	entries []map[string]any
+}
+
+func (r *probeEventRing) add(event map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.entries) >= 200 {
+		copy(r.entries, r.entries[len(r.entries)-199:])
+		r.entries = r.entries[:199]
+	}
+	r.entries = append(r.entries, event)
+}
+
+func (r *probeEventRing) snapshot() []map[string]any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]map[string]any, 0, len(r.entries))
+	for _, entry := range r.entries {
+		copyEntry := make(map[string]any, len(entry))
+		for key, value := range entry {
+			copyEntry[key] = value
+		}
+		out = append(out, copyEntry)
+	}
+	return out
 }
 
 func New() *Plugin {
@@ -98,7 +128,11 @@ func (p *Plugin) status(r *Runtime) map[string]any {
 			blocked++
 		}
 	}
-	return map[string]any{"enabled": r.cfg.Enabled, "revision": r.rev, "host_kv": p.hostClient() != nil, "running": p.running.Load(), "probes": p.probes.Load(), "successes": p.successes.Load(), "failures": p.failures.Load(), "last_error": p.lastError.Load(), "last_probe": p.lastProbe.Load(), "accounts_total": len(tickets), "ready_tickets": ready, "blocked_tickets": blocked, "config": map[string]any{"target_length": r.cfg.TargetLength, "ttl_seconds": r.cfg.TTLSeconds, "refresh_before_seconds": r.cfg.RefreshBeforeSeconds, "models": r.cfg.Models, "transport": r.cfg.Transport, "target_gateway": r.cfg.TargetGateway, "fail_closed": r.cfg.FailClosed, "harvest_proxy_url": maskProxy(r.cfg.HarvestProxyURL)}, "tickets": tickets}
+	accountIDs := make(map[int64]struct{})
+	for _, item := range tickets {
+		accountIDs[item.AccountID] = struct{}{}
+	}
+	return map[string]any{"enabled": r.cfg.Enabled, "revision": r.rev, "host_kv": p.hostClient() != nil, "running": p.running.Load(), "probes": p.probes.Load(), "successes": p.successes.Load(), "failures": p.failures.Load(), "last_error": p.lastError.Load(), "last_probe": p.lastProbe.Load(), "accounts_total": len(accountIDs), "ready_tickets": ready, "blocked_tickets": blocked, "config": map[string]any{"target_length": r.cfg.TargetLength, "ttl_seconds": r.cfg.TTLSeconds, "refresh_before_seconds": r.cfg.RefreshBeforeSeconds, "models": r.cfg.Models, "transport": r.cfg.Transport, "target_gateway": r.cfg.TargetGateway, "fail_closed": r.cfg.FailClosed, "harvest_proxy_url": maskProxy(r.cfg.HarvestProxyURL)}, "tickets": tickets, "events": p.events.snapshot()}
 }
 func maskProxy(raw string) string {
 	if raw == "" || raw == "ip-pool" {
@@ -442,6 +476,23 @@ func (p *Plugin) worker(ctx context.Context) {
 		}
 	}
 }
+
+func (p *Plugin) recordProbeEvent(accountID int64, model, phase, result string, attempt int, started time.Time, extra map[string]any) {
+	event := map[string]any{
+		"time":        time.Now().UTC().Format(time.RFC3339Nano),
+		"account_id":  accountID,
+		"model":       model,
+		"phase":       phase,
+		"result":      result,
+		"attempt":     attempt,
+		"duration_ms": time.Since(started).Milliseconds(),
+	}
+	for key, value := range extra {
+		event[key] = value
+	}
+	p.events.add(event)
+}
+
 func (p *Plugin) probeRound(ctx context.Context) {
 	r := p.state.Load()
 	if r == nil || !r.cfg.Enabled {
@@ -457,6 +508,7 @@ func (p *Plugin) probeRound(ctx context.Context) {
 		return
 	}
 	count := 0
+	roundID := time.Now().UTC().Format("20060102T150405.000Z")
 	for _, a := range accs.Accounts {
 		if count >= r.cfg.MaxProbesPerRound {
 			return
@@ -474,6 +526,7 @@ func (p *Plugin) probeRound(ctx context.Context) {
 				return
 			}
 			now := time.Now()
+			attemptStarted := now
 			old, _ := r.store.Get(ctx, a.Id, model)
 			if old != nil {
 				if _, ok := old.Select(now, r.cfg.TargetLength, r.cfg.Transport, r.cfg.TargetGateway, r.cfg.CookieValidation, r.cfg.GatewayValidation); ok && !old.NeedsRefresh(now, time.Duration(r.cfg.RefreshBeforeSeconds)*time.Second) {
@@ -482,14 +535,20 @@ func (p *Plugin) probeRound(ctx context.Context) {
 			}
 			p.probes.Add(1)
 			count++
+			attempt := count
+			baseEvent := map[string]any{"round_id": roundID, "transport": r.cfg.Transport}
 			id, err := p.resolveIdentity(ctx, a.Id, meta)
 			if err != nil {
 				p.recordError(err)
+				baseEvent["error"] = sanitizeEventError(err.Error())
+				p.recordProbeEvent(a.Id, model, "harvest", "identity_unavailable", attempt, attemptStarted, baseEvent)
 				continue
 			}
 			t, err := r.harvester.Harvest(ctx, id, a.Id, model)
 			if err != nil {
 				p.recordError(err)
+				baseEvent["error"] = sanitizeEventError(err.Error())
+				p.recordProbeEvent(a.Id, model, "harvest", "harvest_failed", attempt, attemptStarted, baseEvent)
 				continue
 			}
 			// The host's outbound identity RPC deliberately withholds email. Bind
@@ -499,16 +558,33 @@ func (p *Plugin) probeRound(ctx context.Context) {
 			t.Identity = identity
 			if err := t.Validate(time.Now(), r.cfg.TargetLength, r.cfg.Transport, r.cfg.TargetGateway, r.cfg.CookieValidation, r.cfg.GatewayValidation); err != nil {
 				p.recordError(err)
+				baseEvent["error"] = sanitizeEventError(err.Error())
+				baseEvent["state_bytes"] = t.Length
+				p.recordProbeEvent(a.Id, model, "validate", "invalid_state", attempt, attemptStarted, baseEvent)
 				continue
 			}
 			if err := r.store.PutWithStandby(ctx, t, time.Duration(r.cfg.TTLSeconds)*time.Second, r.cfg.TargetLength, r.cfg.Transport, r.cfg.TargetGateway, r.cfg.CookieValidation, r.cfg.GatewayValidation); err != nil {
 				p.recordError(err)
+				baseEvent["error"] = sanitizeEventError(err.Error())
+				baseEvent["state_bytes"] = t.Length
+				p.recordProbeEvent(a.Id, model, "restore", "ticket_persistence_failed", attempt, attemptStarted, baseEvent)
 				continue
 			}
 			p.successes.Add(1)
 			p.lastProbe.Store(time.Now().UTC().Format(time.RFC3339))
+			baseEvent["state_bytes"] = t.Length
+			baseEvent["cookie_count"] = len(t.HarvestCookies)
+			p.recordProbeEvent(a.Id, model, "harvest", "ready", attempt, attemptStarted, baseEvent)
 		}
 	}
+}
+
+func sanitizeEventError(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) > 300 {
+		raw = raw[:300]
+	}
+	return raw
 }
 func (p *Plugin) resolveIdentity(ctx context.Context, id int64, meta map[string]any) (harvest.Identity, error) {
 	h := p.hostClient()

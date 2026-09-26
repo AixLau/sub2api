@@ -15,4 +15,18 @@ button.secondary { background: #e5e7eb; color: #1f2937; } button:disabled { opac
 #message { color: #2563eb; } .status { display: flex; gap: 12px; margin-top: 24px; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; }
 .diagnostics { margin-top: 16px; } .diagnostics summary { cursor: pointer; font-weight: 600; }
 pre { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; }
+.ticket-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.ticket-card { position: relative; padding: 13px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fafafa; }
+.ticket-card.ready { border-color: #86c79f; background: #f0fbf4; }
+.ticket-title { font-weight: 700; padding-right: 52px; overflow-wrap: anywhere; }
+.ticket-card .badge { position: absolute; top: 11px; right: 11px; }
+.ticket-meta { margin-top: 7px; color: #5f6368; font-size: 12px; overflow-wrap: anywhere; }
+.event-list { display: grid; gap: 7px; max-height: 430px; overflow: auto; }
+.event-row { display: grid; grid-template-columns: 92px minmax(130px, 1fr) 110px minmax(130px, 1fr) minmax(120px, 1.5fr); gap: 9px; align-items: start; padding: 9px 10px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+.event-time,.event-detail { color: #6b7280; overflow-wrap: anywhere; }
+.event-who,.event-phase { overflow-wrap: anywhere; }
+.event-result.ok { color: #19744a; font-weight: 650; }
+.event-result.error { color: #b42332; font-weight: 650; }
 @media (prefers-color-scheme: dark) { body { background: #111827; color: #f3f4f6; } input, select, textarea { border-color: #4b5563; background: #1f2937; } p, small { color: #9ca3af; } button.secondary { background: #374151; color: #f3f4f6; } .status, pre { border-color: #374151; } }
+@media (prefers-color-scheme: dark) { .ticket-card { background: #1f2937; border-color: #4b5563; } .ticket-card.ready { background: #173a2a; border-color: #2e5942; } .ticket-meta,.event-time,.event-detail { color: #9ca3af; } .event-row { border-color: #374151; } }
+@media (max-width: 760px) { .event-row { grid-template-columns: 1fr 1fr; } .event-detail { grid-column: 1 / -1; } }
