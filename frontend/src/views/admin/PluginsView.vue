@@ -457,7 +457,9 @@ function selectedAccountIDs(plugin: PluginInstallation | null): number[] {
   if (!plugin) return [];
   return (
     plugin.bindings.find(
-      (binding) => binding.capability === "openai.oauth.outbound_transport.v1",
+      (binding) =>
+        binding.capability === "openai.oauth.outbound_transport.v1" ||
+        binding.capability === "openai.oauth.codex_ticket_hook.v1",
     )?.account_ids || []
   );
 }

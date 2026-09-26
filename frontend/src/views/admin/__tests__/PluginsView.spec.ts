@@ -201,6 +201,29 @@ describe('管理员插件页二次验证', () => {
     }
   })
 
+  it('独立 Codex ticket 插件读取自身的账号绑定', async () => {
+    const ticketPlugin = {
+      ...plugin,
+      plugin_key: 'local.test.codex-ticket',
+      name: 'Codex Ticket Hook',
+      bindings: [{
+        ...plugin.bindings[0],
+        capability: 'openai.oauth.codex_ticket_hook.v1',
+        enabled: true,
+        account_ids: [17],
+      }],
+      state: 'enabled' as const,
+      runtime_healthy: true,
+    }
+    listPlugins.mockResolvedValue([ticketPlugin])
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find((item) => item.text().includes('admin.plugins.manageAccounts'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'PluginAccountScopeDialog' }).props('initialAccountIds')).toEqual([17])
+    wrapper.unmount()
+  })
+
   it('绑定保存失败保留账号选择窗口', async () => {
     listPlugins.mockResolvedValue([{
       ...plugin, state: 'enabled', runtime_healthy: true,
