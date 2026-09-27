@@ -40,7 +40,7 @@ class UsageWindowTests(unittest.IsolatedAsyncioTestCase):
     async def test_monitor_updates_usage_and_clears_missing_snapshot(self):
         client = FakeClient()
         client.reference["extra"]["codex_7d_used_percent"] = 38
-        manager = JobManager(client, store=FakeStore(), watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), poll_seconds=0.01)
         try:
             watched = await manager.watch_reference(285)
             job = manager.get_job(watched["id"])
@@ -87,7 +87,7 @@ class UsageWindowTests(unittest.IsolatedAsyncioTestCase):
         async def unavailable(account_id):
             raise AdminAPIError("private upstream error")
         client.get_usage = unavailable
-        manager = JobManager(client, store=FakeStore(), watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), poll_seconds=0.01)
         try:
             watched = await manager.watch_reference(285)
             job = manager.get_job(watched["id"])

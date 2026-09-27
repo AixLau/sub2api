@@ -42,8 +42,8 @@ async def _bundle(file: UploadFile) -> dict:
     return parse_bundle(raw)
 
 
-def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, watch_seconds=1200, poll_seconds=30) -> FastAPI:
-    manager = JobManager(client, store=store, login=login, watch_seconds=watch_seconds, poll_seconds=poll_seconds)
+def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, poll_seconds=30) -> FastAPI:
+    manager = JobManager(client, store=store, login=login, poll_seconds=poll_seconds)
     csrf_token = secrets.token_urlsafe(32)
 
     @asynccontextmanager
@@ -116,6 +116,16 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
             "default_profile_account_id": default_account["id"] if default_account else None,
             "default_profile_account_name": DEFAULT_REFERENCE_ACCOUNT,
         }
+
+    @app.get("/api/reference/{account_id}/models")
+    async def reference_models(account_id: int):
+        try:
+            profile = await manager.profile_for_account(account_id)
+            return {"account_id": account_id, **profile["credentials"]}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except AdminAPIError:
+            raise HTTPException(status_code=502, detail="无法读取参考账号的模型限制") from None
 
     @app.get("/api/jobs")
     async def jobs():
@@ -194,7 +204,7 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与 20 分钟监控服务")
+    parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与持续监控服务")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)

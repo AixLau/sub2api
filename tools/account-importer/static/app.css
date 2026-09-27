@@ -52,11 +52,11 @@ h1 { font-size: 26px; line-height: 1.25; font-weight: 700; }
 h2 { font-size: 17px; }
 .section-heading p { margin-top: 6px; color: #7c8980; font-size: 11px; }
 .table-wrap { width: 100%; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 690px; text-align: left; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; min-width: 1080px; text-align: left; font-size: 12px; }
 th { color: #718076; font-size: 11px; font-weight: 650; background: #f8faf8; border-top: 1px solid #e8eee9; border-bottom: 1px solid #e8eee9; padding: 12px 26px; white-space: nowrap; }
 td { padding: 16px 26px; border-bottom: 1px solid #edf0ed; vertical-align: top; color: #4c5f54; }
 tr:last-child td { border-bottom: 0; }
-td.identity { color: #182d23; font-weight: 600; overflow-wrap: anywhere; max-width: 270px; }
+td.identity { min-width: 190px; color: #182d23; font-weight: 600; overflow-wrap: anywhere; max-width: 270px; }
 td small { display: block; font-size: 11px; color: #7b8980; margin-top: 5px; font-weight: 400; line-height: 1.4; }
 td.empty { text-align: center; padding: 32px; color: #87958a; }
 .usage-window { min-width: 215px; font-variant-numeric: tabular-nums; }
@@ -78,3 +78,9 @@ td.empty { text-align: center; padding: 32px; color: #87958a; }
 #authorization-account { overflow-wrap: anywhere; color: #65786d; margin: 12px 0 24px; }
 #authorization-dialog input { box-sizing: border-box; width: 100%; }
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+
+#reference-models details small, .account-models details small { display: block; overflow-wrap: anywhere; }
+#reference-models summary, .account-models summary { cursor: pointer; }
+.account-models { margin-top: 6px; font-size: 12px; font-weight: 400; }
+
+.section-heading .secondary { flex-shrink: 0; white-space: nowrap; }

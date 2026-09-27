@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
-from fake_store import FakeStore
+from fake_store import FakeStore, wait_for_operation
 from job_manager import JobManager, _account_profile
 from proxy_pool import select_5x_proxy
 from sub2api_client import Sub2APIClient
@@ -59,7 +59,7 @@ class ImportDefaultTests(unittest.IsolatedAsyncioTestCase):
                                 public = (await manager.import_file(document, profile_account_id=285))[0]
                             else:
                                 public = await manager.import_credentials(LINE, profile_account_id=285)
-                                await manager.get_job(public["id"]).task
+                                await wait_for_operation(manager.get_job(public["id"]))
                         job = manager.get_job(public["id"])
                         self.assertEqual(job.state, "monitoring")
                         saved = client.records["account@example.com"]
@@ -129,7 +129,7 @@ class ImportDefaultTests(unittest.IsolatedAsyncioTestCase):
                     await manager.import_file(bundle())
                 else:
                     public = await manager.import_credentials(LINE)
-                    await manager.get_job(public["id"]).task
+                    await wait_for_operation(manager.get_job(public["id"]))
                 record = client.records["account@example.com"]
                 self.assertEqual(record["status"], "active")
                 self.assertIs(record["schedulable"], True)

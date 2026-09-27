@@ -12,3 +12,10 @@ class FakeStore:
         return deepcopy(list(self.records.values()))
     async def close(self):
         pass
+
+
+async def wait_for_operation(job):
+    import asyncio
+    async with asyncio.timeout(3):
+        while job.state in {"importing", "reauthorizing"} or job.manual_pending:
+            await asyncio.sleep(0.005)

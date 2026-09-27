@@ -1,4 +1,4 @@
-from fake_store import FakeStore
+from fake_store import FakeStore, wait_for_operation
 import asyncio
 import json
 import re
@@ -23,7 +23,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         def login(line, fmt, **kwargs):
             self.lines.append(line)
             return bundle(token="manual-access")
-        self.manager = JobManager(self.client, store=FakeStore(), login=login, watch_seconds=10, poll_seconds=1)
+        self.manager = JobManager(self.client, store=FakeStore(), login=login, poll_seconds=1)
 
     async def asyncTearDown(self):
         await self.manager.close()
@@ -39,7 +39,6 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         job.attempts = 3
         job.next_relogin = _now() + timedelta(hours=1)
-        old_deadline = job.deadline
         result = await self.manager.reauthorize_credentials(job.id)
         self.assertEqual(result["state"], "reauthorizing")
         task = job.task
@@ -49,22 +48,20 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.lines, [LINE])
         self.assertEqual(self.client.applied, [(1, "manual-access")])
         self.assertEqual(job.attempts, 0)
-        self.assertGreater(job.deadline, old_deadline)
+        self.assertTrue(job.public()["monitoring_enabled"])
         self.assertEqual(job.credential_line, LINE)
         self.assertEqual(job.state, "monitoring")
         self.assertEqual(len(self.client.records), 1)
         self.assertNotIn("test-password", json.dumps(self.manager.list_jobs()))
 
-    async def test_monitoring_end_keeps_original_credentials_for_one_click(self):
+    async def test_continuous_monitor_keeps_original_credentials_for_one_click(self):
         job = self.job(credential_line=LINE)
-        self.manager.watch_seconds = 0
         await self.manager._start_watch(job)
-        await job.task
-        self.assertEqual(job.state, "completed")
+        await asyncio.sleep(0.01)
+        self.assertFalse(job.task.done())
         self.assertEqual(job.credential_line, LINE)
-        self.manager.watch_seconds = 10
         await self.manager.reauthorize_credentials(job.id)
-        await job.task
+        await wait_for_operation(job)
         self.assertEqual(self.lines, [LINE])
         self.assertEqual(job.state, "monitoring")
 
@@ -92,8 +89,9 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("test-password must never be returned")
         self.manager.login = fail
         await self.manager.reauthorize_credentials(job.id)
-        await job.task
-        self.assertEqual(job.state, "invalid")
+        await wait_for_operation(job)
+        self.assertEqual(job.state, "monitoring")
+        self.assertFalse(job.task.done())
         self.assertEqual(job.credential_line, LINE)
         self.assertFalse(job.manual_pending)
         self.assertNotIn("test-password", json.dumps(job.public()))
@@ -120,13 +118,14 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("secret-rt")
         self.client.refresh_oauth = fail
         await self.manager.reauthorize_rt(job.id, "secret-rt")
-        await job.task
-        self.assertEqual(job.state, "invalid")
+        await wait_for_operation(job)
+        self.assertEqual(job.state, "monitoring")
+        self.assertFalse(job.task.done())
         self.assertNotIn("secret-rt", job.message)
         self.assertFalse(job.manual_pending)
 
     async def test_api_csrf_validation_and_async_credentials(self):
-        app = create_app(self.client, store=FakeStore(), login=self.manager.login, watch_seconds=10)
+        app = create_app(self.client, store=FakeStore(), login=self.manager.login)
         job = self.job(credential_line=LINE)
         app.state.manager.jobs[job.id] = job
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost") as http:
@@ -141,7 +140,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("test-password", response.text)
             rt_path = f"/api/jobs/{job.id}/reauthorize/refresh-token"
             self.assertEqual((await http.post(rt_path, json={"refresh_token": "secret"})).status_code, 403)
-        await job.task
+        await wait_for_operation(job)
         self.assertEqual(self.lines, [LINE])
         await app.state.manager.close()
 
@@ -170,7 +169,8 @@ class RefreshClientTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(writes, [])
             else:
                 await client.refresh_oauth(1, "submitted-rt")
-                self.assertEqual(writes[0]["credentials"]["model_mapping"], {"x": "y"})
+                self.assertNotIn("model_mapping", writes[0]["credentials"])
+                self.assertEqual(remote["credentials"]["model_mapping"], {"x": "y"})
                 self.assertEqual(writes[0]["extra"], {"setting": True})
             return writes
         finally:

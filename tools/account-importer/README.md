@@ -91,11 +91,10 @@ A missing/wrong key or unavailable Redis fails startup rather than silently
 falling back to memory or replacing saved records. For authenticated Redis,
 mount its password as a secret and set ACCOUNT_IMPORT_REDIS_PASSWORD_FILE.
 
-Import data is saved before account login starts. Restart resumes monitoring only
-within the original deadline; interrupted imports/authorizations require an
-explicit one-click retry using the stored first-import credentials. Expired
-monitoring windows still retain those credentials. Older memory-only deployments
-cannot recover data already lost before this version was installed.
+Import data is saved before account login starts. Restart resumes continuous
+monitoring, including previously completed monitoring jobs. Interrupted imports
+without an account ID require an explicit one-click retry using the stored
+first-import credentials.
 
 ## HTTPS and source IP restriction
 
@@ -149,7 +148,26 @@ local test Redis port to run the real DB 0/DB 1 isolation check.
 
 ### 手动重新授权
 
-- 账号资料导入：任务「操作」列提供「手动重新授权」。可在 401 后主动触发；直接使用首次导入的「邮箱----密码----2FA 密钥」，不再要求二次输入；监控结束后仍可一键重试。手动授权不受自动重试 3 次或冷却时间限制。
+- 账号资料导入：任务「操作」列提供「手动重新授权」。可在 401 后主动触发；直接使用首次导入的「邮箱----密码----2FA 密钥」，不再要求二次输入；持续监控期间仍可一键重试。手动授权不受自动重试 3 次或冷却时间限制。
 - JSON 导入：可填写当前账号的 RT，服务经 Sub2API 刷新接口换取授权并校验账号身份后写回；也可重新上传只包含同名账号的 JSON。无法核实身份或身份不匹配时不会写入。
-- 授权成功后重新开始 20 分钟监控，保留账号 ID、分组和插件绑定。正在授权时不接受重复操作；已被新导入任务接管的旧任务不可操作。
+- 授权后继续持续监控，保留账号 ID、分组和插件绑定。正在授权时不接受重复操作；已被新导入任务接管的旧任务不可操作。
 - 手动提交均要求 CSRF 校验。密码、2FA 和 RT 不在任务列表中返回。账号资料与任务加密保存在单独的 Redis 数据库，服务重启后自动恢复，无需再次输入首次导入资料。RT 输入框在提交或关闭时清空。
+
+## Continuous monitoring and model restrictions
+
+Account state is polled every 30 seconds with no time limit, including JSON
+accounts with authorization errors. Credential imports use their encrypted original
+email/password/TOTP for automatic authorization on any remote account error or
+invalid credentials. Each incident permits one initial authorization and up to
+three retries, 60 seconds apart. After exhaustion the watcher keeps polling and
+manual authorization remains available. A confirmed healthy status resets the
+budget for a future incident. Restarts preserve the retry count and retry time.
+Deleted accounts stop monitoring; superseded jobs remain retired. Manual
+reauthorization failure does not stop monitoring.
+
+Model restrictions are required on the selected reference account, shown before
+import, applied through the administrator account settings API, and read back for
+verification. Reimporting with a reference also applies its model restrictions.
+Authorization-only operations preserve existing model restrictions instead of
+accepting model overrides from token files. The monitor shows the actual stored
+model restrictions, not only the requested configuration.

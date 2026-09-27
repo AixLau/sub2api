@@ -61,7 +61,7 @@ class ReferenceDefaultsTests(unittest.IsolatedAsyncioTestCase):
                     chatgpt_account_id="new-account-id",
                     model_mapping={"uploaded-model": "uploaded-model"},
                 )
-                manager = JobManager(client, store=FakeStore(), login=lambda *args, **kwargs: document, watch_seconds=2, poll_seconds=0.01)
+                manager = JobManager(client, store=FakeStore(), login=lambda *args, **kwargs: document, poll_seconds=0.01)
                 try:
                     if mode == "file":
                         jobs = await manager.import_file(document, profile_account_id=285)
@@ -103,14 +103,12 @@ class ReferenceDefaultsTests(unittest.IsolatedAsyncioTestCase):
         profile["credentials"]["model_mapping"]["gpt-5.5"] = "profile-change"
         self.assertEqual(client.reference["credentials"]["model_mapping"]["gpt-5.5"], "gpt-5.5")
 
-    def test_unset_reference_models_clear_uploaded_model_overrides(self):
-        profile = _account_profile(FakeClient().reference)
-        account = bundle()["accounts"][0]
-        account["credentials"].update(model_mapping={"x": "y"}, compact_model_mapping={"a": "b"})
-        prepared = _prepared_new_account(account, profile, profile["group_ids"])
-        self.assertNotIn("model_mapping", prepared["credentials"])
-        self.assertNotIn("compact_model_mapping", prepared["credentials"])
-        self.assertEqual(prepared["credentials"]["access_token"], "token-one")
+    def test_unset_reference_models_reject_import(self):
+        client = FakeClient()
+        client.reference['credentials'] = {}
+        profile = _account_profile(client.reference)
+        with self.assertRaisesRegex(ValueError, '未设置模型限制'):
+            _prepared_new_account(bundle()['accounts'][0], profile, profile['group_ids'])
 
 
 if __name__ == "__main__":

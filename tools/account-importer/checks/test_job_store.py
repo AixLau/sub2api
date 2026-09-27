@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError
 
-from fake_store import FakeStore
+from fake_store import FakeStore, wait_for_operation
 from job_manager import Job, JobManager, _now
 from job_store import KEY, RedisJobStore, StorageError
 from test_web_service import FakeClient, bundle
@@ -68,7 +68,7 @@ class JobStoreChecks(unittest.IsolatedAsyncioTestCase):
             return bundle(token='restart-access')
         first = JobManager(client, store=store, login=login)
         job = Job(name='account@example.com', mode='credentials', group_ids=[2], account_id=1,
-                  state='completed', credential_line=LINE, deadline=_now()-timedelta(seconds=1))
+                  state='completed', credential_line=LINE)
         first.jobs[job.id] = job
         await first.close()
         self.assertIsNone(job.credential_line)
@@ -78,7 +78,7 @@ class JobStoreChecks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored.credential_line, LINE)
         self.assertNotIn('original-password', json.dumps(second.list_jobs()))
         await second.reauthorize_credentials(job.id)
-        await restored.task
+        await wait_for_operation(restored)
         self.assertEqual(calls, [LINE])
         self.assertEqual(client.applied, [(1, 'restart-access')])
         await second.close()
@@ -92,20 +92,22 @@ class JobStoreChecks(unittest.IsolatedAsyncioTestCase):
         restored = manager.get_job(job.id)
         self.assertEqual(restored.state, 'attention')
         await manager.reauthorize_credentials(job.id)
-        await restored.task
+        await wait_for_operation(restored)
         self.assertEqual(restored.account_id, 1)
         self.assertFalse(restored.manual_pending)
         await manager.close()
 
-    async def test_existing_monitor_deadline_is_not_extended_on_restart(self):
+    async def test_completed_monitor_resumes_without_deadline_after_restart(self):
         store, client = FakeStore(), FakeClient()
         await client.import_data(bundle())
-        deadline = _now()+timedelta(seconds=300)
-        job = Job(name='account@example.com', mode='file', group_ids=[2], account_id=1, state='monitoring', deadline=deadline)
-        await store.save(job.stored())
+        job = Job(name='account@example.com', mode='file', group_ids=[2], account_id=1, state='completed')
+        record = job.stored()
+        record['deadline'] = (_now()-timedelta(seconds=300)).isoformat()
+        await store.save(record)
         manager = JobManager(client, store=store)
         await manager.start()
-        self.assertEqual(manager.get_job(job.id).deadline, deadline)
+        self.assertTrue(manager.get_job(job.id).public()['monitoring_enabled'])
+        self.assertNotIn('deadline', manager.get_job(job.id).stored())
         self.assertIsNotNone(manager.get_job(job.id).task)
         await manager.close()
 

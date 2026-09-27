@@ -1,7 +1,7 @@
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const feedback = document.getElementById('feedback');
 const tableBody = document.getElementById('jobs-body');
-const labels = { importing: '导入中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '监控结束' };
+const labels = { importing: '导入中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '已结束', removed: '账号已删除' };
 let reauthJob = null;
 
 function setFeedback(message, error = false) {
@@ -35,6 +35,58 @@ document.getElementById('show-account').addEventListener('change', event => {
   document.getElementById('account-line').type = event.target.checked ? 'text' : 'password';
 });
 
+let referenceModelsReady = false;
+let referenceModelsAccount = '';
+let referenceModelsRequest = 0;
+
+function addModelDetails(container, settings) {
+  const mapping = settings?.model_mapping || {};
+  const entries = Object.entries(mapping);
+  if (!entries.length) {
+    container.textContent = '未设置模型限制';
+    return;
+  }
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = '已限制 ' + entries.length + ' 个模型/规则';
+  details.append(summary);
+  for (const [source, target] of entries) {
+    const item = document.createElement('small');
+    item.textContent = source === target ? source : source + ' → ' + target;
+    details.append(item);
+  }
+  container.append(details);
+}
+
+async function loadReferenceModels() {
+  const account = document.getElementById('reference-account').value;
+  const version = ++referenceModelsRequest;
+  const container = document.getElementById('reference-models');
+  referenceModelsReady = false;
+  referenceModelsAccount = '';
+  container.textContent = account ? '正在读取模型限制…' : '请先选择参照账号';
+  if (!account) return false;
+  try {
+    const settings = await request('api/reference/' + encodeURIComponent(account) + '/models');
+    if (version !== referenceModelsRequest) return false;
+    container.replaceChildren();
+    addModelDetails(container, settings);
+    referenceModelsReady = true;
+    referenceModelsAccount = account;
+    return true;
+  } catch (error) {
+    if (version === referenceModelsRequest) container.textContent = error.message;
+    return false;
+  }
+}
+
+async function requireReferenceModels() {
+  if (referenceModelsReady && referenceModelsAccount === document.getElementById('reference-account').value) return true;
+  if (await loadReferenceModels()) return true;
+  setFeedback('请先选择已设置模型限制的参照账号。', true);
+  return false;
+}
+
 async function loadConfig() {
   try {
     const config = await request('api/config');
@@ -49,6 +101,7 @@ async function loadConfig() {
     }
     if (config.default_profile_account_id != null) {
       reference.value = String(config.default_profile_account_id);
+      await loadReferenceModels();
       document.getElementById('file-group').options[0].textContent = '使用所选参照账号设置';
       document.getElementById('account-group').options[0].textContent = '使用所选参照账号设置';
       await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(reference.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
@@ -74,6 +127,7 @@ async function loadConfig() {
 }
 
 document.getElementById('reference-account').addEventListener('change', async event => {
+  await loadReferenceModels();
   if (!event.target.value) return;
   try {
     await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(event.target.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
@@ -186,6 +240,11 @@ async function loadJobs() {
         id.textContent = 'Sub2API #' + job.account_id;
         identity.append(id);
       }
+      const models = document.createElement('div');
+      models.className = 'account-models';
+      if (job.model_restrictions == null) models.textContent = '模型限制：等待查询';
+      else addModelDetails(models, job.model_restrictions);
+      identity.append(models);
       const state = row.insertCell();
       const badge = document.createElement('span');
       badge.className = 'badge ' + job.state;
@@ -210,9 +269,14 @@ async function loadJobs() {
       }
       addSevenDayUsage(row, job.seven_day_usage);
       addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
-      addCell(row, job.watch_until ? new Date(job.watch_until).toLocaleString('zh-CN') : '—');
+      const monitor = addCell(row, job.monitoring_enabled ? '持续监控' : job.retired ? '已由新任务接管' : job.state === 'removed' ? '已停止' : '等待导入');
+      if (job.last_checked_at) {
+        const checked = document.createElement('small');
+        checked.textContent = '上次检查 ' + new Date(job.last_checked_at).toLocaleString('zh-CN');
+        monitor.append(checked);
+      }
       const action = row.insertCell();
-      if (!job.retired && ((job.mode === 'file' && job.account_id) || (job.mode === 'credentials' && job.has_saved_credentials))) {
+      if (!job.retired && job.state !== 'removed' && ((job.mode === 'file' && job.account_id) || (job.mode === 'credentials' && job.has_saved_credentials))) {
         action.className = 'job-actions';
         const busy = ['importing', 'reauthorizing'].includes(job.state);
         const button = document.createElement('button');
@@ -243,21 +307,9 @@ async function loadJobs() {
           action.append(upload);
         } else if (job.attempts) {
           const attempts = document.createElement('small');
-          attempts.textContent = '自动重试 ' + job.attempts + '/3 次';
+          attempts.textContent = '本轮自动授权 ' + job.attempts + '/' + job.max_authorization_attempts + ' 次（含首次）';
           action.append(attempts);
         }
-      } else if (job.mode === 'reference' && ['completed', 'attention'].includes(job.state)) {
-        const button = document.createElement('button');
-        button.className = 'text-button';
-        button.type = 'button';
-        button.textContent = '重新监控';
-        button.addEventListener('click', async () => {
-          try {
-            await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(job.account_id), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
-            await loadJobs();
-          } catch (error) { setFeedback(error.message, true); }
-        });
-        action.append(button);
       } else {
         action.textContent = '—';
       }
@@ -269,8 +321,9 @@ async function loadJobs() {
 
 document.getElementById('panel-file').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!document.getElementById('reference-account').reportValidity()) return;
   const form = event.currentTarget;
+  if (!document.getElementById('reference-account').reportValidity()) return;
+  if (!await requireReferenceModels()) return;
   const button = form.querySelector('button[type=submit]');
   button.disabled = true;
   setFeedback('正在导入 JSON 文件…');
@@ -293,8 +346,9 @@ document.getElementById('panel-file').addEventListener('submit', async event => 
 
 document.getElementById('panel-account').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!document.getElementById('reference-account').reportValidity()) return;
   const form = event.currentTarget;
+  if (!document.getElementById('reference-account').reportValidity()) return;
+  if (!await requireReferenceModels()) return;
   const button = form.querySelector('button[type=submit]');
   const line = document.getElementById('account-line').value;
   const group = document.getElementById('account-group').value;
@@ -318,7 +372,7 @@ document.getElementById('reauth-json').addEventListener('change', async event =>
   setFeedback('正在应用新的授权文件…');
   try {
     await request('api/jobs/' + encodeURIComponent(reauthJob) + '/reauthorize', submitOptions(data));
-    setFeedback('已提交新授权，监控窗口重新开始。');
+    setFeedback('已提交新授权，继续持续监控。');
     await loadJobs();
   } catch (error) { setFeedback(error.message, true); }
   finally { event.target.value = ''; reauthJob = null; }
@@ -360,7 +414,7 @@ authorizationForm.addEventListener('submit', async event => {
       method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     authorizationDialog.close();
-    setFeedback('手动授权任务已提交，成功后重新监控 20 分钟。');
+    setFeedback('手动授权任务已提交，账号将继续持续监控。');
     await loadJobs();
   } catch (error) {
     if (authorizationDialog.open && authorizationJob?.id === job.id) authorizationError.textContent = error.message;

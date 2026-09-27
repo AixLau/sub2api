@@ -8,9 +8,13 @@ from urllib.parse import urlparse
 
 import httpx
 
+from model_restrictions import MODEL_SETTING_KEYS, model_settings
+
 
 class AdminAPIError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 PLUGIN_CAPABILITIES = {
@@ -89,7 +93,7 @@ class Sub2APIClient:
             raise AdminAPIError("管理员接口响应结构无效")
         if response.status_code >= 400 or body.get("code") not in (None, 0):
             code = body.get("code")
-            raise AdminAPIError(f"管理员接口失败：HTTP {response.status_code}，代码 {code}")
+            raise AdminAPIError(f"管理员接口失败：HTTP {response.status_code}，代码 {code}", status_code=response.status_code)
         return body.get("data")
 
     async def find_account(self, name: str) -> dict | None:
@@ -166,6 +170,19 @@ class Sub2APIClient:
     async def set_schedulable(self, account_id: int, schedulable: bool) -> None:
         await self._request("POST", f"accounts/{account_id}/schedulable", payload={"schedulable": schedulable})
 
+    async def set_model_restrictions(self, account_id: int, settings: dict) -> None:
+        expected = model_settings(settings)
+        remote = await self.get_account(account_id)
+        credentials = dict(remote.get("credentials") or {})
+        if model_settings(credentials, required=False) != expected:
+            for key in MODEL_SETTING_KEYS:
+                credentials.pop(key, None)
+            credentials.update(expected)
+            await self.update_settings(account_id, {"credentials": credentials})
+            remote = await self.get_account(account_id)
+        if model_settings(remote.get("credentials"), required=False) != expected:
+            raise AdminAPIError("模型限制保存后校验失败，请在 Sub2API 核查")
+
     async def apply_oauth(self, account_id: int, account: dict) -> None:
         credentials = account.get("credentials")
         if not isinstance(credentials, dict) or not all(
@@ -177,7 +194,7 @@ class Sub2APIClient:
             "POST", f"accounts/{account_id}/apply-oauth-credentials",
             payload={
                 "type": "oauth",
-                "credentials": credentials,
+                "credentials": {key: value for key, value in credentials.items() if key not in MODEL_SETTING_KEYS},
                 "extra": account.get("extra") or {},
             },
         )
