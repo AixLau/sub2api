@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from default_profile import DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME
 from import_payload import MAX_UPLOAD_BYTES, parse_bundle
 from job_store import JobStore, RedisJobStore, StorageError
 from job_manager import JobManager
@@ -23,7 +24,6 @@ from local_relogin import DEFAULT_SOURCE_DIR, relogin_payload
 from sub2api_client import AdminAPIError, Sub2APIClient
 
 STATIC = Path(__file__).resolve().parent / "static"
-DEFAULT_REFERENCE_ACCOUNT = "laurarobertsl186@gmail.com"
 
 
 class AccountInput(BaseModel):
@@ -107,20 +107,15 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
             accounts = await manager.profile_accounts()
         except AdminAPIError:
             accounts = []
-        default_account = next(
-            (account for account in accounts if str(account.get("name", "")).strip().casefold() == DEFAULT_REFERENCE_ACCOUNT),
-            None,
-        )
         return {
             "base_url": client.base_url, "groups": groups, "accounts": accounts,
-            "default_profile_account_id": default_account["id"] if default_account else None,
-            "default_profile_account_name": DEFAULT_REFERENCE_ACCOUNT,
+            "default_profile": {"id": DEFAULT_PROFILE_ID, "name": DEFAULT_PROFILE_NAME},
         }
 
     @app.get("/api/reference/{account_id}/models")
     async def reference_models(account_id: int):
         try:
-            profile = await manager.profile_for_account(account_id)
+            profile = await manager.import_profile(account_id)
             return {"account_id": account_id, **profile["credentials"]}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
@@ -151,7 +146,7 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
     @app.post("/api/import/file", status_code=202)
     async def import_file(
         file: UploadFile = File(...), group_id: int | None = Form(None),
-        profile_account_id: int | None = Form(None),
+        profile_account_id: int | None = Form(DEFAULT_PROFILE_ID),
         plugin_id: int | None = Form(None),
         x_csrf_token: str | None = Header(None),
     ):
@@ -167,7 +162,7 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
             raise HTTPException(status_code=502, detail="Sub2API 管理员接口不可用") from None
 
     @app.post("/api/import/account", status_code=202)
-    async def import_account(body: AccountInput, profile_account_id: int | None = None, x_csrf_token: str | None = Header(None)):
+    async def import_account(body: AccountInput, profile_account_id: int | None = DEFAULT_PROFILE_ID, x_csrf_token: str | None = Header(None)):
         require_csrf(x_csrf_token)
         try:
             return await manager.import_credentials(body.account_line, body.group_ids, profile_account_id, body.plugin_id)

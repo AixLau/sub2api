@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from default_profile import DEFAULT_PROFILE_ID, default_import_profile
 from job_store import JobStore, StorageError
 from import_payload import validate_bundle
 from local_relogin import parse_account_line, relogin_payload
@@ -271,7 +272,11 @@ class JobManager:
     async def profile_accounts(self) -> list[dict]:
         return await self.client.list_openai_oauth_accounts()
 
-    async def profile_for_account(self, account_id: int) -> dict:
+    async def import_profile(self, account_id: int | None) -> dict:
+        if account_id is None or account_id == DEFAULT_PROFILE_ID:
+            return default_import_profile()
+        if account_id < 0:
+            raise ValueError("导入配置选项无效")
         profile = _account_profile(await self.client.get_profile_account(account_id))
         profile["credentials"] = model_settings(profile["credentials"])
         return profile
@@ -289,16 +294,14 @@ class JobManager:
         await self._start_watch(job)
         return job.public()
 
-    async def import_file(self, payload: dict, override_group_ids: list[int] | None = None, profile_account_id: int | None = None, plugin_id: int | None = None) -> list[dict]:
+    async def import_file(self, payload: dict, override_group_ids: list[int] | None = None, profile_account_id: int | None = DEFAULT_PROFILE_ID, plugin_id: int | None = None) -> list[dict]:
         validate_bundle(payload)
         accounts = payload["accounts"]
         async with self._import_lock:
             plugin = await self.client.get_enabled_plugin(plugin_id) if plugin_id is not None else None
             existing = [await self.client.find_account(account["name"]) for account in accounts]
-            if profile_account_id is None and any(remote is None for remote in existing):
-                raise ValueError("请先在页面选择参照账号")
-            profile = await self.profile_for_account(profile_account_id) if profile_account_id is not None else None
-            models = [profile["credentials"] if profile else model_settings(remote.get("credentials")) for remote in existing]
+            profile = await self.import_profile(profile_account_id)
+            models = [profile["credentials"] for _ in accounts]
             proxy_pool = await self.client.list_active_proxies()
             choices = [select_5x_proxy(proxy_pool) for _ in accounts]
             groups = [
@@ -412,10 +415,9 @@ class JobManager:
         await self.client.update_settings(job.account_id, {**profile["settings"], "group_ids": job.group_ids, **_proxy_settings(job.proxy_id), "status": "active"})
         await self.client.set_schedulable(job.account_id, True)
 
-    async def import_credentials(self, account_line: str, group_ids: list[int] | None = None, profile_account_id: int | None = None, plugin_id: int | None = None) -> dict:
+    async def import_credentials(self, account_line: str, group_ids: list[int] | None = None, profile_account_id: int | None = DEFAULT_PROFILE_ID, plugin_id: int | None = None) -> dict:
         email, _, _ = parse_account_line(account_line)
-        if profile_account_id is not None:
-            await self.profile_for_account(profile_account_id)
+        await self.import_profile(profile_account_id)
         if group_ids and any(isinstance(i, bool) or not isinstance(i, int) or i <= 0 for i in group_ids):
             raise ValueError("请选择有效分组")
         plugin = await self.client.get_enabled_plugin(plugin_id) if plugin_id is not None else None
@@ -439,10 +441,8 @@ class JobManager:
         try:
             async with self._import_lock:
                 remote = await self.client.find_account(job.name)
-                if remote is None and profile_account_id is None:
-                    raise ValueError("请先在页面选择参照账号")
-                profile = await self.profile_for_account(profile_account_id) if profile_account_id is not None else None
-                restrictions = profile["credentials"] if profile else model_settings(remote.get("credentials"))
+                profile = await self.import_profile(profile_account_id)
+                restrictions = profile["credentials"]
                 if not job.group_ids:
                     job.group_ids = list((remote.get("group_ids") or []) if remote else profile["group_ids"])
                 async with self._login_lock:

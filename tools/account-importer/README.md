@@ -6,11 +6,15 @@ successfully imported accounts to a selected, already enabled plugin, preserving
 its current account scope. Failed plugin updates remain visible separately from
 account import status. Existing accounts are reauthorized without duplication.
 
-The tool reads reference accounts, groups, usable 5x proxies, and enabled
-plugins from Sub2API. The default reference account is
-laurarobertsl186@gmail.com, matched by account name independently of list order.
-If unavailable, the page requires an explicit reference selection. New accounts
-inherit the selected reference's current model mappings (including compact model
+The tool reads optional reference accounts, groups, usable 5x proxies, and enabled
+plugins from Sub2API. The first, preselected option is 默认 (built-in profile ID 0).
+Its non-secret configuration is hardcoded in default_profile.py from
+erincpvdb125@gmail.com as captured on 2026-09-27; runtime imports never look up
+that account by name or ID. Deleting or changing the source account does not
+affect this preset. It contains 7 groups, 9 model rules, concurrency 30,
+priority 1, rate multiplier 1, load factor 1000, and the captured billing flags.
+Choosing another account explicitly uses that account's current configuration.
+New accounts inherit the selected profile's model mappings (including compact model
 mappings), concurrency, priority, groups, rate multiplier, load factor,
 and supported billing settings on import. Uploaded OAuth tokens and identity stay
 with the imported account. An explicit group selection overrides inherited groups;
@@ -168,7 +172,7 @@ budget for a future incident. Restarts preserve the retry count and retry time.
 Deleted accounts stop monitoring; superseded jobs remain retired. Manual
 reauthorization failure does not stop monitoring.
 
-Model restrictions are required on the selected reference account, shown before
+Model restrictions are built into 默认 and required on any selected reference account, shown before
 import, applied through the administrator account settings API, and read back for
 verification. Reimporting with a reference also applies its model restrictions.
 Authorization-only operations preserve existing model restrictions instead of

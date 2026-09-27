@@ -21,8 +21,8 @@
       <div class="window-note"><span>监控方式</span><strong>持续监控</strong></div>
     </section>
     <section class="import-section" aria-label="导入方式">
-      <div class="field reference-field"><label for="reference-account">默认配置参照账号</label><select id="reference-account" required><option value="">正在读取 OpenAI OAuth 账号…</option></select><small>复制参考账号的分组及配置；导入账号默认启用，从全部可用的 5x 代理中随机选择，没有可用 5x 代理时直连；不继承参考账号的状态和代理</small></div>
-      <div class="field reference-field"><label>模型限制（随参照账号复制）</label><div id="reference-models" aria-live="polite">请先选择参照账号</div><small>导入后写入并校验模型限制；参照账号未设置限制时，需要先在 Sub2API 配置。</small></div>
+      <div class="field reference-field"><label for="reference-account">导入配置</label><select id="reference-account" required><option value="0" selected>默认</option></select><small>“默认”为代码中固化的配置，也可选择其他账号作为参照；导入账号默认启用，从全部可用的 5x 代理中随机选择，没有可用 5x 代理时直连；不继承参考账号的状态和代理</small></div>
+      <div class="field reference-field"><label>模型限制（随所选配置导入）</label><div id="reference-models" aria-live="polite">正在读取默认模型限制…</div><small>“默认”内置固定模型清单；导入后写入并校验。选择其他账号时使用其模型限制。</small></div>
       <div class="segmented" role="tablist" aria-label="导入方式">
         <button id="tab-file" type="button" role="tab" aria-selected="true" aria-controls="panel-file">上传 Sub2API JSON</button>
         <button id="tab-account" type="button" role="tab" aria-selected="false" aria-controls="panel-account">邮箱 · 密码 · 2FA</button>
@@ -30,13 +30,13 @@
       <form id="panel-file" class="import-form" role="tabpanel" aria-labelledby="tab-file">
         <div class="field wide"><label for="import-json">Sub2API JSON 文件</label><input id="import-json" name="file" type="file" accept=".json,application/json" required><small>支持 1–50 个 OpenAI OAuth 账号，最大 2 MB</small></div>
         <div class="field wide"><label for="file-plugin">加入已启用插件（可选）</label><select id="file-plugin" disabled><option value="">不添加到插件</option></select><small id="plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-plugins" class="text-button" type="button">刷新插件列表</button></div>
-        <div class="field"><label for="file-group">导入分组</label><select id="file-group"><option value="">与参考账号相同</option></select><small>新账号默认继承参考账号设置；选择分组可覆盖分组</small></div>
+        <div class="field"><label for="file-group">导入分组</label><select id="file-group"><option value="">使用所选配置的分组</option></select><small>新账号使用所选配置；选择分组可覆盖默认分组</small></div>
         <div class="form-action"><button class="primary" type="submit">导入文件</button></div>
       </form>
       <form id="panel-account" class="import-form" role="tabpanel" aria-labelledby="tab-account" hidden>
         <div class="field wide"><label for="account-line">账号资料</label><input id="account-line" name="account_line" type="password" autocomplete="off" spellcheck="false" placeholder="邮箱----密码----2FA 密钥" required><label class="check-label"><input id="show-account" type="checkbox">显示输入</label></div>
         <div class="field wide"><label for="account-plugin">加入已启用插件（可选）</label><select id="account-plugin" disabled><option value="">不添加到插件</option></select><small id="account-plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-account-plugins" class="text-button" type="button">刷新插件列表</button></div>
-        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">与参考账号相同</option></select><small>首次导入资料加密保存在独立 Redis 数据库中，重启后仍可一键授权</small></div>
+        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">使用所选配置的分组</option></select><small>首次导入资料加密保存在独立 Redis 数据库中，重启后仍可一键授权</small></div>
         <div class="form-action"><button class="primary" type="submit">登录并导入</button></div>
       </form>
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>

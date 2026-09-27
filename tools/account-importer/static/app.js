@@ -35,6 +35,7 @@ document.getElementById('show-account').addEventListener('change', event => {
   document.getElementById('account-line').type = event.target.checked ? 'text' : 'password';
 });
 
+let defaultProfileId = '0';
 let referenceModelsReady = false;
 let referenceModelsAccount = '';
 let referenceModelsRequest = 0;
@@ -83,7 +84,7 @@ async function loadReferenceModels() {
 async function requireReferenceModels() {
   if (referenceModelsReady && referenceModelsAccount === document.getElementById('reference-account').value) return true;
   if (await loadReferenceModels()) return true;
-  setFeedback('请先选择已设置模型限制的参照账号。', true);
+  setFeedback('请选择已设置模型限制的导入配置。', true);
   return false;
 }
 
@@ -92,22 +93,16 @@ async function loadConfig() {
     const config = await request('api/config');
     document.getElementById('server-name').textContent = config.base_url;
     const reference = document.getElementById('reference-account');
-    reference.replaceChildren(new Option('请选择参照账号', ''));
+    defaultProfileId = String(config.default_profile.id);
+    reference.replaceChildren(new Option(config.default_profile.name, defaultProfileId, true, true));
     for (const account of config.accounts || []) {
       const option = document.createElement('option');
       option.value = String(account.id);
       option.textContent = account.name + ' · #' + account.id + (account.status ? ' · ' + account.status : '');
       reference.append(option);
     }
-    if (config.default_profile_account_id != null) {
-      reference.value = String(config.default_profile_account_id);
-      await loadReferenceModels();
-      document.getElementById('file-group').options[0].textContent = '使用所选参照账号设置';
-      document.getElementById('account-group').options[0].textContent = '使用所选参照账号设置';
-      await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(reference.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
-    } else {
-      setFeedback('未找到默认参照账号 ' + config.default_profile_account_name + '，请手动选择参照账号。', true);
-    }
+    reference.value = defaultProfileId;
+    await loadReferenceModels();
     for (const group of config.groups) {
       if (group.platform && group.platform !== 'openai') continue;
       for (const id of ['file-group', 'account-group']) {
@@ -117,9 +112,6 @@ async function loadConfig() {
         document.getElementById(id).append(option);
       }
     }
-    if (!config.groups.length && !config.accounts.length) {
-      setFeedback('未获取到 OpenAI 分组；请检查 Sub2API 管理员接口。', true);
-    }
   } catch {
     document.getElementById('server-name').textContent = '连接失败';
     setFeedback('无法连接本地服务。', true);
@@ -128,7 +120,7 @@ async function loadConfig() {
 
 document.getElementById('reference-account').addEventListener('change', async event => {
   await loadReferenceModels();
-  if (!event.target.value) return;
+  if (!event.target.value || event.target.value === defaultProfileId) return;
   try {
     await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(event.target.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
     await loadJobs();
