@@ -174,6 +174,7 @@ class RefreshClientTests(unittest.IsolatedAsyncioTestCase):
     async def exercise(self, info, expected_error=None, status=200):
         writes = []
         remote = {"id": 1, "platform": "openai", "type": "oauth", "name": "account@example.com", "proxy_id": 22,
+                  "status": "active", "schedulable": True,
                   "credentials": {"email": "account@example.com", "client_id": "existing-client", "model_mapping": {"x": "y"}},
                   "extra": {"setting": True}}
         def respond(request):

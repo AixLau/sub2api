@@ -293,7 +293,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
             if request.url.path.endswith("/accounts"):
                 data = {"items": [{"id": 3, "name": "account@example.com"}]}
             elif request.url.path.endswith("/accounts/3") and request.method == "GET":
-                data = {"id": 3, "status": "active"}
+                data = {"id": 3, "status": "active", "schedulable": True}
             elif request.url.path.endswith("/accounts/data"):
                 data = {"account_created": 1, "account_failed": 0}
             else:

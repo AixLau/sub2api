@@ -199,6 +199,14 @@ class Sub2APIClient:
             },
         )
 
+        # Reauthorization must also recover disabled accounts and scheduling.
+        # The OAuth endpoint clears errors, but does not restore schedulable.
+        await self.update_settings(account_id, {"status": "active"})
+        await self.set_schedulable(account_id, True)
+        remote = await self.get_account(account_id)
+        if remote.get("status") != "active" or remote.get("schedulable") is not True:
+            raise AdminAPIError("重新授权后启用状态校验失败，请重试")
+
     async def refresh_oauth(self, account_id: int, refresh_token: str) -> None:
         remote = await self.get_profile_account(account_id)
         current = remote.get("credentials") or {}

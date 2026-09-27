@@ -114,8 +114,9 @@ class ModelRestrictionTests(unittest.IsolatedAsyncioTestCase):
     async def test_authorization_does_not_accept_model_overrides_from_token_file(self):
         writes=[]
         def respond(request):
-            writes.append(json.loads(request.content))
-            return httpx.Response(200,json={'code':0,'data':{}})
+            if request.method != 'GET':
+                writes.append(json.loads(request.content))
+            return httpx.Response(200,json={'code':0,'data':{'id':1,'status':'active','schedulable':True}})
         client=Sub2APIClient('https://example.test','test',httpx.MockTransport(respond))
         try:
             document=bundle()['accounts'][0]
