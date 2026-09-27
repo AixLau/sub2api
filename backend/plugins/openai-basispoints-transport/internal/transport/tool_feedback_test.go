@@ -19,8 +19,11 @@ import (
 func TestForwardToolFeedback(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		for _, replySSE := range []bool{false, true} {
-			for _, mode := range []string{"repair", "repeated", "http_failure", "bps_forbidden", "truncated", "upstream_failed", "upstream_incomplete"} {
+			for _, mode := range []string{"repair", "repeated", "http_failure", "bps_forbidden", "truncated", "upstream_failed", "upstream_incomplete",
+				"capability_repair", "capability_repeated", "capability_http_failure", "capability_upstream_failed"} {
 				t.Run(fmt.Sprintf("stream=%v/replySSE=%v/%s", stream, replySSE, mode), func(t *testing.T) {
+					capability := strings.HasPrefix(mode, "capability_")
+					mode := strings.TrimPrefix(mode, "capability_")
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
 					var hits atomic.Int32
@@ -52,6 +55,10 @@ func TestForwardToolFeedback(t *testing.T) {
 						payload, _ := json.Marshal(map[string]any{"city": "Tokyo"})
 						outer, _ := json.Marshal(map[string]any{"references": []string{"client-tool:" + name}, "code": string(payload)})
 						item := map[string]any{"type": "function_call", "id": "fc_" + suffix, "call_id": "call_" + suffix, "name": "run_officejs", "arguments": string(outer)}
+						if capability && suffix == "bad" {
+							item["name"] = "write_range"
+							item["arguments"] = `{"sheetId":"private_sheet","writes":[{"cell":"A1","value":"private_value"}]}`
+						}
 						response := map[string]any{"id": "resp_" + suffix, "status": "completed", "output": []any{item}, "usage": map[string]int{"input_tokens": 9, "output_tokens": 2, "total_tokens": 11}}
 						terminal := "response.completed"
 						if attempt == 2 && (mode == "upstream_failed" || mode == "upstream_incomplete") {
@@ -91,7 +98,11 @@ func TestForwardToolFeedback(t *testing.T) {
 						if stream {
 							require.Equal(t, `"failed"`, string(response["status"]))
 						}
-						require.Contains(t, string(out), "TOOL_BRIDGE_CALL_INVALID")
+						code := "TOOL_BRIDGE_CALL_INVALID"
+						if capability && mode == "repeated" {
+							code = "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE"
+						}
+						require.Contains(t, string(out), code)
 						if mode != "repeated" {
 							require.Contains(t, string(out), "upstream_tool_feedback")
 						}
@@ -112,7 +123,12 @@ func TestForwardToolFeedback(t *testing.T) {
 					last := continuation.Input[len(continuation.Input)-1]
 					require.Equal(t, `"function_call_output"`, string(last["type"]))
 					require.Equal(t, `"call_bad"`, string(last["call_id"]))
-					require.Contains(t, string(last["output"]), "TOOL_BRIDGE_CONVERSION_FAILED")
+					feedbackCode := "TOOL_BRIDGE_CONVERSION_FAILED"
+					if capability {
+						feedbackCode = "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE"
+					}
+					require.Contains(t, string(last["output"]), feedbackCode)
+					require.NotContains(t, string(out), "private_value")
 					if mode == "bps_forbidden" {
 						health, err := c.Health(ctx, &pluginv1.HealthRequest{})
 						require.NoError(t, err)

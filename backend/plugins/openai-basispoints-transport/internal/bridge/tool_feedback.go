@@ -51,10 +51,12 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 			}
 		}
 	}
-	// Preflight the full batch: even a later unsupported native tool rules out
-	// repairing the earlier malformed call. No sibling may escape for execution.
+	// Like Codex's RespondToModel, an unknown tool is a failed tool result,
+	// not a fatal response. The model can select an advertised tool or explain
+	// the missing capability. Retain this diagnostic if feedback is unavailable
+	// or exhausted; no sibling may escape the rejected batch for execution.
 	if capabilityFailure != nil {
-		return nil, capabilityFailure
+		first = capabilityFailure
 	}
 	if first != nil {
 		if r.Feedback == nil || r.feedbackUsed || stringValue(root["status"]) != "completed" {
@@ -146,6 +148,11 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 		detail := object{"code": encoded("TOOL_BATCH_NOT_EXECUTED"), "message": encoded("This call was not executed because another call in the same batch could not be converted. Submit any still-needed calls again with references=[\"client-tool:FULL_CATALOG_NAME\"] and the raw payload in code.")}
 		if failure := failures[i]; failure != nil {
 			detail = object{"code": encoded("TOOL_BRIDGE_CONVERSION_FAILED"), "stage": encoded(failure.stage), "reason": encoded(failure.reason), "message": encoded(failure.Error())}
+			if failure.stage == "upstream_tool_capability" {
+				detail["code"] = encoded(FailureCode(failure))
+				detail["message"] = encoded("This tool is unavailable in the current client catalog and was not executed. Continue using only declared client tools through run_officejs with references=[\"client-tool:FULL_CATALOG_NAME\"] and the catalog's payload format, or explain the missing capability. Do not repeat the unavailable call or claim it succeeded.")
+				detail["diagnostics"] = encoded(failure.diagnostics)
+			}
 		}
 		callID := stringValue(item["call_id"])
 		typ := "function_call_output"

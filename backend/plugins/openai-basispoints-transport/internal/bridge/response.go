@@ -25,8 +25,9 @@ type ToolCallError struct {
 
 func (e *ToolCallError) Error() string { return e.message }
 
-// Capability failures have no executor on this path. Asking the model again
-// cannot provision one; callers must not retry them as malformed envelopes.
+// Preserve the capability diagnostic when bounded tool-result feedback cannot
+// resolve it. Feedback does not provision an executor or authorize a retry on
+// another account/channel; it lets the model choose an available operation.
 func FailureCode(err error) string {
 	var callErr *ToolCallError
 	if errors.As(err, &callErr) && callErr.stage == "upstream_tool_capability" {
