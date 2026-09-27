@@ -160,11 +160,16 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
 		}
 		if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
-			nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
-			if setErr != nil {
-				return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
+			// Inspect input using the same policy as the normal transform, while
+			// patching the original bytes to preserve all other passthrough fields.
+			instructionsBody := map[string]any{"input": gjson.GetBytes(body, "input").Value()}
+			if applyInstructions(instructionsBody, reqModel) {
+				nextBody, setErr := sjson.SetBytes(body, "instructions", instructionsBody["instructions"])
+				if setErr != nil {
+					return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
+				}
+				body = nextBody
 			}
-			body = nextBody
 		}
 
 		normalizedBody, normalized, err := normalizeOpenAIPassthroughOAuthBody(body, isOpenAIResponsesCompactPath(c))

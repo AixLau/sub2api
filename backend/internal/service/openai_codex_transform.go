@@ -298,8 +298,8 @@ func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuth
 		result.Modified = true
 	}
 
-	// instructions 处理逻辑：根据是否是 Codex CLI 分别调用不同方法
-	if !opts.SkipDefaultInstructions && applyInstructions(reqBody, opts.IsCodexCLI) {
+	// Native Codex can carry its instructions in developer input messages.
+	if !opts.SkipDefaultInstructions && applyInstructions(reqBody, normalizedModel) {
 		result.Modified = true
 	}
 	if isCodexSparkModel(normalizedModel) && applyCodexSparkImageUnsupportedInstructions(reqBody) {
@@ -1489,12 +1489,14 @@ func applyCodexClientMetadata(reqBody map[string]any, account *Account) bool {
 	}
 }
 
-// applyInstructions 处理 instructions 字段：仅在 instructions 为空时填充默认值。
-func applyInstructions(reqBody map[string]any, isCodexCLI bool) bool {
-	if !isInstructionsEmpty(reqBody) {
+// applyInstructions supplies defaults only when neither the top-level field nor
+// developer/system input messages contain guidance. Keep input instructions in
+// place: copying them to the top level would make the model receive them twice.
+// model is the resolved upstream model, which may not yet be patched into reqBody.
+func applyInstructions(reqBody map[string]any, model string) bool {
+	if !isInstructionsEmpty(reqBody) || extractPromptLikeInstructionsFromInput(reqBody) != "" {
 		return false
 	}
-	model, _ := reqBody["model"].(string)
 	reqBody["instructions"] = defaultCodexSynthInstructions(model)
 	return true
 }
