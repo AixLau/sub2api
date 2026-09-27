@@ -2,6 +2,20 @@ package bridge
 
 import "strings"
 
+// Responses validates item IDs against the delivered item's type. BPS native
+// functions use fc_, but a function adapted to a client custom tool needs ctc_.
+// The original ID remains in callRecord for lossless BPS replay.
+func clientToolItemID(original string, custom bool) string {
+	prefix := "fc_"
+	if custom {
+		prefix = "ctc_"
+	}
+	if strings.HasPrefix(original, prefix) && len(original) <= 64 && isCleanItemID(original) {
+		return original
+	}
+	return prefix + "bps_" + digest(original)[:32]
+}
+
 // A name already qualified by its explicit namespace must not be prefixed
 // again. The original item is kept intact for replay; this is a lookup key.
 func qualifiedCallName(item object) string {

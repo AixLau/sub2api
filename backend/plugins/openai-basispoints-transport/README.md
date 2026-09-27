@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.3 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
+0.6.4 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -61,6 +61,22 @@
 10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
+
+## 0.6.4 工具 item ID 与原生压缩联调
+
+- 授权联调发现：BPS function_call 转换为客户端 custom_tool_call 后仍携带 fc_ item ID，原生 Responses 在压缩阶段以 input[n].id 必须以 ctc 开头拒绝请求。现在交付调用时按实际类型生成合法 item ID；原始 BPS item 保存在宿主 KV，工具结果回放仍恢复原始 ID。
+- 原生压缩入口按同一规则规范化 call_bps_ 所属历史调用的 item ID，并同步对应 item_reference；调用关联、工具输入/结果和加密历史保持原内容。已经合法的正文逐字保留，不改写客户端自有调用。
+- 本地授权测试通过真实插件 gRPC、导出账号指定的代理和真实上游验证：BPS 生成 update_plan → 本地固定适配脚本实际执行 handler 并写入计划文件 → 随机回执回传 → 模型正确回复 → 原生压缩摘要保留完整回执。另覆盖已保存的 fc_ / custom_tool_call 历史。
+- 原生 SSE 的 response.completed 可只包含空 output；测试从 response.output_item.done 收集实际交付项，生产转发继续原样流式交付。
+- 测试要求导出文件恰好一个 OpenAI OAuth 账号，可携带 proxy_key 关联的代理；凭据只用于选定的本地测试，不导入生产。客户端 handler 使用本地测试实现，不能据此宣称用户设备的 Codex 计划 UI 已更新。
+
+    BPS_DISCOVERY_LIVE_AUTH_FILE='/path/to/authorization-export.json' \
+      go test ./plugins/openai-basispoints-transport/internal/transport \
+      -run '^TestAuthorizedLocalPlanAndCompaction$' -count=1 -v
+
+默认模型为 gpt-6-sol，可通过 BPS_DISCOVERY_LIVE_MODEL 改为其它已授权模型。测试最多三轮计划推理和两轮压缩；未设置授权文件时跳过。
+
+2026-09-27 授权实测通过：gpt-6-sol 与 gpt-5.6-luna 分别完成两轮 HTTP 200 的计划调用/回执回传；gpt-6-sol 对合法 item ID 与已保存的 fc_ / custom_tool_call 历史分别完成原生压缩，均为 HTTP 200、response.completed，摘要保留完整随机回执。
 
 ## 0.6.3 Codex 工具适配与上下文压缩
 
@@ -337,12 +353,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.3.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.4.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.3.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.4.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 

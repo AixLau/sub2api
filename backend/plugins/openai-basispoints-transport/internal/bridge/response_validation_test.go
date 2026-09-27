@@ -64,11 +64,17 @@ func TestCodexCustomExecEnvelopeAndDirectCall(t *testing.T) {
 		require.Len(t, r.converted, 1)
 		for _, converted := range r.converted {
 			call, _ := parseObject(converted)
+			require.True(t, strings.HasPrefix(stringValue(call["id"]), "ctc_"), "native Responses rejects fc_ IDs on custom calls")
+			if direct {
+				require.Equal(t, "ctc_exec", stringValue(call["id"]))
+			}
 			require.Equal(t, source, stringValue(call["input"]))
 			follow := encoded(map[string]any{"tools": json.RawMessage("[{\"type\":\"namespace\",\"name\":\"functions\",\"tools\":[{\"type\":\"custom\",\"name\":\"exec\"}]}]"), "input": []any{map[string]any{"type": "custom_tool_call_output", "call_id": stringValue(call["call_id"]), "output": "ok"}}})
 			restored, err := Prepare(ctx, follow, "s", store, nil, 256<<20)
 			require.NoError(t, err)
 			require.Equal(t, r.Turn.ID, restored.Turn.ID)
+			items := preparedInput(t, restored)
+			require.JSONEq(t, string(item), string(items[1]), "BPS replay must restore the original item ID")
 		}
 	}
 }

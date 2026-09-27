@@ -153,7 +153,7 @@ func (r *Request) decodeCall(ctx context.Context, raw json.RawMessage) (converte
 		return nil, toolValidationError("upstream_tool_choice", "forced_tool_mismatch", "上游未遵循指定工具的 tool_choice")
 	}
 	alias := callPrefix + digest(r.scope, r.Turn.ID, id, callID)[:32]
-	out := object{"type": encoded("function_call"), "id": item["id"], "call_id": encoded(alias), "name": encoded(t.Name)}
+	out := object{"type": encoded("function_call"), "id": encoded(clientToolItemID(id, t.Custom)), "call_id": encoded(alias), "name": encoded(t.Name)}
 	if value := item["status"]; len(value) > 0 {
 		out["status"] = value
 	}
