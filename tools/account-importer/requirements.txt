@@ -1,0 +1,6 @@
+curl-cffi==0.16.3
+fastapi==0.141.1
+httpx==0.28.1
+python-multipart==0.0.32
+requests==2.34.2
+uvicorn==0.54.0

@@ -40,6 +40,8 @@
 
 运行数据、`.env`、备份和构建产物不得提交到 Git。
 
+独立账号导入工具的容器部署、HTTPS 路径和来源 IP 白名单说明见 [account-importer](../tools/account-importer/README.md)。它独立运行，不需要重建或重启 Sub2API 网关。
+
 ## 前端部署约定
 
 - Vue 始终注册并提供 `/`、`/home`、`/login`、`/register`、`/forgot-password`、`/reset-password`、`/model-market`、`/services`、`/service-status` 和 `/faq`。

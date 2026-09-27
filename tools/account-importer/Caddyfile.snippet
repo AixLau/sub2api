@@ -1,0 +1,20 @@
+# Import this file INSIDE an existing HTTPS site block.
+# Set ACCOUNT_IMPORT_ALLOWED_IP in Caddy's environment, or render it explicitly.
+# Match the actual peer, never a client-supplied X-Forwarded-For header.
+@account_import path /account-import /account-import/*
+handle @account_import {
+    route {
+        @account_import_denied not remote_ip {$ACCOUNT_IMPORT_ALLOWED_IP:127.0.0.1}
+        respond @account_import_denied "Forbidden" 403
+        redir /account-import /account-import/ 308
+        uri strip_prefix /account-import
+        request_body {
+            max_size 3MB
+        }
+        reverse_proxy 127.0.0.1:8765 {
+            transport http {
+                response_header_timeout 180s
+            }
+        }
+    }
+}
