@@ -129,19 +129,25 @@ class LiveRedisChecks(unittest.IsolatedAsyncioTestCase):
     async def test_database_isolation_and_reconnect_restore(self):
         port = int(os.environ['IMPORTER_REDIS_TEST_PORT'])
         db0, db1 = Redis(host='127.0.0.1',port=port,db=0), Redis(host='127.0.0.1',port=port,db=1)
-        sentinel = 'gateway-isolation-test'
-        await db0.set(sentinel,'unchanged')
-        before = await db0.dbsize()
+        job = Job(name='redis-check@example.com',mode='credentials',group_ids=[],credential_line=LINE,state='completed')
+        sentinel, test_key = 'gateway-test:'+job.id, KEY+':test:'+job.id
         key = Fernet.generate_key()
         store = RedisJobStore(db1,key)
-        job = Job(name='redis-check@example.com',mode='credentials',group_ids=[],credential_line=LINE,state='completed')
-        await store.save(job.stored())
-        self.assertEqual(await db0.dbsize(),before)
-        self.assertEqual(await db0.get(sentinel),b'unchanged')
-        self.assertFalse(await db0.exists(KEY))
-        self.assertNotIn(b'original-password',await db1.hget(KEY,job.id))
-        await store.close()
         restored = RedisJobStore(Redis(host='127.0.0.1',port=port,db=1),key)
-        self.assertTrue(any(r['id']==job.id and r['credential_line']==LINE for r in await restored.load()))
-        await restored.close()
-        await db0.aclose()
+        with patch('job_store.KEY',test_key):
+            try:
+                await db0.set(sentinel,'unchanged')
+                before = await db0.dbsize()
+                await store.save(job.stored())
+                self.assertEqual(await db0.dbsize(),before)
+                self.assertEqual(await db0.get(sentinel),b'unchanged')
+                self.assertFalse(await db0.exists(test_key))
+                self.assertNotIn(b'original-password',await db1.hget(test_key,job.id))
+                await store.close()
+                self.assertTrue(any(r['id']==job.id and r['credential_line']==LINE for r in await restored.load()))
+            finally:
+                await db1.delete(test_key)
+                await db0.delete(sentinel)
+                await store.close()
+                await restored.close()
+                await db0.aclose()
