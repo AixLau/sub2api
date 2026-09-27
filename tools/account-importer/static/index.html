@@ -35,13 +35,13 @@
       <form id="panel-account" class="import-form" role="tabpanel" aria-labelledby="tab-account" hidden>
         <div class="field wide"><label for="account-line">账号资料</label><input id="account-line" name="account_line" type="password" autocomplete="off" spellcheck="false" placeholder="邮箱----密码----2FA 密钥" required><label class="check-label"><input id="show-account" type="checkbox">显示输入</label></div>
         <div class="field wide"><label for="account-plugin">加入已启用插件（可选）</label><select id="account-plugin" disabled><option value="">不添加到插件</option></select><small id="account-plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-account-plugins" class="text-button" type="button">刷新插件列表</button></div>
-        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">与参考账号相同</option></select><small>首次导入资料保留在本次服务内存中，用于一键重新授权</small></div>
+        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">与参考账号相同</option></select><small>首次导入资料加密保存在独立 Redis 数据库中，重启后仍可一键授权</small></div>
         <div class="form-action"><button class="primary" type="submit">登录并导入</button></div>
       </form>
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>
     <section class="jobs-section">
-      <div class="section-heading"><div><h2>监控任务</h2><p>每 5 秒更新；服务重启后任务不会保留。</p></div><button id="refresh" class="secondary" type="button">刷新</button></div>
+      <div class="section-heading"><div><h2>监控任务</h2><p>每 5 秒更新；任务和原始资料持久保存，服务重启后自动恢复。</p></div><button id="refresh" class="secondary" type="button">刷新</button></div>
       <div class="table-wrap"><table><thead><tr><th>账号</th><th>状态</th><th>调用状态</th><th>来源</th><th>监控截止</th><th>操作</th></tr></thead><tbody id="jobs-body"><tr><td class="empty" colspan="6">暂无监控任务</td></tr></tbody></table></div>
       <input id="reauth-json" type="file" accept=".json,application/json" hidden>
     </section>

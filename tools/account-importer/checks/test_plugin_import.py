@@ -1,3 +1,4 @@
+from fake_store import FakeStore
 import asyncio
 from copy import deepcopy
 import json
@@ -47,7 +48,7 @@ class PluginClient(FakeClient):
 class PluginImportTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.client = PluginClient()
-        self.manager = JobManager(self.client, watch_seconds=2, poll_seconds=0.01)
+        self.manager = JobManager(self.client, store=FakeStore(), watch_seconds=2, poll_seconds=0.01)
 
     async def asyncTearDown(self):
         await self.manager.close()
@@ -139,7 +140,7 @@ class PluginImportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.updates, [])
 
     async def test_http_upload_forwards_plugin_and_requires_csrf(self):
-        app = create_app(self.client, watch_seconds=2, poll_seconds=0.01)
+        app = create_app(self.client, store=FakeStore(), watch_seconds=2, poll_seconds=0.01)
         try:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost') as http:
                 self.assertEqual([item['id'] for item in (await http.get('/api/plugins')).json()], [7])
@@ -159,7 +160,7 @@ class PluginImportTests(unittest.IsolatedAsyncioTestCase):
         async def fail():
             raise AdminAPIError('denied')
         self.client.list_enabled_plugins = fail
-        app = create_app(self.client)
+        app = create_app(self.client, store=FakeStore())
         try:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost') as http:
                 self.assertEqual((await http.get('/api/plugins')).status_code, 502)
@@ -190,7 +191,7 @@ class PluginCredentialTests(unittest.IsolatedAsyncioTestCase):
         def login(line, fmt, **kwargs):
             self.login_calls.append((line, fmt, kwargs))
             return bundle()
-        self.manager = JobManager(self.client, login=login, watch_seconds=2, poll_seconds=0.01, retry_seconds=0)
+        self.manager = JobManager(self.client, store=FakeStore(), login=login, watch_seconds=2, poll_seconds=0.01, retry_seconds=0)
         self.line = "account@example.com----test-password----JBSWY3DPEHPK3PXP"
 
     async def asyncTearDown(self):
@@ -228,7 +229,7 @@ class PluginCredentialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.login_calls, [])
         self.assertEqual(self.manager.jobs, {})
 
-    async def test_credentials_login_failure_skips_plugin_and_clears_secrets(self):
+    async def test_credentials_login_failure_skips_plugin_and_preserves_retry_credentials(self):
         def fail(*args, **kwargs):
             raise RuntimeError('test-password')
         self.manager.login = fail
@@ -236,7 +237,7 @@ class PluginCredentialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((job.state, job.plugin_status), ('failed', 'skipped'))
         self.assertEqual(self.client.updates, [])
         self.assertEqual(self.client.records, {})
-        self.assertIsNone(job.credential_line)
+        self.assertIsNotNone(job.credential_line)
         self.assertNotIn('test-password', json.dumps(job.public()))
 
     async def test_credentials_binding_failure_does_not_undo_import(self):
@@ -263,7 +264,7 @@ class PluginCredentialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.updates, [])
 
     async def test_credentials_http_forwards_selection_and_rejects_invalid_id(self):
-        app = create_app(self.client, login=self.manager.login, watch_seconds=2, poll_seconds=0.01)
+        app = create_app(self.client, store=FakeStore(), login=self.manager.login, watch_seconds=2, poll_seconds=0.01)
         try:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://localhost') as http:
                 page = await http.get('/')

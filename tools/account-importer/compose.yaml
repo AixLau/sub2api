@@ -2,7 +2,10 @@ name: sub2api-account-importer
 services:
   importer:
     image: ${ACCOUNT_IMPORT_IMAGE:?Set ACCOUNT_IMPORT_IMAGE to a versioned image}
-    network_mode: host
+    networks: [sub2api]
+    ports:
+      - "127.0.0.1:8765:8765"
+    command: ["python", "web_service.py", "--host", "0.0.0.0"]
     restart: unless-stopped
     init: true
     read_only: true
@@ -14,10 +17,16 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=128m,mode=1777
     environment:
-      SUB2API_BASE_URL: ${SUB2API_BASE_URL:-http://127.0.0.1:8080}
+      SUB2API_BASE_URL: ${SUB2API_BASE_URL:-http://sub2api:8080}
       SUB2API_ADMIN_API_KEY_FILE: /run/secrets/admin_api_key
+      ACCOUNT_IMPORT_REDIS_HOST: ${ACCOUNT_IMPORT_REDIS_HOST:-redis}
+      ACCOUNT_IMPORT_REDIS_PORT: ${ACCOUNT_IMPORT_REDIS_PORT:-6379}
+      ACCOUNT_IMPORT_REDIS_DB: ${ACCOUNT_IMPORT_REDIS_DB:?Select an unused Redis database}
+      SUB2API_REDIS_DB: ${SUB2API_REDIS_DB:?Set the gateway Redis database}
+      ACCOUNT_IMPORT_ENCRYPTION_KEY_FILE: /run/secrets/importer_encryption_key
     secrets:
       - admin_api_key
+      - importer_encryption_key
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=3)"]
       interval: 15s
@@ -32,3 +41,9 @@ services:
 secrets:
   admin_api_key:
     file: ./secrets/admin-api-key
+  importer_encryption_key:
+    file: ./secrets/importer-encryption-key
+networks:
+  sub2api:
+    external: true
+    name: ${SUB2API_DOCKER_NETWORK:?Set the existing Sub2API Docker network}

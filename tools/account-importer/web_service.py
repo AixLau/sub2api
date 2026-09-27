@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from import_payload import MAX_UPLOAD_BYTES, parse_bundle
+from job_store import JobStore, RedisJobStore, StorageError
 from job_manager import JobManager
 from local_relogin import DEFAULT_SOURCE_DIR, relogin_payload
 from sub2api_client import AdminAPIError, Sub2APIClient
@@ -40,12 +41,13 @@ async def _bundle(file: UploadFile) -> dict:
     return parse_bundle(raw)
 
 
-def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=1200, poll_seconds=30) -> FastAPI:
-    manager = JobManager(client, login=login, watch_seconds=watch_seconds, poll_seconds=poll_seconds)
+def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, watch_seconds=1200, poll_seconds=30) -> FastAPI:
+    manager = JobManager(client, store=store, login=login, watch_seconds=watch_seconds, poll_seconds=poll_seconds)
     csrf_token = secrets.token_urlsafe(32)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        await manager.start()
         try:
             yield
         finally:
@@ -53,6 +55,10 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
 
     app = FastAPI(title="Sub2API 导入监控", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.manager = manager
+
+    @app.exception_handler(StorageError)
+    async def storage_error(_request, _error):
+        return JSONResponse(status_code=503, content={"detail": "Redis 不可用或保存失败，请稍后重试"})
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_request, _error):
@@ -74,6 +80,7 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
 
     @app.get("/healthz")
     async def health():
+        await store.ping()
         return {"status": "ok"}
 
     @app.get("/", response_class=HTMLResponse)
@@ -179,6 +186,7 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与 20 分钟监控服务")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     args = parser.parse_args()
@@ -191,7 +199,7 @@ def main() -> None:
         parser.error("必须设置 SUB2API_BASE_URL")
     client = Sub2APIClient(base_url, key)
     login = partial(relogin_payload, source_dir=args.source_dir)
-    uvicorn.run(create_app(client, login=login), host="127.0.0.1", port=args.port, access_log=False, proxy_headers=False)
+    uvicorn.run(create_app(client, store=RedisJobStore.from_env(), login=login), host=args.host, port=args.port, access_log=False, proxy_headers=False)
 
 
 if __name__ == "__main__":

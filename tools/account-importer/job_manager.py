@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from job_store import JobStore, StorageError
 from import_payload import validate_bundle
 from local_relogin import parse_account_line, relogin_payload
 from proxy_pool import select_5x_proxy
@@ -136,6 +137,24 @@ class Job:
     task: asyncio.Task | None = field(default=None, repr=False)
     manual_pending: bool = field(default=False, repr=False)
     retired: bool = False
+    profile_account_id: int | None = None
+
+    def stored(self) -> dict:
+        record = {item.name: getattr(self, item.name) for item in fields(self)
+                  if item.name not in {"task", "manual_pending"}}
+        for key in ("created_at", "deadline", "next_relogin"):
+            value = record[key]
+            record[key] = value.isoformat() if value else None
+        return record
+
+    @classmethod
+    def restore(cls, record: dict) -> "Job":
+        values = dict(record)
+        for key in ("created_at", "deadline", "next_relogin"):
+            values[key] = _parse_time(values.get(key))
+        if not values["created_at"]:
+            raise ValueError("无效任务时间")
+        return cls(**values)
 
     def public(self) -> dict:
         return {
@@ -156,11 +175,12 @@ class Job:
 
 class JobManager:
     def __init__(
-        self, client: Sub2APIClient, *, watch_seconds: int = WATCH_SECONDS,
+        self, client: Sub2APIClient, *, store: JobStore, watch_seconds: int = WATCH_SECONDS,
         poll_seconds: float = POLL_SECONDS, retry_seconds: int = RETRY_SECONDS,
         login: Callable = relogin_payload,
     ) -> None:
         self.client = client
+        self.store = store
         self.watch_seconds = watch_seconds
         self.poll_seconds = poll_seconds
         self.retry_seconds = retry_seconds
@@ -168,6 +188,28 @@ class JobManager:
         self.jobs: dict[str, Job] = {}
         self._import_lock = asyncio.Lock()
         self._login_lock = asyncio.Lock()
+
+    async def start(self) -> None:
+        await self.store.ping()
+        try:
+            restored = [Job.restore(record) for record in await self.store.load()]
+        except (ValueError, TypeError, KeyError):
+            raise StorageError("已保存任务结构无效，未覆盖数据") from None
+        for job in sorted(restored, key=lambda item: item.created_at):
+            self.jobs[job.id] = job
+            if job.retired:
+                continue
+            if job.state in {"importing", "reauthorizing"}:
+                job.state, job.message = "attention", "服务重启前的操作未确认完成，请手动重新授权"
+                await self.store.save(job.stored())
+            elif job.account_id and job.deadline and job.deadline > _now() and job.state in {"monitoring", "attention", "invalid"}:
+                job.task = asyncio.create_task(self._watch(job))
+            elif job.state == "monitoring":
+                job.state, job.message = "completed", "监控已结束，原始资料已保存，可手动重新授权"
+                await self.store.save(job.stored())
+
+    async def _save(self, job: Job) -> None:
+        await self.store.save(job.stored())
 
     def list_jobs(self) -> list[dict]:
         return [job.public() for job in reversed(list(self.jobs.values()))]
@@ -192,8 +234,9 @@ class JobManager:
             if job.mode == "reference" and job.account_id == account_id and job.task and not job.task.done():
                 return job.public()
         job = Job(name=str(remote["name"]), mode="reference", group_ids=profile["group_ids"], account_id=account_id)
+        await self._save(job)
         self.jobs[job.id] = job
-        self._start_watch(job)
+        await self._start_watch(job)
         return job.public()
 
     async def import_file(self, payload: dict, override_group_ids: list[int] | None = None, profile_account_id: int | None = None, plugin_id: int | None = None) -> list[dict]:
@@ -224,6 +267,7 @@ class JobManager:
                     job.plugin_id = plugin_id
                     job.plugin_name = str(plugin.get("name") or plugin_id)
                     job.plugin_status = "pending"
+                await self._save(job)
                 self.jobs[job.id] = job
             imported_jobs = []
             new_pairs = [(account, job) for account, remote, job in zip(accounts, existing, jobs) if remote is None]
@@ -249,7 +293,7 @@ class JobManager:
                             job.account_id = int(remote["id"])
                             await self._apply_new_settings(job, profile)
                             imported_jobs.append(job)
-                            self._start_watch(job)
+                            await self._start_watch(job)
                         except Exception:
                             job.state, job.message = "attention", "账号可能已导入，但分组或查询失败；请在 Sub2API 核查"
                     if result.get("account_failed"):
@@ -268,7 +312,7 @@ class JobManager:
                         settings["group_ids"] = job.group_ids
                     await self.client.update_settings(job.account_id, settings)
                     imported_jobs.append(job)
-                    self._start_watch(job)
+                    await self._start_watch(job)
                 except Exception:
                     job.state, job.message = "invalid", "重新授权失败，请核查文件和服务器"
             if plugin is not None:
@@ -276,6 +320,8 @@ class JobManager:
                     job.plugin_status = "skipped"
                     job.plugin_message = "账号导入或授权未完成，未加入插件"
                 await self._bind_plugin_jobs(plugin_id, imported_jobs)
+            for job in jobs:
+                await self._save(job)
             return [job.public() for job in jobs]
 
     async def _bind_plugin_jobs(self, plugin_id: int | None, jobs: list[Job]) -> None:
@@ -306,6 +352,7 @@ class JobManager:
             previous.credential_line = None
             previous.login_proxy = None
             previous.state, previous.message = "completed", "已由新上传文件接管监控"
+            await self._save(previous)
 
     async def _apply_new_settings(self, job: Job, profile: dict) -> None:
         await self.client.update_settings(job.account_id, {**profile["settings"], "group_ids": job.group_ids, **_proxy_settings(job.proxy_id)})
@@ -319,6 +366,7 @@ class JobManager:
         choice = select_5x_proxy(await self.client.list_active_proxies())
         job = Job(
             name=email, mode="credentials", group_ids=list(group_ids or []),
+            profile_account_id=profile_account_id,
             credential_line=account_line,
             plugin_id=plugin_id,
             plugin_name=str(plugin.get("name") or plugin_id) if plugin is not None else "",
@@ -326,6 +374,7 @@ class JobManager:
             proxy_id=choice.id if choice else None,
             login_proxy=choice.url if choice else None,
         )
+        await self._save(job)
         self.jobs[job.id] = job
         job.task = asyncio.create_task(self._login_and_import(job, profile_account_id))
         return job.public()
@@ -362,7 +411,7 @@ class JobManager:
                         settings["group_ids"] = job.group_ids
                     await self.client.update_settings(job.account_id, settings)
                     await self._bind_plugin_jobs(job.plugin_id, [job])
-                    self._start_watch(job)
+                    await self._start_watch(job)
                     return
                 payload["accounts"][0] = _prepared_new_account(payload["accounts"][0], profile, job.group_ids)
                 payload["accounts"][0].update(_proxy_settings(job.proxy_id))
@@ -374,22 +423,22 @@ class JobManager:
                 job.account_id = int(remote["id"])
                 await self._apply_new_settings(job, profile)
                 await self._bind_plugin_jobs(job.plugin_id, [job])
-                self._start_watch(job)
+                await self._start_watch(job)
         except asyncio.CancelledError:
             raise
         except Exception:
             job.state, job.message = "failed", "登录或导入失败；请核查账号、网络和 Sub2API 状态"
         finally:
-            if job.state == "failed":
-                if job.plugin_id is not None:
-                    job.plugin_status = "skipped"
-                    job.plugin_message = "账号登录或导入未完成，未加入插件"
-                job.credential_line = None
-                job.login_proxy = None
+            job.manual_pending = False
+            if job.state == "failed" and job.plugin_id is not None:
+                job.plugin_status = "skipped"
+                job.plugin_message = "账号登录或导入未完成，未加入插件"
+            await self._save(job)
 
-    def _start_watch(self, job: Job) -> None:
+    async def _start_watch(self, job: Job) -> None:
         job.state, job.message = "monitoring", ""
         job.deadline = _now() + timedelta(seconds=self.watch_seconds)
+        await self._save(job)
         job.task = asyncio.create_task(self._watch(job))
 
     async def _watch(self, job: Job) -> None:
@@ -405,16 +454,23 @@ class JobManager:
                 if state == "invalid" and job.mode == "credentials":
                     await self._retry_relogin(job)
                 if state == "invalid" and job.mode == "file":
+                    await self._save(job)
                     break
             except asyncio.CancelledError:
                 raise
             except Exception:
                 job.state, job.message = "attention", "状态查询失败，稍后重试"
+            try:
+                await self._save(job)
+            except StorageError:
+                job.message = "Redis 保存失败，将继续重试；原始资料仍保留"
             await asyncio.sleep(min(self.poll_seconds, max(0, (job.deadline - _now()).total_seconds())))
         if job.state == "monitoring" and job.deadline and _now() >= job.deadline:
             job.state, job.message = "completed", "20 分钟监控已结束"
         elif job.state == "attention" and job.deadline and _now() >= job.deadline:
             job.message = "监控已结束；最后状态仍需人工核查"
+
+        await self._save(job)
 
     async def _retry_relogin(self, job: Job) -> None:
         if job.attempts >= MAX_RELOGINS:
@@ -426,6 +482,7 @@ class JobManager:
         job.next_relogin = _now() + timedelta(seconds=self.retry_seconds)
         job.state, job.message = "reauthorizing", "正在自动重新授权"
         try:
+            await self._save(job)
             async with self._login_lock:
                 payload = await asyncio.to_thread(
                     self.login, job.credential_line, "sub2api",
@@ -442,7 +499,7 @@ class JobManager:
             job.state, job.message = "invalid", "自动重新授权失败，稍后再试"
 
     async def _begin_manual(self, job: Job, mode: str) -> None:
-        if job.mode != mode or job.account_id is None or job.retired:
+        if job.mode != mode or (mode == "file" and job.account_id is None) or job.retired:
             raise ValueError("此任务不能执行该重新授权操作，请使用最新导入任务")
         if job.manual_pending or job.state in {"importing", "reauthorizing"}:
             raise ValueError("此账号正在授权，请等待当前操作完成")
@@ -458,8 +515,10 @@ class JobManager:
             # Keep the original import credentials for one-click authorization.
             job.credential_line, job.login_proxy = line, proxy
             job.state, job.message = "reauthorizing", "正在手动重新授权"
+            await self._save(job)
         except BaseException:
             job.manual_pending = False
+            job.state, job.message = "attention", "授权未启动，请稍后重试"
             raise
 
     async def reauthorize_credentials(self, job_id: str) -> dict:
@@ -472,7 +531,9 @@ class JobManager:
             raise ValueError("重新授权资料必须属于当前账号")
         await self._begin_manual(job, "credentials")
         job.credential_line = line
-        job.task = asyncio.create_task(self._manual_credentials(job))
+        job.task = asyncio.create_task(
+            self._manual_credentials(job) if job.account_id else self._login_and_import(job, job.profile_account_id)
+        )
         return job.public()
 
     async def _manual_credentials(self, job: Job) -> None:
@@ -492,13 +553,14 @@ class JobManager:
                 await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
                 job.proxy_id = choice.id if choice else None
                 job.attempts, job.next_relogin = 0, None
-                self._start_watch(job)
+                await self._start_watch(job)
         except asyncio.CancelledError:
             raise
         except Exception:
             job.state, job.message = "invalid", "手动重新授权失败，请核查账号资料和网络后重试"
         finally:
             job.manual_pending = False
+            await self._save(job)
 
     async def reauthorize_rt(self, job_id: str, refresh_token: str) -> dict:
         token = refresh_token.strip()
@@ -513,7 +575,7 @@ class JobManager:
         try:
             async with self._import_lock:
                 await self.client.refresh_oauth(job.account_id, token)
-                self._start_watch(job)
+                await self._start_watch(job)
         except asyncio.CancelledError:
             raise
         except ValueError as exc:
@@ -522,6 +584,7 @@ class JobManager:
             job.state, job.message = "invalid", "RT 重新授权失败，请核查 RT 和网络；也可重新上传 JSON"
         finally:
             job.manual_pending = False
+            await self._save(job)
 
     async def reauthorize_file(self, job_id: str, payload: dict) -> dict:
         job = self.get_job(job_id)
@@ -535,11 +598,12 @@ class JobManager:
                 await self.client.apply_oauth(job.account_id, accounts[0])
                 await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
                 job.proxy_id = choice.id if choice else None
-                self._start_watch(job)
+                await self._start_watch(job)
         except Exception:
             job.state, job.message = "invalid", "重新授权失败，请核查文件和服务器"
         finally:
             job.manual_pending = False
+        await self._save(job)
         return job.public()
 
     async def close(self) -> None:
@@ -548,6 +612,11 @@ class JobManager:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        for job in self.jobs.values():
-            job.credential_line = None
-        await self.client.close()
+        try:
+            for job in self.jobs.values():
+                await self._save(job)
+        finally:
+            for job in self.jobs.values():
+                job.credential_line = job.login_proxy = None
+            await self.store.close()
+            await self.client.close()

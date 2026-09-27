@@ -1,3 +1,4 @@
+from fake_store import FakeStore
 import asyncio
 import json
 import re
@@ -22,7 +23,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         def login(line, fmt, **kwargs):
             self.lines.append(line)
             return bundle(token="manual-access")
-        self.manager = JobManager(self.client, login=login, watch_seconds=10, poll_seconds=1)
+        self.manager = JobManager(self.client, store=FakeStore(), login=login, watch_seconds=10, poll_seconds=1)
 
     async def asyncTearDown(self):
         await self.manager.close()
@@ -34,7 +35,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_saved_credentials_survive_watch_cancellation_and_reset_retry_budget(self):
         job = self.job(credential_line=LINE)
-        self.manager._start_watch(job)
+        await self.manager._start_watch(job)
         await asyncio.sleep(0)
         job.attempts = 3
         job.next_relogin = _now() + timedelta(hours=1)
@@ -57,7 +58,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
     async def test_monitoring_end_keeps_original_credentials_for_one_click(self):
         job = self.job(credential_line=LINE)
         self.manager.watch_seconds = 0
-        self.manager._start_watch(job)
+        await self.manager._start_watch(job)
         await job.task
         self.assertEqual(job.state, "completed")
         self.assertEqual(job.credential_line, LINE)
@@ -125,7 +126,7 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(job.manual_pending)
 
     async def test_api_csrf_validation_and_async_credentials(self):
-        app = create_app(self.client, login=self.manager.login, watch_seconds=10)
+        app = create_app(self.client, store=FakeStore(), login=self.manager.login, watch_seconds=10)
         job = self.job(credential_line=LINE)
         app.state.manager.jobs[job.id] = job
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost") as http:

@@ -160,7 +160,7 @@ async function loadJobs() {
       addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
       addCell(row, job.watch_until ? new Date(job.watch_until).toLocaleString('zh-CN') : '—');
       const action = row.insertCell();
-      if (job.account_id && !job.retired && ['file', 'credentials'].includes(job.mode)) {
+      if (!job.retired && ((job.mode === 'file' && job.account_id) || (job.mode === 'credentials' && job.has_saved_credentials))) {
         action.className = 'job-actions';
         const busy = ['importing', 'reauthorizing'].includes(job.state);
         const button = document.createElement('button');

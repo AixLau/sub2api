@@ -4,3 +4,5 @@ httpx==0.28.1
 python-multipart==0.0.32
 requests==2.34.2
 uvicorn==0.54.0
+redis==8.1.0
+cryptography==50.0.1

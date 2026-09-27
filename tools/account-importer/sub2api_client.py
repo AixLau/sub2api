@@ -47,7 +47,7 @@ class Sub2APIClient:
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+            parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "sub2api"}
         ):
             raise ValueError("Sub2API 地址必须使用 HTTPS（本机除外）")
         if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
