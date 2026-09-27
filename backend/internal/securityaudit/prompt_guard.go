@@ -285,7 +285,7 @@ func minimumInputLimit(endpoints []ActiveEndpoint) int {
 }
 
 func splitPromptAuditChunks(value string, endpoints []ActiveEndpoint, charLimit int) []string {
-	chunks := SplitRunes(value, charLimit)
+	chunks := SplitRunes(preparePromptAuditScanText(value), charLimit)
 	for _, endpoint := range endpoints {
 		if !usesCodexSparkAuditPrompt(endpoint.Model) || endpoint.MaxInputTokens <= 0 {
 			continue

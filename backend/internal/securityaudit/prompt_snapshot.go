@@ -441,10 +441,17 @@ func normalizeSegmentsLatestUserFirst(values []promptSegment) []string {
 		return nil
 	}
 	priorityIndex := len(normalized) - 1
+	foundUser := false
 	for index := len(normalized) - 1; index >= 0; index-- {
 		if isUserSegment(normalized[index]) {
-			priorityIndex = index
-			break
+			if !foundUser {
+				priorityIndex = index
+				foundUser = true
+			}
+			if hasTextOutsideEnvironment(normalized[index].text) {
+				priorityIndex = index
+				break
+			}
 		}
 	}
 	result := make([]string, 0, len(normalized))
