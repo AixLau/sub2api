@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.5"
+	PluginVersion = "0.6.6"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -40,10 +40,11 @@ const (
 type proxyContextKey struct{}
 
 type runtimeState struct {
-	revision  string
-	cfg       pluginconfig.Config
-	client    *http.Client
-	transport *http.Transport
+	revision     string
+	cfg          pluginconfig.Config
+	client       *http.Client
+	transport    *http.Transport
+	nativeClient *http.Client
 }
 
 type requestStats struct {
@@ -166,6 +167,7 @@ func (p *Plugin) ApplyConfig(_ context.Context, request *pluginv1.ApplyConfigReq
 		"config_revision", state.revision, "routing_policy", routingPolicy(state))
 	if old != nil && old.transport != nil {
 		old.transport.CloseIdleConnections()
+		old.nativeClient.CloseIdleConnections()
 	}
 	return &pluginv1.ApplyConfigResponse{Applied: true, Message: "配置已应用"}, nil
 }
@@ -637,7 +639,7 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	if diagnostic != nil {
 		diagnostic.attempt()
 	}
-	response, err := state.client.Do(request)
+	response, err := state.nativeClient.Do(request)
 	if err != nil {
 		return p.sendError(stream, "UPSTREAM_REQUEST_FAILED", "上游连接失败或超时", true)
 	}
@@ -1041,7 +1043,15 @@ func buildRuntimeState(cfg pluginconfig.Config) (*runtimeState, error) {
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 	}
-	return &runtimeState{revision: uuid.NewString(), cfg: cfg, transport: transport, client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	nativeTransport := transport.Clone()
+	// Native Responses may defer headers while producing structured output.
+	// Bound that wait by the existing overall request context, not the BPS
+	// endpoint's short header budget. Connection establishment remains bounded.
+	nativeTransport.ResponseHeaderTimeout = 0
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &runtimeState{revision: uuid.NewString(), cfg: cfg, transport: transport,
+		client:       &http.Client{Transport: transport, CheckRedirect: noRedirect},
+		nativeClient: &http.Client{Transport: nativeTransport, CheckRedirect: noRedirect}}, nil
 }
 
 func (p *Plugin) hostClient() pluginv1.HostServiceClient {

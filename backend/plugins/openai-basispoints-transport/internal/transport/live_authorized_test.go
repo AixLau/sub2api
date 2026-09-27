@@ -21,7 +21,8 @@ import (
 
 // Explicit opt-in. The selected export stays local; credentials only enter
 // the plugin's authorized outbound request. No account import or token refresh.
-func TestAuthorizedLocalPlanAndCompaction(t *testing.T) {
+func newAuthorizedLiveProbe(t *testing.T) (context.Context, *pluginv1.TransportClient, string, func(*testing.T, map[string]any) map[string]json.RawMessage) {
+	t.Helper()
 	authFile := os.Getenv("BPS_DISCOVERY_LIVE_AUTH_FILE")
 	if authFile == "" {
 		t.Skip("select a local authorization export to run live inference")
@@ -66,7 +67,7 @@ func TestAuthorizedLocalPlanAndCompaction(t *testing.T) {
 		require.True(t, proxy != "", "the selected account proxy must exist in its export")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
-	defer cancel()
+	t.Cleanup(cancel)
 	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
 	config := []byte(`{"proxy_mode":"account","native_fallback":false,"tools_via_native":false,"auto_disable_bps_on_403":false}`)
 	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: config})
@@ -161,6 +162,11 @@ func TestAuthorizedLocalPlanAndCompaction(t *testing.T) {
 		t.Logf("terminal=completed input_tokens=%d output_tokens=%d total_tokens=%d", usage.Input, usage.Output, usage.Total)
 		return final
 	}
+	return ctx, c, model, forward
+}
+
+func TestAuthorizedLocalPlanAndCompaction(t *testing.T) {
+	ctx, c, model, forward := newAuthorizedLiveProbe(t)
 	tools := []any{map[string]any{"type": "namespace", "name": "functions", "tools": []any{map[string]any{"type": "custom", "name": "exec", "description": "Run JavaScript in the client. ALL_TOOLS lists enabled tool metadata; tools exposes those tools; text(value) returns actual output. The client has update_plan enabled."}}}}
 	input := []any{map[string]any{"role": "user", "content": "Call the native update_plan now with one in_progress step named Verify the local test. This probe specifically requires native update_plan to exercise the adapter; do not call run_officejs or write code. After the tool returns a receipt, reply only with that exact receipt and no further tool calls."}}
 	receipt := "plan-receipt-" + uuid.NewString()

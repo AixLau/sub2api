@@ -432,7 +432,11 @@ func rebuildTransportCall(item object, typ, name string) (json.RawMessage, error
 		if _, err := parseObject(rawArgs); err != nil {
 			return nil, errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 		}
-		payload = string(rawArgs)
+		var err error
+		payload, err = formatFunctionPayload(rawArgs)
+		if err != nil {
+			return nil, err
+		}
 	}
 	outer := map[string]any{
 		"summary":     "Run client tool " + name,

@@ -47,7 +47,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("X-Request-ID", "upstream_diag_request")
 				item := map[string]any{"type": "function_call", "id": "private_item_id", "call_id": "private_call_id", "name": "functions.run_officejs", "namespace": "functions",
-					"arguments": map[string]any{"references": []string{"client-tool:get_weather"}, "summary": "private_summary", "code": `{"city":"private\'city"}`}}
+					"arguments": map[string]any{"references": []string{"client-tool:get_weather"}, "summary": "private_summary", "code": `{"city":"private\scity"}`}}
 				response := map[string]any{"id": "resp_logs", "status": "completed", "output": []any{item}}
 				if stream {
 					w.Header().Set("Content-Type", "text/event-stream")
@@ -82,7 +82,8 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Equal(t, "upstream_diag_request", d.UpstreamRequestID)
 			require.Equal(t, "bps.tool_rejected", d.Event)
 			require.Equal(t, "upstream_tool_code", d.Tool.Stage)
-			require.Positive(t, d.Tool.JSONOffset)
+			require.Zero(t, d.Tool.JSONOffset)
+			require.Equal(t, "invalid_yaml", d.Tool.Reason)
 			require.Equal(t, "get_weather", d.Tool.TargetTool) // routing is independent of payload syntax
 			require.Equal(t, "test-model", d.Model)
 			require.Equal(t, stream, d.Stream)
@@ -98,7 +99,7 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Contains(t, text, "private_schema")
 			require.Equal(t, string(body), d.RequestBody.Preview)
 			require.True(t, d.RequestBody.Complete)
-			for _, secret := range []string{"private_summary", "private_call_id", "private_item_id", "private\\'city", "Bearer synthetic", "synthetic-account", "isolated-session"} {
+			for _, secret := range []string{"private_summary", "private_call_id", "private_item_id", "private\\scity", "Bearer synthetic", "synthetic-account", "isolated-session"} {
 				require.NotContains(t, text, secret)
 				require.NotContains(t, health.StatusJson, secret)
 			}

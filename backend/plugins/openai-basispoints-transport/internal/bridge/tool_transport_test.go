@@ -13,7 +13,7 @@ func TestEnvelopeTransportSeparatesRoutingFromPayload(t *testing.T) {
 	for _, tc := range []struct {
 		name, payload, typ, field string
 	}{
-		{"functions.read_file", `{"path":"Tokyo's\\file","id":9007199254740993}`, "function_call", "arguments"},
+		{"functions.read_file", `{"id":9007199254740993,"path":"Tokyo's\\file"}`, "function_call", "arguments"},
 		{"functions.exec", "text(await tools.exec_command({cmd: \"printf 'hello'\"}));\n", "custom_tool_call", "input"},
 		{"functions.exec", `{"tool":"functions.read_file","args":{"path":"literal input"}}`, "custom_tool_call", "input"},
 		{"functions.exec", "", "custom_tool_call", "input"},
@@ -107,7 +107,12 @@ func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 		require.NoError(t, err)
 		native, _ := parseObject(rebuilt)
 		outer, _ := parseObject([]byte(stringValue(native["arguments"])))
-		require.Equal(t, arguments, stringValue(outer["code"]))
+		restored, err := parseFunctionPayload([]byte(stringValue(outer["code"])))
+		require.NoError(t, err)
+		var want, got object
+		require.NoError(t, json.Unmarshal([]byte(arguments), &want))
+		require.NoError(t, json.Unmarshal(restored, &got))
+		require.Equal(t, want, got, "numeric literals must retain their full precision")
 		require.Equal(t, string(encoded([]string{clientToolReferencePrefix + "functions.read_file"})), string(outer["references"]))
 	}
 	for _, raw := range []json.RawMessage{nil, encoded("invalid private input"), encoded(nil), encoded([]any{}), encoded(42)} {
@@ -126,7 +131,10 @@ func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 func TestCatalogAdvertisesEnvelopeTransport(t *testing.T) {
 	r := customRequest(t)
 	prompt := r.catalog.prompt()
-	require.Contains(t, prompt, "protocol v5")
+	require.Contains(t, prompt, "protocol v6")
+	require.Contains(t, prompt, "YAML mapping of arguments")
+	require.Contains(t, prompt, "literal |- blocks")
+	require.NotContains(t, prompt, "code is only the JSON arguments object")
 	require.Contains(t, prompt, "Routing is separate from code")
 	require.Contains(t, prompt, "do not wrap it in a JSON envelope")
 	require.Contains(t, prompt, "client-tool:functions.exec")

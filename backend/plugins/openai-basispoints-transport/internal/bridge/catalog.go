@@ -93,7 +93,7 @@ func readCatalog(raw, choice json.RawMessage, input []json.RawMessage) (catalog,
 					line += "Input format reference: " + string(format) + "\n"
 				}
 			} else {
-				line += "FUNCTION: references=" + string(encoded([]string{clientToolReferencePrefix + key})) + "; code is only the JSON arguments object as text.\n"
+				line += "FUNCTION: references=" + string(encoded([]string{clientToolReferencePrefix + key})) + "; code is a YAML mapping of arguments. Use literal |- blocks for nonempty string values; preserve every quote and backslash literally. Use two single quotes for an empty string.\n"
 				if params := entry["parameters"]; len(params) > 0 {
 					line += "Argument reference: " + string(params) + "\n"
 				}
@@ -150,7 +150,7 @@ func (c catalog) prompt() string {
 		return "Do not call any tools for this response. Produce the requested text response directly. Historical tool calls and tool descriptions do not enable tools in this request.\n"
 	}
 	var b strings.Builder
-	b.WriteString("Client tool transport protocol v5. Call run_officejs (also displayed as functions.run_officejs) for exactly one client tool. Set references to exactly [\"client-tool:FULL_CATALOG_NAME\"]. Routing is separate from code. For CUSTOM, code is the exact raw input: write the actual script or patch with its real newlines; do not wrap it in a JSON envelope or JSON-stringify it. For FUNCTION, code is only the JSON arguments object as text. Do not put name, namespace, input or an arguments wrapper around the payload. The native tool serializes its outer arguments; do not pre-escape code. Summary is descriptive only. The bridge forwards the payload to the declared client tool and never executes OfficeJS or scripts. Client permissions and approvals still apply. Do not invent tool results.\n")
+	b.WriteString("Client tool transport protocol v6. Call run_officejs (also displayed as functions.run_officejs) for exactly one client tool. Set references to exactly [\"client-tool:FULL_CATALOG_NAME\"]. Routing is separate from code. For CUSTOM, code is the exact raw input: write the actual script or patch with its real newlines; do not wrap it in a JSON envelope or JSON-stringify it. For FUNCTION, code is a YAML mapping of arguments. Use literal |- blocks for ALL nonempty string values, especially regexes, Windows paths, shell commands and source code. In a block, copy quotes and backslashes exactly once; do not escape, double, remove or add characters. Use two single quotes only for an empty string. Use | instead of |- only when the value must end with a newline. Do not put those strings in quoted scalars or stringify the mapping as JSON. Use JSON-style decimal numbers, booleans and null; no YAML tags, anchors, aliases or duplicate keys. The bridge converts the mapping to a native JSON arguments object for the client. Do not put name, namespace, input or an arguments wrapper around the payload. The native tool serializes its outer arguments; do not pre-escape code. Summary is descriptive only. The bridge never executes OfficeJS or scripts. Client permissions and approvals still apply. Do not invent tool results.\nFUNCTION code example (actual newlines):\npattern: |-\n  Path\\(|pickle\\.dump\npath: |-\n  /workspace/input\ncontextAround: 2\n")
 	if c.choice == "required" {
 		b.WriteString("Request at least one client tool for this response.\n")
 	}
