@@ -99,7 +99,7 @@ func TestPublicTransitHandlerDiscoveryUsesCanonicalRelativeURL(t *testing.T) {
 	req.Header.Set("X-Forwarded-Host", "attacker.invalid")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"schema_version":"ai-transit.v1","system":"sub2api","snapshot_url":"/api/public/transit/v1/snapshot","generated_at":""}`, rec.Body.String())
+	require.JSONEq(t, `{"schema_version":"ai-transit.v2","system":"sub2api","snapshot_url":"/api/public/transit/v1/snapshot","generated_at":""}`, rec.Body.String())
 }
 
 func TestPublicTransitHandlerAllSnapshotPathsHaveSamePublicContract(t *testing.T) {
@@ -129,7 +129,7 @@ func TestPublicTransitHandlerAllSnapshotPathsHaveSamePublicContract(t *testing.T
 			var result map[string]any
 			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
 			require.Len(t, result, 6)
-			require.Equal(t, "ai-transit.v1", result["schema_version"])
+			require.Equal(t, "ai-transit.v2", result["schema_version"])
 			require.Equal(t, "sub2api", result["system"])
 			monitoring := result["monitoring"].(map[string]any)
 			require.Equal(t, "channel-monitor-v2", monitoring["source"])
@@ -238,7 +238,7 @@ func TestPublicTransitHandlerUsesRealV2ServiceWithOnlyPublicGroupScope(t *testin
 	require.Equal(t, http.StatusOK, rec.Code)
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
-	require.Equal(t, "ai-transit.v1", result["schema_version"])
+	require.Equal(t, "ai-transit.v2", result["schema_version"])
 	require.Equal(t, 0.98, result["monitoring"].(map[string]any)["metrics"].(map[string]any)["success_rate"])
 	require.Equal(t, "public-pro", result["groups"].([]any)[0].(map[string]any)["name"])
 	require.Len(t, repo.filters, 3)
