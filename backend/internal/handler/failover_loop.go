@@ -116,13 +116,14 @@ func sameAccountRetryDeadlineAllows(failoverErr *service.UpstreamFailoverError) 
 	return failoverErr == nil || failoverErr.SameAccountRetryDeadline.IsZero() || time.Now().Before(failoverErr.SameAccountRetryDeadline)
 }
 
-// effectiveSameAccountRetryLimit applies an error-specific cap without
-// overriding an explicit account setting of zero (which disables retries).
+// effectiveSameAccountRetryLimit gives explicit request-scoped provider failures
+// their own budget. Other failures retain the account setting, including zero.
 func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
-	if failoverErr != nil && failoverErr.Reason == service.OpenAIResponseProtectionUnavailableReason {
-		// This provider dependency outage is request-scoped and explicitly opts
-		// into five retries even when the selected OAuth account is not pool mode.
-		return 5
+	if failoverErr != nil {
+		switch failoverErr.Reason {
+		case service.OpenAIResponseProtectionUnavailableReason, service.OpenAIProcessingFailureReason:
+			return service.OpenAITransientFailureRetryLimit
+		}
 	}
 	if account == nil {
 		return 0

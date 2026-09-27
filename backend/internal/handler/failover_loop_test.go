@@ -145,6 +145,27 @@ func TestEffectiveSameAccountRetryLimitResponseProtectionOverridesAccountMode(t 
 	require.Equal(t, 5, effectiveSameAccountRetryLimit(err, account))
 }
 
+func TestEffectiveSameAccountRetryLimitProcessingFailureOverridesAccountMode(t *testing.T) {
+	for _, credentials := range []map[string]any{
+		nil,
+		{"pool_mode": true, "pool_mode_retry_count": float64(0)},
+		{"pool_mode": true, "pool_mode_retry_count": float64(1)},
+		{"pool_mode": true, "pool_mode_retry_count": float64(20)},
+	} {
+		account := &service.Account{Type: service.AccountTypeOAuth, Credentials: credentials}
+		err := &service.UpstreamFailoverError{
+			Reason:                 service.OpenAIProcessingFailureReason,
+			RetryableOnSameAccount: true,
+			RequestScopedTransient: true,
+			SameAccountRetryMax:    service.OpenAITransientFailureRetryLimit,
+		}
+		limit := effectiveSameAccountRetryLimit(err, account)
+		require.Equal(t, 5, limit)
+		require.True(t, sameAccountRetryAllowed(err, 4, limit))
+		require.False(t, sameAccountRetryAllowed(err, 5, limit))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
