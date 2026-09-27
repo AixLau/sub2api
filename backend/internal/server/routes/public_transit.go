@@ -12,5 +12,6 @@ func RegisterPublicTransitRoutes(r *gin.Engine, v1 *gin.RouterGroup, h *handler.
 	}
 	r.GET(service.PublicTransitWellKnownPath, h.PublicTransit.Discovery)
 	r.GET(service.PublicTransitSnapshotPath, h.PublicTransit.Snapshot)
+	r.GET(service.PublicTransitV2SnapshotPath, h.PublicTransit.Snapshot)
 	v1.GET("/public/transit/snapshot", h.PublicTransit.Snapshot)
 }

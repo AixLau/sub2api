@@ -12,6 +12,7 @@ const (
 	PublicTransitSystem         = "sub2api"
 	PublicTransitWellKnownPath  = "/.well-known/ai-transit.json"
 	PublicTransitSnapshotPath   = "/api/public/transit/v1/snapshot"
+	PublicTransitV2SnapshotPath = "/api/public/transit/v2/snapshot"
 	publicTransitMaxTrendPoints = 512
 )
 
