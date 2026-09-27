@@ -790,6 +790,11 @@ func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 	if e == nil {
 		return false
 	}
+	if e.RequestScopedTransient && e.Reason == OpenAIProcessingFailureReason {
+		// Keep the selected account eligible throughout this request's bounded
+		// retries instead of degrading its scheduler score on every attempt.
+		return false
+	}
 	return !e.IsCredentialFailure() || e.Scope == GatewayFailureScopeAccount
 }
 

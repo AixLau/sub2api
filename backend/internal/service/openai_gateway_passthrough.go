@@ -1668,7 +1668,8 @@ func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []b
 	if account == nil {
 		return false
 	}
-	if isOpenAIResponseProtectionUnavailable(http.StatusBadGateway, message, payload) {
+	if isOpenAIResponseProtectionUnavailable(http.StatusBadGateway, message, payload) ||
+		isOpenAIProcessingFailure(openAIStreamFailureStatus(payload, message), message, payload) {
 		return true
 	}
 	// 容量降载是请求级信号，不是账号级故障：上游只是让本次请求稍后再试。
@@ -1787,6 +1788,12 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
 		classificationHeaders = nil
 	}
 	failoverErr := s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, headers, classificationHeaders, payload, message, shouldDisable, retryableOnSameAccount)
+	if isOpenAIProcessingFailure(statusCode, message, payload) {
+		// HTTP 200 streams bypass the transport's HTTP-error retry loop. Assign
+		// this budget only to pre-output stream failures, avoiding nested HTTP
+		// retries when the BPS transport has already retried a non-2xx response.
+		setOpenAITransientFailureRetry(failoverErr, OpenAIProcessingFailureReason, message)
+	}
 	failoverErr.SafeToFailoverAfterWrite = true
 	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {
 		return failoverErr

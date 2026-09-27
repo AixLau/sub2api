@@ -190,6 +190,46 @@ func isOpenAICapacityShedMessage(text string) bool {
 		strings.Contains(lower, "servers are currently overloaded")
 }
 
+// isOpenAIProcessingFailure recognizes the provider's transient processing
+// failure, including the semantic 502 carried inside an HTTP 200 SSE stream.
+// Only error fields are authoritative; echoed request content is not evidence.
+func isOpenAIProcessingFailure(statusCode int, message string, body []byte) bool {
+	if statusCode != http.StatusBadRequest && (statusCode < 500 || statusCode >= 600) {
+		return false
+	}
+	if isOpenAINonRetryableProtocolFailure(body) || isOpenAIContextWindowError(message, body) || isOpenAIUpstreamAccessStateError(message, body) {
+		return false
+	}
+	if hit, _, _ := detectOpenAICyberPolicy(body); hit {
+		return false
+	}
+	for _, path := range []string{"error.code", "response.error.code", "code"} {
+		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, path).String()))
+		switch code {
+		case "", "server_error", "internal_error", "upstream_error":
+		default:
+			// Specific auth, rate-limit, policy and client errors keep their own
+			// recovery policy even if their message includes the generic phrase.
+			return false
+		}
+	}
+	match := func(text string) bool {
+		text = strings.ToLower(strings.TrimSpace(text))
+		return strings.Contains(text, "an error occurred while processing your request") ||
+			(strings.Contains(text, "you can retry your request") &&
+				strings.Contains(text, "help.openai.com") && strings.Contains(text, "request id"))
+	}
+	if match(message) {
+		return true
+	}
+	for _, path := range []string{"error.message", "response.error.message", "message"} {
+		if match(gjson.GetBytes(body, path).String()) {
+			return true
+		}
+	}
+	return !gjson.ValidBytes(body) && match(string(body))
+}
+
 func isOpenAIRequestScopedCapacityShed(upstreamMsg string, upstreamBody []byte) bool {
 	return isOpenAIUpstreamCapacityShedEvent(upstreamBody) ||
 		isOpenAICapacityShedMessage(upstreamMsg) ||
@@ -431,18 +471,7 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientMessage = OpenAIRequestBodyTooLargeClientMessage
 	}
 	if isOpenAIResponseProtectionUnavailable(statusCode, upstreamMsg, responseBody) {
-		// The provider's response-protection dependency returned a transient
-		// 502. It is independent of the selected credential, so retry the same
-		// request before rotating accounts; the handler applies the bounded
-		// five-retry budget for this typed reason.
-		failoverErr.RetryableOnSameAccount = true
-		failoverErr.RequestScopedTransient = true
-		failoverErr.SameAccountRetryMax = openAIResponseProtectionRetryLimit
-		failoverErr.Scope = GatewayFailureScopeRequest
-		failoverErr.Reason = OpenAIResponseProtectionUnavailableReason
-		failoverErr.NextAccountAction = NextAccountRetry
-		failoverErr.ClientStatusCode = http.StatusBadGateway
-		failoverErr.ClientMessage = upstreamMsg
+		setOpenAITransientFailureRetry(failoverErr, OpenAIResponseProtectionUnavailableReason, upstreamMsg)
 	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false
@@ -462,12 +491,30 @@ func newOpenAIUpstreamFailoverError(
 	return failoverErr
 }
 
+// setOpenAITransientFailureRetry assigns the handler-owned request retry budget,
+// including non-pool OAuth accounts, independently of the account retry setting.
+func setOpenAITransientFailureRetry(failure *UpstreamFailoverError, reason GatewayFailureReason, message string) {
+	failure.RetryableOnSameAccount = true
+	failure.RequestScopedTransient = true
+	failure.SameAccountRetryMax = OpenAITransientFailureRetryLimit
+	failure.Scope = GatewayFailureScopeRequest
+	failure.Reason = reason
+	failure.NextAccountAction = NextAccountRetry
+	failure.ClientStatusCode = http.StatusBadGateway
+	failure.ClientMessage = message
+}
+
 const (
 	// OpenAIResponseProtectionUnavailableReason identifies the provider-side
 	// response protection dependency outage. It is deliberately exact: generic
 	// 5xx responses retain the existing account failover policy.
 	OpenAIResponseProtectionUnavailableReason = GatewayFailureReason("openai_response_protection_unavailable")
-	openAIResponseProtectionRetryLimit        = 5
+	// OpenAIProcessingFailureReason identifies the provider's explicit
+	// "An error occurred while processing your request" stream failure.
+	OpenAIProcessingFailureReason = GatewayFailureReason("openai_processing_failure")
+	// OpenAITransientFailureRetryLimit is the number of additional attempts for
+	// the two typed provider failures above, before ordinary account failover.
+	OpenAITransientFailureRetryLimit = 5
 )
 
 func isOpenAIResponseProtectionUnavailable(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
