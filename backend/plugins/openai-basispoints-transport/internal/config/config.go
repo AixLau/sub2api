@@ -50,9 +50,9 @@ type Config struct {
 	// An empty selected list sends every request to the native upstream.
 	BPSModelMode string   `json:"bps_model_mode"`
 	BPSModels    []string `json:"bps_models"`
-	// NativeFallback enables the native-channel fallback: requests the Basis
-	// Points upstream cannot serve are forwarded verbatim to the native Codex
-	// endpoint. A missing value means enabled.
+	// NativeFallback enables optional agent capability routing to the native
+	// Codex endpoint. A missing value means enabled. Protocol-only operations
+	// (alpha/search and tool-free context compaction) always use native.
 	NativeFallback *bool `json:"native_fallback"`
 	// NativeUpstreamBaseURL optionally overrides the native Codex endpoint the
 	// fallback path forwards to. Empty means the host-supplied request URL is
