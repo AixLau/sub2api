@@ -21,7 +21,7 @@
       <div class="window-note"><span>监控窗口</span><strong>20 min</strong></div>
     </section>
     <section class="import-section" aria-label="导入方式">
-      <div class="field reference-field"><label for="reference-account">默认配置参照账号</label><select id="reference-account" required><option value="">正在读取 OpenAI OAuth 账号…</option></select><small>新账号默认复制参照账号的模型配置、并发、优先级、分组及计费设置；可手动更换参照账号</small></div>
+      <div class="field reference-field"><label for="reference-account">默认配置参照账号</label><select id="reference-account" required><option value="">正在读取 OpenAI OAuth 账号…</option></select><small>复制参考账号的分组及配置；导入账号默认启用，从全部可用的 5x 代理中随机选择，不继承参考账号的状态和代理</small></div>
       <div class="segmented" role="tablist" aria-label="导入方式">
         <button id="tab-file" type="button" role="tab" aria-selected="true" aria-controls="panel-file">上传 Sub2API JSON</button>
         <button id="tab-account" type="button" role="tab" aria-selected="false" aria-controls="panel-account">邮箱 · 密码 · 2FA</button>

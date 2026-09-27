@@ -13,7 +13,7 @@ from typing import Callable
 from job_store import JobStore, StorageError
 from import_payload import validate_bundle
 from local_relogin import parse_account_line, relogin_payload
-from proxy_pool import select_5x_proxy
+from proxy_pool import ProxyChoice, select_5x_proxy
 from sub2api_client import AdminAPIError, Sub2APIClient
 
 WATCH_SECONDS = 20 * 60
@@ -31,8 +31,8 @@ REFERENCE_EXTRA_KEYS = (
     "openai_oauth_responses_websockets_v2_mode",
 )
 REFERENCE_SETTING_KEYS = (
-    "proxy_id", "concurrency", "priority", "rate_multiplier",
-    "load_factor", "auto_pause_on_expired", "status",
+    "concurrency", "priority", "rate_multiplier",
+    "load_factor", "auto_pause_on_expired",
     "upstream_billing_probe_enabled", "upstream_billing_rate_sync_enabled",
 )
 AUTH_MARKERS = ("401", "403", "token", "oauth", "expired", "invalid", "授权", "凭证", "过期")
@@ -118,7 +118,6 @@ def _account_profile(account: dict) -> dict:
         "group_ids": group_ids, "settings": settings,
         "extra": {key: deepcopy(extra[key]) for key in REFERENCE_EXTRA_KEYS if key in extra},
         "credentials": {key: deepcopy(credentials[key]) for key in REFERENCE_CREDENTIAL_KEYS if key in credentials},
-        "schedulable": account.get("schedulable", True),
         "account_id": int(account["id"]),
     }
 
@@ -131,7 +130,9 @@ def _prepared_new_account(account: dict, profile: dict, group_ids: list[int]) ->
             prepared[key] = profile["settings"][key]
         else:
             prepared.pop(key, None)
-    prepared.pop("expires_at", None)
+    for key in ("proxy_id", "proxy_key", "expires_at", "error_message"):
+        prepared.pop(key, None)
+    prepared.update(status="active", schedulable=True)
     credentials = prepared["credentials"]
     for key in REFERENCE_CREDENTIAL_KEYS:
         credentials.pop(key, None)
@@ -141,8 +142,8 @@ def _prepared_new_account(account: dict, profile: dict, group_ids: list[int]) ->
     return prepared
 
 
-def _proxy_settings(proxy_id: int | None) -> dict:
-    return {"proxy_id": proxy_id} if proxy_id is not None else {}
+def _proxy_settings(proxy_id: int) -> dict:
+    return {"proxy_id": proxy_id}
 
 
 @dataclass
@@ -296,7 +297,7 @@ class JobManager:
                 for item, remote in zip(accounts, existing)
             ]
             jobs = [
-                Job(name=item["name"], mode="file", group_ids=list(group), proxy_id=choice.id if choice else None)
+                Job(name=item["name"], mode="file", group_ids=list(group), proxy_id=choice.id)
                 for item, group, choice in zip(accounts, groups, choices)
             ]
             for job in jobs:
@@ -307,21 +308,21 @@ class JobManager:
                 await self._save(job)
                 self.jobs[job.id] = job
             imported_jobs = []
-            new_pairs = [(account, job) for account, remote, job in zip(accounts, existing, jobs) if remote is None]
+            new_pairs = [(account, job, choice) for account, remote, job, choice in zip(accounts, existing, jobs, choices) if remote is None]
             if new_pairs:
                 new_accounts = []
-                for account, job in new_pairs:
+                for account, job, choice in new_pairs:
                     prepared = _prepared_new_account(account, profile, job.group_ids)
-                    prepared.update(_proxy_settings(job.proxy_id))
+                    prepared.update(_proxy_settings(job.proxy_id), proxy_key=choice.key)
                     new_accounts.append(prepared)
-                new_payload = {"proxies": payload["proxies"], "accounts": new_accounts}
+                new_payload = {"proxies": [], "accounts": new_accounts}
                 try:
                     result = await self.client.import_data(new_payload)
                 except Exception:
-                    for _, job in new_pairs:
+                    for _, job, _ in new_pairs:
                         job.state, job.message = "failed", "导入请求失败；请在 Sub2API 核查后再重试"
                 else:
-                    for _, job in new_pairs:
+                    for _, job, _ in new_pairs:
                         try:
                             remote = await self.client.find_account(job.name)
                             if not remote:
@@ -334,7 +335,7 @@ class JobManager:
                         except Exception:
                             job.state, job.message = "attention", "账号可能已导入，但分组或查询失败；请在 Sub2API 核查"
                     if result.get("account_failed"):
-                        for _, job in new_pairs:
+                        for _, job, _ in new_pairs:
                             if job.state == "monitoring":
                                 job.message = "部分账号导入失败，请核查 Sub2API 导入结果"
             for account, remote, job in zip(accounts, existing, jobs):
@@ -344,10 +345,11 @@ class JobManager:
                 await self._retire_previous(job.account_id, job.id)
                 try:
                     await self.client.apply_oauth(job.account_id, account)
-                    settings = _proxy_settings(job.proxy_id)
+                    settings = {**_proxy_settings(job.proxy_id), "status": "active"}
                     if override_group_ids is not None:
                         settings["group_ids"] = job.group_ids
                     await self.client.update_settings(job.account_id, settings)
+                    await self.client.set_schedulable(job.account_id, True)
                     imported_jobs.append(job)
                     await self._start_watch(job)
                 except Exception:
@@ -392,8 +394,8 @@ class JobManager:
             await self._save(previous)
 
     async def _apply_new_settings(self, job: Job, profile: dict) -> None:
-        await self.client.update_settings(job.account_id, {**profile["settings"], "group_ids": job.group_ids, **_proxy_settings(job.proxy_id)})
-        await self.client.set_schedulable(job.account_id, bool(profile["schedulable"]))
+        await self.client.update_settings(job.account_id, {**profile["settings"], "group_ids": job.group_ids, **_proxy_settings(job.proxy_id), "status": "active"})
+        await self.client.set_schedulable(job.account_id, True)
 
     async def import_credentials(self, account_line: str, group_ids: list[int] | None = None, profile_account_id: int | None = None, plugin_id: int | None = None) -> dict:
         email, _, _ = parse_account_line(account_line)
@@ -408,15 +410,15 @@ class JobManager:
             plugin_id=plugin_id,
             plugin_name=str(plugin.get("name") or plugin_id) if plugin is not None else "",
             plugin_status="pending" if plugin is not None else "",
-            proxy_id=choice.id if choice else None,
-            login_proxy=choice.url if choice else None,
+            proxy_id=choice.id,
+            login_proxy=choice.url,
         )
         await self._save(job)
         self.jobs[job.id] = job
-        job.task = asyncio.create_task(self._login_and_import(job, profile_account_id))
+        job.task = asyncio.create_task(self._login_and_import(job, profile_account_id, choice))
         return job.public()
 
-    async def _login_and_import(self, job: Job, profile_account_id: int | None) -> None:
+    async def _login_and_import(self, job: Job, profile_account_id: int | None, choice: ProxyChoice) -> None:
         try:
             async with self._import_lock:
                 remote = await self.client.find_account(job.name)
@@ -443,15 +445,17 @@ class JobManager:
                     job.account_id = int(remote["id"])
                     await self._retire_previous(job.account_id, job.id)
                     await self.client.apply_oauth(job.account_id, payload["accounts"][0])
-                    settings = _proxy_settings(job.proxy_id)
+                    settings = {**_proxy_settings(job.proxy_id), "status": "active"}
                     if job.group_ids and profile is None and job.group_ids != (remote.get("group_ids") or []):
                         settings["group_ids"] = job.group_ids
                     await self.client.update_settings(job.account_id, settings)
+                    await self.client.set_schedulable(job.account_id, True)
                     await self._bind_plugin_jobs(job.plugin_id, [job])
                     await self._start_watch(job)
                     return
                 payload["accounts"][0] = _prepared_new_account(payload["accounts"][0], profile, job.group_ids)
-                payload["accounts"][0].update(_proxy_settings(job.proxy_id))
+                payload["accounts"][0].update(_proxy_settings(job.proxy_id), proxy_key=choice.key)
+                payload["proxies"] = []
                 await self.client.import_data(payload)
                 remote = await self.client.find_account(remote_name)
                 if not remote:
@@ -570,10 +574,13 @@ class JobManager:
         email, _, _ = parse_account_line(line)
         if email.casefold() != job.name.casefold():
             raise ValueError("重新授权资料必须属于当前账号")
+        choice = select_5x_proxy(await self.client.list_active_proxies()) if job.account_id is None else None
         await self._begin_manual(job, "credentials")
         job.credential_line = line
+        if choice is not None:
+            job.proxy_id, job.login_proxy = choice.id, choice.url
         job.task = asyncio.create_task(
-            self._manual_credentials(job) if job.account_id else self._login_and_import(job, job.profile_account_id)
+            self._manual_credentials(job) if job.account_id else self._login_and_import(job, job.profile_account_id, choice)
         )
         return job.public()
 
@@ -581,7 +588,7 @@ class JobManager:
         try:
             async with self._import_lock:
                 choice = select_5x_proxy(await self.client.list_active_proxies())
-                job.login_proxy = choice.url if choice else None
+                job.login_proxy = choice.url
                 async with self._login_lock:
                     payload = await asyncio.to_thread(
                         self.login, job.credential_line, "sub2api",
@@ -591,8 +598,8 @@ class JobManager:
                 if len(accounts) != 1 or accounts[0]["name"].casefold() != job.name.casefold():
                     raise ValueError("重新授权账号不匹配")
                 await self.client.apply_oauth(job.account_id, accounts[0])
-                await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
-                job.proxy_id = choice.id if choice else None
+                await self.client.update_settings(job.account_id, _proxy_settings(choice.id))
+                job.proxy_id = choice.id
                 job.attempts, job.next_relogin = 0, None
                 await self._start_watch(job)
         except asyncio.CancelledError:
@@ -637,8 +644,8 @@ class JobManager:
             async with self._import_lock:
                 choice = select_5x_proxy(await self.client.list_active_proxies())
                 await self.client.apply_oauth(job.account_id, accounts[0])
-                await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
-                job.proxy_id = choice.id if choice else None
+                await self.client.update_settings(job.account_id, _proxy_settings(choice.id))
+                job.proxy_id = choice.id
                 await self._start_watch(job)
         except Exception:
             job.state, job.message = "invalid", "重新授权失败，请核查文件和服务器"

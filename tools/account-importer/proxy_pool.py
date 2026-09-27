@@ -15,6 +15,7 @@ SUPPORTED_PROTOCOLS = {"http", "https", "socks5", "socks5h"}
 class ProxyChoice:
     id: int
     url: str = field(repr=False)
+    key: str = field(repr=False)
 
 
 def _available(proxy: dict, now: datetime) -> bool:
@@ -46,10 +47,10 @@ def _available(proxy: dict, now: datetime) -> bool:
     return True
 
 
-def select_5x_proxy(proxies: list[dict]) -> ProxyChoice | None:
+def select_5x_proxy(proxies: list[dict]) -> ProxyChoice:
     candidates = [proxy for proxy in proxies if isinstance(proxy, dict) and _available(proxy, datetime.now(timezone.utc))]
     if not candidates:
-        return None
+        raise ValueError("没有可用的 5x 代理，请先在 Sub2API 添加或启用名称为 5x 的代理")
     proxy = secrets.choice(candidates)
     host = proxy["host"]
     if ":" in host and not host.startswith("["):
@@ -58,4 +59,5 @@ def select_5x_proxy(proxies: list[dict]) -> ProxyChoice | None:
     if proxy.get("username") and proxy.get("password"):
         auth = f"{quote(proxy['username'], safe='')}:{quote(proxy['password'], safe='')}@"
     url = f"{proxy['protocol']}://{auth}{host}:{proxy['port']}"
-    return ProxyChoice(id=proxy["id"], url=url)
+    key = "|".join(str(proxy.get(name) or "").strip() for name in ("protocol", "host", "port", "username", "password"))
+    return ProxyChoice(id=proxy["id"], url=url, key=key)
