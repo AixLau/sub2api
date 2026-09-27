@@ -134,7 +134,12 @@ func stampForwardRequestedReasoningEffort(result *service.ForwardResult, request
 }
 
 func applyOpenAIReasoningEffortPolicyForRequest(c *gin.Context, apiKey *service.APIKey, body []byte) ([]byte, bool, error) {
-	bindRequestedReasoningEffort(c, body, strings.TrimSpace(gjson.GetBytes(body, "model").String()))
+	model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	// Composite groups need their concrete target before the policy selector
+	// can decide whether the OpenAI-shaped policy applies. Some callers invoke
+	// this helper before the normal routing validation has resolved that target.
+	ensureCompositeTargetPlatform(c, apiKey, model)
+	bindRequestedReasoningEffort(c, body, model)
 	maxEffort, mappings, overLimit, ok := openAIReasoningEffortPolicyForRequest(c, apiKey)
 	if !ok {
 		return body, false, nil

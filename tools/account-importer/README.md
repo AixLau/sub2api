@@ -7,8 +7,9 @@ its current account scope. Failed plugin updates remain visible separately from
 account import status. Existing accounts are reauthorized without duplication.
 
 The tool reads reference accounts, groups, usable 5x proxies, and enabled
-plugins from Sub2API. Credentials remain in process memory during the 20-minute
-monitoring window. Restarting the service clears jobs and monitoring state.
+plugins from Sub2API. Original import credentials remain in process memory after the 20-minute
+monitoring window for one-click reauthorization. Superseding an import job or
+stopping the service clears its credentials; restarting clears all jobs.
 The login adapter uses the pinned any-auto-register revision recorded in the
 Dockerfile; upstream source is fetched at image build time, not vendored here.
 No third-party login service is used. Account login may still require mailbox
@@ -90,3 +91,11 @@ node --check tools/account-importer/static/app.js
 For local development set SUB2API_BASE_URL, SUB2API_ADMIN_API_KEY_FILE (or
 SUB2API_ADMIN_API_KEY) and ACCOUNT_IMPORT_AUTH_SOURCE to the pinned checkout,
 then run python tools/account-importer/web_service.py.
+
+
+### 手动重新授权
+
+- 账号资料导入：任务「操作」列提供「手动重新授权」。可在 401 后主动触发；直接使用首次导入的「邮箱----密码----2FA 密钥」，不再要求二次输入；监控结束后仍可一键重试。手动授权不受自动重试 3 次或冷却时间限制。
+- JSON 导入：可填写当前账号的 RT，服务经 Sub2API 刷新接口换取授权并校验账号身份后写回；也可重新上传只包含同名账号的 JSON。无法核实身份或身份不匹配时不会写入。
+- 授权成功后重新开始 20 分钟监控，保留账号 ID、分组和插件绑定。正在授权时不接受重复操作；已被新导入任务接管的旧任务不可操作。
+- 手动提交均要求 CSRF 校验。密码、2FA 和 RT 不在任务列表中返回。账号资料仅保存在本次服务内存中，任务被新导入接管或服务停止时清除；服务重启后需重新导入。RT 输入框在提交或关闭时清空。

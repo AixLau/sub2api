@@ -134,10 +134,13 @@ class Job:
     login_proxy: str | None = field(default=None, repr=False)
     next_relogin: datetime | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
+    manual_pending: bool = field(default=False, repr=False)
+    retired: bool = False
 
     def public(self) -> dict:
         return {
             "id": self.id, "name": self.name, "mode": self.mode,
+            "has_saved_credentials": bool(self.credential_line), "retired": self.retired,
             "state": self.state, "account_id": self.account_id,
             "proxy_id": self.proxy_id,
             "plugin_id": self.plugin_id, "plugin_name": self.plugin_name,
@@ -299,6 +302,7 @@ class JobManager:
                     await previous.task
                 except asyncio.CancelledError:
                     pass
+            previous.retired = True
             previous.credential_line = None
             previous.login_proxy = None
             previous.state, previous.message = "completed", "已由新上传文件接管监控"
@@ -389,32 +393,28 @@ class JobManager:
         job.task = asyncio.create_task(self._watch(job))
 
     async def _watch(self, job: Job) -> None:
-        try:
-            while job.deadline and _now() < job.deadline:
-                try:
-                    account = await self.client.get_account(job.account_id)
-                    job.remote_status = str(account.get("status") or "")
-                    job.current_concurrency = account.get("current_concurrency")
-                    job.last_used_at = account.get("last_used_at")
-                    job.schedulable = account.get("schedulable")
-                    state, message = _account_state(account)
-                    job.state, job.message = state, message
-                    if state == "invalid" and job.mode == "credentials":
-                        await self._retry_relogin(job)
-                    if state == "invalid" and job.mode == "file":
-                        break
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    job.state, job.message = "attention", "状态查询失败，稍后重试"
-                await asyncio.sleep(min(self.poll_seconds, max(0, (job.deadline - _now()).total_seconds())))
-            if job.state == "monitoring" and job.deadline and _now() >= job.deadline:
-                job.state, job.message = "completed", "20 分钟监控已结束"
-            elif job.state == "attention" and job.deadline and _now() >= job.deadline:
-                job.message = "监控已结束；最后状态仍需人工核查"
-        finally:
-            job.credential_line = None
-            job.login_proxy = None
+        while job.deadline and _now() < job.deadline:
+            try:
+                account = await self.client.get_account(job.account_id)
+                job.remote_status = str(account.get("status") or "")
+                job.current_concurrency = account.get("current_concurrency")
+                job.last_used_at = account.get("last_used_at")
+                job.schedulable = account.get("schedulable")
+                state, message = _account_state(account)
+                job.state, job.message = state, message
+                if state == "invalid" and job.mode == "credentials":
+                    await self._retry_relogin(job)
+                if state == "invalid" and job.mode == "file":
+                    break
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                job.state, job.message = "attention", "状态查询失败，稍后重试"
+            await asyncio.sleep(min(self.poll_seconds, max(0, (job.deadline - _now()).total_seconds())))
+        if job.state == "monitoring" and job.deadline and _now() >= job.deadline:
+            job.state, job.message = "completed", "20 分钟监控已结束"
+        elif job.state == "attention" and job.deadline and _now() >= job.deadline:
+            job.message = "监控已结束；最后状态仍需人工核查"
 
     async def _retry_relogin(self, job: Job) -> None:
         if job.attempts >= MAX_RELOGINS:
@@ -441,29 +441,105 @@ class JobManager:
         except Exception:
             job.state, job.message = "invalid", "自动重新授权失败，稍后再试"
 
+    async def _begin_manual(self, job: Job, mode: str) -> None:
+        if job.mode != mode or job.account_id is None or job.retired:
+            raise ValueError("此任务不能执行该重新授权操作，请使用最新导入任务")
+        if job.manual_pending or job.state in {"importing", "reauthorizing"}:
+            raise ValueError("此账号正在授权，请等待当前操作完成")
+        job.manual_pending = True
+        line, proxy = job.credential_line, job.login_proxy
+        try:
+            if job.task and not job.task.done():
+                job.task.cancel()
+                try:
+                    await job.task
+                except asyncio.CancelledError:
+                    pass
+            # Keep the original import credentials for one-click authorization.
+            job.credential_line, job.login_proxy = line, proxy
+            job.state, job.message = "reauthorizing", "正在手动重新授权"
+        except BaseException:
+            job.manual_pending = False
+            raise
+
+    async def reauthorize_credentials(self, job_id: str) -> dict:
+        job = self.get_job(job_id)
+        line = job.credential_line
+        if not line:
+            raise ValueError("此任务没有首次导入的账号资料，请使用原始账号资料导入任务")
+        email, _, _ = parse_account_line(line)
+        if email.casefold() != job.name.casefold():
+            raise ValueError("重新授权资料必须属于当前账号")
+        await self._begin_manual(job, "credentials")
+        job.credential_line = line
+        job.task = asyncio.create_task(self._manual_credentials(job))
+        return job.public()
+
+    async def _manual_credentials(self, job: Job) -> None:
+        try:
+            async with self._import_lock:
+                choice = select_5x_proxy(await self.client.list_active_proxies())
+                job.login_proxy = choice.url if choice else None
+                async with self._login_lock:
+                    payload = await asyncio.to_thread(
+                        self.login, job.credential_line, "sub2api",
+                        group_ids=job.group_ids, proxy=job.login_proxy,
+                    )
+                accounts = validate_bundle(payload)["accounts"]
+                if len(accounts) != 1 or accounts[0]["name"].casefold() != job.name.casefold():
+                    raise ValueError("重新授权账号不匹配")
+                await self.client.apply_oauth(job.account_id, accounts[0])
+                await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
+                job.proxy_id = choice.id if choice else None
+                job.attempts, job.next_relogin = 0, None
+                self._start_watch(job)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            job.state, job.message = "invalid", "手动重新授权失败，请核查账号资料和网络后重试"
+        finally:
+            job.manual_pending = False
+
+    async def reauthorize_rt(self, job_id: str, refresh_token: str) -> dict:
+        token = refresh_token.strip()
+        if not token or len(token) > 16384:
+            raise ValueError("请填写有效的 RT")
+        job = self.get_job(job_id)
+        await self._begin_manual(job, "file")
+        job.task = asyncio.create_task(self._manual_rt(job, token))
+        return job.public()
+
+    async def _manual_rt(self, job: Job, token: str) -> None:
+        try:
+            async with self._import_lock:
+                await self.client.refresh_oauth(job.account_id, token)
+                self._start_watch(job)
+        except asyncio.CancelledError:
+            raise
+        except ValueError as exc:
+            job.state, job.message = "invalid", str(exc)
+        except Exception:
+            job.state, job.message = "invalid", "RT 重新授权失败，请核查 RT 和网络；也可重新上传 JSON"
+        finally:
+            job.manual_pending = False
+
     async def reauthorize_file(self, job_id: str, payload: dict) -> dict:
         job = self.get_job(job_id)
-        if job.mode != "file" or job.account_id is None:
-            raise ValueError("此任务无法通过上传文件重新授权")
-        account = validate_bundle(payload)["accounts"]
-        if len(account) != 1 or account[0]["name"].casefold() != job.name.casefold():
+        accounts = validate_bundle(payload)["accounts"]
+        if len(accounts) != 1 or accounts[0]["name"].casefold() != job.name.casefold():
             raise ValueError("重新授权文件必须只包含同名账号")
-        choice = select_5x_proxy(await self.client.list_active_proxies())
-        if job.task and not job.task.done():
-            job.task.cancel()
-            try:
-                await job.task
-            except asyncio.CancelledError:
-                pass
-        job.state, job.message = "reauthorizing", "正在应用新文件"
+        await self._begin_manual(job, "file")
         try:
-            await self.client.apply_oauth(job.account_id, account[0])
-            await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
-            job.proxy_id = choice.id if choice else None
+            async with self._import_lock:
+                choice = select_5x_proxy(await self.client.list_active_proxies())
+                await self.client.apply_oauth(job.account_id, accounts[0])
+                await self.client.update_settings(job.account_id, _proxy_settings(choice.id if choice else None))
+                job.proxy_id = choice.id if choice else None
+                self._start_watch(job)
         except Exception:
             job.state, job.message = "invalid", "重新授权失败，请核查文件和服务器"
-            return job.public()
-        self._start_watch(job)
+        finally:
+            job.manual_pending = False
         return job.public()
 
     async def close(self) -> None:

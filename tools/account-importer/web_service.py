@@ -30,6 +30,10 @@ class AccountInput(BaseModel):
     plugin_id: int | None = Field(default=None, gt=0, strict=True)
 
 
+class RefreshTokenInput(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=16384)
+
+
 async def _bundle(file: UploadFile) -> dict:
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     await file.close()
@@ -151,6 +155,22 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
         require_csrf(x_csrf_token)
         try:
             return await manager.reauthorize_file(job_id, await _bundle(file))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/jobs/{job_id}/reauthorize/credentials", status_code=202)
+    async def reauthorize_credentials(job_id: str, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            return await manager.reauthorize_credentials(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/jobs/{job_id}/reauthorize/refresh-token", status_code=202)
+    async def reauthorize_rt(job_id: str, body: RefreshTokenInput, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            return await manager.reauthorize_rt(job_id, body.refresh_token)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 

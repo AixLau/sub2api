@@ -67,3 +67,11 @@ td.empty { text-align: center; padding: 32px; color: #87958a; }
 .text-button { padding: 3px 0; border: 0; color: #137956; background: transparent; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .text-button:hover { text-decoration: underline; }
 @media (max-width: 680px) { .shell { width: min(100% - 28px, 1120px); } .topbar-inner { height: 62px; } .intro { padding: 28px 0 24px; align-items: flex-start; } h1 { font-size: 22px; } .window-note { display: none; } .import-section { padding: 17px 17px 12px; } .segmented { display: flex; } .segmented button { flex: 1; padding: 9px 7px; font-size: 12px; } .import-form { grid-template-columns: 1fr; gap: 19px; } .form-action { grid-column: 1; } .section-heading { padding: 20px 17px; } }
+
+.job-actions { min-width: 124px; }
+.job-actions .text-button { display: block; margin-bottom: 8px; white-space: nowrap; }
+#authorization-dialog { width: min(480px, calc(100vw - 32px)); box-sizing: border-box; padding: 28px; border: 1px solid #dbe4df; border-radius: 8px; color: #23332d; }
+#authorization-dialog::backdrop { background: rgb(15 32 26 / 45%); }
+#authorization-account { overflow-wrap: anywhere; color: #65786d; margin: 12px 0 24px; }
+#authorization-dialog input { box-sizing: border-box; width: 100%; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }

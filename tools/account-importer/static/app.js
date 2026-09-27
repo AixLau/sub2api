@@ -160,15 +160,40 @@ async function loadJobs() {
       addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
       addCell(row, job.watch_until ? new Date(job.watch_until).toLocaleString('zh-CN') : '—');
       const action = row.insertCell();
-      if (job.mode === 'file' && job.account_id && ['invalid', 'completed', 'attention'].includes(job.state)) {
+      if (job.account_id && !job.retired && ['file', 'credentials'].includes(job.mode)) {
+        action.className = 'job-actions';
+        const busy = ['importing', 'reauthorizing'].includes(job.state);
         const button = document.createElement('button');
         button.className = 'text-button';
         button.type = 'button';
-        button.textContent = '重新上传';
-        button.addEventListener('click', () => { reauthJob = job.id; document.getElementById('reauth-json').click(); });
+        button.disabled = busy;
+        button.textContent = job.mode === 'file' ? 'RT 重新授权' : '手动重新授权';
+        button.addEventListener('click', async () => {
+          if (job.mode === 'file') { openAuthorization(job); return; }
+          button.disabled = true;
+          setFeedback('正在使用首次导入的账号资料重新授权…');
+          try {
+            await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/credentials', {
+              method: 'POST', headers: { 'X-CSRF-Token': csrf },
+            });
+            setFeedback('已使用首次导入的资料启动授权，结果会在下方更新。');
+            await loadJobs();
+          } catch (error) { setFeedback(error.message, true); button.disabled = false; }
+        });
         action.append(button);
-      } else if (job.mode === 'credentials' && job.attempts) {
-        action.textContent = job.attempts + '/3 次';
+        if (job.mode === 'file') {
+          const upload = document.createElement('button');
+          upload.className = 'text-button';
+          upload.type = 'button';
+          upload.disabled = busy;
+          upload.textContent = '重新上传 JSON';
+          upload.addEventListener('click', () => { reauthJob = job.id; document.getElementById('reauth-json').click(); });
+          action.append(upload);
+        } else if (job.attempts) {
+          const attempts = document.createElement('small');
+          attempts.textContent = '自动重试 ' + job.attempts + '/3 次';
+          action.append(attempts);
+        }
       } else if (job.mode === 'reference' && ['completed', 'attention'].includes(job.state)) {
         const button = document.createElement('button');
         button.className = 'text-button';
@@ -243,6 +268,50 @@ document.getElementById('reauth-json').addEventListener('change', async event =>
     await loadJobs();
   } catch (error) { setFeedback(error.message, true); }
   finally { event.target.value = ''; reauthJob = null; }
+});
+
+const authorizationDialog = document.getElementById('authorization-dialog');
+const authorizationForm = document.getElementById('authorization-form');
+const authorizationSecret = document.getElementById('authorization-secret');
+const authorizationError = document.getElementById('authorization-error');
+let authorizationJob = null;
+
+function openAuthorization(job) {
+  authorizationJob = job;
+  authorizationForm.reset();
+  authorizationError.textContent = '';
+  document.getElementById('authorization-account').textContent = job.name + ' · #' + job.account_id;
+  authorizationDialog.showModal();
+  authorizationSecret.focus();
+}
+
+document.getElementById('authorization-cancel').addEventListener('click', () => authorizationDialog.close());
+authorizationDialog.addEventListener('close', () => {
+  authorizationForm.reset();
+  authorizationJob = null;
+  authorizationError.textContent = '';
+});
+authorizationForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!authorizationJob) return;
+  const job = authorizationJob;
+  const button = document.getElementById('authorization-submit');
+  const body = { refresh_token: authorizationSecret.value };
+  button.disabled = true;
+  authorizationError.textContent = '';
+  // Clear the input immediately; the request body is never persisted in the page.
+  authorizationSecret.value = '';
+  try {
+    await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/refresh-token', {
+      method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    authorizationDialog.close();
+    setFeedback('手动授权任务已提交，成功后重新监控 20 分钟。');
+    await loadJobs();
+  } catch (error) {
+    if (authorizationDialog.open && authorizationJob?.id === job.id) authorizationError.textContent = error.message;
+    else setFeedback(error.message, true);
+  } finally { button.disabled = false; }
 });
 
 document.getElementById('refresh').addEventListener('click', loadJobs);

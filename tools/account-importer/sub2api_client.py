@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -73,11 +74,11 @@ class Sub2APIClient:
         await self._http.aclose()
 
     async def _request(
-        self, method: str, path: str, *, params: dict | None = None, payload: dict | None = None
+        self, method: str, path: str, *, params: dict | None = None, payload: dict | None = None, timeout: float = 20.0
     ):
         url = f"{self.base_url}/api/v1/admin/{path.lstrip('/')}"
         try:
-            response = await self._http.request(method, url, params=params, json=payload)
+            response = await self._http.request(method, url, params=params, json=payload, timeout=timeout)
         except httpx.HTTPError as exc:
             raise AdminAPIError(f"管理员接口连接失败：{type(exc).__name__}") from None
         try:
@@ -174,6 +175,47 @@ class Sub2APIClient:
                 "extra": account.get("extra") or {},
             },
         )
+
+    async def refresh_oauth(self, account_id: int, refresh_token: str) -> None:
+        remote = await self.get_profile_account(account_id)
+        current = remote.get("credentials") or {}
+        extra = remote.get("extra") or {}
+        payload = {"refresh_token": refresh_token}
+        if remote.get("proxy_id") is not None:
+            payload["proxy_id"] = remote["proxy_id"]
+        if current.get("client_id"):
+            payload["client_id"] = current["client_id"]
+        info = await self._request("POST", "openai/refresh-token", payload=payload, timeout=120.0)
+        if not isinstance(info, dict) or not isinstance(info.get("access_token"), str) or not info["access_token"].strip():
+            raise ValueError("RT 未返回有效的访问令牌")
+        # Verify identity before applying credentials to an existing account.
+        email = current.get("email") or extra.get("email")
+        if not email and "@" in str(remote.get("name", "")):
+            email = remote["name"]
+        matched = False
+        for key, expected in (("email", email), ("chatgpt_user_id", current.get("chatgpt_user_id")),
+                              ("chatgpt_account_id", current.get("chatgpt_account_id"))):
+            actual = info.get(key)
+            if expected and actual:
+                left, right = str(expected).strip(), str(actual).strip()
+                if key == "email":
+                    left, right = left.casefold(), right.casefold()
+                if left != right:
+                    raise ValueError("RT 所属账号与当前账号不一致，未写入授权")
+                matched = True
+        if not matched:
+            raise ValueError("无法核实 RT 所属账号，未写入授权；请重新上传同账号 JSON")
+        credentials = dict(current)
+        for key in ("access_token", "id_token", "email", "chatgpt_account_id", "chatgpt_user_id",
+                    "organization_id", "plan_type", "subscription_expires_at", "client_id"):
+            if info.get(key):
+                credentials[key] = info[key]
+        # OAuth may retain the submitted refresh token when it is not rotated.
+        credentials["refresh_token"] = info.get("refresh_token") or refresh_token
+        expires_at = info.get("expires_at")
+        if isinstance(expires_at, (int, float)) and not isinstance(expires_at, bool) and expires_at > 0:
+            credentials["expires_at"] = datetime.fromtimestamp(expires_at, timezone.utc).isoformat()
+        await self.apply_oauth(account_id, {"credentials": credentials, "extra": extra})
 
     async def list_groups(self) -> list[dict]:
         data = await self._request("GET", "groups", params={"page": 1, "page_size": 100})
