@@ -137,10 +137,10 @@ func prioritize(legacy *LegacyDecision, prompt *PromptDecision) Decision {
 			ClientMessage: "此内容因可能存在网络安全风险而被标记。", Legacy: legacy, Prompt: prompt}
 	case DecisionInvalid:
 		return Decision{Kind: DecisionInvalid, HTTPStatus: http.StatusServiceUnavailable, ErrorCode: ErrorCodeInvalidResponse,
-			ClientMessage: "提示词安全审计暂时不可用，请稍后重试", Legacy: legacy, Prompt: prompt}
+			ClientMessage: "此内容因可能存在网络安全风险而被标记。", Legacy: legacy, Prompt: prompt}
 	case DecisionUnavailable:
 		return Decision{Kind: DecisionUnavailable, HTTPStatus: http.StatusServiceUnavailable, ErrorCode: ErrorCodeUnavailable,
-			ClientMessage: "提示词安全审计暂时不可用，请稍后重试", Legacy: legacy, Prompt: prompt}
+			ClientMessage: "此内容因可能存在网络安全风险而被标记。", Legacy: legacy, Prompt: prompt}
 	case DecisionFlag:
 		decision := Decision{Kind: DecisionFlag, HTTPStatus: http.StatusOK, Legacy: legacy, Prompt: prompt, AllowNextStage: prompt.AllowNextStage}
 		if !prompt.AllowNextStage {
