@@ -75,7 +75,7 @@ func (c catalog) targetError(item object, key string) error {
 
 func toolIdentityError(item object, catalogTools int) error {
 	return &ToolCallError{
-		message: "上游工具既不是传输执行器，也没有匹配本轮客户端工具或已支持的发现适配",
+		message: "上游工具既不是传输执行器，也没有匹配本轮客户端工具或已支持的客户端适配",
 		stage:   "upstream_tool_capability", reason: "unsupported_native_tool",
 		diagnostics: &toolCallDiagnostics{
 			Stage:         "upstream_tool_capability",
