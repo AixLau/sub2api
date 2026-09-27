@@ -40,7 +40,7 @@ func TestPublicTransitDiscoveryBypassesEmbeddedFrontend(t *testing.T) {
 						c.Status(http.StatusNotFound)
 						return
 					}
-					c.JSON(http.StatusOK, gin.H{"schema_version": "ai-transit.v1"})
+					c.JSON(http.StatusOK, gin.H{"schema_version": "ai-transit.v2"})
 				})
 				recorder := httptest.NewRecorder()
 				router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/.well-known/ai-transit.json", nil))
@@ -48,7 +48,7 @@ func TestPublicTransitDiscoveryBypassesEmbeddedFrontend(t *testing.T) {
 				if enabled {
 					require.Equal(t, http.StatusOK, recorder.Code)
 					require.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
-					require.JSONEq(t, `{"schema_version":"ai-transit.v1"}`, recorder.Body.String())
+					require.JSONEq(t, `{"schema_version":"ai-transit.v2"}`, recorder.Body.String())
 				} else {
 					require.Equal(t, http.StatusNotFound, recorder.Code)
 					require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))

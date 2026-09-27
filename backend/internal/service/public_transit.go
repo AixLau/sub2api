@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	PublicTransitSchemaVersion  = "ai-transit.v1"
+	PublicTransitSchemaVersion  = "ai-transit.v2"
 	PublicTransitSystem         = "sub2api"
 	PublicTransitWellKnownPath  = "/.well-known/ai-transit.json"
 	PublicTransitSnapshotPath   = "/api/public/transit/v1/snapshot"
