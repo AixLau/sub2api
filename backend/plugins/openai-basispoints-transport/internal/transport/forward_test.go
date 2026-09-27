@@ -360,4 +360,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	testForwardFailedRequestBodies(t, binary)
 	testAlphaSearchNativeForward(t, binary)
 	testForwardNoneReasoningEffort(t, binary)
+	testCompactionBypassesInjectedToolSuite(t, binary)
 }

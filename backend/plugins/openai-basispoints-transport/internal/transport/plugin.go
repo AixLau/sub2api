@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.2"
+	PluginVersion = "0.6.3"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -262,6 +262,15 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	if nativeSearch {
 		diagnostic.route("native", "alpha_search")
+		return p.forwardNative(stream, start, state, body, headers)
+	}
+	// Context checkpoint generation is a tool-free Codex control request, not
+	// a BPS agent turn. Keep its original body and encrypted history on the
+	// native protocol; the BPS server would inject a callable Office tool suite.
+	// Like alpha/search, this protocol route is independent of optional agent
+	// capability fallback and must not mint or restore client tool declarations.
+	if bridge.IsContextCompaction(body, headers.Get("x-codex-turn-metadata")) {
+		diagnostic.route("native", bridge.RouteContextCompaction)
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Model selection is independent of capability fallback. Unselected models

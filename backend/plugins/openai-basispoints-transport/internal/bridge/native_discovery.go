@@ -13,13 +13,16 @@ func (c catalog) hasDiscoveryRuntime() bool {
 	return ok && runtime.Custom && strings.Contains(runtime.Description, "ALL_TOOLS") && strings.Contains(runtime.Description, "text(") && strings.Contains(runtime.Description, "tools")
 }
 
-// Translate only explicit discovery operations into the declared client runtime.
+// Translate only explicit supported operations into the declared client runtime.
 // Client permissions still apply; no model-authored code enters this program.
 func (r *Request) nativeDiscovery(item object) (object, bool, error) {
 	if stringValue(item["type"]) != "function_call" {
 		return nil, false, nil
 	}
 	name := strings.TrimPrefix(qualifiedCallName(item), "functions.")
+	if name == "update_plan" {
+		return r.nativePlan(item)
+	}
 	allowed := map[string]string{
 		"list_skills":          "limit cursor",
 		"read_skills":          "skill_ids mode offset file_paths",

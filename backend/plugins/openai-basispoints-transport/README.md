@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.2 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
+0.6.3 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -14,7 +14,7 @@
 
 ### Codex 原生发现调用
 
-当本轮目录声明了带有 ALL_TOOLS、tools、text() 合约的 functions.exec custom 工具时，桥接支持四个 BPS 原生调用：
+当本轮目录声明了带有 ALL_TOOLS、tools、text() 合约的 functions.exec custom 工具时，桥接支持四个 BPS 原生发现调用，以及下文 0.6.3 的 update_plan 适配：
 
 - list_skills：读取客户端最后一份 developer/system skills_instructions 目录，返回真实名称、说明和展开根别名后的路径。只使用客户端声明；不扫描网关文件，不把 user/tool 文本当作目录。缺少或无法完整解析目录时返回明确的客户端结果，不伪造空列表。
 - read_skills：根据目录中的精确 skill_ids，经 functions.exec 调用客户端 exec_command 读取文件。Windows 使用 PowerShell 的文件读取，POSIX 使用有界字节读取；返回 offset_unit 和下一窗口位置。引用文件必须是 Skill 目录内的相对路径，不接受绝对路径或父目录跳转。客户端仍负责权限、审批、运行中的命令和错误处理。
@@ -61,6 +61,15 @@
 10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
+
+## 0.6.3 Codex 工具适配与上下文压缩
+
+- #483934 的 BPS 原生 update_plan 现在可转换到 code mode 的 functions.exec，由客户端实际启用的 update_plan handler 执行。BPS summary / plan[].description 转为 Codex explanation / plan[].step，保留 result 文本；状态只接受 pending / in_progress / completed。已在当前目录直接声明的工具仍优先按原生协议交付。客户端禁用该能力、参数无效或执行失败时，明确回传工具结果，让同批工具及后续推理继续，不伪造计划成功。
+- #483946 的失败请求标记 request_kind=compaction，最后一条输入要求生成上下文交接摘要；additional_tools 为空是 Codex 的正常契约。此前插件把这类请求送入附带 Office 工具的 BPS 推理接口，导致模型生成本轮不存在的工具调用。
+- 现在根据结构化 x-codex-turn-metadata（请求头或宿主保留的 client_metadata）及本轮空工具目录识别压缩请求，直接走 Codex 原生 Responses 接口，原样保留正文、历史和响应。此协议路由与 alpha/search 一样，不受可选 native_fallback 开关影响。普通空工具聊天、旧 compaction 历史或用户文本关键词不会误触发。
+- 空目录或 tool_choice=none 的提示不再同时教授 run_officejs 调用。不从历史调用、提示词或其它会话猜造客户端工具目录。
+- 源码依据：OpenAI Codex [compact.rs](https://github.com/openai/codex/blob/67a709665ac7b50311b93e32612c9a8281684787/codex-rs/core/src/compact.rs)、[client_common.rs](https://github.com/openai/codex/blob/67a709665ac7b50311b93e32612c9a8281684787/codex-rs/core/src/client_common.rs)、[session/session.rs](https://github.com/openai/codex/blob/67a709665ac7b50311b93e32612c9a8281684787/codex-rs/core/src/session/session.rs)、[PlanHandler](https://github.com/openai/codex/blob/67a709665ac7b50311b93e32612c9a8281684787/codex-rs/core/src/tools/handlers/plan.rs) 与 [code mode 命名](https://github.com/openai/codex/blob/67a709665ac7b50311b93e32612c9a8281684787/codex-rs/tools/src/code_mode.rs)。
+- 聚焦测试覆盖生成脚本的客户端执行副作用、结果回放、能力缺失后继续、压缩 JSON/SSE 原样交付及打包插件 gRPC 路由。计划 UI 可用性仍取决于客户端本轮启用的工具。
 
 ## 0.6.2 none 推理档位映射
 
@@ -328,12 +337,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.2.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.3.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.2.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.3.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 

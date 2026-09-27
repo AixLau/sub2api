@@ -8,19 +8,21 @@ import (
 
 // Route reasons are fixed identifiers, never caller-controlled text.
 const (
-	RouteImageInput       = "image_input"
-	RouteImageGeneration  = "image_generation"
-	RouteHostedToolChoice = "hosted_tool_choice"
-	RouteStructuredOutput = "structured_output"
-	RouteEncryptedAgent   = "encrypted_agent_message"
+	RouteImageInput        = "image_input"
+	RouteImageGeneration   = "image_generation"
+	RouteHostedToolChoice  = "hosted_tool_choice"
+	RouteStructuredOutput  = "structured_output"
+	RouteEncryptedAgent    = "encrypted_agent_message"
+	RouteContextCompaction = "context_compaction"
 )
 
 // NeedsNativeUpstream reports whether a raw Responses request must bypass
 // the BPS tool bridge and go to the native Codex upstream instead.
 //
 // An empty reason means the request stays on the BPS path. Triggers are
-// evaluated in a fixed order (image_input, image_generation,
-// hosted_tool_choice, structured_output) and the first match is reported. The
+// evaluated in a fixed order (context_compaction, image_input,
+// image_generation, hosted_tool_choice, structured_output, encrypted_agent_message)
+// and the first match is reported. The
 // routing decision depends only on whether the reason is empty, so the
 // priority never changes which upstream serves the request.
 //
@@ -33,6 +35,8 @@ func NeedsNativeUpstream(body []byte) (reason string) {
 		return ""
 	}
 	switch {
+	case hasContextCompaction(root, ""):
+		reason = RouteContextCompaction
 	case hasNativeImageInput(root):
 		reason = RouteImageInput
 	case hasImageGeneration(root):
