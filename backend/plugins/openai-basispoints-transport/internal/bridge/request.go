@@ -513,7 +513,9 @@ func normalizeReasoningEffort(root object) (string, error) {
 		}
 	}
 	effort := strings.ToLower(strings.TrimSpace(stringValue(raw)))
-	if effort == "" {
+	// BPS uses medium for both an omitted effort and the client's explicit
+	// none setting. Apply this policy after resolving either API spelling.
+	if effort == "" || effort == "none" {
 		return "medium", nil
 	}
 	switch effort {
@@ -526,7 +528,7 @@ func normalizeReasoningEffort(root object) (string, error) {
 		// max is a client-side alias for the highest standard tier.
 		return "xhigh", nil
 	default:
-		return "", errors.New("不支持的 reasoning effort；支持 low/medium/high/xhigh/ultra，max 映射为 xhigh")
+		return "", errors.New("不支持的 reasoning effort；支持 low/medium/high/xhigh/ultra，none 映射为 medium，max 映射为 xhigh")
 	}
 }
 

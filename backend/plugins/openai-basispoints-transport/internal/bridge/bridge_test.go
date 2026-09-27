@@ -364,15 +364,18 @@ func TestReasoningAndItemReferenceHygiene(t *testing.T) {
 func TestReasoningEffortPolicy(t *testing.T) {
 	ctx := context.Background()
 	for requested, expected := range map[string]string{
+		"none": "medium", "NONE": "medium", " none ": "medium",
 		"low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh",
 		"ultra": "ultra", "ULTRA": "ultra",
 		"max": "xhigh", "x-high": "xhigh", "extra-high": "xhigh",
 	} {
-		raw := []byte(`{"input":"hi","reasoning":{"effort":"` + requested + `"}}`)
-		r, err := Prepare(ctx, raw, "s", memoryStore{}, nil, 256<<20)
-		require.NoError(t, err)
-		root, _ := parseObject(r.Body)
-		require.Equal(t, expected, stringValue(root["reasoning_effort"]), requested)
+		for _, field := range []string{`"reasoning":{"effort":"` + requested + `"}`, `"reasoning_effort":"` + requested + `"`} {
+			raw := []byte(`{"input":"hi",` + field + `}`)
+			r, err := Prepare(ctx, raw, "s", memoryStore{}, nil, 256<<20)
+			require.NoError(t, err)
+			root, _ := parseObject(r.Body)
+			require.Equal(t, expected, stringValue(root["reasoning_effort"]), field)
+		}
 	}
 	r, err := Prepare(ctx, []byte(`{"input":"hi"}`), "s", memoryStore{}, nil, 256<<20)
 	require.NoError(t, err)
@@ -380,6 +383,22 @@ func TestReasoningEffortPolicy(t *testing.T) {
 	require.Equal(t, "medium", stringValue(root["reasoning_effort"]))
 	_, err = Prepare(ctx, []byte(`{"input":"hi","reasoning":{"effort":"banana"}}`), "s", memoryStore{}, nil, 256<<20)
 	require.ErrorContains(t, err, "reasoning effort")
+}
+
+func TestReasoningEffortNestedValueTakesPrecedence(t *testing.T) {
+	for _, tc := range []struct{ nested, topLevel, want string }{
+		{"none", "high", "medium"},
+		{"high", "none", "high"},
+	} {
+		r, err := Prepare(context.Background(), encoded(map[string]any{
+			"input": "hi", "reasoning_effort": tc.topLevel,
+			"reasoning": map[string]string{"effort": tc.nested},
+		}), "s", memoryStore{}, nil, 256<<20)
+		require.NoError(t, err)
+		root, err := parseObject(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, tc.want, stringValue(root["reasoning_effort"]))
+	}
 }
 
 func TestModelMapping(t *testing.T) {

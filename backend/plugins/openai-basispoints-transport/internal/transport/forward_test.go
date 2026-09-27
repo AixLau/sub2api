@@ -359,4 +359,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	testForwardDiagnosticLogs(t, binary)
 	testForwardFailedRequestBodies(t, binary)
 	testAlphaSearchNativeForward(t, binary)
+	testForwardNoneReasoningEffort(t, binary)
 }
