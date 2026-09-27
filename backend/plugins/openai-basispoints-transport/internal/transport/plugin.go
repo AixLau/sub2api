@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.4"
+	PluginVersion = "0.6.5"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -377,6 +377,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		resp, err := state.client.Do(request)
 		if resp != nil {
 			diagnostic.upstream(resp)
+			if resp.StatusCode == http.StatusForbidden && state.cfg.AutoDisableOn403Enabled() {
+				p.markBPS403(start.AccountId)
+				diagnostic.fail("BPS_403_AUTO_DISABLED")
+			}
 		}
 		return resp, err
 	}
@@ -409,10 +413,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return resp, adapted, "", err
 	}
 	response, adapted, code, err := execute(body, false)
-	if response != nil && response.StatusCode == http.StatusForbidden && state.cfg.AutoDisableOn403Enabled() {
-		p.markBPS403(start.AccountId)
-		diagnostic.fail("BPS_403_AUTO_DISABLED")
-	}
 	defer func() {
 		if adapted != nil && diagnostic.entry.Route == "bps" {
 			diagnostic.entry.ResponseID = safeLogID(adapted.ResponseID())
@@ -427,6 +427,15 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	// Retry only pre-output errors; include ciphertext restored from KV.
 	encryptedRetried := false
 	for transientRetries := 0; ; {
+		// A BPS denial disables this protocol, not the underlying OAuth account.
+		// Before publishing any output, retry the original request natively so
+		// the host's account cooldown policy sees only the native result. Check
+		// every attempt, including encrypted-history and transient retries.
+		if response.StatusCode == http.StatusForbidden && state.cfg.AutoDisableOn403Enabled() {
+			response.Body.Close()
+			diagnostic.route("native", "bps_403_auto_disabled")
+			return p.forwardNative(stream, start, state, body, headers)
+		}
 		// Ordinary streams must publish headers immediately, even if the
 		// upstream has not produced an event yet. Probe only recoverable history.
 		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") && (encryptedRetried || !bytes.Contains(adapted.Body, []byte("\"encrypted_content\""))) {
