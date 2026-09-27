@@ -145,6 +145,31 @@ class ManualReauthorizationTests(unittest.IsolatedAsyncioTestCase):
         await app.state.manager.close()
 
 
+    async def test_empty_pool_manual_credentials_and_json_reupload_clear_old_proxy(self):
+        calls = []
+        async def no_proxies():
+            return []
+        def login(line, fmt, **kwargs):
+            calls.append((line, kwargs["proxy"]))
+            return bundle(token="manual-direct")
+        self.client.list_active_proxies = no_proxies
+        self.manager.login = login
+        for mode in ("credentials", "file"):
+            job = self.job(mode, credential_line=LINE if mode == "credentials" else None,
+                           proxy_id=999, login_proxy="http://old-proxy:8080")
+            self.client.records["account@example.com"]["proxy_id"] = 999
+            if mode == "credentials":
+                await self.manager.reauthorize_credentials(job.id)
+                await wait_for_operation(job)
+                self.assertEqual(calls, [(LINE, None)])
+                self.assertIsNone(job.login_proxy)
+            else:
+                await self.manager.reauthorize_file(job.id, bundle())
+            self.assertEqual(self.client.records["account@example.com"]["proxy_id"], 0)
+            self.assertIsNone(job.proxy_id)
+            self.assertTrue(job.public()["monitoring_enabled"])
+
+
 class RefreshClientTests(unittest.IsolatedAsyncioTestCase):
     async def exercise(self, info, expected_error=None, status=200):
         writes = []

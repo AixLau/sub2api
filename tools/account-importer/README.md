@@ -14,7 +14,7 @@ inherit the selected reference's current model mappings (including compact model
 mappings), concurrency, priority, groups, rate multiplier, load factor,
 and supported billing settings on import. Uploaded OAuth tokens and identity stay
 with the imported account. An explicit group selection overrides inherited groups;
-reimporting an existing account also enables it and selects a 5x proxy.
+reimporting an existing account also enables it and selects a 5x proxy when available.
 Other existing account configuration is preserved.
 
 The 7-day monitor uses the existing account /usage API for both utilization and
@@ -27,7 +27,10 @@ financial values until the next successful poll.
 Imports use active status with scheduling enabled, regardless
 of the reference account status or scheduling flag. Each account independently
 selects a random active, unexpired proxy named exactly 5x from the full proxy
-list. An empty eligible pool rejects the import before any login or account write.
+list. If no eligible 5x proxy exists, imports and credential reauthorization connect
+directly without a proxy. Reimporting or reauthorizing an existing account in this
+case explicitly clears its previous proxy assignment. Proxy-list API failures
+still surface as errors rather than being treated as an empty pool.
 Reference/uploaded proxy assignments and uploaded proxy definitions are ignored;
 other reference settings and the group override behavior are preserved.
 

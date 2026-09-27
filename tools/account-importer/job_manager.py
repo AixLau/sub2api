@@ -141,8 +141,15 @@ def _prepared_new_account(account: dict, profile: dict, group_ids: list[int]) ->
     return prepared
 
 
-def _proxy_settings(proxy_id: int) -> dict:
-    return {"proxy_id": proxy_id}
+def _proxy_settings(proxy_id: int | None) -> dict:
+    # Sub2API uses 0 to clear an existing proxy; null leaves it unchanged.
+    return {"proxy_id": proxy_id if proxy_id is not None else 0}
+
+
+def _import_proxy_settings(choice: ProxyChoice) -> dict:
+    if choice.id is None:
+        return {}
+    return {"proxy_id": choice.id, "proxy_key": choice.key}
 
 
 @dataclass
@@ -316,7 +323,7 @@ class JobManager:
                 new_accounts = []
                 for account, job, choice in new_pairs:
                     prepared = _prepared_new_account(account, profile, job.group_ids)
-                    prepared.update(_proxy_settings(job.proxy_id), proxy_key=choice.key)
+                    prepared.update(_import_proxy_settings(choice))
                     new_accounts.append(prepared)
                 new_payload = {"proxies": [], "accounts": new_accounts}
                 try:
@@ -464,7 +471,7 @@ class JobManager:
                     await self._start_watch(job)
                     return
                 payload["accounts"][0] = _prepared_new_account(payload["accounts"][0], profile, job.group_ids)
-                payload["accounts"][0].update(_proxy_settings(job.proxy_id), proxy_key=choice.key)
+                payload["accounts"][0].update(_import_proxy_settings(choice))
                 payload["proxies"] = []
                 await self.client.import_data(payload)
                 remote = await self.client.find_account(remote_name)

@@ -98,22 +98,83 @@ class ImportDefaultTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await manager.close()
 
-    async def test_empty_pool_stops_both_import_modes_before_any_write_or_login(self):
+    async def test_empty_pool_imports_directly_in_both_modes(self):
         for mode in ("file", "credentials"):
-            client, store, calls = ImportClient(), FakeStore(), []
-            client.proxies = [proxy(1, name="other"), proxy(2, status="disabled")]
-            manager = JobManager(client, store=store, login=lambda *a, **kw: calls.append(1))
+            for proxies in ([], [proxy(1, name="other"), proxy(2, status="disabled"),
+                                proxy(3, expires_at="2000-01-01T00:00:00Z")]):
+                with self.subTest(mode=mode, proxies=proxies):
+                    client, calls = ImportClient(), []
+                    client.proxies = proxies
+                    document = bundle()
+                    document["accounts"][0].update(proxy_id=999, proxy_key="uploaded-old-proxy")
+                    def login(*args, **kwargs):
+                        calls.append(kwargs["proxy"])
+                        return deepcopy(document)
+                    manager = JobManager(client, store=FakeStore(), login=login)
+                    try:
+                        if mode == "file":
+                            public = (await manager.import_file(document, profile_account_id=285))[0]
+                        else:
+                            public = await manager.import_credentials(LINE, profile_account_id=285)
+                            await wait_for_operation(manager.get_job(public["id"]))
+                        job = manager.get_job(public["id"])
+                        self.assertEqual(job.state, "monitoring")
+                        self.assertIsNone(job.proxy_id)
+                        self.assertIsNone(job.login_proxy)
+                        sent = client.payloads[0]
+                        self.assertEqual(sent["proxies"], [])
+                        self.assertNotIn("proxy_id", sent["accounts"][0])
+                        self.assertNotIn("proxy_key", sent["accounts"][0])
+                        saved = client.records["account@example.com"]
+                        self.assertEqual(saved["proxy_id"], 0)
+                        self.assertEqual(saved["status"], "active")
+                        self.assertIs(saved["schedulable"], True)
+                        self.assertEqual(saved["credentials"]["model_mapping"], client.reference["credentials"]["model_mapping"])
+                        self.assertEqual(calls, [None] if mode == "credentials" else [])
+                    finally:
+                        await manager.close()
+
+    async def test_direct_reimport_clears_existing_proxy_in_both_modes(self):
+        for mode in ("file", "credentials"):
+            client, calls = ImportClient(), []
+            client.proxies = []
+            document = bundle()
+            document["accounts"][0]["proxy_id"] = 999
+            await client.import_data(document)
+            def login(*args, **kwargs):
+                calls.append(kwargs["proxy"])
+                return bundle()
+            manager = JobManager(client, store=FakeStore(), login=login)
             try:
-                with self.assertRaisesRegex(ValueError, "没有可用的 5x 代理"):
+                if mode == "file":
+                    public = (await manager.import_file(bundle(), profile_account_id=285))[0]
+                else:
+                    public = await manager.import_credentials(LINE, profile_account_id=285)
+                    await wait_for_operation(manager.get_job(public["id"]))
+                self.assertEqual(client.records["account@example.com"]["proxy_id"], 0)
+                self.assertIsNone(manager.get_job(public["id"]).proxy_id)
+                self.assertEqual(calls, [None] if mode == "credentials" else [])
+                self.assertEqual(len(client.records), 1)
+            finally:
+                await manager.close()
+
+    async def test_proxy_api_failure_is_not_treated_as_empty_pool(self):
+        from sub2api_client import AdminAPIError
+        for mode in ("file", "credentials"):
+            client, calls = ImportClient(), []
+            async def fail():
+                raise AdminAPIError("proxy API unavailable", status_code=503)
+            client.list_active_proxies = fail
+            manager = JobManager(client, store=FakeStore(), login=lambda *a, **kw: calls.append(1))
+            try:
+                with self.assertRaises(AdminAPIError):
                     if mode == "file":
                         await manager.import_file(bundle(), profile_account_id=285)
                     else:
                         await manager.import_credentials(LINE, profile_account_id=285)
-                self.assertEqual(client.payloads, [])
-                self.assertEqual(client.settings_updates, [])
-                self.assertEqual(manager.jobs, {})
-                self.assertEqual(await store.load(), [])
-                self.assertEqual(calls, [])
+                self.assertFalse(client.payloads)
+                self.assertFalse(manager.jobs)
+                self.assertFalse(calls)
             finally:
                 await manager.close()
 

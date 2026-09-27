@@ -203,9 +203,11 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_unix_expiry_marks_account_invalid(self):
         self.assertEqual(_account_state({"status": "active", "expires_at": 1})[0], "invalid")
 
-    def test_empty_5x_pool_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "没有可用的 5x 代理"):
-            select_5x_proxy([{"id": 1, "name": "other", "status": "active"}])
+    def test_empty_5x_pool_uses_direct_connection(self):
+        choice = select_5x_proxy([{"id": 1, "name": "other", "status": "active"}])
+        self.assertIsNone(choice.id)
+        self.assertIsNone(choice.url)
+        self.assertIsNone(choice.key)
 
     async def test_multi_account_file_creates_separate_jobs(self):
         client = FakeClient()

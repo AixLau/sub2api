@@ -176,3 +176,23 @@ class ContinuousMonitoringTests(unittest.IsolatedAsyncioTestCase):
         await until(lambda: self.polls >= 3)
         self.assertFalse(imported.task.done())
         self.assertTrue(imported.public()['monitoring_enabled'])
+
+
+    async def test_empty_pool_automatic_reauthorization_is_direct_and_clears_old_proxy(self):
+        calls = []
+        async def no_proxies():
+            return []
+        def success(line, fmt, **kwargs):
+            calls.append((line, kwargs["proxy"]))
+            return bundle(token="direct-token")
+        self.client.list_active_proxies = no_proxies
+        self.manager.login = success
+        self.job.proxy_id, self.job.login_proxy = 999, "http://old-proxy:8080"
+        self.record.update(proxy_id=999, status="error", error_message="401")
+        await self.manager._start_watch(self.job)
+        await until(lambda: calls and self.job.attempts == 0)
+        self.assertEqual(calls, [(LINE, None)])
+        self.assertEqual(self.record["proxy_id"], 0)
+        self.assertIsNone(self.job.proxy_id)
+        self.assertIsNone(self.job.login_proxy)
+        self.assertFalse(self.job.task.done())
