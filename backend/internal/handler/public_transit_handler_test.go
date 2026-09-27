@@ -54,13 +54,14 @@ func publicTransitTestRouter(svc publicTransitReader, settings *service.SettingS
 	r := gin.New()
 	r.GET(service.PublicTransitWellKnownPath, h.Discovery)
 	r.GET(service.PublicTransitSnapshotPath, h.Snapshot)
+	r.GET(service.PublicTransitV2SnapshotPath, h.Snapshot)
 	r.GET("/api/v1/public/transit/snapshot", h.Snapshot)
 	return r
 }
 
 func TestPublicTransitHandlerGateAppliesToEveryRouteAndChangesImmediately(t *testing.T) {
 	for _, path := range []string{
-		service.PublicTransitWellKnownPath, service.PublicTransitSnapshotPath, "/api/v1/public/transit/snapshot",
+		service.PublicTransitWellKnownPath, service.PublicTransitSnapshotPath, service.PublicTransitV2SnapshotPath, "/api/v1/public/transit/snapshot",
 	} {
 		t.Run(path, func(t *testing.T) {
 			repo := &publicTransitSettingRepo{value: "false"}
@@ -101,7 +102,7 @@ func TestPublicTransitHandlerDiscoveryUsesCanonicalRelativeURL(t *testing.T) {
 	require.JSONEq(t, `{"schema_version":"ai-transit.v1","system":"sub2api","snapshot_url":"/api/public/transit/v1/snapshot","generated_at":""}`, rec.Body.String())
 }
 
-func TestPublicTransitHandlerBothSnapshotPathsHaveSamePublicContract(t *testing.T) {
+func TestPublicTransitHandlerAllSnapshotPathsHaveSamePublicContract(t *testing.T) {
 	ttft := int64(125)
 	snapshot := &service.PublicTransitSnapshot{
 		SchemaVersion: service.PublicTransitSchemaVersion,
@@ -118,7 +119,7 @@ func TestPublicTransitHandlerBothSnapshotPathsHaveSamePublicContract(t *testing.
 	}
 	svc := &publicTransitReaderStub{result: snapshot}
 	router := publicTransitTestRouter(svc, nil)
-	for _, path := range []string{service.PublicTransitSnapshotPath, "/api/v1/public/transit/snapshot"} {
+	for _, path := range []string{service.PublicTransitSnapshotPath, service.PublicTransitV2SnapshotPath, "/api/v1/public/transit/snapshot"} {
 		t.Run(path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path+"?range=7d&group_id=999&platform=private&model=secret&admin=true", nil))
@@ -233,7 +234,7 @@ func TestPublicTransitHandlerUsesRealV2ServiceWithOnlyPublicGroupScope(t *testin
 	settings := service.NewSettingService(&publicTransitSettingRepo{value: "true"}, &config.Config{})
 	router := publicTransitTestRouter(svc, settings)
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, service.PublicTransitSnapshotPath+"?group_id=99&admin=true", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, service.PublicTransitV2SnapshotPath+"?group_id=99&admin=true", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	var result map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
