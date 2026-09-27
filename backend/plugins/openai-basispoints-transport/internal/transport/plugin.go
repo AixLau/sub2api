@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.3"
+	PluginVersion = "0.6.4"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -265,12 +265,16 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Context checkpoint generation is a tool-free Codex control request, not
-	// a BPS agent turn. Keep its original body and encrypted history on the
+	// a BPS agent turn. Keep its payload and encrypted history on the
 	// native protocol; the BPS server would inject a callable Office tool suite.
 	// Like alpha/search, this protocol route is independent of optional agent
 	// capability fallback and must not mint or restore client tool declarations.
 	if bridge.IsContextCompaction(body, headers.Get("x-codex-turn-metadata")) {
 		diagnostic.route("native", bridge.RouteContextCompaction)
+		body, err = bridge.NormalizeCompactionToolIDs(body)
+		if err != nil {
+			return p.sendError(stream, "TOOL_BRIDGE_REQUEST_INVALID", err.Error(), false)
+		}
 		return p.forwardNative(stream, start, state, body, headers)
 	}
 	// Model selection is independent of capability fallback. Unselected models
@@ -585,8 +589,8 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 }
 
 // forwardNative takes the native Codex path for requests the Basis Points tool
-// bridge cannot serve. The original request body is forwarded byte-identical to
-// the native target (no wire-shape rebuild, no tool bridging, no turn metadata,
+// bridge cannot serve. The supplied body is forwarded byte-identical to the
+// native target (no further rebuild, no tool bridging, no turn metadata,
 // no model mapping) and the response is streamed back untouched: SSE stays
 // streaming and no event rewriting is applied on this path.
 func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest, pluginv1.ForwardResponse], start *pluginv1.ForwardRequestStart, state *runtimeState, body []byte, headers http.Header) error {

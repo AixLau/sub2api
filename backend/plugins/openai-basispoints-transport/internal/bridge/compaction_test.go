@@ -75,3 +75,48 @@ func TestDisabledCatalogDoesNotAdvertiseExecutor(t *testing.T) {
 	require.NotContains(t, cat.prompt(), "run_officejs")
 	require.NotContains(t, cat.prompt(), "get_weather")
 }
+
+func TestCompactionNormalizesOnlyPluginOwnedToolIDs(t *testing.T) {
+	body := []byte(`{
+  "model":"gpt-6-sol", "client_metadata":{"opaque":"unchanged"},
+  "input":[
+    {"type":"custom_tool_call","id":"fc_bridged","call_id":"call_bps_one","name":"exec","input":"raw script"},
+    {"type":"custom_tool_call_output","call_id":"call_bps_one","output":"real result"},
+    {"type":"function_call","id":"ctc_bridged","call_id":"call_bps_two","name":"shell","arguments":"{}"},
+    {"type":"custom_tool_call","id":"fc_external","call_id":"call_native","name":"exec","input":"client owned"},
+    {"type":"custom_tool_call","call_id":"call_bps_optional","name":"exec","input":"id omitted"},
+    {"type":"reasoning","id":"rs_history","encrypted_content":"opaque-encrypted-bytes"},
+    {"type":"item_reference","id":"fc_bridged"},
+    {"type":"item_reference","id":"fc_external"}
+  ]
+}`)
+	got, err := NormalizeCompactionToolIDs(body)
+	require.NoError(t, err)
+	before, _ := parseObject(body)
+	after, _ := parseObject(got)
+	want := inputItems(before)
+	for _, change := range []struct {
+		index int
+		id    string
+	}{{0, clientToolItemID("fc_bridged", true)}, {2, clientToolItemID("ctc_bridged", false)}, {6, clientToolItemID("fc_bridged", true)}} {
+		item, _ := parseObject(want[change.index])
+		item["id"] = encoded(change.id)
+		want[change.index] = encoded(item)
+	}
+	before["input"] = encoded(want)
+	require.JSONEq(t, string(encoded(before)), string(encoded(after)), "only typed IDs and their references may change")
+	again, err := NormalizeCompactionToolIDs(got)
+	require.NoError(t, err)
+	require.Equal(t, got, again, "canonical bodies must be byte-identical")
+	for _, unchanged := range []string{
+		`{ "input": "plain text" }`,
+		`{ "input": [{"type":"custom_tool_call","id":"fc_native","call_id":"call_native","input":"do not rewrite"}] }`,
+		`{ "input": [{"type":"custom_tool_call","id":"ctc_valid","call_id":"call_bps_one","input":"valid"}] }`,
+	} {
+		got, err := NormalizeCompactionToolIDs([]byte(unchanged))
+		require.NoError(t, err)
+		require.Equal(t, unchanged, string(got))
+	}
+	_, err = NormalizeCompactionToolIDs([]byte("{"))
+	require.Error(t, err)
+}
