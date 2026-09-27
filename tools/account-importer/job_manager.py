@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+import math
 import secrets
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta, timezone
@@ -13,15 +14,18 @@ from job_store import JobStore, StorageError
 from import_payload import validate_bundle
 from local_relogin import parse_account_line, relogin_payload
 from proxy_pool import select_5x_proxy
-from sub2api_client import Sub2APIClient
+from sub2api_client import AdminAPIError, Sub2APIClient
 
 WATCH_SECONDS = 20 * 60
 POLL_SECONDS = 30
 RETRY_SECONDS = 60
 MAX_RELOGINS = 3
+REFERENCE_CREDENTIAL_KEYS = (
+    "model_mapping", "compact_model_mapping",
+)
 REFERENCE_EXTRA_KEYS = (
-    "auto_reset_credit_enabled", "auto_reset_credit_primary_threshold",
-    "auto_reset_credit_secondary_threshold",
+    "auto_reset_credit_enabled", "auto_reset_credit_5h_threshold",
+    "auto_reset_credit_7d_threshold",
     "openai_long_context_billing_enabled",
     "openai_oauth_responses_websockets_v2_enabled",
     "openai_oauth_responses_websockets_v2_mode",
@@ -72,6 +76,31 @@ def _account_state(account: dict) -> tuple[str, str]:
     return "monitoring", ""
 
 
+def _seven_day_usage(usage: dict) -> dict:
+    window = usage.get("seven_day") or {}
+    used = window.get("utilization")
+    if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used) or not 0 <= used <= 100:
+        used = None
+    reset_at = _parse_time(window.get("resets_at"))
+    updated_at = _parse_time(usage.get("updated_at"))
+    cost = (window.get("window_stats") or {}).get("cost")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+        cost = None
+    estimate = None
+    if used is not None and used > 0 and cost is not None and cost > 0 and (reset_at is None or reset_at > _now()):
+        candidate = cost / used * 100
+        if math.isfinite(candidate):
+            estimate = candidate
+    return {
+        "used_percent": used,
+        "remaining_percent": 100 - used if used is not None else None,
+        "reset_at": reset_at.isoformat() if reset_at else None,
+        "updated_at": updated_at.isoformat() if updated_at else None,
+        "account_cost": cost,
+        "estimated_total_cost": estimate,
+    }
+
+
 def _account_profile(account: dict) -> dict:
     if account.get("platform") != "openai" or account.get("type") != "oauth":
         raise ValueError("参考账号不是 OpenAI OAuth 账号")
@@ -84,9 +113,11 @@ def _account_profile(account: dict) -> dict:
         raise ValueError("参考账号未绑定分组")
     settings = {key: account[key] for key in REFERENCE_SETTING_KEYS if account.get(key) is not None}
     extra = account.get("extra") or {}
+    credentials = account.get("credentials") or {}
     return {
         "group_ids": group_ids, "settings": settings,
-        "extra": {key: extra[key] for key in REFERENCE_EXTRA_KEYS if key in extra},
+        "extra": {key: deepcopy(extra[key]) for key in REFERENCE_EXTRA_KEYS if key in extra},
+        "credentials": {key: deepcopy(credentials[key]) for key in REFERENCE_CREDENTIAL_KEYS if key in credentials},
         "schedulable": account.get("schedulable", True),
         "account_id": int(account["id"]),
     }
@@ -101,6 +132,10 @@ def _prepared_new_account(account: dict, profile: dict, group_ids: list[int]) ->
         else:
             prepared.pop(key, None)
     prepared.pop("expires_at", None)
+    credentials = prepared["credentials"]
+    for key in REFERENCE_CREDENTIAL_KEYS:
+        credentials.pop(key, None)
+    credentials.update(deepcopy(profile["credentials"]))
     extra = prepared.get("extra") or {}
     prepared["extra"] = {**{key: value for key, value in extra.items() if key not in REFERENCE_EXTRA_KEYS}, **profile["extra"]}
     return prepared
@@ -127,6 +162,7 @@ class Job:
     remote_status: str = ""
     current_concurrency: int | None = None
     last_used_at: str | None = None
+    seven_day_usage: dict | None = None
     schedulable: bool | None = None
     attempts: int = 0
     created_at: datetime = field(default_factory=_now)
@@ -167,6 +203,7 @@ class Job:
             "message": self.message, "remote_status": self.remote_status,
             "current_concurrency": self.current_concurrency,
             "last_used_at": self.last_used_at, "schedulable": self.schedulable,
+            "seven_day_usage": self.seven_day_usage,
             "attempts": self.attempts, "group_ids": self.group_ids,
             "created_at": self.created_at.isoformat(),
             "watch_until": self.deadline.isoformat() if self.deadline else None,
@@ -449,6 +486,10 @@ class JobManager:
                 job.current_concurrency = account.get("current_concurrency")
                 job.last_used_at = account.get("last_used_at")
                 job.schedulable = account.get("schedulable")
+                try:
+                    job.seven_day_usage = _seven_day_usage(await self.client.get_usage(job.account_id))
+                except (AdminAPIError, ValueError, TypeError, AttributeError):
+                    job.seven_day_usage = {"error": "用量与计费查询失败，等待重试"}
                 state, message = _account_state(account)
                 job.state, job.message = state, message
                 if state == "invalid" and job.mode == "credentials":

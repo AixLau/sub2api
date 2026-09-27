@@ -23,6 +23,7 @@ from local_relogin import DEFAULT_SOURCE_DIR, relogin_payload
 from sub2api_client import AdminAPIError, Sub2APIClient
 
 STATIC = Path(__file__).resolve().parent / "static"
+DEFAULT_REFERENCE_ACCOUNT = "laurarobertsl186@gmail.com"
 
 
 class AccountInput(BaseModel):
@@ -106,7 +107,15 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
             accounts = await manager.profile_accounts()
         except AdminAPIError:
             accounts = []
-        return {"base_url": client.base_url, "groups": groups, "accounts": accounts}
+        default_account = next(
+            (account for account in accounts if str(account.get("name", "")).strip().casefold() == DEFAULT_REFERENCE_ACCOUNT),
+            None,
+        )
+        return {
+            "base_url": client.base_url, "groups": groups, "accounts": accounts,
+            "default_profile_account_id": default_account["id"] if default_account else None,
+            "default_profile_account_name": DEFAULT_REFERENCE_ACCOUNT,
+        }
 
     @app.get("/api/jobs")
     async def jobs():

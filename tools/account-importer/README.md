@@ -7,7 +7,24 @@ its current account scope. Failed plugin updates remain visible separately from
 account import status. Existing accounts are reauthorized without duplication.
 
 The tool reads reference accounts, groups, usable 5x proxies, and enabled
-plugins from Sub2API. Original import credentials and jobs are encrypted with Fernet and saved in a
+plugins from Sub2API. The default reference account is
+laurarobertsl186@gmail.com, matched by account name independently of list order.
+If unavailable, the page requires an explicit reference selection. New accounts
+inherit the selected reference's current model mappings (including compact model
+mappings), concurrency, priority, groups, rate multiplier, load factor, scheduling
+and supported billing settings on import. Uploaded OAuth tokens and identity stay
+with the imported account. An explicit group selection overrides inherited groups;
+the existing 5x proxy selection rule still applies. Reauthorization of existing
+accounts preserves their configuration.
+
+The 7-day monitor uses the existing account /usage API for both utilization and
+window account-billed cost (including the account multiplier, in USD). Estimated
+total quota is window account cost / (utilization / 100), matching the main
+account page. It is an estimate, not an official fixed monetary allowance. Missing
+or zero samples and expired windows are not estimated; usage query failures clear
+financial values until the next successful poll.
+
+Original import credentials and jobs are encrypted with Fernet and saved in a
 separate logical database of the existing Sub2API Redis instance. Jobs and
 one-click reauthorization survive importer restarts. Superseded jobs stop
 monitoring and have their active stored credentials cleared.

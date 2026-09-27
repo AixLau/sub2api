@@ -151,6 +151,12 @@ class Sub2APIClient:
             raise AdminAPIError("账号详情响应结构无效")
         return data
 
+    async def get_usage(self, account_id: int) -> dict:
+        data = await self._request("GET", f"accounts/{account_id}/usage")
+        if not isinstance(data, dict):
+            raise AdminAPIError("账号用量响应结构无效")
+        return data
+
     async def update_groups(self, account_id: int, group_ids: list[int]) -> None:
         await self._request("PUT", f"accounts/{account_id}", payload={"group_ids": group_ids})
 

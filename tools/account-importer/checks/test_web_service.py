@@ -71,6 +71,17 @@ class FakeClient:
     async def get_profile_account(self, account_id):
         return await self.get_account(account_id)
 
+    async def get_usage(self, account_id):
+        account = await self.get_account(account_id)
+        extra = account.get("extra") or {}
+        return {
+            "updated_at": extra.get("codex_usage_updated_at"),
+            "seven_day": {
+                "utilization": extra.get("codex_7d_used_percent"),
+                "resets_at": extra.get("codex_7d_reset_at"),
+            },
+        }
+
     async def list_active_proxies(self):
         return [
             {"id": 17382, "name": "5x", "protocol": "http", "host": "proxy.example",

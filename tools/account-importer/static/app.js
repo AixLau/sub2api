@@ -40,20 +40,20 @@ async function loadConfig() {
     const config = await request('api/config');
     document.getElementById('server-name').textContent = config.base_url;
     const reference = document.getElementById('reference-account');
-    reference.replaceChildren();
+    reference.replaceChildren(new Option('请选择参照账号', ''));
     for (const account of config.accounts || []) {
       const option = document.createElement('option');
       option.value = String(account.id);
       option.textContent = account.name + ' · #' + account.id + (account.status ? ' · ' + account.status : '');
       reference.append(option);
     }
-    if (reference.options.length) {
-      reference.selectedIndex = 0;
+    if (config.default_profile_account_id != null) {
+      reference.value = String(config.default_profile_account_id);
       document.getElementById('file-group').options[0].textContent = '使用所选参照账号设置';
       document.getElementById('account-group').options[0].textContent = '使用所选参照账号设置';
       await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(reference.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
     } else {
-      setFeedback('未读取到 OpenAI OAuth 账号；新账号导入需要先选择参照账号。', true);
+      setFeedback('未找到默认参照账号 ' + config.default_profile_account_name + '，请手动选择参照账号。', true);
     }
     for (const group of config.groups) {
       if (group.platform && group.platform !== 'openai') continue;
@@ -74,6 +74,7 @@ async function loadConfig() {
 }
 
 document.getElementById('reference-account').addEventListener('change', async event => {
+  if (!event.target.value) return;
   try {
     await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(event.target.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
     await loadJobs();
@@ -117,6 +118,56 @@ async function loadPlugins() {
   }
 }
 
+function addSevenDayUsage(row, usage) {
+  const cell = row.insertCell();
+  cell.className = 'usage-window';
+  if (usage?.error) {
+    cell.textContent = usage.error;
+    return;
+  }
+  const reset = usage?.reset_at ? new Date(usage.reset_at) : null;
+  const expired = reset && reset.getTime() <= Date.now();
+  const known = typeof usage?.used_percent === 'number';
+  const label = document.createElement('span');
+  label.textContent = known
+    ? (expired ? '上个窗口已用 ' : '已用 ') + usage.used_percent.toFixed(1) + '%'
+    : '暂无用量数据';
+  cell.append(label);
+  if (known) {
+    const progress = document.createElement('progress');
+    progress.max = 100;
+    progress.value = usage.used_percent;
+    progress.setAttribute('aria-label', expired ? '上个 7 天窗口用量' : '7 天窗口用量');
+    cell.append(progress);
+    if (!expired) {
+      const remaining = document.createElement('small');
+      remaining.textContent = '剩余 ' + usage.remaining_percent.toFixed(1) + '%';
+      cell.append(remaining);
+    }
+  }
+  const billed = document.createElement('small');
+  billed.className = 'usage-billing';
+  billed.textContent = (expired ? '上个窗口账号计费：' : '账号计费：')
+    + (typeof usage?.account_cost === 'number' ? '$' + usage.account_cost.toFixed(2) : '暂无数据');
+  billed.title = '本窗口账号口径费用，已包含账号倍率；不是用户/API Key 计费。';
+  cell.append(billed);
+  const estimate = document.createElement('small');
+  estimate.className = 'usage-billing';
+  estimate.textContent = '预计总额度：' + (!expired && typeof usage?.estimated_total_cost === 'number'
+    ? '≈ $' + usage.estimated_total_cost.toFixed(2) : '暂无法估算');
+  estimate.title = '按本窗口账号计费 ÷（已用百分比 / 100）估算。非官方固定额度，随模型与使用情况变化；无有效费用或比例、窗口到期时不估算。';
+  cell.append(estimate);
+  const window = document.createElement('small');
+  window.textContent = expired ? '窗口已到期，等待用量同步'
+    : reset ? '重置于 ' + reset.toLocaleString('zh-CN') : '重置时间暂未提供';
+  cell.append(window);
+  if (usage?.updated_at) {
+    const updated = document.createElement('small');
+    updated.textContent = '数据更新 ' + new Date(usage.updated_at).toLocaleString('zh-CN');
+    cell.append(updated);
+  }
+}
+
 async function loadJobs() {
   try {
     const jobs = await request('api/jobs');
@@ -124,7 +175,7 @@ async function loadJobs() {
     if (!jobs.length) {
       const row = tableBody.insertRow();
       const cell = addCell(row, '暂无导入任务', 'empty');
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       return;
     }
     for (const job of jobs) {
@@ -157,6 +208,7 @@ async function loadJobs() {
         last.textContent = '上次使用 ' + new Date(job.last_used_at).toLocaleString('zh-CN');
         calls.append(last);
       }
+      addSevenDayUsage(row, job.seven_day_usage);
       addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
       addCell(row, job.watch_until ? new Date(job.watch_until).toLocaleString('zh-CN') : '—');
       const action = row.insertCell();
@@ -217,6 +269,7 @@ async function loadJobs() {
 
 document.getElementById('panel-file').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!document.getElementById('reference-account').reportValidity()) return;
   const form = event.currentTarget;
   const button = form.querySelector('button[type=submit]');
   button.disabled = true;
@@ -240,6 +293,7 @@ document.getElementById('panel-file').addEventListener('submit', async event => 
 
 document.getElementById('panel-account').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!document.getElementById('reference-account').reportValidity()) return;
   const form = event.currentTarget;
   const button = form.querySelector('button[type=submit]');
   const line = document.getElementById('account-line').value;
