@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
+	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
 func TestForwardToolFeedback(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		for _, replySSE := range []bool{false, true} {
-			for _, mode := range []string{"repair", "repeated", "http_failure", "truncated", "upstream_failed", "upstream_incomplete"} {
+			for _, mode := range []string{"repair", "repeated", "http_failure", "bps_forbidden", "truncated", "upstream_failed", "upstream_incomplete"} {
 				t.Run(fmt.Sprintf("stream=%v/replySSE=%v/%s", stream, replySSE, mode), func(t *testing.T) {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
@@ -28,8 +29,12 @@ func TestForwardToolFeedback(t *testing.T) {
 						raw, _ := io.ReadAll(req.Body)
 						observed = append(observed, raw)
 						attempt := hits.Add(1)
-						if attempt == 2 && mode == "http_failure" {
-							w.WriteHeader(500)
+						if attempt == 2 && (mode == "http_failure" || mode == "bps_forbidden") {
+							code := http.StatusInternalServerError
+							if mode == "bps_forbidden" {
+								code = http.StatusForbidden
+							}
+							w.WriteHeader(code)
 							io.WriteString(w, `{"error":{"code":"server_error","message":"An error occurred while processing"}}`)
 							return
 						}
@@ -92,7 +97,7 @@ func TestForwardToolFeedback(t *testing.T) {
 						}
 						require.NotContains(t, string(out), "response.function_call_arguments.delta")
 					}
-					if mode == "repair" || (stream && mode != "http_failure" && mode != "truncated") {
+					if mode == "repair" || (stream && mode != "http_failure" && mode != "bps_forbidden" && mode != "truncated") {
 						var usage map[string]int
 						require.NoError(t, json.Unmarshal(response["usage"], &usage))
 						require.Equal(t, 22, usage["total_tokens"])
@@ -108,6 +113,15 @@ func TestForwardToolFeedback(t *testing.T) {
 					require.Equal(t, `"function_call_output"`, string(last["type"]))
 					require.Equal(t, `"call_bad"`, string(last["call_id"]))
 					require.Contains(t, string(last["output"]), "TOOL_BRIDGE_CONVERSION_FAILED")
+					if mode == "bps_forbidden" {
+						health, err := c.Health(ctx, &pluginv1.HealthRequest{})
+						require.NoError(t, err)
+						var status struct {
+							Blocked map[string]string `json:"bps_403_blocked_accounts"`
+						}
+						require.NoError(t, json.Unmarshal([]byte(health.StatusJson), &status))
+						require.NotEmpty(t, status.Blocked["7"])
+					}
 					entries := completedRequestsForTest(t, c, ctx, 1)
 					require.Equal(t, "bps", entries[0].Route)
 					require.Equal(t, 2, entries[0].Attempt)

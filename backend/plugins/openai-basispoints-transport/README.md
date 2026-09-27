@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.4 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
+0.6.5 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -247,13 +247,15 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 - 工具校验失败和加密回放拒绝按语义错误交付：流式发送一个 response.failed 并正常结束 RPC；非流式返回 HTTP 400 的结构化错误。不会返回可执行的坏工具调用；流式序号、响应 ID 和已有文本保留。无效 JSON 的通用诊断不再一概归因于单引号转义。
 - 宿主按结构化错误码区分协议失败与断流；工具协议错误不换号、不触发代理隔离，已交付终端错误后不追加通用错误。真正的网络断流仍执行原有熔断策略。上游 invalid_encrypted_content 在 BPS 一次安全清理失败后转原生，不通过换号重复发送。
 
-## 按模型选择 BPS 通道
-
 ## BPS 403 自动隔离
 
-`auto_disable_bps_on_403` 默认开启。某个账号在 BPS 上游收到 HTTP 403 后，插件会记录账号和触发时间，并把该账号后续请求自动改走原生 Codex 通道；其他账号不受影响。记录通过宿主 KV 保存，插件重启后仍然有效，默认保留 30 天。关闭该配置可恢复原有行为。
+`auto_disable_bps_on_403` 默认开启。某个账号在 BPS 上游收到 HTTP 403 后，插件会记录账号和触发时间，在尚未向客户端发送输出时，立即把本次原始请求转交原生 Codex 通道；该账号后续请求也自动改走原生通道；其他账号不受影响。记录通过宿主 KV 保存，插件重启后仍然有效，默认保留 30 天。关闭该配置可恢复原有行为。
 
-插件只能隔离自身的 BPS 路由，不能替宿主修改账号实体或账号编辑页的协议开关；因此该状态会出现在插件 `Health.status_json.bps_403_blocked_accounts` 中，管理员重新绑定/重启插件前应先确认账号和代理状态。
+0.6.5 修复首次 403 仍传给宿主、导致整个 OAuth 账号进入通用 403 冷却的问题。首次请求和输出前重试都执行同一处理；宿主只接收原生通道的真实结果，原生通道本身返回 403 时仍遵循账号冷却策略。工具反馈阶段遇到 403 也记录隔离状态，但已开始输出的请求不会切换通道重新执行。该行为独立于 native_fallback 能力路由开关；关闭 auto_disable_bps_on_403 时保留上游 403 原始结果。
+
+插件隔离的是自身 BPS 路由，状态会出现在插件 `Health.status_json.bps_403_blocked_accounts` 中，管理员重新绑定/重启插件前应先确认账号和代理状态。
+
+## 按模型选择 BPS 通道
 
 配置页提供“全部模型”和“仅指定模型”。例如以下配置只允许插件收到的 model-a 请求进入 BPS 适配，其余模型直接走原生端点：
 
@@ -353,12 +355,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.4.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.5.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.4.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.5.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 
