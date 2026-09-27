@@ -20,7 +20,7 @@ func TestToolDiagnosticObserver(t *testing.T) {
 
 		{"unknown_target", "upstream_tool_references", "undeclared_target", object{"references": encoded([]string{clientToolReferencePrefix + "private_reference"}), "code": encoded("private_code")}, "run_officejs"},
 		{"code_type", "upstream_tool_code", "code_not_string", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(map[string]string{"secret": "private_code"})}, "run_officejs"},
-		{"json", "upstream_tool_code", "invalid_json", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`{"secret":"private\'code"}`)}, "run_officejs"},
+		{"yaml", "upstream_tool_code", "invalid_yaml", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`{"secret":"private\scode"}`)}, "run_officejs"},
 		{"array", "upstream_tool_code", "not_object", object{"references": encoded([]string{clientToolReferencePrefix + "functions.read_file"}), "code": encoded(`["private_code"]`)}, "run_officejs"},
 	} {
 		for _, stream := range []bool{false, true} {
@@ -50,11 +50,11 @@ func TestToolDiagnosticObserver(t *testing.T) {
 				require.Equal(t, map[bool]string{true: "response.output_item.done", false: "json_response"}[stream], d.SourceEvent)
 				require.Equal(t, tc.reason, d.Reason)
 				require.Equal(t, 2, d.CatalogTools)
-				if tc.name == "json" {
-					require.Positive(t, d.JSONOffset)
+				if tc.name == "yaml" {
+					require.Zero(t, d.JSONOffset)
 					require.Equal(t, "code", d.Field)
 					require.Equal(t, "invalid", d.CodeJSONType)
-					require.Equal(t, "functions.read_file", d.TargetTool, "routing survives invalid payload JSON")
+					require.Equal(t, "functions.read_file", d.TargetTool, "routing survives invalid function payload")
 				}
 				raw, err := json.Marshal(d)
 				require.NoError(t, err)

@@ -44,8 +44,8 @@
         </div>
 
         <div class="grid">
-          <label><span>请求超时（秒）</span><input id="request_timeout_seconds" type="number" min="1" max="600" /></label>
-          <label><span>响应头超时（秒）</span><input id="response_header_timeout_seconds" type="number" min="1" max="120" /></label>
+          <label><span>请求总超时（秒，含原生响应等待）</span><input id="request_timeout_seconds" type="number" min="1" max="600" /></label>
+          <label><span>BPS 响应头超时（秒）</span><input id="response_header_timeout_seconds" type="number" min="1" max="120" /></label>
           <label><span>空闲连接超时（秒）</span><input id="idle_connection_timeout_seconds" type="number" min="1" max="600" /></label>
           <label><span>最大空闲连接数</span><input id="max_idle_connections" type="number" min="1" max="1000" /></label>
           <label><span>每主机空闲连接数</span><input id="max_idle_connections_per_host" type="number" min="1" max="100" /></label>

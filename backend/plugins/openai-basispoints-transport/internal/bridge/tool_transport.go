@@ -35,8 +35,8 @@ func (c catalog) transportPayload(item object) (object, error) {
 	if t.Custom {
 		return object{"tool": encoded(key), "args": payload}, nil
 	}
-	payload = []byte(stringValue(payload))
-	if _, err := parseToolObject(payload, "code"); err != nil {
+	payload, err = parseFunctionPayload([]byte(stringValue(payload)))
+	if err != nil {
 		return nil, err
 	}
 	return object{"tool": encoded(key), "args": payload}, nil

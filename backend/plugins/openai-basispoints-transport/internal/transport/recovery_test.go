@@ -108,7 +108,7 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 		start, out, failure := forwardForTest(t, c, body, ctx)
 		require.Nil(t, failure, "semantic failures must not use RPC error frames")
 		require.Contains(t, string(out), "TOOL_BRIDGE_CALL_INVALID")
-		require.Contains(t, string(out), "JSON")
+		require.Contains(t, string(out), "参数映射")
 		if stream {
 			require.Equal(t, int32(200), start.StatusCode)
 		} else {

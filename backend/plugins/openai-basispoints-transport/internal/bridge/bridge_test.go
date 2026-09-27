@@ -310,7 +310,9 @@ func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {
 	var outer map[string]any
 	require.NoError(t, json.Unmarshal([]byte(stringValue(call["arguments"])), &outer))
 	require.Equal(t, []any{"client-tool:get_weather"}, outer["references"])
-	require.JSONEq(t, `{"city":"Tokyo"}`, outer["code"].(string))
+	args, err := parseFunctionPayload([]byte(outer["code"].(string)))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"city":"Tokyo"}`, string(args))
 	out, _ := parseObject(items[3])
 	require.Equal(t, "function_call_output", stringValue(out["type"]))
 	require.Equal(t, "call_old_1", stringValue(out["call_id"]))
