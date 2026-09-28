@@ -167,60 +167,52 @@ func TestGuardEvaluatorOrderedFailoverAndInvalidTerminal(t *testing.T) {
 	require.Equal(t, int64(1), snapshotMetrics.Invalid)
 }
 
-func TestGuardEvaluatorGlobalBulkheadIsNonBlocking(t *testing.T) {
-	release := make(chan struct{})
-	entered := make(chan struct{}, 1)
-	scanner := &scriptedScanner{block: release, entered: entered}
-	metrics := NewAtomicMetrics()
-	evaluator := newGuardEvaluator(scanner, nil, metrics, 1, 1)
-	cfg := guardConfig(ActiveEndpoint{ID: "good", Enabled: true, TimeoutMS: 2000, InputLimit: 100})
-	done := make(chan error, 1)
-	go func() {
-		_, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "one", PromptLength: 3})
-		done <- err
-	}()
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("first evaluation did not enter scanner")
+func TestGuardEvaluatorBulkheadsRetryWithinBudget(t *testing.T) {
+	for _, globalLimit := range []int{1, 2} {
+		for _, recoverCapacity := range []bool{false, true} {
+			t.Run(fmt.Sprintf("global=%d/recover=%t", globalLimit, recoverCapacity), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					release := make(chan struct{})
+					entered := make(chan struct{}, 1)
+					scanner := &scriptedScanner{block: release, entered: entered}
+					metrics := NewAtomicMetrics()
+					evaluator := newGuardEvaluator(scanner, nil, metrics, globalLimit, 1)
+					cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 2000, InputLimit: 100})
+					cfg.MaxAttempts = 3
+					done := make(chan error, 1)
+					go func() {
+						_, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "one"})
+						done <- err
+					}()
+					<-entered
+					if recoverCapacity {
+						go func() { time.Sleep(50 * time.Millisecond); close(release) }()
+					}
+					started := time.Now()
+					decision, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "two"})
+					elapsed := time.Since(started)
+					if recoverCapacity {
+						require.NoError(t, err)
+						require.True(t, decision.AllowNextStage)
+						require.GreaterOrEqual(t, elapsed, 100*time.Millisecond)
+						require.LessOrEqual(t, elapsed, 300*time.Millisecond)
+						require.Equal(t, int64(1), metrics.Snapshot().BulkheadFull)
+					} else {
+						require.Error(t, err)
+						require.Equal(t, ErrorCodeUnavailable, guardErrorCode(err))
+						require.GreaterOrEqual(t, elapsed, 200*time.Millisecond)
+						require.LessOrEqual(t, elapsed, 600*time.Millisecond)
+						require.Equal(t, int64(3), metrics.Snapshot().BulkheadFull)
+						close(release)
+					}
+					require.NoError(t, <-done)
+					require.Equal(t, int64(2), metrics.Snapshot().Total)
+					require.Empty(t, evaluator.global)
+					require.Empty(t, evaluator.nodeSemaphore("one"))
+				})
+			})
+		}
 	}
-	start := time.Now()
-	_, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "two", PromptLength: 3})
-	require.Error(t, err)
-	require.Less(t, time.Since(start), 200*time.Millisecond)
-	require.Equal(t, int64(1), metrics.Snapshot().BulkheadFull)
-	close(release)
-	require.NoError(t, <-done)
-	snapshotMetrics := metrics.Snapshot()
-	require.Equal(t, int64(2), snapshotMetrics.Total)
-	require.Equal(t, int64(1), snapshotMetrics.Allowed)
-	require.Equal(t, int64(1), snapshotMetrics.Unavailable)
-}
-
-func TestGuardEvaluatorPerNodeBulkheadIsNonBlocking(t *testing.T) {
-	release := make(chan struct{})
-	entered := make(chan struct{}, 1)
-	scanner := &scriptedScanner{block: release, entered: entered}
-	metrics := NewAtomicMetrics()
-	evaluator := newGuardEvaluator(scanner, nil, metrics, 2, 1)
-	cfg := guardConfig(ActiveEndpoint{ID: "same-node", Enabled: true, TimeoutMS: 2000, InputLimit: 100})
-	done := make(chan error, 1)
-	go func() {
-		_, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "one", PromptLength: 3})
-		done <- err
-	}()
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("first evaluation did not enter scanner")
-	}
-	started := time.Now()
-	_, err := evaluator.Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "two", PromptLength: 3})
-	require.Error(t, err)
-	require.Less(t, time.Since(started), 200*time.Millisecond)
-	require.GreaterOrEqual(t, metrics.Snapshot().BulkheadFull, int64(1))
-	close(release)
-	require.NoError(t, <-done)
 }
 
 func TestGuardEvaluatorLastChunkFailureNeverAllows(t *testing.T) {
@@ -406,14 +398,23 @@ func TestGuardEvaluatorConfiguredAttempts(t *testing.T) {
 		{"recover on tenth attempt", 10, 9, true, 10, false},
 		{"exhaust ten attempts", 10, 10, true, 10, true},
 		{"default attempts", 0, 10, true, DefaultMaxAttempts, true},
-		{"permanent failure", 10, 1, false, 1, true},
+		{"retry despite false hint", 10, 9, false, 10, false},
+		{"exhaust despite false hint", 10, 10, false, 10, true},
+		{"clamp attempts", 100, 100, false, 10, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 30000, InputLimit: 100})
 				cfg.MaxAttempts = tc.maxAttempts
 				calls := 0
+				var previousCall time.Time
 				scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
+					if !previousCall.IsZero() {
+						delay := time.Since(previousCall)
+						require.GreaterOrEqual(t, delay, 100*time.Millisecond)
+						require.LessOrEqual(t, delay, 300*time.Millisecond)
+					}
+					previousCall = time.Now()
 					calls++
 					if calls <= tc.failures {
 						return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: tc.retryable}
@@ -450,7 +451,7 @@ func TestGuardEvaluatorRetriesOnlyFailedChunkWithOrderedFailover(t *testing.T) {
 		scanner := PromptScannerFunc(func(_ context.Context, endpoint ActiveEndpoint, chunk string, _ []string) (*NormalizedResult, error) {
 			calls = append(calls, endpoint.ID+":"+chunk)
 			if chunk == "def" && len(calls) < 5 {
-				return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
+				return nil, &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: http.StatusForbidden}
 			}
 			return ParseQwen3Guard("Safety: Safe\nCategories: None", AllScannerIDs)
 		})
@@ -461,6 +462,44 @@ func TestGuardEvaluatorRetriesOnlyFailedChunkWithOrderedFailover(t *testing.T) {
 		require.Equal(t, []string{"first:abc", "first:def", "second:def", "first:def", "second:def"}, calls)
 		require.Equal(t, int64(2), metrics.Snapshot().Failovers)
 	})
+}
+
+func TestGuardEvaluatorRetriesUnavailableRegardlessOfCause(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"bad request", &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 400}},
+		{"authentication", &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 401}},
+		{"forbidden", &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 403}},
+		{"rate limit", &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 429}},
+		{"upstream failure", &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 502}},
+		{"wrapped unavailable", fmt.Errorf("scanner: %w", &GuardError{Code: ErrorCodeUnavailable})},
+		{"unclassified scanner error", errors.New("scanner failed")},
+		{"panic", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 30000, InputLimit: 100})
+				cfg.MaxAttempts = 10
+				calls := 0
+				scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
+					calls++
+					if calls < 10 {
+						if tc.name == "panic" {
+							panic("private scanner error")
+						}
+						return nil, tc.err
+					}
+					return ParseQwen3Guard("Safety: Safe\nCategories: None", AllScannerIDs)
+				})
+				decision, err := NewGuardEvaluator(scanner, nil, nil).Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "hello"})
+				require.NoError(t, err)
+				require.True(t, decision.AllowNextStage)
+				require.Equal(t, 10, calls)
+			})
+		})
+	}
 }
 
 func TestGuardEvaluatorRetryBackoffHonorsContext(t *testing.T) {

@@ -270,11 +270,11 @@ func usesCodexSparkAuditPrompt(model string) bool {
 func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpoint, chunk string, enabledScanners []string) (*NormalizedResult, error) {
 	client, err := s.clientFor(endpoint)
 	if err != nil {
-		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
+		return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true, Cause: err}
 	}
 	requestURL, err := ChatCompletionsURL(endpoint.BaseURL)
 	if err != nil {
-		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
+		return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true, Cause: err}
 	}
 	messages := []map[string]string{{"role": "user", "content": chunk}}
 	if usesCodexSparkAuditPrompt(endpoint.Model) {
@@ -296,7 +296,7 @@ func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpo
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
+		return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true, Cause: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if endpoint.Token != "" {
@@ -313,8 +313,7 @@ func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpo
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return nil, &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: resp.StatusCode, Retryable: retryable}
+		return nil, &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: resp.StatusCode, Retryable: true}
 	}
 	limited := io.LimitReader(resp.Body, maxGuardResponseBytes+1)
 	responseBody, err := io.ReadAll(limited)

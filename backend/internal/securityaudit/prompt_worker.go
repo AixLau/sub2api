@@ -235,13 +235,9 @@ func decisionKindForResult(result *NormalizedResult) DecisionKind {
 func (r *Runner) finishFailure(ctx context.Context, job *Job, err error) error {
 	baseFields := jobLogFields(job)
 	code := guardErrorCode(err)
-	retryable := false
-	var guardErr *GuardError
-	if errors.As(err, &guardErr) {
-		retryable = guardErr.Retryable
-	}
+	retryable := shouldRetryPromptGuard(err)
 	if retryable && job.Attempts < job.MaxAttempts {
-		next := r.clock.Now().Add(retryBackoff(job.Attempts))
+		next := r.clock.Now().Add(promptGuardRetryDelay())
 		if updateErr := r.repo.Retry(ctx, job.ID, job.ClaimVersion, next, code, "prompt guard temporarily unavailable"); updateErr != nil {
 			return updateErr
 		}
@@ -317,8 +313,7 @@ func scanWithFailover(ctx context.Context, scanner PromptScanner, scanners []str
 			err = &GuardError{Code: ErrorCodeInvalidResponse, Retryable: false}
 		}
 		lastErr = err
-		var guardErr *GuardError
-		if !errors.As(err, &guardErr) || !guardErr.Retryable {
+		if !shouldRetryPromptGuard(err) {
 			return nil, err
 		}
 		if index < len(endpoints)-1 && metrics != nil {
@@ -329,17 +324,6 @@ func scanWithFailover(ctx context.Context, scanner PromptScanner, scanners []str
 		lastErr = &GuardError{Code: ErrorCodeUnavailable}
 	}
 	return nil, lastErr
-}
-
-func retryBackoff(attempt int) time.Duration {
-	switch attempt {
-	case 1:
-		return 5 * time.Second
-	case 2:
-		return 30 * time.Second
-	default:
-		return 2 * time.Minute
-	}
 }
 
 func eventID(event *Event) int64 {

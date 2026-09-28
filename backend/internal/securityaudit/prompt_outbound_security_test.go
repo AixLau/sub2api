@@ -113,11 +113,11 @@ func TestOpenAICompatibleScannerClassifiesHTTPConnectionAndTimeoutFailures(t *te
 		status    int
 		retryable bool
 	}{
-		{name: "authentication", status: http.StatusUnauthorized, retryable: false},
-		{name: "forbidden", status: http.StatusForbidden, retryable: false},
+		{name: "authentication", status: http.StatusUnauthorized, retryable: true},
+		{name: "forbidden", status: http.StatusForbidden, retryable: true},
 		{name: "rate limited", status: http.StatusTooManyRequests, retryable: true},
 		{name: "server failure", status: http.StatusBadGateway, retryable: true},
-		{name: "other client error", status: http.StatusBadRequest, retryable: false},
+		{name: "other client error", status: http.StatusBadRequest, retryable: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,7 +203,7 @@ func TestPromptAuditProbeModelsFallbackAndResponseSafety(t *testing.T) {
 		require.False(t, result.OK)
 		require.Equal(t, ErrorCodeUnavailable, result.ErrorCode)
 		require.Equal(t, http.StatusUnauthorized, result.HTTPStatus)
-		require.False(t, result.Retryable)
+		require.True(t, result.Retryable)
 	})
 
 	t.Run("oversized models response is rejected without fallback", func(t *testing.T) {

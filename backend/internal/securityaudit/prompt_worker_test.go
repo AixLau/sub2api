@@ -408,11 +408,11 @@ func TestWorkerRetryBackoffTerminalFailureAndFailover(t *testing.T) {
 		maxAttempts int
 		err         *GuardError
 		wantRetry   bool
-		wantBackoff time.Duration
 	}{
-		{name: "first retry", attempts: 1, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true, wantBackoff: 5 * time.Second},
-		{name: "second retry", attempts: 2, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true, wantBackoff: 30 * time.Second},
-		{name: "third retry", attempts: 3, maxAttempts: 4, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true, wantBackoff: 2 * time.Minute},
+		{name: "first retry", attempts: 1, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true},
+		{name: "second retry", attempts: 2, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true},
+		{name: "third retry", attempts: 3, maxAttempts: 4, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}, wantRetry: true},
+		{name: "unavailable without retry hint", attempts: 1, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, HTTPStatus: 403}, wantRetry: true},
 		{name: "max attempts", attempts: 3, maxAttempts: 3, err: &GuardError{Code: ErrorCodeUnavailable, Retryable: true}},
 		{name: "invalid terminal", attempts: 1, maxAttempts: 3, err: &GuardError{Code: ErrorCodeInvalidResponse, Retryable: false}},
 	} {
@@ -428,7 +428,8 @@ func TestWorkerRetryBackoffTerminalFailureAndFailover(t *testing.T) {
 			require.Error(t, err)
 			if tt.wantRetry {
 				require.Equal(t, 1, repo.retried)
-				require.Equal(t, now.Add(tt.wantBackoff), repo.retryAt)
+				require.GreaterOrEqual(t, repo.retryAt.Sub(now), 100*time.Millisecond)
+				require.LessOrEqual(t, repo.retryAt.Sub(now), 300*time.Millisecond)
 				require.Empty(t, payload.deleted)
 			} else {
 				require.Equal(t, 1, repo.failed)

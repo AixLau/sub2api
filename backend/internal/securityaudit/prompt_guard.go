@@ -3,7 +3,6 @@ package securityaudit
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -49,17 +48,6 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	endpoints := cfg.EnabledEndpoints()
 	if len(endpoints) == 0 {
 		if g.metrics != nil {
-			g.metrics.Observe(DecisionUnavailable, g.clock.Now().Sub(start))
-		}
-		logGuardFailure(snapshot, cfg, DecisionUnavailable, ErrorCodeUnavailable, "", g.clock.Now().Sub(start))
-		return nil, &GuardError{Code: ErrorCodeUnavailable}
-	}
-	select {
-	case g.global <- struct{}{}:
-		defer func() { <-g.global }()
-	default:
-		if g.metrics != nil {
-			g.metrics.IncBulkheadFull()
 			g.metrics.Observe(DecisionUnavailable, g.clock.Now().Sub(start))
 		}
 		logGuardFailure(snapshot, cfg, DecisionUnavailable, ErrorCodeUnavailable, "", g.clock.Now().Sub(start))
@@ -217,20 +205,18 @@ func (g *GuardEvaluator) scanChunk(ctx context.Context, cfg ActiveConfig, endpoi
 		maxAttempts = DefaultMaxAttempts
 	}
 	maxAttempts = min(maxAttempts, MaxPromptAuditAttempts)
+	// Keep intermediate failures inside this loop. Only the final outcome may
+	// reach Evaluate's failure metrics/logs and the gateway error recorder.
 	for attempt := 1; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, &GuardError{Code: ErrorCodeUnavailable, Timeout: errors.Is(err, context.DeadlineExceeded), Cause: err}
 		}
 		result, err := g.scanChunkAttempt(ctx, cfg, endpoints, chunk)
-		var guardErr *GuardError
-		if err == nil || attempt >= maxAttempts || !errors.As(err, &guardErr) || !guardErr.Retryable {
+		if err == nil || attempt >= maxAttempts || !shouldRetryPromptGuard(err) {
 			return result, err
 		}
-		// Capped exponential backoff with equal jitter prevents synchronized
-		// retries while keeping short transient failures within the deadline.
-		delay := min(100*time.Millisecond<<(attempt-1), time.Second)
-		delay = delay/2 + time.Duration(rand.Int64N(int64(delay/2)))
-		timer := time.NewTimer(delay)
+		// Keep every retry within 100–300 ms without synchronizing callers.
+		timer := time.NewTimer(promptGuardRetryDelay())
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -241,6 +227,17 @@ func (g *GuardEvaluator) scanChunk(ctx context.Context, cfg ActiveConfig, endpoi
 }
 
 func (g *GuardEvaluator) scanChunkAttempt(ctx context.Context, cfg ActiveConfig, endpoints []ActiveEndpoint, chunk string) (*NormalizedResult, error) {
+	// Bound active attempts, releasing capacity during retry waits. Admission
+	// failures use the same retry budget and deadline as scanner failures.
+	select {
+	case g.global <- struct{}{}:
+		defer func() { <-g.global }()
+	default:
+		if g.metrics != nil {
+			g.metrics.IncBulkheadFull()
+		}
+		return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
+	}
 	var lastErr error
 	for index, endpoint := range endpoints {
 		if err := ctx.Err(); err != nil {
@@ -255,11 +252,7 @@ func (g *GuardEvaluator) scanChunkAttempt(ctx context.Context, cfg ActiveConfig,
 			if g.metrics != nil {
 				g.metrics.IncBulkheadFull()
 			}
-			// Local saturation remains fail-fast unless an actual upstream call
-			// in this attempt already returned a retryable error.
-			if lastErr == nil {
-				lastErr = &GuardError{Code: ErrorCodeUnavailable}
-			}
+			lastErr = &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
 			if index < len(endpoints)-1 && g.metrics != nil {
 				g.metrics.IncFailover()
 			}
@@ -274,8 +267,7 @@ func (g *GuardEvaluator) scanChunkAttempt(ctx context.Context, cfg ActiveConfig,
 			err = &GuardError{Code: ErrorCodeInvalidResponse, Retryable: false}
 		}
 		lastErr = err
-		var guardErr *GuardError
-		if !errors.As(err, &guardErr) || !guardErr.Retryable {
+		if !shouldRetryPromptGuard(err) {
 			return nil, err
 		}
 		if index < len(endpoints)-1 && g.metrics != nil {
@@ -292,7 +284,7 @@ func callPromptScanner(ctx context.Context, scanner PromptScanner, endpoint Acti
 	defer func() {
 		if recover() != nil {
 			result = nil
-			err = &GuardError{Code: ErrorCodeUnavailable, Retryable: false}
+			err = &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
 		}
 	}()
 	return scanner.Scan(ctx, endpoint, chunk, scanners)
