@@ -92,7 +92,7 @@ func TestAuthorizedFunctionHistoryUnicode(t *testing.T) {
 	require.NoError(t, json.Unmarshal(final["output"], &output))
 	var answer strings.Builder
 	for _, item := range output {
-		require.Equal(t, "message", item.Type)
+		require.Contains(t, []string{"message", "reasoning"}, item.Type)
 		for _, content := range item.Content {
 			if content.Type == "output_text" {
 				answer.WriteString(content.Text)

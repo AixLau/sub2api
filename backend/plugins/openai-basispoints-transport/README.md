@@ -52,15 +52,21 @@
 1. 请求体只发送 Excel 加载项词汇表字段：`model`（见下方模型映射）、`model_selection: "explicit"`、`stream`、`store: false`、`input`、`prompt_cache_key`、`reasoning_effort`、`context_management`、`metadata`。`tools`、`tool_choice`、`parallel_tool_calls`、`reasoning` 对象、`instructions`、`include`、`text`、`max_output_tokens`、`temperature`、`top_p`、`previous_response_id` 等一律不发往上游。
 2. `task_id`、`turn_id`、`agent_iteration` 放在 `metadata` 中，值为字符串；客户端 metadata 的标量字段一并透传（保留键优先）。`agent_iteration` 随每个工具往返递增，同一请求重试不递增；新的 user 消息或非空明文 agent_message 开启新 turn；同一正文发给不同子 agent 时保留独立身份。显式传入的 turn 与回放状态冲突时直接报错。
 3. `instructions` 与客户端工具目录都写入 developer 消息（带 `type: "message"`）。工具目录是普通文本，不是上游工具声明。
-4. 工具传输协议 v6：references 必须为单元素 ["client-tool:目录完整工具名"]，code 只承载原始载荷。function 的 code 是 YAML 参数映射，字符串用单引号或原样文本块，避免正则和路径在内层 JSON 再次转义；custom/freeform 的 code 是原始脚本或补丁，不再嵌套 name/input JSON 信封，也不预先转义。summary 只作描述。
+4. 工具传输协议 v7：references 必须为单元素 ["client-tool:目录完整工具名"]，code 只承载原始载荷。function 的 code 是 YAML 参数映射，非空字符串使用显式缩进 |2- / |2 / |2+ 原样文本块，避免源代码缩进被当作 YAML 结构；custom/freeform 的 code 是原始脚本或补丁，不再嵌套 name/input JSON 信封，也不预先转义。summary 只作描述。
 5. 仅 run_officejs / functions.run_officejs 承载传输协议（支持独立 namespace: "functions"）。路由必须精确匹配客户端目录的完整名称；不接受短名、未声明工具、递归执行器、无前缀的旧 references 或 code 内旧信封路由。function 映射转换为客户端原生 JSON 参数对象，只接受 JSON 数据类型，拒绝重复键、标签、锚点、别名和多文档；custom 原文不解析 JSON，不修补脚本。上游直接调用已声明的客户端工具仍按标准 Responses 字段处理。
 6. 通过宿主 HostService KV 保存完整上游 item，包含 `id`、`call_id`、`arguments` 内外的 `summary`、`references` 和未知字段。客户端收到不透明的 `call_bps_…` 标识，按正常流程决定是否执行工具。
 7. 客户端提交工具结果时，插件恢复原始调用 item 和原始 `call_id`（即使客户端只提交了工具结果也能回放），并为结果 item 补全 `fc_…` 形式的 `id`。相同调用 item 不重复插入。
-8. 非插件生成但结构有效的客户端工具历史，使用客户端自己的 name/arguments 按 v6 重建 `run_officejs` 调用继续回放，字符串使用原样表达，保留参数值和数字精度。无效参数或没有对应调用项的孤立工具结果明确报错。
+8. 非插件生成但结构有效的客户端工具历史，使用客户端自己的 name/arguments 按 v7 重建 `run_officejs` 调用继续回放，字符串使用原样表达，保留参数值和数字精度。无效参数或没有对应调用项的孤立工具结果明确报错。
 9. 输入项清洗：带 `encrypted_content` 的 reasoning 原样保留（仅保留加密内容），裸 reasoning 与 `item_reference` 丢弃（`store:false` 的上游拒绝它们）；`image_generation` 只保留仍带内联数据的 item，瘦身项（仅 `id`，`result: null`）丢弃——`store:false` 下上游不持久化 item，回放瘦身项会以 `Item with id 'ig_…' not found` 404 整个请求；各 item 上的 `internal_chat_message_metadata_passthrough` 会剥离。
 10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
+
+## 0.6.12 历史 JSON 参数保真
+
+- 原生 function 历史按 JSON 解码，再通过现有 yaml.v3 节点编码器生成传输映射；不再把 JSON 直接交给 YAML 扫描器。修复合法 Unicode 代理对导致整个后续对话在出站前失败。
+- 延续 main 中的 JSON token 解码方案，保留字段顺序、数字字面量与重复字段校验语义；补齐 CR、NEL、Unicode 行/段分隔符的保真输出。
+- 合成回归覆盖两种 arguments 外层形式、历史重建、JSON/SSE gRPC 及独立安装包进程；真实授权验证与一小时生产错误分类见[本次审计](ERROR_AUDIT_2026-09-28_2118.md)。
 
 ## 0.6.10 保留工具反馈阶段的上游失败
 
@@ -398,19 +404,19 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.10.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.12.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.10.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.12.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 显式授权后，可指定包含单个 OpenAI OAuth 账号的本地导出文件进行真实上游验证；未设置授权文件时测试跳过。授权不导入生产，不刷新令牌。设置安装包环境变量时，通过包内独立进程验证，否则使用进程内插件。
 
 ```bash
 BPS_DISCOVERY_LIVE_AUTH_FILE='/path/to/authorized-export.json' \
 BPS_DISCOVERY_LIVE_MODEL=gpt-6-sol \
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.10.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.12.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestAuthorizedCustomToolResultReplay$' -count=1 -v
 ```
