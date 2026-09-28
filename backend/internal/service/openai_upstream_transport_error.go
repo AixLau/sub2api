@@ -124,7 +124,6 @@ if isClientCanceledTransportError(ctx, err) {
 	if credentialExecutionFromContext(ctx) != nil {
 		return errors.New("UPSTREAM_RESULT_UNKNOWN")
 	}
-	}
 	safeErr := sanitizeUpstreamErrorMessage(err.Error())
 	setOpsUpstreamError(c, 0, safeErr, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
