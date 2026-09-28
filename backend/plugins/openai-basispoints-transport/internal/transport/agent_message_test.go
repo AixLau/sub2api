@@ -32,7 +32,7 @@ func terminalResponse(t *testing.T, out []byte, stream bool) map[string]json.Raw
 			Response map[string]json.RawMessage
 		}
 		require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &frame))
-		if frame.Type == "response.completed" || frame.Type == "response.failed" {
+		if frame.Type == "response.completed" || frame.Type == "response.failed" || frame.Type == "response.incomplete" {
 			response = frame.Response
 		}
 	}

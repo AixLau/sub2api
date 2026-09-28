@@ -229,6 +229,10 @@ func TestClientToolFailureBoundaries(t *testing.T) {
 			if mode == "forced_exec" {
 				require.NoError(t, err)
 				require.Len(t, r.converted, 1)
+			} else if mode == "failed" || mode == "incomplete" {
+				require.NoError(t, err)
+				require.True(t, r.Failed)
+				require.Empty(t, r.converted)
 			} else {
 				require.Error(t, err)
 				require.Empty(t, r.converted)

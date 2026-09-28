@@ -186,37 +186,35 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		if len(response["output"]) > 0 && json.Unmarshal(response["output"], &output) != nil {
 			return errors.New("上游 output 无效")
 		}
-		for i, raw := range output {
-			item, _ := parseObject(raw)
-			if isToolCall(item) {
-				if previous := s.completed[i]; previous != nil {
-					old, _ := parseObject(previous)
-					for _, key := range []string{"id", "call_id", "type", "name", "namespace", "arguments", "input"} {
-						if string(old[key]) != string(item[key]) {
-							return errors.New("上游在完成快照中修改了工具调用")
+		if typ == "response.completed" {
+			for i, raw := range output {
+				item, _ := parseObject(raw)
+				if isToolCall(item) {
+					if previous := s.completed[i]; previous != nil {
+						old, _ := parseObject(previous)
+						for _, key := range []string{"id", "call_id", "type", "name", "namespace", "arguments", "input"} {
+							if string(old[key]) != string(item[key]) {
+								return errors.New("上游在完成快照中修改了工具调用")
+							}
 						}
 					}
+					delete(s.pending, i)
 				}
-				delete(s.pending, i)
+			}
+			for i := range s.completed {
+				if i >= len(output) {
+					return errors.New("上游完成快照遗漏工具调用")
+				}
+				item, _ := parseObject(output[i])
+				if !isToolCall(item) {
+					return errors.New("上游完成快照将工具调用替换为非工具项")
+				}
+			}
+			if len(s.pending) > 0 {
+				return errors.New("上游工具流缺少完整 output item")
 			}
 		}
-		for i := range s.completed {
-			if i >= len(output) {
-				return errors.New("上游完成快照遗漏工具调用")
-			}
-			item, _ := parseObject(output[i])
-			if !isToolCall(item) {
-				return errors.New("上游完成快照将工具调用替换为非工具项")
-			}
-		}
-		if typ == "response.completed" && len(s.pending) > 0 {
-			return errors.New("上游工具流缺少完整 output item")
-		}
-		if typ == "response.completed" {
-			response["status"] = encoded("completed")
-		} else {
-			s.request.Failed = true
-		}
+		response["status"] = encoded(strings.TrimPrefix(typ, "response."))
 		converted, err := s.request.Response(ctx, encoded(response))
 		if err != nil {
 			return err

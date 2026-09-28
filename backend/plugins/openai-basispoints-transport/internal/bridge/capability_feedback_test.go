@@ -179,7 +179,12 @@ func TestUnsupportedToolFeedbackBoundaries(t *testing.T) {
 				}
 			}
 			_, err := r.Response(ctx, encoded(initial))
-			require.Error(t, err)
+			if mode == "upstream_failed" {
+				require.NoError(t, err)
+				require.True(t, r.Failed)
+			} else {
+				require.Error(t, err)
+			}
 			require.Equal(t, wantHits, hits)
 			require.Empty(t, r.converted)
 			if mode == "cancelled" {

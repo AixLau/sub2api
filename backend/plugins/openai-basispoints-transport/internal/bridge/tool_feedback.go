@@ -14,6 +14,22 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 	if len(root["output"]) > 0 && json.Unmarshal(root["output"], &output) != nil {
 		return nil, errors.New("上游 output 必须是数组")
 	}
+	if status := stringValue(root["status"]); status == "failed" || status == "incomplete" {
+		// Failed responses cannot dispatch tools. Preserve the upstream cause
+		// without trying to validate or repair a batch that never completed.
+		visible := make([]json.RawMessage, 0, len(output))
+		for _, raw := range output {
+			item, err := parseObject(raw)
+			if err != nil {
+				return nil, err
+			}
+			if !isToolCall(item) {
+				visible = append(visible, raw)
+			}
+		}
+		root["output"] = encoded(visible)
+		return root, nil
+	}
 	converted := make([]json.RawMessage, len(output))
 	failures := map[int]*ToolCallError{}
 	var first *ToolCallError
@@ -77,17 +93,6 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 	}
 	if stringValue(root["status"]) == "completed" && r.catalog.choice == "required" && calls == 0 {
 		return nil, toolValidationError("upstream_tool_choice", "required_tool_missing", "上游未返回 required 工具调用")
-	}
-	if status := stringValue(root["status"]); status == "failed" || status == "incomplete" {
-		var visible []json.RawMessage
-		for _, raw := range output {
-			item, _ := parseObject(raw)
-			if !isToolCall(item) {
-				visible = append(visible, raw)
-			}
-		}
-		root["output"] = encoded(visible)
-		return root, nil
 	}
 	for i, raw := range output {
 		if err := r.saveCall(ctx, raw, converted[i]); err != nil {
@@ -194,8 +199,9 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 	}
 	root["usage"] = sumUsage(root["usage"], next["usage"])
 	r.failureSnapshot = encoded(root)
-	if stringValue(next["status"]) != "completed" {
-		return nil, &FeedbackFailure{Message: "工具错误反馈未生成 completed 响应"}
+	status := stringValue(next["status"])
+	if status != "completed" && status != "failed" && status != "incomplete" {
+		return nil, &FeedbackFailure{Message: "工具错误反馈未生成终结响应"}
 	}
 	// The continuation creates new calls. Reusing a native identity would
 	// produce two different items/results for the same call during replay.
@@ -210,10 +216,13 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 		}
 	}
 	var nextOutput []json.RawMessage
-	if json.Unmarshal(next["output"], &nextOutput) != nil {
+	if len(next["output"]) > 0 && json.Unmarshal(next["output"], &nextOutput) != nil {
 		return nil, errors.New("工具反馈 output 无效")
 	}
 	for _, raw := range nextOutput {
+		if status != "completed" {
+			break
+		}
 		item, _ := parseObject(raw)
 		if ids[stringValue(item["id"])] || (isToolCall(item) && callIDs[stringValue(item["call_id"])]) {
 			// Keep the precise conversion diagnostic when the repeated item
@@ -232,7 +241,9 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 	if json.Unmarshal(next["output"], &final) != nil {
 		return nil, errors.New("工具反馈 output 无效")
 	}
-	next["output"] = encoded(append(visible, final...))
+	merged := make([]json.RawMessage, 0, len(visible)+len(final))
+	merged = append(merged, visible...)
+	next["output"] = encoded(append(merged, final...))
 	next["usage"] = root["usage"]
 	// Retain the response identity already sent to the downstream client.
 	for _, field := range []string{"id", "created_at", "model"} {

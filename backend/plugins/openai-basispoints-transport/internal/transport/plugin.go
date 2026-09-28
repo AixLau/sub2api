@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.9"
+	PluginVersion = "0.6.10"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -504,9 +504,6 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			return nil, &bridge.FeedbackFailure{Message: "工具错误反馈连接失败"}
 		}
 		defer next.Body.Close()
-		if next.StatusCode < 200 || next.StatusCode >= 300 {
-			return nil, &bridge.FeedbackFailure{Message: fmt.Sprintf("工具错误反馈被上游拒绝（HTTP %d）", next.StatusCode)}
-		}
 		if activity != nil {
 			next.Body = activity.wrap(next.Body)
 		}
@@ -515,7 +512,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			return nil, &bridge.FeedbackFailure{Message: "工具错误反馈响应不完整或无效"}
+			return nil, &bridge.FeedbackFailure{Message: "工具错误反馈响应不完整或无效：" + err.Error()}
 		}
 		return raw, nil
 	}
