@@ -95,8 +95,49 @@ func formatFunctionPayload(raw []byte) (string, error) {
 		return "", errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 	}
 	var document yaml.Node
-	if yaml.Unmarshal(raw, &document) != nil {
-		return "", errors.New("历史 function 参数无法转换为传输映射")
+	var value any
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		// YAML 1.2 rejects a few escapes that are legal in JSON (notably
+		// escaped slashes and surrogate pairs). Decode those inputs with the
+		// JSON parser instead, while keeping UseNumber for exact numerics.
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&value); err != nil {
+			return "", errors.New("历史 function 参数无法转换为传输映射")
+		}
+	}
+	var node func(any) *yaml.Node
+	node = func(value any) *yaml.Node {
+		switch value := value.(type) {
+		case map[string]any:
+			out := &yaml.Node{Kind: yaml.MappingNode}
+			for key, child := range value {
+				out.Content = append(out.Content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+					node(child),
+				)
+			}
+			return out
+		case []any:
+			out := &yaml.Node{Kind: yaml.SequenceNode}
+			for _, child := range value {
+				out.Content = append(out.Content, node(child))
+			}
+			return out
+		case string:
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+		case json.Number:
+			return &yaml.Node{Kind: yaml.ScalarNode, Value: value.String()}
+		case bool:
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: map[bool]string{true: "true", false: "false"}[value]}
+		case nil:
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}
+		default:
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: ""}
+		}
+	}
+	if document.Kind == 0 {
+		document = *node(value)
 	}
 	var style func(*yaml.Node, bool)
 	style = func(node *yaml.Node, key bool) {

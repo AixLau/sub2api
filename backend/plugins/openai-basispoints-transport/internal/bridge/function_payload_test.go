@@ -124,3 +124,15 @@ func TestFunctionPayloadNumbersBeyondMachineRange(t *testing.T) {
 		require.Equal(t, want, got)
 	}
 }
+
+func TestFunctionPayloadHistoryAcceptsJSONEscapesRejectedByYAML(t *testing.T) {
+	raw := []byte(`{"slash":"https:\/\/example.com\/search","emoji":"\ud83d\ude00","lone":"\ud800"}`)
+	code, err := formatFunctionPayload(raw)
+	require.NoError(t, err)
+	restored, err := parseFunctionPayload([]byte(code))
+	require.NoError(t, err)
+	var want, got map[string]string
+	require.NoError(t, json.Unmarshal(raw, &want))
+	require.NoError(t, json.Unmarshal(restored, &got))
+	require.Equal(t, want, got)
+}
