@@ -199,7 +199,12 @@ func TestToolFeedbackBoundaries(t *testing.T) {
 				return encoded(response), nil
 			}
 			_, err := r.Response(ctx, encoded(response))
-			require.Error(t, err)
+			if mode == "upstream_failed" {
+				require.NoError(t, err)
+				require.True(t, r.Failed)
+			} else {
+				require.Error(t, err)
+			}
 			require.Empty(t, r.converted)
 			if mode == "repeated" || mode == "required" {
 				require.Equal(t, 1, hits)
@@ -217,6 +222,64 @@ func TestToolFeedbackCancellationDoesNotDispatch(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.Empty(t, r.converted)
 	require.True(t, errors.Is(err, context.Canceled))
+}
+
+func TestToolFeedbackPreservesFailedAndIncompleteResponses(t *testing.T) {
+	for _, status := range []string{"failed", "incomplete"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", status, stream), func(t *testing.T) {
+				r := customRequest(t)
+				r.catalog.choice = "required"
+				initial := feedbackResponse("resp_initial", feedbackCall("unknown", nil, "bad"), feedbackMessage("msg_before", "Before."))
+				initial["model"], initial["created_at"] = encoded("test-model"), encoded(123)
+				next := feedbackResponse("resp_continuation", encoded(object{"type": encoded("function_call"), "name": encoded("write_range"), "arguments": encoded("private executable input")}), feedbackMessage("msg_partial", "Partial."))
+				next["status"] = encoded(status)
+				if status == "failed" {
+					next["error"] = encoded(map[string]any{"code": "rate_limit_exceeded", "message": "TPM limit", "headers": map[string]string{"retry-after-ms": "231"}})
+				} else {
+					next["incomplete_details"] = encoded(map[string]string{"reason": "max_output_tokens"})
+				}
+				hits := 0
+				r.Feedback = func(context.Context, []byte) ([]byte, error) { hits++; return encoded(next), nil }
+				var final object
+				if stream {
+					var emitted strings.Builder
+					wire := event("response.completed", map[string]any{"response": initial})
+					require.NoError(t, r.Stream(context.Background(), strings.NewReader(wire), func(b []byte) error { emitted.Write(b); return nil }))
+					final = streamSnapshot(t, emitted.String())
+					require.Contains(t, emitted.String(), "event: response."+status)
+					require.NotContains(t, emitted.String(), "event: response.completed")
+				} else {
+					raw, err := r.Response(context.Background(), encoded(initial))
+					require.NoError(t, err)
+					final, err = parseObject(raw)
+					require.NoError(t, err)
+				}
+				require.Equal(t, 1, hits)
+				require.True(t, r.Failed)
+				require.Empty(t, r.converted)
+				for _, field := range []string{"id", "model", "created_at"} {
+					require.JSONEq(t, string(initial[field]), string(final[field]))
+				}
+				require.Equal(t, status, stringValue(final["status"]))
+				for _, field := range []string{"error", "incomplete_details"} {
+					if len(next[field]) > 0 {
+						require.JSONEq(t, string(next[field]), string(final[field]))
+					}
+				}
+				var output []object
+				var counters struct {
+					Total int `json:"total_tokens"`
+				}
+				require.NoError(t, json.Unmarshal(final["usage"], &counters))
+				require.Equal(t, 28, counters.Total)
+				require.NoError(t, json.Unmarshal(final["output"], &output))
+				require.Len(t, output, 2)
+				require.NotContains(t, string(encoded(final)), "private executable input")
+				require.NotContains(t, string(encoded(final)), "function_call")
+			})
+		}
+	}
 }
 
 func TestToolFeedbackRejectsReusedNativeCallID(t *testing.T) {
@@ -243,4 +306,28 @@ func TestStreamRejectsReplacedToolInTerminalSnapshot(t *testing.T) {
 	require.ErrorContains(t, err, "替换为非工具项")
 	require.NotContains(t, emitted.String(), "custom_tool_call")
 	require.Empty(t, r.converted)
+}
+
+func TestStreamPreservesFailureAfterUnfinishedToolBatch(t *testing.T) {
+	for _, status := range []string{"failed", "incomplete"} {
+		t.Run(status, func(t *testing.T) {
+			r := customRequest(t)
+			r.Feedback = func(context.Context, []byte) ([]byte, error) {
+				t.Fatal("failed batch must not be repaired")
+				return nil, nil
+			}
+			call := feedbackCall("unknown", nil, "held")
+			terminal := object{"id": encoded("resp_failed"), "output": encoded([]any{}), "error": encoded(map[string]string{"code": "server_error", "message": "upstream failed"})}
+			wire := event("response.output_item.done", map[string]any{"output_index": 0, "item": call}) + event("response."+status, map[string]any{"response": terminal})
+			var emitted strings.Builder
+			require.NoError(t, r.Stream(context.Background(), strings.NewReader(wire), func(b []byte) error { emitted.Write(b); return nil }))
+			final := streamSnapshot(t, emitted.String())
+			require.Equal(t, status, stringValue(final["status"]))
+			require.JSONEq(t, string(terminal["error"]), string(final["error"]))
+			require.JSONEq(t, `[]`, string(final["output"]))
+			require.True(t, r.Failed)
+			require.Empty(t, r.converted)
+			require.NotContains(t, emitted.String(), "unknown")
+		})
+	}
 }

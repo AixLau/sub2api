@@ -201,7 +201,7 @@ func TestPluginOutboundIdentityUsesGlobalUserAgent(t *testing.T) {
 	}}
 	settings := newOpenAICodexUASettingService("codex_vscode/0.200.1 (Linux; x86_64) terminal")
 	gateway := &OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}}, settingService: settings}
-	identity, err := gateway.ResolvePluginOutboundIdentity(context.Background(), account.ID)
+	identity, err := gateway.ResolvePluginOutboundIdentity(context.Background(), newPluginAccountScope(pluginAccountScopeEntry{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}).WithAccountIDs([]int64{account.ID}), account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, identity)
 	require.Equal(t, resolveOpenAICodexCanonicalUserAgent(context.Background(), settings), identity.Headers.Get("User-Agent"))

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -88,11 +89,24 @@ func TestGatewayHandlerPreCancelledCompatibleRequestsDoNotSelectAccount(t *testi
 			c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
 
+			handlerName := "GatewayHandler.Responses"
+			protocol := service.ContentModerationProtocolOpenAIResponses
+			if tt.path == "/v1/chat/completions" {
+				handlerName = "GatewayHandler.ChatCompletions"
+				protocol = service.ContentModerationProtocolOpenAIChat
+			}
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
+				Method: http.MethodPost, Path: tt.path, Handler: handlerName,
+				Upstream: true, ModerationRequired: true, Protocol: protocol,
+				Pipeline: moderationcoverage.PipelineGatewayPreForward, Status: moderationcoverage.StatusCovered,
+			}))
 			tt.call(c)
 
 			require.Zero(t, schedulerCache.snapshotCalls.Load(), "a cancelled request must stop before the account selector")
 			_, selected := c.Get(opsAccountIDKey)
 			require.False(t, selected)
+			require.Equal(t, statusClientClosedRequest, c.Writer.Status(), "an uncommitted cancelled request is marked 499")
+			require.Zero(t, recorder.Body.Len())
 		})
 	}
 }

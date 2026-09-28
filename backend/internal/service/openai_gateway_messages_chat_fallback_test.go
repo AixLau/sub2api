@@ -91,6 +91,13 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			mapped:     "gpt-5.6-luna",
 			wantEffort: "medium",
 		},
+		{
+			name:       "disabled thinking overrides max",
+			model:      "gpt-5.6-luna",
+			mapped:     "gpt-5.6-luna",
+			effortJSON: `,"output_config":{"effort":"max"},"thinking":{"type":"disabled"}`,
+			wantEffort: "none",
+		},
 	}
 
 	for _, tt := range tests {
@@ -121,8 +128,13 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			require.NotNil(t, result)
 			require.Equal(t, tt.mapped, gjson.GetBytes(upstream.lastBody, "model").String())
 			require.Equal(t, tt.wantEffort, gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
-			require.NotNil(t, result.ReasoningEffort)
-			require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
+			if tt.wantEffort == "none" {
+				// The product records disabled thinking as an absent billing effort.
+				require.Nil(t, result.ReasoningEffort)
+			} else {
+				require.NotNil(t, result.ReasoningEffort)
+				require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
+			}
 		})
 	}
 }

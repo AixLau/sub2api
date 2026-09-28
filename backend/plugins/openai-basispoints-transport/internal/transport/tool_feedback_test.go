@@ -17,9 +17,13 @@ import (
 )
 
 func TestForwardToolFeedback(t *testing.T) {
+	testForwardToolFeedback(t, "")
+}
+
+func testForwardToolFeedback(t *testing.T, binary string) {
 	for _, stream := range []bool{false, true} {
 		for _, replySSE := range []bool{false, true} {
-			for _, mode := range []string{"repair", "repeated", "http_failure", "bps_forbidden", "truncated", "upstream_failed", "upstream_incomplete",
+			for _, mode := range []string{"repair", "repeated", "http_failure", "bps_forbidden", "truncated", "upstream_failed", "upstream_incomplete", "http_rate_limit", "sse_error", "flat_sse_error", "proxy_html",
 				"capability_repair", "capability_repeated", "capability_http_failure", "capability_upstream_failed"} {
 				t.Run(fmt.Sprintf("stream=%v/replySSE=%v/%s", stream, replySSE, mode), func(t *testing.T) {
 					capability := strings.HasPrefix(mode, "capability_")
@@ -32,13 +36,36 @@ func TestForwardToolFeedback(t *testing.T) {
 						raw, _ := io.ReadAll(req.Body)
 						observed = append(observed, raw)
 						attempt := hits.Add(1)
-						if attempt == 2 && (mode == "http_failure" || mode == "bps_forbidden") {
+						if attempt == 2 && (mode == "http_failure" || mode == "bps_forbidden" || mode == "http_rate_limit" || mode == "proxy_html") {
 							code := http.StatusInternalServerError
+							if mode == "http_rate_limit" {
+								w.Header().Set("Retry-After", "1")
+								w.WriteHeader(http.StatusTooManyRequests)
+								io.WriteString(w, `{"error":{"code":"rate_limit_exceeded","type":"tokens","message":"TPM limit"}}`)
+								return
+							}
+							if mode == "proxy_html" {
+								w.WriteHeader(http.StatusBadGateway)
+								io.WriteString(w, "<html>private proxy debug body</html>")
+								return
+							}
 							if mode == "bps_forbidden" {
 								code = http.StatusForbidden
 							}
 							w.WriteHeader(code)
 							io.WriteString(w, `{"error":{"code":"server_error","message":"An error occurred while processing"}}`)
+							return
+						}
+						if attempt == 2 && (mode == "sse_error" || mode == "flat_sse_error") {
+							w.Header().Set("Content-Type", "text/event-stream")
+							w.Header().Set("Retry-After-Ms", "231")
+							detail := map[string]any{"code": "rate_limit_exceeded", "message": "TPM limit"}
+							if mode == "sse_error" {
+								detail = map[string]any{"error": detail}
+							}
+							io.WriteString(w, wireEvent("error", detail))
+							w.(http.Flusher).Flush()
+							<-req.Context().Done()
 							return
 						}
 						if attempt == 2 && mode == "truncated" {
@@ -81,10 +108,14 @@ func TestForwardToolFeedback(t *testing.T) {
 						}
 					}))
 					defer upstream.Close()
-					c := recoveryClient(t, ctx, upstream.URL)
+					c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, binary)
+					cfg, _ := json.Marshal(map[string]any{"upstream_base_url": upstream.URL, "proxy_mode": "disabled"})
+					applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+					require.NoError(t, err)
+					require.True(t, applied.Applied)
 					body, _ := json.Marshal(map[string]any{"input": "weather", "stream": stream, "tools": []any{map[string]any{"type": "function", "name": "get_weather"}}})
 					_, out, rpcErr := forwardForTest(t, c, body, ctx)
-					require.Nil(t, rpcErr, "tool feedback failure must be semantic, never trigger account retry")
+					require.Nil(t, rpcErr, "tool feedback failure must be semantic, not an RPC disconnect")
 					require.Equal(t, int32(2), hits.Load(), "one feedback round, no blind retry")
 					response := terminalResponse(t, out, stream)
 					if stream || mode == "repair" {
@@ -95,20 +126,36 @@ func TestForwardToolFeedback(t *testing.T) {
 						require.NotContains(t, string(out), "unknown_client_target")
 						require.Contains(t, string(out), "get_weather")
 					} else {
-						if stream {
-							require.Equal(t, `"failed"`, string(response["status"]))
+						status := `"failed"`
+						if mode == "upstream_incomplete" {
+							status = `"incomplete"`
+						}
+						if stream || (mode != "repeated" && mode != "truncated") {
+							require.Equal(t, status, string(response["status"]))
+							require.JSONEq(t, `[]`, string(response["output"]))
 						}
 						code := "TOOL_BRIDGE_CALL_INVALID"
+						switch mode {
+						case "http_failure", "bps_forbidden", "upstream_failed", "upstream_incomplete":
+							code = "server_error"
+						case "http_rate_limit", "sse_error", "flat_sse_error":
+							code = "rate_limit_exceeded"
+							require.Contains(t, string(out), "retry-after")
+						case "proxy_html":
+							code = "upstream_error"
+							require.NotContains(t, string(out), "private proxy")
+						}
 						if capability && mode == "repeated" {
 							code = "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE"
 						}
 						require.Contains(t, string(out), code)
-						if mode != "repeated" {
+						if mode == "truncated" {
 							require.Contains(t, string(out), "upstream_tool_feedback")
+							require.Contains(t, string(out), "缺少终结事件")
 						}
 						require.NotContains(t, string(out), "response.function_call_arguments.delta")
 					}
-					if mode == "repair" || (stream && mode != "http_failure" && mode != "bps_forbidden" && mode != "truncated") {
+					if mode == "repair" || mode == "upstream_failed" || mode == "upstream_incomplete" || (stream && mode == "repeated") {
 						var usage map[string]int
 						require.NoError(t, json.Unmarshal(response["usage"], &usage))
 						require.Equal(t, 22, usage["total_tokens"])
@@ -163,5 +210,42 @@ func TestFeedbackReaderRejectsNonterminalJSON(t *testing.T) {
 		resp := &http.Response{Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(raw))}
 		_, err := readFeedbackResponse(context.Background(), resp)
 		require.Error(t, err)
+	}
+}
+
+func TestFeedbackReaderPreservesUpstreamErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body string
+		status                  int
+	}{
+		{"http", "application/json", `{"error":{"code":"rate_limit_exceeded","type":"tokens","message":"TPM limit","param":null}}`, 429},
+		{"failed_json", "application/json", `{"status":"failed","output":[],"error":{"code":"rate_limit_exceeded","type":"tokens","message":"TPM limit","param":null}}`, 200},
+		{"failed_sse", "text/event-stream", "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"output\":[],\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"TPM limit\",\"param\":null}}}\n\n", 200},
+		{"http_sse", "text/event-stream", "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"TPM limit\",\"param\":null}}\n\n", 429},
+		{"nested_sse", "text/event-stream", "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"type\":\"tokens\",\"message\":\"TPM limit\",\"param\":null}}\n\n", 200},
+		{"flat_sse", "text/event-stream", "data: {\"type\":\"error\",\"code\":\"rate_limit_exceeded\",\"message\":\"TPM limit\",\"param\":null,\"sequence_number\":7}\n\n", 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {tc.contentType}, "Retry-After": {"1"}, "Retry-After-Ms": {"231"}, "Set-Cookie": {"private"}}, Body: io.NopCloser(strings.NewReader(tc.body))}
+			raw, err := readFeedbackResponse(context.Background(), resp)
+			require.NoError(t, err)
+			var got struct {
+				Status string
+				Output []json.RawMessage
+				Error  map[string]json.RawMessage
+			}
+			require.NoError(t, json.Unmarshal(raw, &got))
+			require.Equal(t, "failed", got.Status)
+			require.Empty(t, got.Output)
+			require.Equal(t, `"rate_limit_exceeded"`, string(got.Error["code"]))
+			require.Equal(t, `"TPM limit"`, string(got.Error["message"]))
+			require.Equal(t, "null", string(got.Error["param"]))
+			if tc.status == 429 {
+				require.Equal(t, "429", string(got.Error["status_code"]))
+			}
+			require.Contains(t, string(got.Error["headers"]), `"retry-after-ms":"231"`)
+			require.NotContains(t, string(raw), "private")
+			require.NotContains(t, string(raw), "sequence_number")
+		})
 	}
 }

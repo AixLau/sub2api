@@ -314,7 +314,8 @@ func TestForwardCancellationClosesUpstream(t *testing.T) {
 	}
 }
 
-func TestPackagedPluginToolReplay(t *testing.T) {
+func packagedRuntimeForTest(t *testing.T) string {
+	t.Helper()
 	packagePath := os.Getenv("SUB2API_TEST_BPS_PACKAGE")
 	if packagePath == "" {
 		t.Skip("set SUB2API_TEST_BPS_PACKAGE to verify the packaged native runtime")
@@ -355,10 +356,17 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 		}
 	}
 	require.True(t, found)
+	return binary
+}
+
+func TestPackagedPluginToolReplay(t *testing.T) {
+	binary := packagedRuntimeForTest(t)
 	testForwardReplay(t, binary)
 	testForwardDiagnosticLogs(t, binary)
 	testForwardFailedRequestBodies(t, binary)
 	testAlphaSearchNativeForward(t, binary)
 	testForwardNoneReasoningEffort(t, binary)
 	testCompactionBypassesInjectedToolSuite(t, binary)
+	testForwardClientToolFailures(t, binary)
+	testForwardToolFeedback(t, binary)
 }

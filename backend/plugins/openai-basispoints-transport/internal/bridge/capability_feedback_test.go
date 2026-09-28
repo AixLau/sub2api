@@ -50,6 +50,11 @@ func TestUnsupportedToolFeedbackAndReplay(t *testing.T) {
 								require.JSONEq(t, string(encoded(unknown)), string(encoded(item)))
 							}
 							if strings.HasSuffix(stringValue(item["type"]), "call_output") {
+								prefix := "fc_"
+								if stringValue(item["type"]) == "custom_tool_call_output" {
+									prefix = "ctco_"
+								}
+								require.True(t, strings.HasPrefix(stringValue(item["id"]), prefix), "feedback result ID must match the native type")
 								result, err := parseObject([]byte(stringValue(item["output"])))
 								require.NoError(t, err)
 								require.Equal(t, "false", string(result["success"]))
@@ -174,7 +179,12 @@ func TestUnsupportedToolFeedbackBoundaries(t *testing.T) {
 				}
 			}
 			_, err := r.Response(ctx, encoded(initial))
-			require.Error(t, err)
+			if mode == "upstream_failed" {
+				require.NoError(t, err)
+				require.True(t, r.Failed)
+			} else {
+				require.Error(t, err)
+			}
 			require.Equal(t, wantHits, hits)
 			require.Empty(t, r.converted)
 			if mode == "cancelled" {

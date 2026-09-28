@@ -131,9 +131,11 @@ func TestEnvelopeTransportHistoryPreservesJSONNumbers(t *testing.T) {
 func TestCatalogAdvertisesEnvelopeTransport(t *testing.T) {
 	r := customRequest(t)
 	prompt := r.catalog.prompt()
-	require.Contains(t, prompt, "protocol v6")
+	require.Contains(t, prompt, "protocol v7")
 	require.Contains(t, prompt, "YAML mapping of arguments")
-	require.Contains(t, prompt, "literal |- blocks")
+	require.Contains(t, prompt, "explicit-indent |2- blocks")
+	require.Contains(t, prompt, "preserve the original content indentation")
+	require.Contains(t, prompt, "old_string: |2-\n      work();\n    }")
 	require.NotContains(t, prompt, "code is only the JSON arguments object")
 	require.Contains(t, prompt, "Routing is separate from code")
 	require.Contains(t, prompt, "do not wrap it in a JSON envelope")

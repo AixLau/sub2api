@@ -89,6 +89,7 @@ var openaiAllowedHeaders = map[string]bool{
 	"x-codex-turn-metadata":    true,
 	"x-codex-window-id":        true,
 	responsesLiteHeaderKey:     true,
+	"openai-beta":              true,
 }
 
 // OpenAI passthrough allowed headers whitelist.

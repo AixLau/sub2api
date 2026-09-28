@@ -68,7 +68,11 @@ func newAuthorizedLiveProbe(t *testing.T) (context.Context, *pluginv1.TransportC
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	t.Cleanup(cancel)
-	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	binary := ""
+	if os.Getenv("SUB2API_TEST_BPS_PACKAGE") != "" {
+		binary = packagedRuntimeForTest(t)
+	}
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, binary)
 	config := []byte(`{"proxy_mode":"account","native_fallback":false,"tools_via_native":false,"auto_disable_bps_on_403":false}`)
 	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: config})
 	require.NoError(t, err)
@@ -110,18 +114,28 @@ func newAuthorizedLiveProbe(t *testing.T) (context.Context, *pluginv1.TransportC
 		}
 		var final map[string]json.RawMessage
 		completedItems := map[int]json.RawMessage{}
+		var eventTypes []string
+		invalidEvents := 0
 		for _, line := range strings.Split(string(wire), "\n") {
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
 			var event struct {
 				Type        string
+				Error       struct{ Code, Message string }
 				Response    map[string]json.RawMessage
 				Item        json.RawMessage
 				OutputIndex int `json:"output_index"`
 			}
 			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) != nil {
+				invalidEvents++
 				continue
+			}
+			eventTypes = append(eventTypes, safeLogID(event.Type))
+			if event.Type == "error" {
+				message := strings.ReplaceAll(event.Error.Message, a.Credentials.AccessToken, "[redacted]")
+				message = strings.ReplaceAll(message, a.Credentials.AccountID, "[redacted]")
+				t.Fatalf("upstream error event: code=%s message=%s", event.Error.Code, message[:min(len(message), 512)])
 			}
 			if event.Type == "response.completed" || event.Type == "response.failed" || event.Type == "response.incomplete" {
 				final = event.Response
@@ -130,7 +144,22 @@ func newAuthorizedLiveProbe(t *testing.T) (context.Context, *pluginv1.TransportC
 				completedItems[event.OutputIndex] = event.Item
 			}
 		}
-		require.NotNil(t, final, "must receive a terminal response event")
+		if final == nil {
+			health, healthErr := c.Health(ctx, &pluginv1.HealthRequest{})
+			if healthErr == nil {
+				var state struct {
+					Entries []diagnosticEntry `json:"recent_requests"`
+				}
+				if json.Unmarshal([]byte(health.StatusJson), &state) == nil {
+					for _, entry := range state.Entries {
+						if entry.RequestID == start.RequestId {
+							t.Logf("incomplete probe route=%s status=%d attempt=%d error_code=%s", entry.Route, entry.Status, entry.Attempt, entry.ErrorCode)
+						}
+					}
+				}
+			}
+			t.Fatalf("must receive a terminal response event: parsed=%d invalid=%d last_types=%v", len(eventTypes), invalidEvents, eventTypes[max(0, len(eventTypes)-5):])
+		}
 		if string(final["status"]) != `"completed"` {
 			var failure struct{ Code, Message string }
 			_ = json.Unmarshal(final["error"], &failure)

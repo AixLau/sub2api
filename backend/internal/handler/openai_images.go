@@ -185,7 +185,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			RequestedModel:             requestModel,
 			SessionHash:                &sessionHash,
 			FailedAccountIDs:           failedAccountIDs,
-			RequiredImageCapability:    parsed.RequiredCapability,
+			RequiredImageCapability:    parsed.RequiredCapabilityForModel(channelMapping.MappedModel),
 			Stream:                     parsed.Stream,
 			StreamStarted:              &streamStarted,
 			MaxAccountSwitches:         maxAccountSwitches,
