@@ -253,7 +253,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 				"type":    encoded(nativeResultTypes[callID]),
 				"call_id": encoded(nativeCallID),
 				"output":  item["output"],
-				"id":      encoded(functionItemID(nativeCallID)),
+				"id":      encoded(toolResultItemID(nativeResultTypes[callID], nativeCallID)),
 			}
 			restored = append(restored, encoded(out))
 		case "reasoning":

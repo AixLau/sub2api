@@ -42,6 +42,7 @@ func TestClientToolFailuresContinueAndReplay(t *testing.T) {
 						if kind == "function_call" {
 							unknown["arguments"] = encoded(`{"value":"private_payload"}`)
 						} else {
+							unknown["id"], unknown["call_id"] = encoded("ctc_unknown"), encoded("ctc_unknown")
 							unknown["input"] = encoded("private_payload")
 						}
 						calls = []json.RawMessage{encoded(unknown), feedbackCall("functions.exec", "await tools.update_plan({private_payload:true});", "held")}
@@ -131,6 +132,11 @@ func TestClientToolFailuresContinueAndReplay(t *testing.T) {
 							} else {
 								resultCount++
 								require.Equal(t, stringValue(item["type"])+"_output", stringValue(restored["type"]))
+								prefix := "fc_"
+								if stringValue(item["type"]) == "custom_tool_call" {
+									prefix = "ctco_"
+								}
+								require.True(t, strings.HasPrefix(stringValue(restored["id"]), prefix), "tool result ID must match the restored upstream type")
 							}
 						}
 						require.Equal(t, 1, callCount)
@@ -140,6 +146,47 @@ func TestClientToolFailuresContinueAndReplay(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Production 0.6.8 replayed a native custom tool result as fc_ctc_..., which
+// the upstream rejected because custom outputs require the ctco_ item family.
+// Also cover client history rebuilt as run_officejs: that result is a function
+// output even when the original client tool was custom.
+func TestHistoricalToolResultIdentityMatchesReplayedCall(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		t.Run(fmt.Sprint(declared), func(t *testing.T) {
+			tools := []any{}
+			if declared {
+				tools = append(tools, map[string]any{"type": "custom", "name": "local_exec"})
+			}
+			call := object{"type": encoded("custom_tool_call"), "id": encoded("ctc_history"), "call_id": encoded("ctc_history"), "name": encoded("local_exec"), "input": encoded("text('done')"), "status": encoded("completed")}
+			result := object{"type": encoded("custom_tool_call_output"), "id": encoded("ctco_client"), "call_id": call["call_id"], "output": encoded("done")}
+			r, err := Prepare(context.Background(), encoded(map[string]any{"tools": tools, "input": []any{messageItem("user", "Inspect"), call, result}}), "history-result-id", memoryStore{}, nil, 256<<20)
+			require.NoError(t, err)
+			items := preparedInput(t, r)
+			out, err := parseObject(items[len(items)-1])
+			require.NoError(t, err)
+			wantType, wantID := "custom_tool_call_output", "ctco_ctc_history"
+			if declared {
+				wantType, wantID = "function_call_output", "fc_ctc_history"
+			}
+			require.Equal(t, wantType, stringValue(out["type"]))
+			require.Equal(t, wantID, stringValue(out["id"]))
+			require.Equal(t, "ctc_history", stringValue(out["call_id"]))
+			require.Equal(t, "done", stringValue(out["output"]))
+		})
+	}
+}
+
+func TestCustomToolResultIDValidation(t *testing.T) {
+	for _, callID := range []string{"ctc_native", "call_bps_123", "ctco_existing", "fc_bad#suffix", strings.Repeat("x", 80), ""} {
+		id := toolResultItemID("custom_tool_call_output", callID)
+		require.Regexp(t, `^ctco_[A-Za-z0-9_-]+$`, id)
+		require.LessOrEqual(t, len(id), 64)
+		require.Equal(t, id, toolResultItemID("custom_tool_call_output", callID), "replay identity must be stable")
+		require.NotEqual(t, id, toolResultItemID("function_call_output", callID))
+	}
+	require.NotEqual(t, toolResultItemID("custom_tool_call_output", "ctc_one"), toolResultItemID("custom_tool_call_output", "ctc_two"))
 }
 
 func TestClientToolFailureBoundaries(t *testing.T) {

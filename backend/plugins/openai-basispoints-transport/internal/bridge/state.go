@@ -55,19 +55,29 @@ func Scope(accountID, endpoint, session string) string {
 
 func stateKey(scope, kind, id string) string { return digest(scope, kind, id) }
 
-// functionItemID derives the item id used by replayed tool results. The
-// upstream validates item ids as fc_ + [A-Za-z0-9_-] and rejects anything
-// else, so ids are concatenated only when the call id is already clean and not
-// itself fc_ prefixed; otherwise a stable hash is used.
+// Function calls and their replayed results use the upstream's fc_ family.
 func functionItemID(callID string) string {
+	return typedItemID("fc_", callID)
+}
+
+// Result identities follow the restored upstream type, not the client-facing
+// tool or call_id prefix. A custom output with an fc_ ID is rejected upstream.
+func toolResultItemID(resultType, callID string) string {
+	if resultType == "custom_tool_call_output" {
+		return typedItemID("ctco_", callID)
+	}
+	return functionItemID(callID)
+}
+
+func typedItemID(prefix, callID string) string {
 	const maxLength = 64
-	if callID != "" && !strings.HasPrefix(callID, "fc_") && isCleanItemID(callID) {
-		if id := "fc_" + callID; len(id) <= maxLength {
+	if callID != "" && !strings.HasPrefix(callID, prefix) && isCleanItemID(callID) {
+		if id := prefix + callID; len(id) <= maxLength {
 			return id
 		}
 	}
 	sum := sha256.Sum256([]byte(callID))
-	return "fc_" + hex.EncodeToString(sum[:])[:maxLength-len("fc_")]
+	return prefix + hex.EncodeToString(sum[:])[:maxLength-len(prefix)]
 }
 
 func isCleanItemID(id string) bool {

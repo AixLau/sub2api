@@ -161,7 +161,7 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 		if stringValue(item["type"]) == "custom_tool_call" {
 			typ = "custom_tool_call_output"
 		}
-		result := encoded(object{"type": encoded(typ), "id": encoded(functionItemID(callID)), "call_id": item["call_id"],
+		result := encoded(object{"type": encoded(typ), "id": encoded(toolResultItemID(typ, callID)), "call_id": item["call_id"],
 			"output": encoded(string(encoded(toolFailureResult(failures[i]))))})
 		input = append(input, result)
 		hidden = append(hidden, result)

@@ -44,6 +44,30 @@ func testForwardClientToolFailures(t *testing.T, binary string) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
+				// Enforce the actual upstream item-type/ID contract. Merely
+				// accepting any JSON missed the 0.6.8 fc_ctc_ replay regression.
+				var items []struct{ Type, ID string }
+				if err := json.Unmarshal(body["input"], &items); err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				for _, item := range items {
+					prefix := ""
+					switch item.Type {
+					case "function_call", "function_call_output":
+						prefix = "fc_"
+					case "custom_tool_call":
+						prefix = "ctc_"
+					case "custom_tool_call_output":
+						prefix = "ctco_"
+					}
+					if prefix != "" && !strings.HasPrefix(item.ID, prefix) {
+						t.Errorf("invalid upstream %s item ID %q; expected %s", item.Type, item.ID, prefix)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+				}
 				observed <- body
 				round := hits.Add(1)
 				output := []any{}
@@ -55,7 +79,7 @@ func testForwardClientToolFailures(t *testing.T, binary string) {
 					args, _ := json.Marshal(map[string]any{"references": []string{"client-tool:collaboration.list_agents"}, "code": code})
 					call := map[string]any{"type": "function_call", "name": "run_officejs", "id": fmt.Sprintf("fc_%d", round), "call_id": fmt.Sprintf("call_%d", round), "arguments": string(args)}
 					if round == 2 {
-						call["name"], call["arguments"] = "write_range", "{\"value\":\"private_payload\"}"
+						call = map[string]any{"type": "custom_tool_call", "name": "write_range", "id": "ctc_2", "call_id": "ctc_2", "input": "private_payload"}
 					}
 					output = append(output, call)
 				}
@@ -90,8 +114,12 @@ func testForwardClientToolFailures(t *testing.T, binary string) {
 				require.JSONEq(t, "{\"total_tokens\":11}", string(response["usage"]))
 				request := <-observed
 				if round > 1 {
-					require.Contains(t, string(request["input"]), fmt.Sprintf("\"call_id\":\"call_%d\"", round-1))
-					require.Contains(t, string(request["input"]), "function_call_output")
+					callID, outputType := fmt.Sprintf("call_%d", round-1), "function_call_output"
+					if round == 3 {
+						callID, outputType = "ctc_2", "custom_tool_call_output"
+					}
+					require.Contains(t, string(request["input"]), "\"call_id\":\""+callID+"\"")
+					require.Contains(t, string(request["input"]), outputType)
 				}
 				if round == 4 {
 					break
