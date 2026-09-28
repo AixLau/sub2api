@@ -12,6 +12,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFunctionPayloadHistoryJSONUnicodeEscapes(t *testing.T) {
+	// JSON permits UTF-16 surrogate escapes; YAML's scanner rejects them.
+	for _, raw := range []string{
+		`{"content":"\ud83d\ude80 release","nested":{"\ud83d\udd11":"ok"}}`,
+		`{"content":"\ud800","low":"\udfff"}`,
+		`{"content":"line\u0085next\u2028next\u2029end\r\n\t\u0000"}`,
+		`{"\u0085key":"value","escaped":"\\ud83d\\ude80","id":9007199254740993,"huge":1e32}`,
+	} {
+		require.True(t, json.Valid([]byte(raw)))
+		payload, err := formatFunctionPayload([]byte(raw))
+		require.NoError(t, err)
+		restored, err := parseFunctionPayload([]byte(payload))
+		require.NoError(t, err)
+		require.JSONEq(t, raw, string(restored))
+		for _, arguments := range []json.RawMessage{encoded(raw), json.RawMessage(raw)} {
+			rebuilt, err := rebuildTransportCall(object{"call_id": encoded("call_unicode"), "arguments": arguments}, "function_call", "Edit")
+			require.NoError(t, err)
+			call, err := parseObject(rebuilt)
+			require.NoError(t, err)
+			envelope, err := parseObject([]byte(stringValue(call["arguments"])))
+			require.NoError(t, err)
+			roundtrip, err := parseFunctionPayload([]byte(stringValue(envelope["code"])))
+			require.NoError(t, err)
+			var want, got any
+			d := json.NewDecoder(strings.NewReader(raw))
+			d.UseNumber()
+			require.NoError(t, d.Decode(&want))
+			d = json.NewDecoder(strings.NewReader(string(roundtrip)))
+			d.UseNumber()
+			require.NoError(t, d.Decode(&got))
+			require.Equal(t, want, got)
+		}
+	}
+}
+
 func TestFunctionPayloadLiteralStringsExecuteAndReplay(t *testing.T) {
 	patterns := []string{`info\[['\"]path['\"]\]`, `DATA_PATH|root_path|Path\(|pickle\.dump`, `(write_text|pickle\.dump|json\.dump|\.tofile|np\.save)`}
 	file := filepath.Join(t.TempDir(), "sample.py")

@@ -128,6 +128,11 @@ func formatFunctionPayload(raw []byte) (string, error) {
 			if !key && value != "" {
 				node.Style = yaml.LiteralStyle
 			}
+			// YAML literal line breaks normalize these characters; let the
+			// existing emitter escape them to preserve the JSON string.
+			if strings.ContainsAny(value, "\r\u0085\u2028\u2029") {
+				node.Style = yaml.DoubleQuotedStyle
+			}
 		case json.Number:
 			// Leave the tag empty so large numbers remain plain JSON literals.
 			node.Value = value.String()

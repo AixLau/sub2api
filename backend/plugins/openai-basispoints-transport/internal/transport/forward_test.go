@@ -369,4 +369,5 @@ func TestPackagedPluginToolReplay(t *testing.T) {
 	testCompactionBypassesInjectedToolSuite(t, binary)
 	testForwardClientToolFailures(t, binary)
 	testForwardToolFeedback(t, binary)
+	testForwardFunctionHistoryUnicode(t, binary)
 }
