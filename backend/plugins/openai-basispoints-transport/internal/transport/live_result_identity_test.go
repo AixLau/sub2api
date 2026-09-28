@@ -71,3 +71,34 @@ func TestAuthorizedCustomToolResultReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, health.Healthy)
 }
+
+func TestAuthorizedFunctionHistoryUnicode(t *testing.T) {
+	ctx, _, model, forward := newAuthorizedLiveProbe(t)
+	result, err := exec.CommandContext(ctx, "node", "-e", `process.stdout.write("receipt-"+require("node:crypto").randomUUID())`).Output()
+	require.NoError(t, err)
+	final := forward(t, map[string]any{
+		"model": model, "stream": true, "tool_choice": "none", "reasoning": map[string]string{"effort": "low"},
+		"tools": []any{map[string]any{"type": "function", "name": "probe", "parameters": map[string]any{"type": "object", "properties": map[string]any{"content": map[string]string{"type": "string"}}}}},
+		"input": []any{
+			map[string]any{"type": "function_call", "id": "fc_unicode", "call_id": "call_unicode", "name": "probe", "arguments": `{"content":"Unicode \ud83d\ude80 history"}`},
+			map[string]any{"type": "function_call_output", "call_id": "call_unicode", "output": string(result)},
+			map[string]any{"role": "user", "content": "The probe already ran. Reply with exactly its receipt and nothing else. Do not call any tools."},
+		},
+	})
+	var output []struct {
+		Type    string
+		Content []struct{ Type, Text string }
+	}
+	require.NoError(t, json.Unmarshal(final["output"], &output))
+	var answer strings.Builder
+	for _, item := range output {
+		require.Equal(t, "message", item.Type)
+		for _, content := range item.Content {
+			if content.Type == "output_text" {
+				answer.WriteString(content.Text)
+			}
+		}
+	}
+	require.Equal(t, string(result), strings.TrimSpace(answer.String()))
+	t.Log("PASS real BPS accepted JSON surrogate-pair function history and returned the actual local receipt")
+}

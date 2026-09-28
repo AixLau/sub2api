@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -102,35 +103,65 @@ func formatFunctionPayload(raw []byte) (string, error) {
 	if !json.Valid(raw) || jsonKind(raw) != "object" {
 		return "", errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 	}
-	var document yaml.Node
-	if yaml.Unmarshal(raw, &document) != nil {
+	// Decode the client contract as JSON, not as YAML. In particular JSON
+	// UTF-16 surrogate pairs are valid strings but invalid YAML escapes.
+	// UseNumber retains arbitrary-precision numeric literals in history.
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
-	var style func(*yaml.Node, bool)
-	style = func(node *yaml.Node, key bool) {
-		number := node.Kind == yaml.ScalarNode && node.Style == 0 && jsonKind([]byte(node.Value)) == "number"
-		node.Style = 0
-		if number {
-			node.Tag = "" // Emit the original literal without a YAML type tag.
-		} else if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
-			node.Style = yaml.SingleQuotedStyle
-			if !key && node.Value != "" {
-				node.Style = yaml.LiteralStyle
-			}
-		}
-		for i, child := range node.Content {
-			style(child, node.Kind == yaml.MappingNode && i%2 == 0)
-		}
-	}
-	style(&document, false)
+	document := functionHistoryNode(value, false)
 	var out bytes.Buffer
 	encoder := yaml.NewEncoder(&out)
 	encoder.SetIndent(2)
-	if err := encoder.Encode(&document); err != nil {
+	if err := encoder.Encode(document); err != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
 	if err := encoder.Close(); err != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
 	return out.String(), nil
+}
+
+// Construct YAML's syntax tree from decoded JSON types. The library remains
+// responsible for escaping and emission; numbers never pass through float64.
+func functionHistoryNode(value any, key bool) *yaml.Node {
+	switch v := value.(type) {
+	case map[string]any:
+		node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			node.Content = append(node.Content, functionHistoryNode(k, true), functionHistoryNode(v[k], false))
+		}
+		return node
+	case []any:
+		node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, child := range v {
+			node.Content = append(node.Content, functionHistoryNode(child, false))
+		}
+		return node
+	case string:
+		style := yaml.SingleQuotedStyle
+		if !key && v != "" {
+			style = yaml.LiteralStyle
+		}
+		// YAML literal line breaks normalize these characters. Quoting lets
+		// the emitter preserve their exact JSON string values instead.
+		if strings.ContainsAny(v, "\r\u0085\u2028\u2029") {
+			style = yaml.DoubleQuotedStyle
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Style: style, Value: v}
+	case json.Number:
+		return &yaml.Node{Kind: yaml.ScalarNode, Value: string(v)}
+	case bool:
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprint(v)}
+	default: // json.Decoder's remaining value is null.
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}
+	}
 }
