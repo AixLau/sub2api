@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -21,7 +22,14 @@ func parseFunctionPayload(raw []byte) (json.RawMessage, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	var document, extra yaml.Node
 	if err := decoder.Decode(&document); err != nil {
-		return nil, fail("invalid_yaml", "函数 code 必须是有效 YAML 参数映射；正则、路径及代码字符串请使用单引号或 |- 原样文本块")
+		// yaml.v3 errors can contain source tokens. Return only its numeric
+		// location and bridge-owned guidance, never the raw parser message.
+		location := ""
+		var line int
+		if _, scanErr := fmt.Sscanf(err.Error(), "yaml: line %d:", &line); scanErr == nil && line > 0 {
+			location = fmt.Sprintf("（解析器报告第 %d 行）", line)
+		}
+		return nil, fail("invalid_yaml", "函数 code 必须是有效 YAML 参数映射"+location+"；字符串使用显式缩进 |2-，每行在字段缩进基础上添加两个空格，再保留原文全部缩进；末尾一个换行用 |2，多个换行用 |2+。不要从代码首行缩进推断 YAML 缩进")
 	}
 	if decoder.Decode(&extra) != io.EOF {
 		return nil, fail("multiple_documents", "函数 code 只能包含一个 YAML 参数映射")
@@ -115,9 +123,14 @@ func formatFunctionPayload(raw []byte) (string, error) {
 		}
 	}
 	style(&document, false)
-	out, err := yaml.Marshal(&document)
-	if err != nil {
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&document); err != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
-	return string(out), nil
+	if err := encoder.Close(); err != nil {
+		return "", errors.New("历史 function 参数无法转换为传输映射")
+	}
+	return out.String(), nil
 }

@@ -124,3 +124,108 @@ func TestFunctionPayloadNumbersBeyondMachineRange(t *testing.T) {
 		require.Equal(t, want, got)
 	}
 }
+
+func TestFunctionPayloadExplicitIndentPreservesSource(t *testing.T) {
+	// Production #489926: the first source line was more indented than a
+	// later closing brace. Implicit YAML indentation treated it as a new key.
+	broken := "old_string: |-\n      privateWork();\n    }\n"
+	_, err := parseFunctionPayload([]byte(broken))
+	require.ErrorContains(t, err, "解析器报告第")
+	require.ErrorContains(t, err, "|2-")
+	require.NotContains(t, err.Error(), "privateWork")
+	var failure *ToolCallError
+	require.ErrorAs(t, err, &failure)
+	feedback := string(encoded(toolFailureResult(failure)))
+	require.Contains(t, feedback, "|2-")
+	require.NotContains(t, feedback, "privateWork")
+
+	for _, tc := range []struct{ header, source string }{
+		{"|2-", "    work();\n  }"},
+		{"|2-", "    first();\n    second();"},
+		{"|2", "    work();\n  }\n"},
+		{"|2+", "    work();\n  }\n\n"},
+	} {
+		t.Run(tc.header+"/"+tc.source, func(t *testing.T) {
+			literal := tc.header + "\n  " + strings.ReplaceAll(tc.source, "\n", "\n  ")
+			code := "old_string: " + literal
+			raw, err := parseFunctionPayload([]byte(code))
+			require.NoError(t, err)
+			args, err := parseObject(raw)
+			require.NoError(t, err)
+			require.Equal(t, tc.source, stringValue(args["old_string"]))
+			// The same rule applies to nested mappings, relative to the key.
+			nested := "edit:\n  old_string: " + strings.ReplaceAll(literal, "\n", "\n  ")
+			raw, err = parseFunctionPayload([]byte(nested))
+			require.NoError(t, err)
+			args, err = parseObject(raw)
+			require.NoError(t, err)
+			edit, err := parseObject(args["edit"])
+			require.NoError(t, err)
+			require.Equal(t, tc.source, stringValue(edit["old_string"]))
+			// Native history must preserve source indentation and chomping too.
+			want := encoded(map[string]any{"old_string": tc.source, "nested": map[string]string{"content": tc.source}})
+			history, err := formatFunctionPayload(want)
+			require.NoError(t, err)
+			restored, err := parseFunctionPayload([]byte(history))
+			require.NoError(t, err)
+			require.JSONEq(t, string(want), string(restored))
+		})
+	}
+}
+
+func TestFunctionPayloadEditFeedbackExecutesOnlyCorrectedBytes(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "JSON", true: "SSE"}[streaming], func(t *testing.T) {
+			ctx := context.Background()
+			tools := []any{map[string]any{"type": "function", "name": "Edit", "parameters": map[string]any{"type": "object", "properties": map[string]any{"old_string": map[string]string{"type": "string"}, "new_string": map[string]string{"type": "string"}}}}}
+			r, err := Prepare(ctx, encoded(map[string]any{"tools": tools, "input": "edit the source"}), "edit-session", memoryStore{}, nil, 256<<20)
+			require.NoError(t, err)
+			require.False(t, r.canDeliverToolFailures(), "ordinary function-only client like #489926")
+			bad := feedbackCall("Edit", "old_string: |-\n      before();\n    }\n", "invalid_indent")
+			corrected := feedbackCall("Edit", "old_string: |2-\n      before();\n    }\nnew_string: |2-\n      after();\n    }\n", "explicit_indent")
+			hits := 0
+			r.Feedback = func(_ context.Context, body []byte) ([]byte, error) {
+				hits++
+				root, err := parseObject(body)
+				require.NoError(t, err)
+				var input []object
+				require.NoError(t, json.Unmarshal(root["input"], &input))
+				result := input[len(input)-1]
+				require.Equal(t, "function_call_output", stringValue(result["type"]))
+				require.Contains(t, stringValue(result["output"]), "|2-")
+				require.Contains(t, stringValue(result["output"]), "解析器报告第")
+				return encoded(feedbackResponse("resp_fixed", corrected)), nil
+			}
+			var final object
+			if streaming {
+				var wire strings.Builder
+				err = r.Stream(ctx, strings.NewReader(event("response.completed", map[string]any{"response": feedbackResponse("resp_edit", bad)})), func(b []byte) error { wire.Write(b); return nil })
+				require.NoError(t, err)
+				final = streamSnapshot(t, wire.String())
+			} else {
+				out, err := r.Response(ctx, encoded(feedbackResponse("resp_edit", bad)))
+				require.NoError(t, err)
+				final, err = parseObject(out)
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, hits)
+			var output []object
+			require.NoError(t, json.Unmarshal(final["output"], &output))
+			require.Len(t, output, 1, "the rejected Edit must never execute")
+			args, err := parseObject([]byte(stringValue(output[0]["arguments"])))
+			require.NoError(t, err)
+			file := filepath.Join(t.TempDir(), "example.js")
+			require.NoError(t, os.WriteFile(file, []byte("function example() {\n    before();\n  }\n"), 0600))
+			source, err := os.ReadFile(file)
+			require.NoError(t, err)
+			old, replacement := stringValue(args["old_string"]), stringValue(args["new_string"])
+			require.Equal(t, "    before();\n  }", old)
+			require.Equal(t, "    after();\n  }", replacement)
+			require.Equal(t, 1, strings.Count(string(source), old))
+			require.NoError(t, os.WriteFile(file, []byte(strings.Replace(string(source), old, replacement, 1)), 0600))
+			updated, err := os.ReadFile(file)
+			require.NoError(t, err)
+			require.Equal(t, "function example() {\n    after();\n  }\n", string(updated))
+		})
+	}
+}
