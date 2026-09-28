@@ -72,6 +72,7 @@ var (
 		-- Redis 3.2-4.x compat: opt into effects replication so redis.call('TIME')
 		-- replicates correctly. No-op on Redis 5.0+ (effects replication is default).
 		redis.replicate_commands()
+        if KEYS[3] and redis.call('GET', KEYS[3]) ~= ARGV[4] then return {-1,0} end
 		local key = KEYS[1]
 		local liveKey = KEYS[2]
 		local maxConcurrency = tonumber(ARGV[1])
@@ -355,6 +356,7 @@ var (
 )
 
 type concurrencyCache struct {
+	credentialUserEpoch string
 	rdb                 *redis.Client
 	slotTTLSeconds      int // 槽位过期时间（秒）
 	waitQueueTTLSeconds int // 等待队列过期时间（秒）
@@ -708,7 +710,16 @@ func (c *concurrencyCache) GetAccountConcurrencyBatch(ctx context.Context, accou
 func (c *concurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
 	key := userSlotKey(userID)
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取，确保多实例时钟一致
-	result, now, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{key, liveUserSlotKey(userID)}, maxConcurrency, c.slotTTLSeconds, requestID)
+	keys := []string{key, liveUserSlotKey(userID)}
+	args := []any{maxConcurrency, c.slotTTLSeconds, requestID}
+	if c.credentialUserEpoch != "" {
+		keys = append(keys, credentialRedisEpochKey)
+		args = append(args, c.credentialUserEpoch)
+	}
+	result, now, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, keys, args...)
+	if result == -1 {
+		return false, errCredentialRedisEpoch
+	}
 	if err != nil {
 		return false, err
 	}

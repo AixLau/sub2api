@@ -12,6 +12,10 @@ import (
 
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
+	credentialMigrationHandler *admin.CredentialMigrationHandler,
+	credentialOperationsHandler *admin.CredentialOperationsHandler,
+	credentialImportHandler *admin.CredentialImportHandler,
+	upstreamPrincipalHandler *admin.UpstreamPrincipalHandler,
 	dashboardHandler *admin.DashboardHandler,
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
@@ -58,6 +62,10 @@ func ProvideAdminHandlers(
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetOpenCodeGoUsageService(opencodeGoUsage)
 	return &AdminHandlers{
+		CredentialMigration:    credentialMigrationHandler,
+		CredentialOperations:   credentialOperationsHandler,
+		CredentialImport:       credentialImportHandler,
+		UpstreamPrincipal:      upstreamPrincipalHandler,
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
 		Group:                  groupHandler,
@@ -125,6 +133,7 @@ func ProvideGatewayHandler(
 }
 
 func ProvideOpenAIGatewayHandler(
+	credentialHTTP *service.CredentialHTTPRuntime,
 	gatewayService *service.OpenAIGatewayService,
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
@@ -141,6 +150,7 @@ func ProvideOpenAIGatewayHandler(
 		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
 	h.securityAuditCoordinator = coordinator
 	h.grokMediaEligibilityProber = grokQuotaService
+	h.credentialHTTP = credentialHTTP
 	return h
 }
 
@@ -289,6 +299,10 @@ var ProviderSet = wire.NewSet(
 	NewMerchantSSOAPIHandler,
 
 	// Admin handlers
+	admin.NewUpstreamPrincipalHandler,
+	admin.NewCredentialImportHandler,
+	admin.NewCredentialOperationsHandler,
+	admin.NewCredentialMigrationHandler,
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandlerWithConfig,

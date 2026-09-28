@@ -32,6 +32,10 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		return nil, service.ErrUsageBillingRequestIDRequired
 	}
 
+	if lease, ok := service.CredentialBillingLeaseID(cmd.RequestID); ok {
+		return r.applyCredentialBilling(ctx, lease, cmd)
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
