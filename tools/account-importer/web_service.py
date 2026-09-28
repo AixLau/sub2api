@@ -16,7 +16,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from default_profile import DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME
 from import_payload import MAX_UPLOAD_BYTES, parse_bundle
+from job_store import JobStore, RedisJobStore, StorageError
 from job_manager import JobManager
 from local_relogin import DEFAULT_SOURCE_DIR, relogin_payload
 from sub2api_client import AdminAPIError, Sub2APIClient
@@ -30,18 +32,23 @@ class AccountInput(BaseModel):
     plugin_id: int | None = Field(default=None, gt=0, strict=True)
 
 
+class RefreshTokenInput(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=16384)
+
+
 async def _bundle(file: UploadFile) -> dict:
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     await file.close()
     return parse_bundle(raw)
 
 
-def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=1200, poll_seconds=30) -> FastAPI:
-    manager = JobManager(client, login=login, watch_seconds=watch_seconds, poll_seconds=poll_seconds)
+def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, poll_seconds=30) -> FastAPI:
+    manager = JobManager(client, store=store, login=login, poll_seconds=poll_seconds)
     csrf_token = secrets.token_urlsafe(32)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        await manager.start()
         try:
             yield
         finally:
@@ -49,6 +56,10 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
 
     app = FastAPI(title="Sub2API 导入监控", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.manager = manager
+
+    @app.exception_handler(StorageError)
+    async def storage_error(_request, _error):
+        return JSONResponse(status_code=503, content={"detail": "Redis 不可用或保存失败，请稍后重试"})
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_request, _error):
@@ -70,6 +81,7 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
 
     @app.get("/healthz")
     async def health():
+        await store.ping()
         return {"status": "ok"}
 
     @app.get("/", response_class=HTMLResponse)
@@ -95,7 +107,20 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
             accounts = await manager.profile_accounts()
         except AdminAPIError:
             accounts = []
-        return {"base_url": client.base_url, "groups": groups, "accounts": accounts}
+        return {
+            "base_url": client.base_url, "groups": groups, "accounts": accounts,
+            "default_profile": {"id": DEFAULT_PROFILE_ID, "name": DEFAULT_PROFILE_NAME},
+        }
+
+    @app.get("/api/reference/{account_id}/models")
+    async def reference_models(account_id: int):
+        try:
+            profile = await manager.import_profile(account_id)
+            return {"account_id": account_id, **profile["credentials"]}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except AdminAPIError:
+            raise HTTPException(status_code=502, detail="无法读取参考账号的模型限制") from None
 
     @app.get("/api/jobs")
     async def jobs():
@@ -121,7 +146,7 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
     @app.post("/api/import/file", status_code=202)
     async def import_file(
         file: UploadFile = File(...), group_id: int | None = Form(None),
-        profile_account_id: int | None = Form(None),
+        profile_account_id: int | None = Form(DEFAULT_PROFILE_ID),
         plugin_id: int | None = Form(None),
         x_csrf_token: str | None = Header(None),
     ):
@@ -137,7 +162,7 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
             raise HTTPException(status_code=502, detail="Sub2API 管理员接口不可用") from None
 
     @app.post("/api/import/account", status_code=202)
-    async def import_account(body: AccountInput, profile_account_id: int | None = None, x_csrf_token: str | None = Header(None)):
+    async def import_account(body: AccountInput, profile_account_id: int | None = DEFAULT_PROFILE_ID, x_csrf_token: str | None = Header(None)):
         require_csrf(x_csrf_token)
         try:
             return await manager.import_credentials(body.account_line, body.group_ids, profile_account_id, body.plugin_id)
@@ -154,11 +179,28 @@ def create_app(client: Sub2APIClient, *, login=relogin_payload, watch_seconds=12
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
+    @app.post("/api/jobs/{job_id}/reauthorize/credentials", status_code=202)
+    async def reauthorize_credentials(job_id: str, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            return await manager.reauthorize_credentials(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/jobs/{job_id}/reauthorize/refresh-token", status_code=202)
+    async def reauthorize_rt(job_id: str, body: RefreshTokenInput, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            return await manager.reauthorize_rt(job_id, body.refresh_token)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
     return app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与 20 分钟监控服务")
+    parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与持续监控服务")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     args = parser.parse_args()
@@ -171,7 +213,7 @@ def main() -> None:
         parser.error("必须设置 SUB2API_BASE_URL")
     client = Sub2APIClient(base_url, key)
     login = partial(relogin_payload, source_dir=args.source_dir)
-    uvicorn.run(create_app(client, login=login), host="127.0.0.1", port=args.port, access_log=False, proxy_headers=False)
+    uvicorn.run(create_app(client, store=RedisJobStore.from_env(), login=login), host=args.host, port=args.port, access_log=False, proxy_headers=False)
 
 
 if __name__ == "__main__":

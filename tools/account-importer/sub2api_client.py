@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
 
+from model_restrictions import MODEL_SETTING_KEYS, model_settings
+
 
 class AdminAPIError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 PLUGIN_CAPABILITIES = {
@@ -46,7 +51,7 @@ class Sub2APIClient:
     ) -> None:
         parsed = urlparse(base_url)
         if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+            parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "sub2api"}
         ):
             raise ValueError("Sub2API 地址必须使用 HTTPS（本机除外）")
         if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -73,11 +78,11 @@ class Sub2APIClient:
         await self._http.aclose()
 
     async def _request(
-        self, method: str, path: str, *, params: dict | None = None, payload: dict | None = None
+        self, method: str, path: str, *, params: dict | None = None, payload: dict | None = None, timeout: float = 20.0
     ):
         url = f"{self.base_url}/api/v1/admin/{path.lstrip('/')}"
         try:
-            response = await self._http.request(method, url, params=params, json=payload)
+            response = await self._http.request(method, url, params=params, json=payload, timeout=timeout)
         except httpx.HTTPError as exc:
             raise AdminAPIError(f"管理员接口连接失败：{type(exc).__name__}") from None
         try:
@@ -88,7 +93,7 @@ class Sub2APIClient:
             raise AdminAPIError("管理员接口响应结构无效")
         if response.status_code >= 400 or body.get("code") not in (None, 0):
             code = body.get("code")
-            raise AdminAPIError(f"管理员接口失败：HTTP {response.status_code}，代码 {code}")
+            raise AdminAPIError(f"管理员接口失败：HTTP {response.status_code}，代码 {code}", status_code=response.status_code)
         return body.get("data")
 
     async def find_account(self, name: str) -> dict | None:
@@ -150,6 +155,12 @@ class Sub2APIClient:
             raise AdminAPIError("账号详情响应结构无效")
         return data
 
+    async def get_usage(self, account_id: int) -> dict:
+        data = await self._request("GET", f"accounts/{account_id}/usage")
+        if not isinstance(data, dict):
+            raise AdminAPIError("账号用量响应结构无效")
+        return data
+
     async def update_groups(self, account_id: int, group_ids: list[int]) -> None:
         await self._request("PUT", f"accounts/{account_id}", payload={"group_ids": group_ids})
 
@@ -158,6 +169,19 @@ class Sub2APIClient:
 
     async def set_schedulable(self, account_id: int, schedulable: bool) -> None:
         await self._request("POST", f"accounts/{account_id}/schedulable", payload={"schedulable": schedulable})
+
+    async def set_model_restrictions(self, account_id: int, settings: dict) -> None:
+        expected = model_settings(settings)
+        remote = await self.get_account(account_id)
+        credentials = dict(remote.get("credentials") or {})
+        if model_settings(credentials, required=False) != expected:
+            for key in MODEL_SETTING_KEYS:
+                credentials.pop(key, None)
+            credentials.update(expected)
+            await self.update_settings(account_id, {"credentials": credentials})
+            remote = await self.get_account(account_id)
+        if model_settings(remote.get("credentials"), required=False) != expected:
+            raise AdminAPIError("模型限制保存后校验失败，请在 Sub2API 核查")
 
     async def apply_oauth(self, account_id: int, account: dict) -> None:
         credentials = account.get("credentials")
@@ -170,10 +194,59 @@ class Sub2APIClient:
             "POST", f"accounts/{account_id}/apply-oauth-credentials",
             payload={
                 "type": "oauth",
-                "credentials": credentials,
+                "credentials": {key: value for key, value in credentials.items() if key not in MODEL_SETTING_KEYS},
                 "extra": account.get("extra") or {},
             },
         )
+
+        # Reauthorization must also recover disabled accounts and scheduling.
+        # The OAuth endpoint clears errors, but does not restore schedulable.
+        await self.update_settings(account_id, {"status": "active"})
+        await self.set_schedulable(account_id, True)
+        remote = await self.get_account(account_id)
+        if remote.get("status") != "active" or remote.get("schedulable") is not True:
+            raise AdminAPIError("重新授权后启用状态校验失败，请重试")
+
+    async def refresh_oauth(self, account_id: int, refresh_token: str) -> None:
+        remote = await self.get_profile_account(account_id)
+        current = remote.get("credentials") or {}
+        extra = remote.get("extra") or {}
+        payload = {"refresh_token": refresh_token}
+        if remote.get("proxy_id") is not None:
+            payload["proxy_id"] = remote["proxy_id"]
+        if current.get("client_id"):
+            payload["client_id"] = current["client_id"]
+        info = await self._request("POST", "openai/refresh-token", payload=payload, timeout=120.0)
+        if not isinstance(info, dict) or not isinstance(info.get("access_token"), str) or not info["access_token"].strip():
+            raise ValueError("RT 未返回有效的访问令牌")
+        # Verify identity before applying credentials to an existing account.
+        email = current.get("email") or extra.get("email")
+        if not email and "@" in str(remote.get("name", "")):
+            email = remote["name"]
+        matched = False
+        for key, expected in (("email", email), ("chatgpt_user_id", current.get("chatgpt_user_id")),
+                              ("chatgpt_account_id", current.get("chatgpt_account_id"))):
+            actual = info.get(key)
+            if expected and actual:
+                left, right = str(expected).strip(), str(actual).strip()
+                if key == "email":
+                    left, right = left.casefold(), right.casefold()
+                if left != right:
+                    raise ValueError("RT 所属账号与当前账号不一致，未写入授权")
+                matched = True
+        if not matched:
+            raise ValueError("无法核实 RT 所属账号，未写入授权；请重新上传同账号 JSON")
+        credentials = dict(current)
+        for key in ("access_token", "id_token", "email", "chatgpt_account_id", "chatgpt_user_id",
+                    "organization_id", "plan_type", "subscription_expires_at", "client_id"):
+            if info.get(key):
+                credentials[key] = info[key]
+        # OAuth may retain the submitted refresh token when it is not rotated.
+        credentials["refresh_token"] = info.get("refresh_token") or refresh_token
+        expires_at = info.get("expires_at")
+        if isinstance(expires_at, (int, float)) and not isinstance(expires_at, bool) and expires_at > 0:
+            credentials["expires_at"] = datetime.fromtimestamp(expires_at, timezone.utc).isoformat()
+        await self.apply_oauth(account_id, {"credentials": credentials, "extra": extra})
 
     async def list_groups(self) -> list[dict]:
         data = await self._request("GET", "groups", params={"page": 1, "page_size": 100})

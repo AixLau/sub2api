@@ -1,7 +1,7 @@
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const feedback = document.getElementById('feedback');
 const tableBody = document.getElementById('jobs-body');
-const labels = { importing: '导入中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '监控结束' };
+const labels = { importing: '导入中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '已结束', removed: '账号已删除' };
 let reauthJob = null;
 
 function setFeedback(message, error = false) {
@@ -35,26 +35,74 @@ document.getElementById('show-account').addEventListener('change', event => {
   document.getElementById('account-line').type = event.target.checked ? 'text' : 'password';
 });
 
+let defaultProfileId = '0';
+let referenceModelsReady = false;
+let referenceModelsAccount = '';
+let referenceModelsRequest = 0;
+
+function addModelDetails(container, settings) {
+  const mapping = settings?.model_mapping || {};
+  const entries = Object.entries(mapping);
+  if (!entries.length) {
+    container.textContent = '未设置模型限制';
+    return;
+  }
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = '已限制 ' + entries.length + ' 个模型/规则';
+  details.append(summary);
+  for (const [source, target] of entries) {
+    const item = document.createElement('small');
+    item.textContent = source === target ? source : source + ' → ' + target;
+    details.append(item);
+  }
+  container.append(details);
+}
+
+async function loadReferenceModels() {
+  const account = document.getElementById('reference-account').value;
+  const version = ++referenceModelsRequest;
+  const container = document.getElementById('reference-models');
+  referenceModelsReady = false;
+  referenceModelsAccount = '';
+  container.textContent = account ? '正在读取模型限制…' : '请先选择参照账号';
+  if (!account) return false;
+  try {
+    const settings = await request('api/reference/' + encodeURIComponent(account) + '/models');
+    if (version !== referenceModelsRequest) return false;
+    container.replaceChildren();
+    addModelDetails(container, settings);
+    referenceModelsReady = true;
+    referenceModelsAccount = account;
+    return true;
+  } catch (error) {
+    if (version === referenceModelsRequest) container.textContent = error.message;
+    return false;
+  }
+}
+
+async function requireReferenceModels() {
+  if (referenceModelsReady && referenceModelsAccount === document.getElementById('reference-account').value) return true;
+  if (await loadReferenceModels()) return true;
+  setFeedback('请选择已设置模型限制的导入配置。', true);
+  return false;
+}
+
 async function loadConfig() {
   try {
     const config = await request('api/config');
     document.getElementById('server-name').textContent = config.base_url;
     const reference = document.getElementById('reference-account');
-    reference.replaceChildren();
+    defaultProfileId = String(config.default_profile.id);
+    reference.replaceChildren(new Option(config.default_profile.name, defaultProfileId, true, true));
     for (const account of config.accounts || []) {
       const option = document.createElement('option');
       option.value = String(account.id);
       option.textContent = account.name + ' · #' + account.id + (account.status ? ' · ' + account.status : '');
       reference.append(option);
     }
-    if (reference.options.length) {
-      reference.selectedIndex = 0;
-      document.getElementById('file-group').options[0].textContent = '使用所选参照账号设置';
-      document.getElementById('account-group').options[0].textContent = '使用所选参照账号设置';
-      await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(reference.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
-    } else {
-      setFeedback('未读取到 OpenAI OAuth 账号；新账号导入需要先选择参照账号。', true);
-    }
+    reference.value = defaultProfileId;
+    await loadReferenceModels();
     for (const group of config.groups) {
       if (group.platform && group.platform !== 'openai') continue;
       for (const id of ['file-group', 'account-group']) {
@@ -64,9 +112,6 @@ async function loadConfig() {
         document.getElementById(id).append(option);
       }
     }
-    if (!config.groups.length && !config.accounts.length) {
-      setFeedback('未获取到 OpenAI 分组；请检查 Sub2API 管理员接口。', true);
-    }
   } catch {
     document.getElementById('server-name').textContent = '连接失败';
     setFeedback('无法连接本地服务。', true);
@@ -74,6 +119,8 @@ async function loadConfig() {
 }
 
 document.getElementById('reference-account').addEventListener('change', async event => {
+  await loadReferenceModels();
+  if (!event.target.value || event.target.value === defaultProfileId) return;
   try {
     await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(event.target.value), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
     await loadJobs();
@@ -117,6 +164,56 @@ async function loadPlugins() {
   }
 }
 
+function addSevenDayUsage(row, usage) {
+  const cell = row.insertCell();
+  cell.className = 'usage-window';
+  if (usage?.error) {
+    cell.textContent = usage.error;
+    return;
+  }
+  const reset = usage?.reset_at ? new Date(usage.reset_at) : null;
+  const expired = reset && reset.getTime() <= Date.now();
+  const known = typeof usage?.used_percent === 'number';
+  const label = document.createElement('span');
+  label.textContent = known
+    ? (expired ? '上个窗口已用 ' : '已用 ') + usage.used_percent.toFixed(1) + '%'
+    : '暂无用量数据';
+  cell.append(label);
+  if (known) {
+    const progress = document.createElement('progress');
+    progress.max = 100;
+    progress.value = usage.used_percent;
+    progress.setAttribute('aria-label', expired ? '上个 7 天窗口用量' : '7 天窗口用量');
+    cell.append(progress);
+    if (!expired) {
+      const remaining = document.createElement('small');
+      remaining.textContent = '剩余 ' + usage.remaining_percent.toFixed(1) + '%';
+      cell.append(remaining);
+    }
+  }
+  const billed = document.createElement('small');
+  billed.className = 'usage-billing';
+  billed.textContent = (expired ? '上个窗口账号计费：' : '账号计费：')
+    + (typeof usage?.account_cost === 'number' ? '$' + usage.account_cost.toFixed(2) : '暂无数据');
+  billed.title = '本窗口账号口径费用，已包含账号倍率；不是用户/API Key 计费。';
+  cell.append(billed);
+  const estimate = document.createElement('small');
+  estimate.className = 'usage-billing';
+  estimate.textContent = '预计总额度：' + (!expired && typeof usage?.estimated_total_cost === 'number'
+    ? '≈ $' + usage.estimated_total_cost.toFixed(2) : '暂无法估算');
+  estimate.title = '按本窗口账号计费 ÷（已用百分比 / 100）估算。非官方固定额度，随模型与使用情况变化；无有效费用或比例、窗口到期时不估算。';
+  cell.append(estimate);
+  const window = document.createElement('small');
+  window.textContent = expired ? '窗口已到期，等待用量同步'
+    : reset ? '重置于 ' + reset.toLocaleString('zh-CN') : '重置时间暂未提供';
+  cell.append(window);
+  if (usage?.updated_at) {
+    const updated = document.createElement('small');
+    updated.textContent = '数据更新 ' + new Date(usage.updated_at).toLocaleString('zh-CN');
+    cell.append(updated);
+  }
+}
+
 async function loadJobs() {
   try {
     const jobs = await request('api/jobs');
@@ -124,7 +221,7 @@ async function loadJobs() {
     if (!jobs.length) {
       const row = tableBody.insertRow();
       const cell = addCell(row, '暂无导入任务', 'empty');
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       return;
     }
     for (const job of jobs) {
@@ -135,6 +232,11 @@ async function loadJobs() {
         id.textContent = 'Sub2API #' + job.account_id;
         identity.append(id);
       }
+      const models = document.createElement('div');
+      models.className = 'account-models';
+      if (job.model_restrictions == null) models.textContent = '模型限制：等待查询';
+      else addModelDetails(models, job.model_restrictions);
+      identity.append(models);
       const state = row.insertCell();
       const badge = document.createElement('span');
       badge.className = 'badge ' + job.state;
@@ -157,30 +259,49 @@ async function loadJobs() {
         last.textContent = '上次使用 ' + new Date(job.last_used_at).toLocaleString('zh-CN');
         calls.append(last);
       }
+      addSevenDayUsage(row, job.seven_day_usage);
       addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
-      addCell(row, job.watch_until ? new Date(job.watch_until).toLocaleString('zh-CN') : '—');
+      const monitor = addCell(row, job.monitoring_enabled ? '持续监控' : job.retired ? '已由新任务接管' : job.state === 'removed' ? '已停止' : '等待导入');
+      if (job.last_checked_at) {
+        const checked = document.createElement('small');
+        checked.textContent = '上次检查 ' + new Date(job.last_checked_at).toLocaleString('zh-CN');
+        monitor.append(checked);
+      }
       const action = row.insertCell();
-      if (job.mode === 'file' && job.account_id && ['invalid', 'completed', 'attention'].includes(job.state)) {
+      if (!job.retired && job.state !== 'removed' && ((job.mode === 'file' && job.account_id) || (job.mode === 'credentials' && job.has_saved_credentials))) {
+        action.className = 'job-actions';
+        const busy = ['importing', 'reauthorizing'].includes(job.state);
         const button = document.createElement('button');
         button.className = 'text-button';
         button.type = 'button';
-        button.textContent = '重新上传';
-        button.addEventListener('click', () => { reauthJob = job.id; document.getElementById('reauth-json').click(); });
-        action.append(button);
-      } else if (job.mode === 'credentials' && job.attempts) {
-        action.textContent = job.attempts + '/3 次';
-      } else if (job.mode === 'reference' && ['completed', 'attention'].includes(job.state)) {
-        const button = document.createElement('button');
-        button.className = 'text-button';
-        button.type = 'button';
-        button.textContent = '重新监控';
+        button.disabled = busy;
+        button.textContent = job.mode === 'file' ? 'RT 重新授权' : '手动重新授权';
         button.addEventListener('click', async () => {
+          if (job.mode === 'file') { openAuthorization(job); return; }
+          button.disabled = true;
+          setFeedback('正在使用首次导入的账号资料重新授权…');
           try {
-            await request('api/jobs/reference/watch?account_id=' + encodeURIComponent(job.account_id), { method: 'POST', headers: { 'X-CSRF-Token': csrf } });
+            await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/credentials', {
+              method: 'POST', headers: { 'X-CSRF-Token': csrf },
+            });
+            setFeedback('已使用首次导入的资料启动授权，结果会在下方更新。');
             await loadJobs();
-          } catch (error) { setFeedback(error.message, true); }
+          } catch (error) { setFeedback(error.message, true); button.disabled = false; }
         });
         action.append(button);
+        if (job.mode === 'file') {
+          const upload = document.createElement('button');
+          upload.className = 'text-button';
+          upload.type = 'button';
+          upload.disabled = busy;
+          upload.textContent = '重新上传 JSON';
+          upload.addEventListener('click', () => { reauthJob = job.id; document.getElementById('reauth-json').click(); });
+          action.append(upload);
+        } else if (job.attempts) {
+          const attempts = document.createElement('small');
+          attempts.textContent = '本轮自动授权 ' + job.attempts + '/' + job.max_authorization_attempts + ' 次（含首次）';
+          action.append(attempts);
+        }
       } else {
         action.textContent = '—';
       }
@@ -193,6 +314,8 @@ async function loadJobs() {
 document.getElementById('panel-file').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (!document.getElementById('reference-account').reportValidity()) return;
+  if (!await requireReferenceModels()) return;
   const button = form.querySelector('button[type=submit]');
   button.disabled = true;
   setFeedback('正在导入 JSON 文件…');
@@ -216,6 +339,8 @@ document.getElementById('panel-file').addEventListener('submit', async event => 
 document.getElementById('panel-account').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
+  if (!document.getElementById('reference-account').reportValidity()) return;
+  if (!await requireReferenceModels()) return;
   const button = form.querySelector('button[type=submit]');
   const line = document.getElementById('account-line').value;
   const group = document.getElementById('account-group').value;
@@ -239,10 +364,54 @@ document.getElementById('reauth-json').addEventListener('change', async event =>
   setFeedback('正在应用新的授权文件…');
   try {
     await request('api/jobs/' + encodeURIComponent(reauthJob) + '/reauthorize', submitOptions(data));
-    setFeedback('已提交新授权，监控窗口重新开始。');
+    setFeedback('已提交新授权，继续持续监控。');
     await loadJobs();
   } catch (error) { setFeedback(error.message, true); }
   finally { event.target.value = ''; reauthJob = null; }
+});
+
+const authorizationDialog = document.getElementById('authorization-dialog');
+const authorizationForm = document.getElementById('authorization-form');
+const authorizationSecret = document.getElementById('authorization-secret');
+const authorizationError = document.getElementById('authorization-error');
+let authorizationJob = null;
+
+function openAuthorization(job) {
+  authorizationJob = job;
+  authorizationForm.reset();
+  authorizationError.textContent = '';
+  document.getElementById('authorization-account').textContent = job.name + ' · #' + job.account_id;
+  authorizationDialog.showModal();
+  authorizationSecret.focus();
+}
+
+document.getElementById('authorization-cancel').addEventListener('click', () => authorizationDialog.close());
+authorizationDialog.addEventListener('close', () => {
+  authorizationForm.reset();
+  authorizationJob = null;
+  authorizationError.textContent = '';
+});
+authorizationForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!authorizationJob) return;
+  const job = authorizationJob;
+  const button = document.getElementById('authorization-submit');
+  const body = { refresh_token: authorizationSecret.value };
+  button.disabled = true;
+  authorizationError.textContent = '';
+  // Clear the input immediately; the request body is never persisted in the page.
+  authorizationSecret.value = '';
+  try {
+    await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/refresh-token', {
+      method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    authorizationDialog.close();
+    setFeedback('手动授权任务已提交，账号将继续持续监控。');
+    await loadJobs();
+  } catch (error) {
+    if (authorizationDialog.open && authorizationJob?.id === job.id) authorizationError.textContent = error.message;
+    else setFeedback(error.message, true);
+  } finally { button.disabled = false; }
 });
 
 document.getElementById('refresh').addEventListener('click', loadJobs);
