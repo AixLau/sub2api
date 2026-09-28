@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -21,7 +23,14 @@ func parseFunctionPayload(raw []byte) (json.RawMessage, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	var document, extra yaml.Node
 	if err := decoder.Decode(&document); err != nil {
-		return nil, fail("invalid_yaml", "函数 code 必须是有效 YAML 参数映射；正则、路径及代码字符串请使用单引号或 |- 原样文本块")
+		// yaml.v3 errors can contain source tokens. Return only its numeric
+		// location and bridge-owned guidance, never the raw parser message.
+		location := ""
+		var line int
+		if _, scanErr := fmt.Sscanf(err.Error(), "yaml: line %d:", &line); scanErr == nil && line > 0 {
+			location = fmt.Sprintf("（解析器报告第 %d 行）", line)
+		}
+		return nil, fail("invalid_yaml", "函数 code 必须是有效 YAML 参数映射"+location+"；字符串使用显式缩进 |2-，每行在字段缩进基础上添加两个空格，再保留原文全部缩进；末尾一个换行用 |2，多个换行用 |2+。不要从代码首行缩进推断 YAML 缩进")
 	}
 	if decoder.Decode(&extra) != io.EOF {
 		return nil, fail("multiple_documents", "函数 code 只能包含一个 YAML 参数映射")
@@ -94,30 +103,60 @@ func formatFunctionPayload(raw []byte) (string, error) {
 	if !json.Valid(raw) || jsonKind(raw) != "object" {
 		return "", errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 	}
-	var document yaml.Node
-	if yaml.Unmarshal(raw, &document) != nil {
-		return "", errors.New("历史 function 参数无法转换为传输映射")
-	}
-	var style func(*yaml.Node, bool)
-	style = func(node *yaml.Node, key bool) {
-		number := node.Kind == yaml.ScalarNode && node.Style == 0 && jsonKind([]byte(node.Value)) == "number"
-		node.Style = 0
-		if number {
-			node.Tag = "" // Emit the original literal without a YAML type tag.
-		} else if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+	// Decode JSON strings before constructing YAML nodes: YAML rejects JSON's
+	// UTF-16 surrogate-pair escapes. Tokens retain member order, while
+	// UseNumber preserves numeric literals beyond floating-point precision.
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var convert func(bool) (*yaml.Node, error)
+	convert = func(key bool) (*yaml.Node, error) {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		node := &yaml.Node{Kind: yaml.ScalarNode}
+		switch value := token.(type) {
+		case json.Delim:
+			node.Kind = yaml.SequenceNode
+			if value == '{' {
+				node.Kind = yaml.MappingNode
+			}
+			for decoder.More() {
+				child, err := convert(node.Kind == yaml.MappingNode && len(node.Content)%2 == 0)
+				if err != nil {
+					return nil, err
+				}
+				node.Content = append(node.Content, child)
+			}
+			_, err = decoder.Token()
+			return node, err
+		case string:
+			node.Tag, node.Value = "!!str", value
 			node.Style = yaml.SingleQuotedStyle
-			if !key && node.Value != "" {
+			if !key && value != "" {
 				node.Style = yaml.LiteralStyle
 			}
+		case json.Number:
+			node.Value = value.String()
+		case bool:
+			node.Tag, node.Value = "!!bool", strconv.FormatBool(value)
+		case nil:
+			node.Tag, node.Value = "!!null", "null"
 		}
-		for i, child := range node.Content {
-			style(child, node.Kind == yaml.MappingNode && i%2 == 0)
-		}
+		return node, nil
 	}
-	style(&document, false)
-	out, err := yaml.Marshal(&document)
+	document, err := convert(false)
 	if err != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
-	return string(out), nil
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(document); err != nil {
+		return "", errors.New("历史 function 参数无法转换为传输映射")
+	}
+	if err := encoder.Close(); err != nil {
+		return "", errors.New("历史 function 参数无法转换为传输映射")
+	}
+	return out.String(), nil
 }
