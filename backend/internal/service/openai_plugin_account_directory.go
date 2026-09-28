@@ -159,8 +159,13 @@ func (s *OpenAIGatewayService) ResolvePluginOutboundIdentity(ctx context.Context
 	if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
 		return nil, err
 	}
+	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, headers)
 	ensureCodexIdentityHeaders(headers)
-	enforceCodexIdentityHeaders(headers)
+	if canonical := resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService); canonical != "" {
+		identity := resolveCodexOutboundIdentityWithCanonicalUA("", canonical)
+		headers.Set("Originator", identity.originator)
+		headers.Set("Version", identity.version)
+	}
 	return &PluginOutboundIdentity{
 		AccountID:   account.ID,
 		Platform:    account.Platform,

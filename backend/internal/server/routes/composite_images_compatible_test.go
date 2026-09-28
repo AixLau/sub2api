@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -103,7 +104,7 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			upstream, usage := &compatibleImagesUpstream{}, &compatibleImagesUsage{}
 			billingCache := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 			t.Cleanup(billingCache.Stop)
-			gateway := service.NewOpenAIGatewayService(repo, usage, nil, nil, nil, nil, nil, cfg, nil, nil, service.NewBillingService(cfg, nil), nil, billingCache, upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil)
+			gateway := service.NewOpenAIGatewayService(nil, repo, usage, nil, nil, nil, nil, nil, cfg, nil, nil, service.NewBillingService(cfg, nil), nil, billingCache, upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil)
 			imagesHandler := handler.NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(nil), billingCache, service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg), nil, nil, nil, nil, cfg)
 			publicModel := model
 			if scenario == "multipart_alias" {
@@ -117,8 +118,17 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 				c.Next()
 			})
 			router.Use(compositeTargetPlatformMiddleware(resolver))
-			router.POST("/v1/images/generations", imagesHandler.Images)
-			router.POST("/v1/images/edits", imagesHandler.Images)
+			restore := replaceModeratedRouteRegistryForTest(nil)
+			t.Cleanup(restore)
+			registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+				moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+					result := imagesHandler.EnterOpenAIHTTPGatewayPipeline(c, meta)
+					return GatewayPipelineEntryResult{Stop: result.Stop}
+				}),
+			})
+			for _, path := range []string{"/v1/images/generations", "/v1/images/edits"} {
+				registrar.POST(path, coveredOpenAIHTTPRoute(path, "OpenAIGatewayHandler.Images", service.ContentModerationProtocolOpenAIImages, "Exercise the production image pipeline."), imagesHandler.Images)
+			}
 			endpoint, contentType := "/v1/images/generations", "application/json"
 			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw","size":"1024x1024"}`, publicModel))
 			if scenario == "json_edit" {

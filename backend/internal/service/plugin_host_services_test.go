@@ -294,27 +294,26 @@ func TestPluginHostServiceServer_AccountDirectory(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-func TestScopedPluginAccountDirectoryRestrictsEnumerationAndIdentity(t *testing.T) {
+func TestPluginHostServiceRestrictsEnumerationAndIdentity(t *testing.T) {
 	dir := &fakeAccountDirectory{
-		ids:      []int64{3, 7, 11},
+		infos:    []PluginAccountInfo{{ID: 3, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}, {ID: 7, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}, {ID: 11, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}},
 		identity: &PluginOutboundIdentity{AccountID: 3, Token: "must-not-leak"},
 	}
-	scoped := newScopedPluginAccountDirectory(dir, []int64{7, 11})
-
-	ids, err := scoped.ListPluginAccounts(context.Background(), "openai", "oauth")
+	scope := newPluginAccountScope(pluginAccountScopeEntry{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}).WithAccountIDs([]int64{7, 11})
+	server := newPluginHostServiceServer("local.scoped", newFakePluginKVStore(), dir, scope)
+	accounts, err := server.ListAccounts(context.Background(), &pluginv1.ListAccountsRequest{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth})
 	require.NoError(t, err)
-	assert.Equal(t, []int64{7, 11}, ids)
-
-	identity, err := scoped.ResolvePluginOutboundIdentity(context.Background(), 3)
+	assert.Equal(t, []int64{7, 11}, accounts.AccountIds)
+	identity, err := server.ResolveOutboundIdentity(context.Background(), &pluginv1.ResolveOutboundIdentityRequest{AccountId: 3})
 	require.NoError(t, err)
-	assert.Nil(t, identity)
-	assert.Zero(t, dir.lastReq, "未绑定账号不得触发凭据解析")
-
+	require.False(t, identity.Found)
+	assert.Zero(t, dir.lastReq, "unbound accounts must not trigger credential resolution")
 	dir.identity = &PluginOutboundIdentity{AccountID: 7, Token: "allowed"}
-	identity, err = scoped.ResolvePluginOutboundIdentity(context.Background(), 7)
+	identity, err = server.ResolveOutboundIdentity(context.Background(), &pluginv1.ResolveOutboundIdentityRequest{AccountId: 7})
 	require.NoError(t, err)
-	require.NotNil(t, identity)
+	require.True(t, identity.Found)
 	assert.Equal(t, "allowed", identity.Token)
+	assert.Equal(t, scope, dir.lastScope)
 }
 
 func TestPluginHostServiceFiltersUnselectedBindingAccounts(t *testing.T) {
@@ -381,12 +380,12 @@ func TestPluginAccountScopeFromManifest(t *testing.T) {
 
 // buildHostServices 只对声明了 OpenAI OAuth 能力的插件注入账号目录。
 func TestBuildHostServicesGatesDirectoryByCapability(t *testing.T) {
-	dir := &fakeAccountDirectory{ids: []int64{3, 7}}
+	dir := &fakeAccountDirectory{infos: []PluginAccountInfo{{ID: 3, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}, {ID: 7, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}}}
 	m := &PluginManager{kvStore: newFakePluginKVStore(), accountDirectory: dir}
 
 	authorized := &PluginInstallation{PluginKey: "p.authorized", Manifest: PluginManifest{
 		Capabilities: []PluginCapability{{ID: PluginCapabilityOpenAIOAuthOutbound, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}},
-	}, Bindings: []PluginBinding{{Capability: PluginCapabilityOpenAIOAuthOutbound, AccountIDs: []int64{7}}}}
+	}, Bindings: []PluginBinding{{Capability: PluginCapabilityOpenAIOAuthOutbound, Enabled: true, AccountIDs: []int64{7}}}}
 	srv, ok := m.buildHostServices(authorized).(*pluginHostServiceServer)
 	require.True(t, ok)
 	require.NotNil(t, srv.directory)
