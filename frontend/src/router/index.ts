@@ -575,12 +575,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/credential-principals',
-    name: 'AdminCredentialPrincipals',
-    component: () => import('@/views/admin/CredentialPrincipalsView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Credential instances', titleKey: 'admin.accounts.credentials.title' }
-  },
-  {
     path: '/admin/accounts',
     name: 'AdminAccounts',
     component: () => import('@/views/admin/AccountsView.vue'),

@@ -15,7 +15,7 @@ import (
 
 // ProvideConcurrencyCache 创建并发控制缓存，从配置读取 TTL 参数
 // 性能优化：TTL 可配置，支持长时间运行的 LLM 请求场景
-func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config, db *sql.DB) (service.ConcurrencyCache, error) {
+func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.ConcurrencyCache {
 	waitTTLSeconds := int(cfg.Gateway.Scheduling.StickySessionWaitTimeout.Seconds())
 	if cfg.Gateway.Scheduling.FallbackWaitTimeout > cfg.Gateway.Scheduling.StickySessionWaitTimeout {
 		waitTTLSeconds = int(cfg.Gateway.Scheduling.FallbackWaitTimeout.Seconds())
@@ -23,16 +23,7 @@ func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config, db *sql.DB) 
 	if waitTTLSeconds <= 0 {
 		waitTTLSeconds = cfg.Gateway.ConcurrencySlotTTLMinutes * 60
 	}
-	cache := NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
-	if !cfg.Gateway.MultiCredentialHTTPEnabled {
-		return cache, nil
-	}
-	guard, err := newCredentialGlobalUserSlots(db, rdb, cache)
-	if err != nil {
-		return nil, err
-	}
-	cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
-	return cache, nil
+	return NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
 }
 
 // ProvideGitHubReleaseClient 创建 GitHub Release 客户端
@@ -74,16 +65,6 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
-	NewUpstreamPrincipalReader,
-	ProvidePrincipalAdmissionStore,
-	NewCredentialRouteStore,
-	ProvideCredentialGlobalUserSlots,
-	NewCredentialRefreshStore,
-	ProvideCredentialOperations,
-	NewCredentialInstanceLifecycle,
-	NewCredentialMigrationStore,
-	NewCredentialImportRepository,
-	NewCredentialPrincipalCreator,
 	NewUserRepository,
 	NewAPIKeyRepository,
 	NewGroupRepository,
@@ -180,7 +161,7 @@ var ProviderSet = wire.NewSet(
 	NewProxyExitInfoProber,
 	NewClaudeUsageFetcher,
 	NewClaudeOAuthClient,
-	ProvideCredentialGuardedHTTPUpstream,
+	NewHTTPUpstream,
 	NewOpenAIOAuthClient,
 	NewOpenAIReferralClient,
 	NewGrokOAuthClient,
@@ -251,16 +232,4 @@ func ProvideSQLDB(client *ent.Client) (*sql.DB, error) {
 // 提供：*redis.Client
 func ProvideRedis(cfg *config.Config) *redis.Client {
 	return InitRedis(cfg)
-}
-
-func ProvideCredentialGlobalUserSlots(db *sql.DB, rdb *redis.Client, cfg *config.Config, cache service.ConcurrencyCache, store service.PrincipalAdmissionStore) (service.CredentialGlobalUserSlots, error) {
-	if !cfg.Gateway.MultiCredentialHTTPEnabled {
-		return nil, nil
-	}
-
-	guard, err := newCredentialGlobalUserSlots(store.(*principalAdmissionStore).criticalDB(), rdb, cache)
-	if err == nil {
-		cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
-	}
-	return guard, err
 }

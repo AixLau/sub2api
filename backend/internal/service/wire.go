@@ -229,7 +229,6 @@ func ProvideAccountUsageService(
 }
 
 func ProvideAccountTestService(
-	credentialHTTP *CredentialHTTPRuntime,
 	accountRepo AccountRepository,
 	geminiTokenProvider *GeminiTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
@@ -260,7 +259,6 @@ func ProvideAccountTestService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
-	service.credentialHTTP = credentialHTTP
 	service.SetProxyExitInfoProber(proxyProber)
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
@@ -868,38 +866,7 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
-func ProvideCredentialReconciler(ops CredentialOperations, refresh *CredentialRefreshCoordinator, store PrincipalAdmissionStore, gateway *OpenAIGatewayService, keys APIKeyRepository, updater *APIKeyService, globalUserSlots CredentialGlobalUserSlots) *CredentialReconciler {
-	r := NewCredentialReconciler(ops)
-	if closer, ok := store.(interface{ Close() error }); ok {
-		r.closeAdmission = closer.Close
-	}
-	r.refresh = refresh
-	r.usageStore, _ = store.(CredentialUsageReceiptStore)
-	r.gateway = gateway
-	r.keys = keys
-	r.updater = updater
-	r.globalUserSlots = globalUserSlots
-	r.Start()
-	return r
-}
-
-func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *config.Config, client OpenAIOAuthClient, proxies ProxyRepository) *CredentialRefreshCoordinator {
-	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
-	return NewCredentialRefreshCoordinator(store, vault, &openAICredentialRefreshProvider{client: client, proxies: proxies})
-}
-
-func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
-	// Missing/invalid key disables only import. No provider verifier is configured:
-	// real imports stay UNVERIFIED until an authenticated contract is implemented.
-	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
-	return NewCredentialImportService(store, vault, nil)
-}
-
 var ProviderSet = wire.NewSet(
-	ProvideCredentialImportService,
-	ProvideCredentialRefreshCoordinator,
-	ProvideCredentialReconciler,
-	NewCredentialHTTPRuntime,
 	NewMerchantSSOAPIService,
 	// Core services
 	ProvideAuthService,
