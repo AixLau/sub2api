@@ -251,7 +251,8 @@ func TestOpsErrorLoggerMiddleware_ClassifiesCanceledBodyUploadAsClientRequest(t 
 	setupOpsErrorLogTestQueue(t, 1)
 
 	gin.SetMode(gin.TestMode)
-	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	settings := &opsAdvancedSettingsRepoStub{advanced: `{"ignore_context_canceled":false}`}
+	ops := service.NewOpsService(nil, settings, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	r := gin.New()
 	r.Use(OpsErrorLoggerMiddleware(ops))
 	r.POST("/v1/responses", func(c *gin.Context) {

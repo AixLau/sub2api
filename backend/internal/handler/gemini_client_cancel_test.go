@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -82,6 +83,21 @@ func (f *geminiClientCancelFixture) serve(t *testing.T, route, path, body string
 	router.POST(route, func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), f.apiKey)
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: f.apiKey.UserID, Concurrency: 10})
+		handlerName := "GatewayHandler.GeminiV1BetaModels"
+		protocol := service.ContentModerationProtocolGemini
+		if route == "/v1/chat/completions" {
+			handlerName = "GatewayHandler.ChatCompletions"
+			protocol = service.ContentModerationProtocolOpenAIChat
+		}
+		meta := moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
+			Method: http.MethodPost, Path: route, Handler: handlerName,
+			Upstream: true, ModerationRequired: true, Protocol: protocol,
+			Pipeline: moderationcoverage.PipelineGatewayPreForward, Status: moderationcoverage.StatusCovered,
+		})
+		moderationcoverage.SetRouteMeta(c, meta)
+		if result := f.handler.EnterGatewayPreForwardPipeline(c, meta); result.Blocked {
+			return
+		}
 		call(c)
 	})
 
