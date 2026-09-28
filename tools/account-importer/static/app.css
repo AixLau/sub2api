@@ -52,13 +52,16 @@ h1 { font-size: 26px; line-height: 1.25; font-weight: 700; }
 h2 { font-size: 17px; }
 .section-heading p { margin-top: 6px; color: #7c8980; font-size: 11px; }
 .table-wrap { width: 100%; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 690px; text-align: left; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; min-width: 1080px; text-align: left; font-size: 12px; }
 th { color: #718076; font-size: 11px; font-weight: 650; background: #f8faf8; border-top: 1px solid #e8eee9; border-bottom: 1px solid #e8eee9; padding: 12px 26px; white-space: nowrap; }
 td { padding: 16px 26px; border-bottom: 1px solid #edf0ed; vertical-align: top; color: #4c5f54; }
 tr:last-child td { border-bottom: 0; }
-td.identity { color: #182d23; font-weight: 600; overflow-wrap: anywhere; max-width: 270px; }
+td.identity { min-width: 190px; color: #182d23; font-weight: 600; overflow-wrap: anywhere; max-width: 270px; }
 td small { display: block; font-size: 11px; color: #7b8980; margin-top: 5px; font-weight: 400; line-height: 1.4; }
 td.empty { text-align: center; padding: 32px; color: #87958a; }
+.usage-window { min-width: 215px; font-variant-numeric: tabular-nums; }
+.usage-window .usage-billing { color: #305c49; }
+.usage-window progress { display: block; width: 100%; height: 9px; margin-top: 8px; accent-color: #157b63; }
 .badge { display: inline-block; padding: 4px 8px; border-radius: 3px; background: #e6f4ec; color: #167554; font-weight: 650; white-space: nowrap; }
 .badge.invalid, .badge.failed { background: #ffeded; color: #b83f3f; }
 .badge.attention { background: #fff4db; color: #9b6810; }
@@ -67,3 +70,17 @@ td.empty { text-align: center; padding: 32px; color: #87958a; }
 .text-button { padding: 3px 0; border: 0; color: #137956; background: transparent; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .text-button:hover { text-decoration: underline; }
 @media (max-width: 680px) { .shell { width: min(100% - 28px, 1120px); } .topbar-inner { height: 62px; } .intro { padding: 28px 0 24px; align-items: flex-start; } h1 { font-size: 22px; } .window-note { display: none; } .import-section { padding: 17px 17px 12px; } .segmented { display: flex; } .segmented button { flex: 1; padding: 9px 7px; font-size: 12px; } .import-form { grid-template-columns: 1fr; gap: 19px; } .form-action { grid-column: 1; } .section-heading { padding: 20px 17px; } }
+
+.job-actions { min-width: 124px; }
+.job-actions .text-button { display: block; margin-bottom: 8px; white-space: nowrap; }
+#authorization-dialog { width: min(480px, calc(100vw - 32px)); box-sizing: border-box; padding: 28px; border: 1px solid #dbe4df; border-radius: 8px; color: #23332d; }
+#authorization-dialog::backdrop { background: rgb(15 32 26 / 45%); }
+#authorization-account { overflow-wrap: anywhere; color: #65786d; margin: 12px 0 24px; }
+#authorization-dialog input { box-sizing: border-box; width: 100%; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; }
+
+#reference-models details small, .account-models details small { display: block; overflow-wrap: anywhere; }
+#reference-models summary, .account-models summary { cursor: pointer; }
+.account-models { margin-top: 6px; font-size: 12px; font-weight: 400; }
+
+.section-heading .secondary { flex-shrink: 0; white-space: nowrap; }

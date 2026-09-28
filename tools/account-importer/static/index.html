@@ -17,11 +17,12 @@
   </header>
   <main class="shell">
     <section class="intro">
-      <div><h1>导入账号</h1><p>导入后监控 20 分钟。凭据方式可自动重新授权；JSON 方式失效后可重新上传。</p></div>
-      <div class="window-note"><span>监控窗口</span><strong>20 min</strong></div>
+      <div><h1>导入账号</h1><p>持续监控账号状态。账号资料导入遇错自动授权，失败后最多重试 3 次；JSON 方式可填写 RT 或重新上传。</p></div>
+      <div class="window-note"><span>监控方式</span><strong>持续监控</strong></div>
     </section>
     <section class="import-section" aria-label="导入方式">
-      <div class="field reference-field"><label for="reference-account">默认配置参照账号</label><select id="reference-account" required><option value="">正在读取 OpenAI OAuth 账号…</option></select><small>从远程 OpenAI OAuth 账号中选择，新账号默认复制其分组和设置</small></div>
+      <div class="field reference-field"><label for="reference-account">导入配置</label><select id="reference-account" required><option value="0" selected>默认</option></select><small>“默认”为代码中固化的配置，也可选择其他账号作为参照；导入账号默认启用，从全部可用的 5x 代理中随机选择，没有可用 5x 代理时直连；不继承参考账号的状态和代理</small></div>
+      <div class="field reference-field"><label>模型限制（随所选配置导入）</label><div id="reference-models" aria-live="polite">正在读取默认模型限制…</div><small>“默认”内置固定模型清单；导入后写入并校验。选择其他账号时使用其模型限制。</small></div>
       <div class="segmented" role="tablist" aria-label="导入方式">
         <button id="tab-file" type="button" role="tab" aria-selected="true" aria-controls="panel-file">上传 Sub2API JSON</button>
         <button id="tab-account" type="button" role="tab" aria-selected="false" aria-controls="panel-account">邮箱 · 密码 · 2FA</button>
@@ -29,22 +30,35 @@
       <form id="panel-file" class="import-form" role="tabpanel" aria-labelledby="tab-file">
         <div class="field wide"><label for="import-json">Sub2API JSON 文件</label><input id="import-json" name="file" type="file" accept=".json,application/json" required><small>支持 1–50 个 OpenAI OAuth 账号，最大 2 MB</small></div>
         <div class="field wide"><label for="file-plugin">加入已启用插件（可选）</label><select id="file-plugin" disabled><option value="">不添加到插件</option></select><small id="plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-plugins" class="text-button" type="button">刷新插件列表</button></div>
-        <div class="field"><label for="file-group">导入分组</label><select id="file-group"><option value="">与参考账号相同</option></select><small>新账号默认继承参考账号设置；选择分组可覆盖分组</small></div>
+        <div class="field"><label for="file-group">导入分组</label><select id="file-group"><option value="">使用所选配置的分组</option></select><small>新账号使用所选配置；选择分组可覆盖默认分组</small></div>
         <div class="form-action"><button class="primary" type="submit">导入文件</button></div>
       </form>
       <form id="panel-account" class="import-form" role="tabpanel" aria-labelledby="tab-account" hidden>
         <div class="field wide"><label for="account-line">账号资料</label><input id="account-line" name="account_line" type="password" autocomplete="off" spellcheck="false" placeholder="邮箱----密码----2FA 密钥" required><label class="check-label"><input id="show-account" type="checkbox">显示输入</label></div>
         <div class="field wide"><label for="account-plugin">加入已启用插件（可选）</label><select id="account-plugin" disabled><option value="">不添加到插件</option></select><small id="account-plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-account-plugins" class="text-button" type="button">刷新插件列表</button></div>
-        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">与参考账号相同</option></select><small>账号资料仅保留在本次服务的内存中</small></div>
+        <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">使用所选配置的分组</option></select><small>首次导入资料加密保存在独立 Redis 数据库中，重启后仍可一键授权</small></div>
         <div class="form-action"><button class="primary" type="submit">登录并导入</button></div>
       </form>
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>
     <section class="jobs-section">
-      <div class="section-heading"><div><h2>监控任务</h2><p>每 5 秒更新；服务重启后任务不会保留。</p></div><button id="refresh" class="secondary" type="button">刷新</button></div>
-      <div class="table-wrap"><table><thead><tr><th>账号</th><th>状态</th><th>调用状态</th><th>来源</th><th>监控截止</th><th>操作</th></tr></thead><tbody id="jobs-body"><tr><td class="empty" colspan="6">暂无监控任务</td></tr></tbody></table></div>
+      <div class="section-heading"><div><h2>监控任务</h2><p>页面每 5 秒更新，账号每 30 秒查询；7 天用量取自 Sub2API 最近同步数据。任务和原始资料持久保存，服务重启后自动恢复。</p></div><button id="refresh" class="secondary" type="button">刷新</button></div>
+      <div class="table-wrap"><table><thead><tr><th>账号</th><th>状态</th><th>调用状态</th><th>7 天用量窗口</th><th>来源</th><th>监控</th><th>操作</th></tr></thead><tbody id="jobs-body"><tr><td class="empty" colspan="7">暂无监控任务</td></tr></tbody></table></div>
       <input id="reauth-json" type="file" accept=".json,application/json" hidden>
     </section>
   </main>
+  <dialog id="authorization-dialog" aria-labelledby="authorization-title">
+    <form id="authorization-form">
+      <h2 id="authorization-title">RT 重新授权</h2>
+      <p id="authorization-account"></p>
+      <div class="field">
+        <label id="authorization-label" for="authorization-secret">Refresh Token（RT）</label>
+        <input id="authorization-secret" type="password" required maxlength="16384" placeholder="填写当前账号的 RT" autocomplete="off" spellcheck="false" aria-describedby="authorization-hint">
+        <small id="authorization-hint">校验 RT 所属账号后更新授权。RT 无效时也可重新上传该账号 JSON。</small>
+      </div>
+      <p id="authorization-error" class="feedback error" role="alert"></p>
+      <div class="dialog-actions"><button id="authorization-cancel" class="secondary" type="button">取消</button><button id="authorization-submit" class="primary" type="submit">提交重新授权</button></div>
+    </form>
+  </dialog>
 </body>
 </html>

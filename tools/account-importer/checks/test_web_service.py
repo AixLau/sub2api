@@ -1,3 +1,4 @@
+from fake_store import FakeStore
 import asyncio
 import json
 import re
@@ -17,7 +18,7 @@ def bundle(name="account@example.com", token="token-one"):
         "proxies": [],
         "accounts": [{
             "name": name, "platform": "openai", "type": "oauth",
-            "credentials": {"access_token": token, "refresh_token": "refresh-one"},
+            "credentials": {"access_token": token, "refresh_token": "refresh-one", "model_mapping": {"gpt-5.5": "gpt-5.5"}},
             "extra": {"email": name}, "group_ids": [2],
         }],
     }
@@ -34,6 +35,7 @@ class FakeClient:
         self.reference = {
             "id": 285, "name": "reference@example.com", "platform": "openai", "type": "oauth",
             "status": "active", "schedulable": True, "proxy_id": 17382,
+            "credentials": {"model_mapping": {"gpt-5.5": "gpt-5.5"}},
             "concurrency": 30, "priority": 1, "rate_multiplier": 1,
             "auto_pause_on_expired": True, "current_concurrency": 3,
             "last_used_at": "2026-09-26T12:00:00Z",
@@ -70,6 +72,17 @@ class FakeClient:
     async def get_profile_account(self, account_id):
         return await self.get_account(account_id)
 
+    async def get_usage(self, account_id):
+        account = await self.get_account(account_id)
+        extra = account.get("extra") or {}
+        return {
+            "updated_at": extra.get("codex_usage_updated_at"),
+            "seven_day": {
+                "utilization": extra.get("codex_7d_used_percent"),
+                "resets_at": extra.get("codex_7d_reset_at"),
+            },
+        }
+
     async def list_active_proxies(self):
         return [
             {"id": 17382, "name": "5x", "protocol": "http", "host": "proxy.example",
@@ -86,6 +99,8 @@ class FakeClient:
         self.settings_updates.append(settings.copy())
         account = next(value for value in self.records.values() if value["id"] == account_id)
         account.update(settings)
+
+    set_model_restrictions = Sub2APIClient.set_model_restrictions
 
     async def set_schedulable(self, account_id, schedulable):
         account = next(value for value in self.records.values() if value["id"] == account_id)
@@ -107,7 +122,7 @@ class FakeClient:
 class WebServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_file_import_invalid_status_and_reupload(self):
         client = FakeClient()
-        app = create_app(client, watch_seconds=2, poll_seconds=0.01)
+        app = create_app(client, store=FakeStore(), poll_seconds=0.01)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as http:
             page = await http.get("/")
@@ -157,7 +172,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
             login_calls.append((fmt, group_ids, proxy))
             return bundle(name="account@example.com", token="new-token")
 
-        manager = JobManager(client, login=login, watch_seconds=2, poll_seconds=0.01, retry_seconds=0)
+        manager = JobManager(client, store=FakeStore(), login=login, poll_seconds=0.01, retry_seconds=0)
         line = "account@example.com----password----JBSWY3DPEHPK3PXP"
         job = await manager.import_credentials(line, [2], profile_account_id=285)
         for _ in range(40):
@@ -188,12 +203,15 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_unix_expiry_marks_account_invalid(self):
         self.assertEqual(_account_state({"status": "active", "expires_at": 1})[0], "invalid")
 
-    def test_empty_5x_pool_means_direct_connection(self):
-        self.assertIsNone(select_5x_proxy([{"id": 1, "name": "other", "status": "active"}]))
+    def test_empty_5x_pool_uses_direct_connection(self):
+        choice = select_5x_proxy([{"id": 1, "name": "other", "status": "active"}])
+        self.assertIsNone(choice.id)
+        self.assertIsNone(choice.url)
+        self.assertIsNone(choice.key)
 
     async def test_multi_account_file_creates_separate_jobs(self):
         client = FakeClient()
-        manager = JobManager(client, watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), poll_seconds=0.01)
         document = bundle(name="first@example.com")
         document["accounts"].append(bundle(name="second@example.com")["accounts"][0])
         jobs = await manager.import_file(document, profile_account_id=285)
@@ -204,7 +222,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_account_inherits_reference_settings_and_watches_calls(self):
         client = FakeClient()
-        manager = JobManager(client, watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), poll_seconds=0.01)
         watched = await manager.watch_reference(285)
         await asyncio.sleep(0.02)
         observed = manager.get_job(watched["id"]).public()
@@ -227,7 +245,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_credentials_default_to_reference_profile(self):
         client = FakeClient()
         login = lambda line, fmt, *, group_ids, proxy: bundle(token="fresh-token")
-        manager = JobManager(client, login=login, watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), login=login, poll_seconds=0.01)
         job = await manager.import_credentials("account@example.com----password----JBSWY3DPEHPK3PXP", profile_account_id=285)
         for _ in range(40):
             if manager.get_job(job["id"]).account_id:
@@ -242,7 +260,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_account_upload_reauthorizes_without_duplicate(self):
         client = FakeClient()
         await client.import_data(bundle())
-        manager = JobManager(client, watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), poll_seconds=0.01)
         refreshed = bundle(token="fresh-token")
         refreshed["accounts"][0]["group_ids"] = []
         jobs = await manager.import_file(refreshed)
@@ -256,7 +274,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
         client = FakeClient()
         await client.import_data(bundle())
         login = lambda line, fmt, *, group_ids, proxy: bundle(token="fresh-token")
-        manager = JobManager(client, login=login, watch_seconds=2, poll_seconds=0.01)
+        manager = JobManager(client, store=FakeStore(), login=login, poll_seconds=0.01)
         job = await manager.import_credentials("account@example.com----password----JBSWY3DPEHPK3PXP", [2])
         for _ in range(40):
             if client.applied:
@@ -275,7 +293,7 @@ class WebServiceTests(unittest.IsolatedAsyncioTestCase):
             if request.url.path.endswith("/accounts"):
                 data = {"items": [{"id": 3, "name": "account@example.com"}]}
             elif request.url.path.endswith("/accounts/3") and request.method == "GET":
-                data = {"id": 3, "status": "active"}
+                data = {"id": 3, "status": "active", "schedulable": True}
             elif request.url.path.endswith("/accounts/data"):
                 data = {"account_created": 1, "account_failed": 0}
             else:

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -226,7 +227,7 @@ func TestGuardEvaluatorLastChunkFailureNeverAllows(t *testing.T) {
 	call := 0
 	scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
 		call++
-		if call == 2 {
+		if call >= 2 {
 			return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true, Cause: errors.New("down")}
 		}
 		return &NormalizedResult{Decision: EventPass, RiskLevel: RiskLow, Action: ActionAllow, ScannerScores: map[string]float64{}, ScannerEvidence: map[string]string{}}, nil
@@ -390,4 +391,106 @@ type PromptScannerFunc func(context.Context, ActiveEndpoint, string, []string) (
 
 func (f PromptScannerFunc) Scan(ctx context.Context, endpoint ActiveEndpoint, chunk string, scanners []string) (*NormalizedResult, error) {
 	return f(ctx, endpoint, chunk, scanners)
+}
+
+func TestGuardEvaluatorConfiguredAttempts(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		maxAttempts int
+		failures    int
+		retryable   bool
+		wantCalls   int
+		wantError   bool
+	}{
+		{"one attempt", 1, 1, true, 1, true},
+		{"recover on tenth attempt", 10, 9, true, 10, false},
+		{"exhaust ten attempts", 10, 10, true, 10, true},
+		{"default attempts", 0, 10, true, DefaultMaxAttempts, true},
+		{"permanent failure", 10, 1, false, 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 30000, InputLimit: 100})
+				cfg.MaxAttempts = tc.maxAttempts
+				calls := 0
+				scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
+					calls++
+					if calls <= tc.failures {
+						return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: tc.retryable}
+					}
+					return ParseQwen3Guard("Safety: Safe\nCategories: None", AllScannerIDs)
+				})
+				repo := &fakeJobRepository{}
+				metrics := NewAtomicMetrics()
+				decision, err := NewGuardEvaluator(scanner, repo, metrics).Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "hello"})
+				require.Equal(t, tc.wantCalls, calls)
+				require.Equal(t, int64(1), metrics.Snapshot().Total)
+				if tc.wantError {
+					require.Error(t, err)
+					require.Nil(t, decision)
+					require.Nil(t, repo.recordBlockingResult)
+				} else {
+					require.NoError(t, err)
+					require.True(t, decision.AllowNextStage)
+					require.NotNil(t, repo.recordBlockingResult)
+				}
+			})
+		})
+	}
+}
+
+func TestGuardEvaluatorRetriesOnlyFailedChunkWithOrderedFailover(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cfg := guardConfig(
+			ActiveEndpoint{ID: "first", Enabled: true, TimeoutMS: 30000, InputLimit: 3},
+			ActiveEndpoint{ID: "second", Enabled: true, TimeoutMS: 30000, InputLimit: 3},
+		)
+		cfg.MaxAttempts = 3
+		var calls []string
+		scanner := PromptScannerFunc(func(_ context.Context, endpoint ActiveEndpoint, chunk string, _ []string) (*NormalizedResult, error) {
+			calls = append(calls, endpoint.ID+":"+chunk)
+			if chunk == "def" && len(calls) < 5 {
+				return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
+			}
+			return ParseQwen3Guard("Safety: Safe\nCategories: None", AllScannerIDs)
+		})
+		metrics := NewAtomicMetrics()
+		decision, err := NewGuardEvaluator(scanner, nil, metrics).Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "abcdef"})
+		require.NoError(t, err)
+		require.True(t, decision.AllowNextStage)
+		require.Equal(t, []string{"first:abc", "first:def", "second:def", "first:def", "second:def"}, calls)
+		require.Equal(t, int64(2), metrics.Snapshot().Failovers)
+	})
+}
+
+func TestGuardEvaluatorRetryBackoffHonorsContext(t *testing.T) {
+	for _, cancelParent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancel=%t", cancelParent), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 20, InputLimit: 100})
+				cfg.MaxAttempts = 10
+				calls := 0
+				scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
+					calls++
+					if cancelParent {
+						go func() { time.Sleep(time.Millisecond); cancel() }()
+					}
+					return nil, &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
+				})
+				metrics := NewAtomicMetrics()
+				decision, err := NewGuardEvaluator(scanner, nil, metrics).Evaluate(ctx, cfg, PromptSnapshot{ScanText: "hello"})
+				require.Nil(t, decision)
+				require.Equal(t, 1, calls)
+				if cancelParent {
+					require.ErrorIs(t, err, context.Canceled)
+					require.Zero(t, metrics.Snapshot().Timeouts)
+				} else {
+					require.ErrorIs(t, err, context.DeadlineExceeded)
+					require.Equal(t, int64(1), metrics.Snapshot().Timeouts)
+				}
+			})
+		})
+	}
 }
