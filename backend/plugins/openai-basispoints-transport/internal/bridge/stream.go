@@ -156,7 +156,7 @@ func (s *streamBridge) event(ctx context.Context, raw []byte) error {
 		if isToolCall(item) {
 			s.completed[index] = event["item"]
 			delete(s.pending, index)
-			if s.request.Feedback == nil {
+			if s.request.Feedback == nil && !s.request.canDeliverToolFailures() {
 				_, err := s.request.decodeCall(ctx, event["item"])
 				return err
 			}

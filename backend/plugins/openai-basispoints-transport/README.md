@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.7 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
+0.6.8 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -23,7 +23,7 @@
 
 这四种调用转换为客户端 functions.exec；完整的原始 BPS item 和 call_id 继续保存在已有 KV 中。客户端返回结果时恢复原始调用身份，然后正常继续推理。发现调用不会为了改名或补目录额外触发内部反馈推理。已声明客户端工具优先直通；tool_choice=none、指定工具限制、整批校验和未知工具拒绝仍生效。没有上述执行合约的客户端不会被假定拥有这些能力。
 
-客户端目录提示会说明这套适配。其他原生工具没有实际执行路径时，以 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE 工具失败结果进入一次反馈续接，让模型选择本轮已声明工具或说明能力缺失；无法续接或再次生成不可用工具时才终止为语义失败，不换号重试。
+客户端目录提示会说明这套适配。具备上述 functions.exec 合约的客户端，转换失败或不可用工具会通过固定的 text(...) 程序收到 success:false、executed:false 的工具结果，再由正常客户端工具循环继续。程序只输出桥接生成的错误数据，不执行原始载荷、不调用任何业务 handler。没有该结果通道的客户端仍使用有界的一次服务端反馈；无法续接或再次失败时明确终止，不换号重试。
 
 验证命令：
 
@@ -61,6 +61,15 @@
 10. 图片输入：内嵌 `input_image`（`data:` URL，含 `{"url":…}` 字典形态）默认留在 BPS，无需关闭 `native_fallback`。先把工具结果中的图片移到紧随工具结果批次的用户消息，保留工具结果文本、调用归属和图片 detail，再将图片以 multipart 的 `file` 字段和 `purpose=vision` 上传到与 `/responses` 同目录的 `attachments` 端点；取得 `openai_file_id` 后替换为 `file_id` 引用，保留 `detail`，缺省补 `auto`。BPS 主请求有图片时自动设置 `Copilot-Vision-Request: true`，纯文本请求清除此头。仅支持 JPEG/PNG/GIF/WebP，常见 MIME 别名归一，非法数据或不支持的格式在主请求前明确报错。同内容图片按端点和凭据隔离缓存复用，并发同图合并上传，失败不缓存；缓存有界且仅存于进程内。上传失败返回 `ATTACHMENT_UPLOAD_FAILED`，`request_sent=false`，错误文本脱敏凭据与图片字节。上传在 turn/task 标识计算之后执行，不改变会话身份。客户端提供的 `file_id` 和远程图片 URL 默认仍走原生，避免假定跨通道文件可访问；图片与生图、结构化输出或加密 agent 历史同时出现时，仍按相关能力规则走原生。
 
 SSE 中的普通文本与推理保持流式；工具调用统一等待 `response.completed` 的完整批次通过校验并保存回放状态后再交付。修正响应的新增文本和工具使用连续事件序号与 output_index，整个客户端请求只产生一个终结事件。插件不会执行任何客户端工具。
+
+## 0.6.8 工具失败交还客户端正常循环
+
+- #485286（2026-09-28 09:50:12，Asia/Shanghai）的线上 0.6.7 日志确认：第一次 HTTP 200 的 run_officejs 目标是 collaboration.list_agents，但 code 不是参数映射；唯一一次内部反馈的 HTTP 200 又生成了未声明的 write_range，最终才出现 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE。客户端看到的 400 是桥接语义失败，不能作为上游 HTTP 400 的证据。原请求目录中的 functions.exec 确实声明了运行时结果输出合约。
+- 对这类客户端，整批校验失败后通过已声明的 functions.exec 返回桥接生成的固定错误输出程序，让客户端实际执行并回传失败结果。每次客户端请求只进行一次上游推理，不再把正常工具纠错限制为一次隐藏续接；保留客户端取消和既有 turn 轮次上限。其他没有该通道的客户端仍按其能力使用有界服务端反馈。
+- 错误结果明确标记 success:false、executed:false；原始无效载荷不进入程序。同批合法调用也返回 TOOL_BATCH_NOT_EXECUTED，由模型重新提交。FUNCTION 需要 YAML 参数映射（无参数为 {}），CUSTOM 才接受原始脚本。不会把未知 Office 工具映射成可执行能力。
+- 完整原始调用继续保存到宿主 KV。回放按原始 function/custom 类型恢复结果类型和 call_id，支持只上传结果及正常调用历史；tool_choice=none、强制其它工具、缺失/重复标识、上游未完成、取消与 KV 错误仍受原有边界限制。
+- 回归使用合成载荷复现同一错误顺序，覆盖 JSON/SSE、混合批次、客户端 Node 实际执行、零业务副作用、原始调用回放和 gRPC 四轮正常往返。测试不调用真实 BPS 推理；本地回归和打包通过不代表修复已部署或原请求已在线重放。
+- 设计沿用 [OpenAI 工具结果合约](https://developers.openai.com/api/docs/guides/function-calling) 与下节 Codex RespondToModel 的错误语义；没有新增执行库或扩大客户端工具目录。
 
 ## 0.6.7 未知工具按 Codex 失败结果续接
 
@@ -360,7 +369,7 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 - 需要宿主提供 HostService KV。记录按账号、上游地址及宿主隔离后的 session 标识隔离，保留 24 小时。KV 包含工具调用参数，可能含业务数据；不保存 OAuth 认证头或 refresh token。
 - 非桥接工具历史可以继续回放，但其中没有 BPS 原始 item，encrypted reasoning 的连续性只从插件接管后的新调用开始。桥接调用（`call_bps_…`）在 KV 过期或丢失后仍然报错，请开始新会话；切换账号或丢失 session/KV 状态后同理。
 - 仅桥接客户端 function/custom 工具。`image_generation`、`web_search` 等托管工具声明会移除，不会被转成并不存在的客户端函数；被移除的类型可在插件状态页查看。
-- 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器载荷转换为实际客户端工具；客户端已声明的直接调用也接受校验。可回放的转换失败或未知工具先进入一次失败结果续接；仍失败时，能力缺失返回 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE，其它参数或路由错误返回 TOOL_BRIDGE_CALL_INVALID。custom 原文不解析为 JSON。不透传 Office 执行器、不猜测或修复可执行代码。
+- 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器载荷转换为实际客户端工具；客户端已声明的直接调用也接受校验。可回放的转换失败或未知工具在具备运行时结果通道时返回客户端失败工具结果；其余客户端进入一次服务端失败结果续接。无法安全交付或续接时，能力缺失返回 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE，其它参数或路由错误返回 TOOL_BRIDGE_CALL_INVALID。custom 原文不解析为 JSON。不透传 Office 执行器、不猜测或修复可执行代码。
 - 当前支持 Responses 桥接和独立 alpha/search 原生转发；不支持 compact、图片专用接口或计数接口，不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片上传支持消息和工具结果中的内嵌图。
 - 工具结果（`function_call_output` / `custom_tool_call_output`）中的内嵌图片先迁移到后续用户消息，再附件化。工具结果保留文本及媒体位置标记，消息注明来源调用；不会把 file_id 图片直接留在工具 output 中。
 - 请求体上限沿用宿主 gateway.max_body_size；响应缓冲上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
@@ -374,12 +383,12 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 cd backend
 go test -race ./plugins/openai-basispoints-transport/... -count=1
 TARGETS=linux-amd64,darwin-arm64 ./plugins/openai-basispoints-transport/build.sh
-SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.7.s2plugin" \
+SUB2API_TEST_BPS_PACKAGE="$PWD/plugins/openai-basispoints-transport/dist/openai-basispoints-transport-0.6.8.s2plugin" \
 SUB2API_TEST_BPS_RUNTIME=darwin-arm64 \
 go test ./plugins/openai-basispoints-transport/internal/transport -run '^TestPackagedPluginToolReplay$' -count=1
 ```
 
-`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.7.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
+`build.sh` 不执行测试，不删除旧版包。只需 Linux 部署时设 `TARGETS=linux-amd64`。生成的包位于 `dist/openai-basispoints-transport-0.6.8.s2plugin`。配置页测试使用仓库已有的 frontend jsdom 开发依赖，在 backend 目录运行 `node --test plugins/openai-basispoints-transport/tools/ui-config.test.cjs`。
 
 不设置签名参数时输出无 `signature.json` 的开发包，适用于已明确配置 `plugins.allow_unsigned: true` 的宿主。签名构建：
 

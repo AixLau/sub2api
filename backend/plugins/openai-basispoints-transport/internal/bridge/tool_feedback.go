@@ -59,10 +59,21 @@ func (r *Request) resolveResponse(ctx context.Context, root object) (object, err
 		first = capabilityFailure
 	}
 	if first != nil {
-		if r.Feedback == nil || r.feedbackUsed || stringValue(root["status"]) != "completed" {
+		if stringValue(root["status"]) != "completed" {
 			return nil, first
 		}
-		return r.continueAfterToolFailure(ctx, root, output, failures)
+		if r.canDeliverToolFailures() {
+			var err error
+			converted, err = r.clientToolFailures(ctx, output, failures)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			if r.Feedback == nil || r.feedbackUsed {
+				return nil, first
+			}
+			return r.continueAfterToolFailure(ctx, root, output, failures)
+		}
 	}
 	if stringValue(root["status"]) == "completed" && r.catalog.choice == "required" && calls == 0 {
 		return nil, toolValidationError("upstream_tool_choice", "required_tool_missing", "上游未返回 required 工具调用")
@@ -145,22 +156,13 @@ func (r *Request) continueAfterToolFailure(ctx context.Context, root object, out
 		if !isToolCall(item) {
 			continue
 		}
-		detail := object{"code": encoded("TOOL_BATCH_NOT_EXECUTED"), "message": encoded("This call was not executed because another call in the same batch could not be converted. Submit any still-needed calls again with references=[\"client-tool:FULL_CATALOG_NAME\"] and the raw payload in code.")}
-		if failure := failures[i]; failure != nil {
-			detail = object{"code": encoded("TOOL_BRIDGE_CONVERSION_FAILED"), "stage": encoded(failure.stage), "reason": encoded(failure.reason), "message": encoded(failure.Error())}
-			if failure.stage == "upstream_tool_capability" {
-				detail["code"] = encoded(FailureCode(failure))
-				detail["message"] = encoded("This tool is unavailable in the current client catalog and was not executed. Continue using only declared client tools through run_officejs with references=[\"client-tool:FULL_CATALOG_NAME\"] and the catalog's payload format, or explain the missing capability. Do not repeat the unavailable call or claim it succeeded.")
-				detail["diagnostics"] = encoded(failure.diagnostics)
-			}
-		}
 		callID := stringValue(item["call_id"])
 		typ := "function_call_output"
 		if stringValue(item["type"]) == "custom_tool_call" {
 			typ = "custom_tool_call_output"
 		}
 		result := encoded(object{"type": encoded(typ), "id": encoded(functionItemID(callID)), "call_id": item["call_id"],
-			"output": encoded(string(encoded(object{"success": encoded(false), "executed": encoded(false), "error": encoded(detail)})))})
+			"output": encoded(string(encoded(toolFailureResult(failures[i]))))})
 		input = append(input, result)
 		hidden = append(hidden, result)
 	}

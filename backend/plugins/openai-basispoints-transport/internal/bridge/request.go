@@ -109,6 +109,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 	var restored []json.RawMessage
 	restoredCalls := map[string]bool{}
 	nativeCallIDs := map[string]string{}
+	nativeResultTypes := map[string]string{}
 	trackTurn := func(record *callRecord, i int) error {
 		if i <= lastUser {
 			return nil
@@ -217,6 +218,8 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 				restored = append(restored, native)
 				restoredCalls[callID] = true
 				nativeCallIDs[callID] = nativeCallID
+				original, _ := parseObject(native)
+				nativeResultTypes[callID] = stringValue(original["type"]) + "_output"
 			}
 		case "function_call_output", "custom_tool_call_output":
 			if len(item["output"]) == 0 {
@@ -242,11 +245,12 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 					restored = append(restored, record.Original)
 					restoredCalls[callID] = true
 					nativeCallIDs[callID] = stringValue(original["call_id"])
+					nativeResultTypes[callID] = stringValue(original["type"]) + "_output"
 				}
 				nativeCallID = nativeCallIDs[callID]
 			}
 			out := object{
-				"type":    encoded("function_call_output"),
+				"type":    encoded(nativeResultTypes[callID]),
 				"call_id": encoded(nativeCallID),
 				"output":  item["output"],
 				"id":      encoded(functionItemID(nativeCallID)),
