@@ -229,3 +229,46 @@ func TestFunctionPayloadEditFeedbackExecutesOnlyCorrectedBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionPayloadHistoryUnicodeEscapes(t *testing.T) {
+	for name, raw := range map[string]string{
+		"surrogate_pairs":      "{\"command\":\"printf '\\ud83d\\ude80'\",\"nested\":[{\"\\uD834\\uDD1E\":\"\\uDBFF\\uDFFF\"}]}",
+		"literal_escapes":      "{\"command\":\"printf '\\\\ud83d\\\\ude80'\"}",
+		"unicode_and_controls": "{\"text\":\"中文 🚀\\u0000\\t\\r\\n\\u2028\\u2029\"}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, err := formatFunctionPayload([]byte(raw))
+			require.NoError(t, err)
+			restored, err := parseFunctionPayload([]byte(code))
+			require.NoError(t, err)
+			require.JSONEq(t, raw, string(restored))
+		})
+	}
+}
+
+func TestPrepareFunctionHistoryWithSurrogatePairs(t *testing.T) {
+	const arguments = "{\"command\":\"printf '\\ud83d\\ude80'\",\"timeout_ms\":1000}"
+	for _, args := range []any{arguments, json.RawMessage(arguments)} {
+		raw := encoded(map[string]any{
+			"model": "gpt-5.6-luna",
+			"tools": []any{map[string]any{"type": "function", "name": "terminal", "parameters": map[string]any{"type": "object"}}},
+			"input": []any{
+				messageItem("user", "Run the command"),
+				map[string]any{"type": "function_call", "call_id": "call_unicode", "name": "terminal", "arguments": args},
+				map[string]any{"type": "function_call_output", "call_id": "call_unicode", "output": "🚀"},
+			},
+		})
+		request, err := Prepare(context.Background(), raw, "unicode-history", memoryStore{}, nil, 256<<20)
+		require.NoError(t, err)
+		items := preparedInput(t, request)
+		require.Len(t, items, 4)
+		call, err := parseObject(items[2])
+		require.NoError(t, err)
+		require.Equal(t, "run_officejs", stringValue(call["name"]))
+		outer, err := parseObject([]byte(stringValue(call["arguments"])))
+		require.NoError(t, err)
+		restored, err := parseFunctionPayload([]byte(stringValue(outer["code"])))
+		require.NoError(t, err)
+		require.JSONEq(t, arguments, string(restored))
+	}
+}

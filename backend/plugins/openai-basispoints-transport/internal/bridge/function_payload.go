@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -102,31 +103,56 @@ func formatFunctionPayload(raw []byte) (string, error) {
 	if !json.Valid(raw) || jsonKind(raw) != "object" {
 		return "", errors.New("历史 function 工具 arguments 必须是 JSON 对象")
 	}
-	var document yaml.Node
-	if yaml.Unmarshal(raw, &document) != nil {
-		return "", errors.New("历史 function 参数无法转换为传输映射")
-	}
-	var style func(*yaml.Node, bool)
-	style = func(node *yaml.Node, key bool) {
-		number := node.Kind == yaml.ScalarNode && node.Style == 0 && jsonKind([]byte(node.Value)) == "number"
-		node.Style = 0
-		if number {
-			node.Tag = "" // Emit the original literal without a YAML type tag.
-		} else if node.Kind == yaml.ScalarNode && node.Tag == "!!str" {
+	// Decode JSON strings before constructing YAML nodes: YAML rejects JSON's
+	// UTF-16 surrogate-pair escapes. Tokens retain member order, while
+	// UseNumber preserves numeric literals beyond floating-point precision.
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var convert func(bool) (*yaml.Node, error)
+	convert = func(key bool) (*yaml.Node, error) {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		node := &yaml.Node{Kind: yaml.ScalarNode}
+		switch value := token.(type) {
+		case json.Delim:
+			node.Kind = yaml.SequenceNode
+			if value == '{' {
+				node.Kind = yaml.MappingNode
+			}
+			for decoder.More() {
+				child, err := convert(node.Kind == yaml.MappingNode && len(node.Content)%2 == 0)
+				if err != nil {
+					return nil, err
+				}
+				node.Content = append(node.Content, child)
+			}
+			_, err = decoder.Token()
+			return node, err
+		case string:
+			node.Tag, node.Value = "!!str", value
 			node.Style = yaml.SingleQuotedStyle
-			if !key && node.Value != "" {
+			if !key && value != "" {
 				node.Style = yaml.LiteralStyle
 			}
+		case json.Number:
+			node.Value = value.String()
+		case bool:
+			node.Tag, node.Value = "!!bool", strconv.FormatBool(value)
+		case nil:
+			node.Tag, node.Value = "!!null", "null"
 		}
-		for i, child := range node.Content {
-			style(child, node.Kind == yaml.MappingNode && i%2 == 0)
-		}
+		return node, nil
 	}
-	style(&document, false)
+	document, err := convert(false)
+	if err != nil {
+		return "", errors.New("历史 function 参数无法转换为传输映射")
+	}
 	var out bytes.Buffer
 	encoder := yaml.NewEncoder(&out)
 	encoder.SetIndent(2)
-	if err := encoder.Encode(&document); err != nil {
+	if err := encoder.Encode(document); err != nil {
 		return "", errors.New("历史 function 参数无法转换为传输映射")
 	}
 	if err := encoder.Close(); err != nil {
