@@ -3,6 +3,7 @@ package securityaudit
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -209,8 +210,42 @@ func logGuardFailure(snapshot PromptSnapshot, cfg ActiveConfig, kind DecisionKin
 }
 
 func (g *GuardEvaluator) scanChunk(ctx context.Context, cfg ActiveConfig, endpoints []ActiveEndpoint, chunk string) (*NormalizedResult, error) {
+	// Like asynchronous jobs, an attempt includes ordered endpoint failover.
+	// Retry only this chunk; all attempts still share Evaluate's deadline.
+	maxAttempts := cfg.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultMaxAttempts
+	}
+	maxAttempts = min(maxAttempts, MaxPromptAuditAttempts)
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, &GuardError{Code: ErrorCodeUnavailable, Timeout: errors.Is(err, context.DeadlineExceeded), Cause: err}
+		}
+		result, err := g.scanChunkAttempt(ctx, cfg, endpoints, chunk)
+		var guardErr *GuardError
+		if err == nil || attempt >= maxAttempts || !errors.As(err, &guardErr) || !guardErr.Retryable {
+			return result, err
+		}
+		// Capped exponential backoff with equal jitter prevents synchronized
+		// retries while keeping short transient failures within the deadline.
+		delay := min(100*time.Millisecond<<(attempt-1), time.Second)
+		delay = delay/2 + time.Duration(rand.Int64N(int64(delay/2)))
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, &GuardError{Code: ErrorCodeUnavailable, Timeout: errors.Is(ctx.Err(), context.DeadlineExceeded), Cause: ctx.Err()}
+		case <-timer.C:
+		}
+	}
+}
+
+func (g *GuardEvaluator) scanChunkAttempt(ctx context.Context, cfg ActiveConfig, endpoints []ActiveEndpoint, chunk string) (*NormalizedResult, error) {
 	var lastErr error
 	for index, endpoint := range endpoints {
+		if err := ctx.Err(); err != nil {
+			return nil, &GuardError{Code: ErrorCodeUnavailable, Timeout: errors.Is(err, context.DeadlineExceeded), Cause: err}
+		}
 		semaphore := g.nodeSemaphore(endpoint.ID)
 		select {
 		case semaphore <- struct{}{}:
@@ -220,7 +255,11 @@ func (g *GuardEvaluator) scanChunk(ctx context.Context, cfg ActiveConfig, endpoi
 			if g.metrics != nil {
 				g.metrics.IncBulkheadFull()
 			}
-			lastErr = &GuardError{Code: ErrorCodeUnavailable, Retryable: true}
+			// Local saturation remains fail-fast unless an actual upstream call
+			// in this attempt already returned a retryable error.
+			if lastErr == nil {
+				lastErr = &GuardError{Code: ErrorCodeUnavailable}
+			}
 			if index < len(endpoints)-1 && g.metrics != nil {
 				g.metrics.IncFailover()
 			}
