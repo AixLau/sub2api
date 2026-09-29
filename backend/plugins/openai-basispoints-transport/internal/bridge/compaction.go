@@ -2,8 +2,6 @@ package bridge
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
 )
 
@@ -109,87 +107,4 @@ func hasRemoteCompactionV2(root object, turnMetadata string) bool {
 		}
 	}
 	return false
-}
-
-// ValidateRemoteCompactionResponse verifies the semantic contract consumed by
-// Codex's remote compaction v2 collector. A successful response must contain
-// exactly one output item whose type is "compaction". Ordinary text summaries
-// are not a substitute for that item.
-func ValidateRemoteCompactionResponse(body []byte, contentType string) error {
-	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
-		return validateCompactionSSE(body)
-	}
-	root, err := parseObject(body)
-	if err != nil {
-		return errors.New("远程压缩响应不是 JSON 对象")
-	}
-	return validateCompactionOutput(root["output"])
-}
-
-func validateCompactionSSE(body []byte) error {
-	var compactions int
-	var completedOutput json.RawMessage
-	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
-	var data []string
-	flush := func() {
-		if len(data) == 0 {
-			return
-		}
-		root, err := parseObject([]byte(strings.Join(data, "\n")))
-		if err == nil {
-			switch stringValue(root["type"]) {
-			case "response.output_item.done":
-				item, _ := parseObject(root["item"])
-				if stringValue(item["type"]) == "compaction" {
-					compactions++
-				}
-			case "response.completed":
-				if response, err := parseObject(root["response"]); err == nil {
-					completedOutput = response["output"]
-				}
-			}
-		}
-		data = nil
-	}
-	for _, line := range lines {
-		if line == "" {
-			flush()
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			part := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
-			if part != "[DONE]" {
-				data = append(data, part)
-			}
-		}
-	}
-	flush()
-	if compactions == 0 {
-		if err := validateCompactionOutput(completedOutput); err != nil {
-			return err
-		}
-		return nil
-	}
-	if compactions != 1 {
-		return fmt.Errorf("远程压缩响应必须包含恰好一个 compaction 输出项，实际为 %d 个", compactions)
-	}
-	return nil
-}
-
-func validateCompactionOutput(raw json.RawMessage) error {
-	var output []json.RawMessage
-	if len(raw) == 0 || json.Unmarshal(raw, &output) != nil {
-		return errors.New("远程压缩响应缺少有效 output")
-	}
-	count := 0
-	for _, itemRaw := range output {
-		item, err := parseObject(itemRaw)
-		if err == nil && stringValue(item["type"]) == "compaction" {
-			count++
-		}
-	}
-	if count != 1 {
-		return fmt.Errorf("远程压缩响应必须包含恰好一个 compaction 输出项，实际为 %d 个", count)
-	}
-	return nil
 }
