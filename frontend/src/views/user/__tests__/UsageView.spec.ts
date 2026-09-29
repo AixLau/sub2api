@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import UsageTable from '@/components/admin/usage/UsageTable.vue'
 
 const {
   query,
@@ -96,7 +98,7 @@ const appStoreState = vi.hoisted(() => ({
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError, showWarning, showSuccess, showInfo,
-    cachedPublicSettings: { allow_user_view_error_requests: true },
+    cachedPublicSettings: appStoreState.cachedPublicSettings,
   }),
 }))
 
@@ -112,7 +114,7 @@ vi.mock('vue-i18n', async () => {
 
 const simpleStub = { template: '<div><slot /></div>' }
 const usageTableStub = {
-  props: ['columns', 'showAccountBilling', 'showUpstreamEndpoint', 'showCostBreakdown'],
+  props: ['data', 'columns', 'showAccountBilling', 'showUpstreamEndpoint', 'showCostBreakdown'],
   template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" :data-show-cost-breakdown="String(showCostBreakdown)" />',
 }
 const tokenUsageTrendStub = {
@@ -190,6 +192,10 @@ function mountUsageView() {
 }
 
 describe('user UsageView', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     query.mockReset()
     getStats.mockReset()
@@ -258,6 +264,88 @@ describe('user UsageView', () => {
     expect(list).toHaveBeenCalledTimes(1)
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it.each(['Usage records', 'Error records'])('refreshes the rolling range and data from %s', async (tab) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 28, 23, 55))
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    const keySelect = wrapper.findAllComponents(Select).find((select) =>
+      select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
+    )!
+    keySelect.vm.$emit('update:modelValue', 1)
+    keySelect.vm.$emit('change', 1)
+    if (tab === 'Error records') {
+      await wrapper.findAll('button').find((button) => button.text() === tab)!.trigger('click')
+    }
+    await flushPromises()
+
+    const now = new Date(2026, 8, 29, 0, 5)
+    vi.setSystemTime(now)
+    query.mockClear()
+    getStats.mockClear()
+    getDashboardModels.mockClear()
+    getDashboardSnapshotV2.mockClear()
+    listMyErrorRequests.mockClear()
+    const freshLog = { ...usageLog, id: 2, created_at: now.toISOString() }
+    query.mockResolvedValue({ items: [freshLog], total: 1, pages: 1 })
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+
+    const range = {
+      start_date: '2026-09-28',
+      end_date: '2026-09-29',
+      start_time: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+      end_time: now.toISOString(),
+    }
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ ...range, api_key_id: 1 }), expect.anything())
+    for (const request of [getStats, getDashboardModels, getDashboardSnapshotV2]) {
+      expect(request).toHaveBeenCalledTimes(1)
+      expect(request).toHaveBeenCalledWith(expect.objectContaining({ ...range, api_key_id: 1 }))
+    }
+    expect(wrapper.findComponent(DateRangePicker).props()).toMatchObject({
+      startDate: range.start_date, endDate: range.end_date,
+    })
+    if (tab === 'Error records') {
+      expect(listMyErrorRequests).toHaveBeenCalledTimes(1)
+      expect(listMyErrorRequests).toHaveBeenCalledWith(expect.objectContaining(range))
+    } else {
+      expect(wrapper.findComponent(UsageTable).props('data')).toEqual([freshLog])
+      expect(listMyErrorRequests).not.toHaveBeenCalled()
+    }
+    wrapper.unmount()
+  })
+
+  it('preserves a selected calendar range when refreshing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 28, 23, 55))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    wrapper.findComponent(DateRangePicker).vm.$emit('change', {
+      startDate: '2026-09-01', endDate: '2026-09-02', preset: null,
+    })
+    await flushPromises()
+    vi.setSystemTime(new Date(2026, 8, 29, 0, 5))
+    query.mockClear()
+    getStats.mockClear()
+    getDashboardModels.mockClear()
+    getDashboardSnapshotV2.mockClear()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+
+    const range = { start_date: '2026-09-01', end_date: '2026-09-02', start_time: undefined, end_time: undefined }
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(query).toHaveBeenCalledWith(expect.objectContaining(range), expect.anything())
+    for (const request of [getStats, getDashboardModels, getDashboardSnapshotV2]) {
+      expect(request).toHaveBeenCalledTimes(1)
+      expect(request).toHaveBeenCalledWith(expect.objectContaining(range))
+    }
+    wrapper.unmount()
   })
 
   it('includes API keys after the first page in both record filters and queries by the selected key', async () => {
@@ -464,7 +552,7 @@ describe('user UsageView', () => {
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.slice(1)).toBe([
       'Time,API Key Name,Model,Reasoning Effort,Inbound Endpoint,IP Address,Type,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,First Token (ms),Duration (ms)',
-      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",,203.0.113.10,Sync,Token,4057,101,278272,4,12,345',
+      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,-,,203.0.113.10,Sync,Token,4057,101,278272,4,12,345',
     ].join('\n'))
     expect(csvContent).toContain('IP Address')
     expect(csvContent).toContain('203.0.113.10')

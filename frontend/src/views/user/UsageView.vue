@@ -549,6 +549,13 @@ const applyFilters = () => {
 }
 
 const refreshData = () => {
+  // Advance the rolling window before loading any data, including errors.
+  if (filters.value.start_time && filters.value.end_time) {
+    const range = getLast24HoursRange()
+    startDate.value = range.start_date
+    endDate.value = range.end_date
+    filters.value = { ...filters.value, ...range }
+  }
   void loadLogs()
   void loadStats()
   void loadModelStats()
