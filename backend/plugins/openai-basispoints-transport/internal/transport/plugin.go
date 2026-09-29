@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.12"
+	PluginVersion = "0.6.13"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -733,11 +733,10 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 		}
 		request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
 	}
-	applyExcelClientProfile(request.Header)
-	ensureCodexIdentity(request.Header)
 	for key, value := range cfg.ExtraHeaders {
 		request.Header.Set(key, value)
 	}
+	applyBPSClientIdentity(request.Header)
 	return request, nil
 }
 
@@ -812,6 +811,16 @@ func applyExcelClientProfile(header http.Header) {
 	} {
 		header.Set(key, value)
 	}
+}
+
+// applyBPSClientIdentity keeps the BPS request aligned with the official
+// Excel client profile. BPS is not the native Codex endpoint: do not stamp
+// Codex-only originator/version/beta headers or rewrite the caller's UA.
+func applyBPSClientIdentity(header http.Header) {
+	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
+		header.Del(key)
+	}
+	applyExcelClientProfile(header)
 }
 
 // The upstream's transient processing failure ("An error occurred while
@@ -977,8 +986,7 @@ func (p *Plugin) uploadImage(ctx context.Context, endpoint string, cfg plugincon
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
-	applyExcelClientProfile(request.Header)
-	ensureCodexIdentity(request.Header)
+	applyBPSClientIdentity(request.Header)
 	accountID := strings.TrimSpace(request.Header.Get("chatgpt-account-id"))
 	if accountID == "" {
 		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))

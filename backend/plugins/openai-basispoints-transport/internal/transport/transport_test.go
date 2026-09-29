@@ -53,6 +53,10 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 		Headers: map[string]*pluginv1.HeaderValues{
 			"Content-Type":  {Values: []string{"application/json"}},
 			"Authorization": {Values: []string{"Bearer client-value"}},
+			"User-Agent":    {Values: []string{"Mozilla/5.0 ExcelWebView/1.0"}},
+			"Originator":    {Values: []string{"codex-tui"}},
+			"Version":       {Values: []string{"0.158.0"}},
+			"OpenAI-Beta":   {Values: []string{"responses=experimental"}},
 		},
 	}
 	p := New()
@@ -76,5 +80,37 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 	}
 	if strings.Contains(request.Header.Get("Authorization"), "client-value") {
 		t.Fatal("client authorization leaked into the upstream request")
+	}
+	if got := request.Header.Get("User-Agent"); got != "Mozilla/5.0 ExcelWebView/1.0" {
+		t.Fatalf("BPS user-agent was rewritten: %q", got)
+	}
+	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
+		if got := request.Header.Get(key); got != "" {
+			t.Fatalf("BPS request retained Codex header %s=%q", key, got)
+		}
+	}
+	if got := request.Header.Get("x-openai-internal-basispoints-client-product"); got != "basispoints-excel-plugin" {
+		t.Fatalf("BPS client profile: %q", got)
+	}
+}
+
+func TestApplyBPSClientIdentityDoesNotRewriteUserAgent(t *testing.T) {
+	h := http.Header{
+		"User-Agent":  []string{"excel-client/1.0"},
+		"Originator":  []string{"codex-tui"},
+		"Version":     []string{"0.158.0"},
+		"OpenAI-Beta": []string{"responses=experimental"},
+	}
+	applyBPSClientIdentity(h)
+	if got := h.Get("User-Agent"); got != "excel-client/1.0" {
+		t.Fatalf("user-agent was rewritten: %q", got)
+	}
+	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
+		if got := h.Get(key); got != "" {
+			t.Fatalf("retained Codex header %s=%q", key, got)
+		}
+	}
+	if got := h.Get("x-openai-internal-basispoints-client-agent-profile"); got != "excel" {
+		t.Fatalf("client profile: %q", got)
 	}
 }
