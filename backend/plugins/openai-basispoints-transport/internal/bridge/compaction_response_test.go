@@ -12,6 +12,7 @@ import (
 
 func TestReadRemoteCompactionResponse(t *testing.T) {
 	const item = `{"type":"compaction","encrypted_content":"opaque"}`
+	const itemAlias = `{"type":"compaction_summary","encrypted_content":"opaque"}`
 	event := func(raw string) string { return "data: " + raw + "\n\n" }
 	done := func(raw string) string { return event(`{"type":"response.output_item.done","item":` + raw + `}`) }
 	completed := event(`{"type":"response.completed","response":{"id":"resp_compaction","output":[]}}`)
@@ -22,6 +23,7 @@ func TestReadRemoteCompactionResponse(t *testing.T) {
 		wantErr                    error
 	}{
 		{name: "sse valid done then completed", body: done(item) + completed},
+		{name: "sse compaction alias", body: done(itemAlias) + completed},
 		{name: "sse comments and multiline data", body: ": progress\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\ndata: \"item\":" + item + "}\n\n" + completed},
 		{name: "sse CRLF byte identical", body: strings.ReplaceAll(done(item)+completed, "\n", "\r\n")},
 		{name: "sse ignores trailing events", body: done(item) + completed + done(item), wantBody: done(item) + completed},
@@ -45,6 +47,7 @@ func TestReadRemoteCompactionResponse(t *testing.T) {
 		{name: "sse incomplete preserved", body: event(`{"type":"response.incomplete","response":{"id":"resp_compaction","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`)},
 		{name: "sse error preserved", body: event(`{"type":"error","error":{"code":"insufficient_quota","message":"quota exhausted"}}`)},
 		{name: "json completed", mime: "application/json", body: `{"status":"completed","output":[` + item + `]}`},
+		{name: "json compaction alias", mime: "application/json", body: `{"status":"completed","output":[` + itemAlias + `]}`},
 		{name: "json failed preserves error", mime: "application/json", body: `{"status":"failed","error":{"code":"context_length_exceeded","message":"too long"}}`},
 		{name: "json error preserved", mime: "application/json", body: `{"error":{"code":"insufficient_quota","message":"quota exhausted"}}`},
 		{name: "json incomplete preserved", mime: "application/json", body: `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`},

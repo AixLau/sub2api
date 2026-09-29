@@ -131,7 +131,9 @@ func isValidCompactionItem(raw json.RawMessage) bool {
 	}
 	// encrypted_content is required by Codex's ResponseItem::Compaction; a
 	// type label alone is not a deserializable compaction item.
-	return json.Unmarshal(raw, &item) == nil && item.Type == "compaction" && item.EncryptedContent != nil
+	return json.Unmarshal(raw, &item) == nil &&
+		(item.Type == "compaction" || item.Type == "compaction_summary") &&
+		item.EncryptedContent != nil
 }
 
 func validateCompactionCount(count int) error {
