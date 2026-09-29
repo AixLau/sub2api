@@ -1,6 +1,6 @@
 # Basis Points Responses 工具桥接插件
 
-0.6.12 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。
+0.6.14 是根据 BPS 实测请求词汇表实现的独立 Sub2API 插件。默认上游是 `https://bps.openai.com/basispoints/api/responses`，桥接 `POST /responses`，独立的 `POST /alpha/search` 走原生通道。宿主负责凭据刷新、账号调度、下游协议与计费；插件复用该次请求已经携带的 OAuth Authorization 和 ChatGPT 账号 ID。0.4.5 补齐已完成请求的链路、会话与配置关联记录，并保留独立搜索路由及失败请求原始正文日志；0.6.0 起须同步更新支持请求体限额元数据的宿主；插件沿用宿主 gateway.max_body_size，缺少该元数据会明确拒绝请求。0.6.14 增加 Codex remote compaction v2 路由、严格的 compaction 输出校验、KV 回放滑动续期和独立 SSE 语义事件空闲预算。
 
 0.2.0 上线后的真实错误（`422: Invalid request body`）定位出：BPS 只接受 Excel 加载项的请求体词汇表，客户端 Responses 字段与顶层自定义字段都会被整体拒绝。0.3.0 起插件按已知字段白名单重建请求体，不再在客户端 body 上做删除式修补。
 
@@ -109,7 +109,7 @@ SSE 中的普通文本与推理保持流式；工具调用统一等待 `response
 - #484223 的已保存原始调用确认：search_content 正则中的 `\[`、`\(`、`\.` 被写入内层 JSON 字符串，三次调用及一次反馈均未通过解析。v6 将 FUNCTION 载荷改为标准 YAML 参数映射，字符串使用单引号或 literal block；使用现有 gopkg.in/yaml.v3 解码后交付原生 JSON 参数。CUSTOM 继续逐字传输，不猜测修补坏正则，不执行代码。
 - 只允许 JSON 对应的数据类型；精确保留大整数和小数，拒绝重复键、多文档、锚点、别名、自定义标签、非十进制数和非有限数。有效 JSON 自然属于 YAML 的子集，不存在额外旧协议解包入口。客户端原生历史按相同映射格式重建，宿主 KV 中的原始 BPS 调用继续原样回放。
 - #484175 走原生 structured_output 通道，约 30 秒未收到响应头。原生 HTTP 客户端现在单独使用请求总超时，解除 BPS response_header_timeout_seconds 对原生推理等待的限制；拨号和 TLS 握手仍有界，BPS 响应头超时继续生效。旧日志未保存底层网络错误，不能仅凭 30 秒断言该次一定是响应头超时而非连接超时。
-- 配置页区分“请求总超时”和“BPS 响应头超时”。不提高请求总预算，不新增网络重试。可控延迟测试验证原生响应头等待、总超时到期以及 BPS 响应头限额。
+- 配置页分别区分整次任务预算、BPS 响应头预算和 SSE 语义事件空闲预算。默认总预算为 600 秒，事件空闲预算为 300 秒；SSE 注释只表示连接活动，不会重置语义事件计时。可控延迟测试验证原生响应头等待、总超时到期以及 BPS 响应头限额。
 - 本地回归实际执行 rg 并验证匹配与结果回传；授权联调使用下列显式选定文件的命令。原生测试若返回 usage_limit_reached，只能说明账号额度阻塞，不能作为原生推理完成的证明。
 
     BPS_DISCOVERY_LIVE_AUTH_FILE='/path/to/authorization-export.json' \
@@ -392,11 +392,11 @@ BPS 只服务 Excel 加载项词汇表能表达的请求。凡是工具桥无法
 - **真实账号联调限于本文记录的模型和场景**。0.2.0 的 422 暴露了词汇表问题，0.3.0 的白名单以 Excel 加载项线上请求形态为准；JSON、SSE、gRPC、跨进程回放与打包测试不能替代所有真实模型和请求形态的联调。
 - `reasoning_effort`：`low`/`medium`/`high`/`xhigh`/`ultra` 按原值发送（`ultra` 不改档）；`none` 与客户端省略时均按 `medium` 发送；`max` 映射为 `xhigh`；`x-high`、`extra-high`、`extra_high` 映射为 `xhigh`。该策略同时适用于顶层 `reasoning_effort` 和嵌套 `reasoning.effort`，后者优先。其它未知档位（如 `minimal` 或拼写错误）在插件侧明确报错，不静默改档。
 - 客户端的 `max_output_tokens`、`temperature`、`top_p` 等采样/长度字段不再发往上游（不在 Excel 词汇表内）。这些约束由上游默认行为接管，属行为变化。
-- 需要宿主提供 HostService KV。记录按账号、上游地址及宿主隔离后的 session 标识隔离，保留 24 小时。KV 包含工具调用参数，可能含业务数据；不保存 OAuth 认证头或 refresh token。
+- 需要宿主提供 HostService KV。记录按账号、上游地址及宿主隔离后的 session 标识隔离，最长保留 7 天；活跃回放读取会重新写入相同内容并滑动续期。KV 包含工具调用参数，可能含业务数据；不保存 OAuth 认证头或 refresh token。离线超过保留期、切换账号或改变 session/KV 作用域后，原记录无法恢复。
 - 非桥接工具历史可以继续回放，但其中没有 BPS 原始 item，encrypted reasoning 的连续性只从插件接管后的新调用开始。桥接调用（`call_bps_…`）在 KV 过期或丢失后仍然报错，请开始新会话；切换账号或丢失 session/KV 状态后同理。
 - 仅桥接客户端 function/custom 工具。`image_generation`、`web_search` 等托管工具声明会移除，不会被转成并不存在的客户端函数；被移除的类型可在插件状态页查看。
 - 上游返回的每个工具调用都必须匹配当前客户端目录并通过参数类型校验。有效的执行器载荷转换为实际客户端工具；客户端已声明的直接调用也接受校验。可回放的转换失败或未知工具在具备运行时结果通道时返回客户端失败工具结果；其余客户端进入一次服务端失败结果续接。无法安全交付或续接时，能力缺失返回 TOOL_BRIDGE_CAPABILITY_UNAVAILABLE，其它参数或路由错误返回 TOOL_BRIDGE_CALL_INVALID。custom 原文不解析为 JSON。不透传 Office 执行器、不猜测或修复可执行代码。
-- 当前支持 Responses 桥接和独立 alpha/search 原生转发；不支持 compact、图片专用接口或计数接口，不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片上传支持消息和工具结果中的内嵌图。
+- 当前支持 Responses 桥接、独立 alpha/search 原生转发，以及带结构化元数据的旧摘要压缩和 remote compaction v2 原生转发；v2 响应必须含恰好一个 `compaction` output item，普通文本摘要不会被当作成功。图片专用接口或计数接口仍不支持，不会把这些请求伪装成普通 Responses。`/images/*` 等生成类端点仍然不支持；图片上传支持消息和工具结果中的内嵌图。
 - 工具结果（`function_call_output` / `custom_tool_call_output`）中的内嵌图片先迁移到后续用户消息，再附件化。工具结果保留文本及媒体位置标记，消息注明来源调用；不会把 file_id 图片直接留在工具 output 中。
 - 请求体上限沿用宿主 gateway.max_body_size；响应缓冲上限 64 MiB；每个回放 KV 记录上限 240 KiB；每次响应最多 128 个工具调用；每个 turn 最多 512 轮工具往返（防跑飞的保险丝，不是产品限制；超出时明确报错请开新 turn）。错误发生在发出上游请求之后时，返回 `request_sent=true`，防止宿主重复执行。
 - `tool_choice` 通过文本约定和返回校验表达，无法保证模型与原生 API 的行为完全一致。

@@ -15,8 +15,10 @@ const (
 	MaxResponseBytes = 64 << 20  // Response buffering is independent of the host request policy.
 	MaxItemBytes     = 240 << 10 // HostService KV values are limited to 256 KiB.
 	MaxIterations    = 512       // Runaway guard, not a product limit: real agent turns exceed 64 tool rounds.
-	StateTTLSeconds  = 24 * 60 * 60
-	callPrefix       = "call_bps_"
+	// Replay records must survive ordinary offline session recovery. Reads
+	// slide the expiry forward, while this ceiling bounds abandoned sessions.
+	StateTTLSeconds = 7 * 24 * 60 * 60
+	callPrefix      = "call_bps_"
 )
 
 // Store must be shared across plugin processes and restarts. Production uses
@@ -106,7 +108,21 @@ func loadCall(ctx context.Context, store Store, scope, id string) (*callRecord, 
 	if json.Unmarshal(raw, &record) != nil || !json.Valid(record.Original) || !json.Valid(record.Client) || record.Turn.ID == "" {
 		return nil, errors.New("工具回放状态无效")
 	}
+	if err := renewState(ctx, store, stateKey(scope, "call", id), raw); err != nil {
+		return nil, err
+	}
 	return &record, nil
+}
+
+// renewState implements a sliding lease for active sessions. The raw value is
+// written back unchanged so replay contents remain immutable; Store.Put applies
+// the configured StateTTLSeconds again. A failed renewal is surfaced instead
+// of pretending the record is durable when the host KV is unavailable.
+func renewState(ctx context.Context, store Store, key string, raw []byte) error {
+	if err := store.Put(ctx, key, raw); err != nil {
+		return errors.New("续期工具回放状态失败")
+	}
+	return nil
 }
 
 func putState(ctx context.Context, store Store, key string, value any) error {

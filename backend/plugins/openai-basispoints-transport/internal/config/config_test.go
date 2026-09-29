@@ -19,6 +19,9 @@ func TestParseDefaultsAndRejectsUnknownFields(t *testing.T) {
 	if !cfg.EnableHTTP2 {
 		t.Fatal("empty configuration must enable HTTP/2")
 	}
+	if cfg.RequestTimeoutSeconds != 600 || cfg.ResponseIdleTimeoutSeconds != 300 {
+		t.Fatalf("unexpected timeout defaults: request=%d idle=%d", cfg.RequestTimeoutSeconds, cfg.ResponseIdleTimeoutSeconds)
+	}
 	disabled, _, err := Parse([]byte(`{"enable_http2":false}`))
 	if err != nil || disabled.EnableHTTP2 {
 		t.Fatal("explicit HTTP/2 opt-out must be preserved")
@@ -39,7 +42,7 @@ func TestParseRejectsProtectedHeadersAndInvalidLimits(t *testing.T) {
 		`{"extra_headers":{"Authorization":"Bearer bad"}}`,
 		`{"extra_headers":{"x-openai-account-id":"spoof"}}`,
 		`{"request_timeout_seconds":-1}`,
-		`{"request_timeout_seconds":601}`,
+		`{"request_timeout_seconds":3601}`,
 		`{"upstream_base_url":"https://user:pass@example.test/api"}`,
 		`{"model_mapping":{"":"gpt-6-astra"}}`,
 		`{"model_mapping":{"gpt-6-astra-basispoints":""}}`,

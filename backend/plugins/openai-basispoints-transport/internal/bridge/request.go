@@ -136,6 +136,9 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		if json.Unmarshal(raw, &record) != nil || record.Turn.ID == "" || len(record.Items) == 0 {
 			return errors.New("工具反馈回放状态无效")
 		}
+		if err := renewState(ctx, store, stateKey(scope, "feedback", id), raw); err != nil {
+			return err
+		}
 		if err := trackTurn(&callRecord{Turn: record.Turn}, i); err != nil {
 			return err
 		}
@@ -160,6 +163,9 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 				var feedbackID string
 				if json.Unmarshal(raw, &feedbackID) != nil {
 					return nil, errors.New("工具反馈锚点无效")
+				}
+				if err := renewState(ctx, store, stateKey(scope, "feedback_item", id), raw); err != nil {
+					return nil, err
 				}
 				if err := restoreFeedback(feedbackID, i); err != nil {
 					return nil, err

@@ -32,7 +32,7 @@ import (
 
 const (
 	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.13"
+	PluginVersion = "0.6.14"
 	Capability    = "openai.oauth.outbound_transport.v1"
 	chunkSize     = 32 * 1024
 )
@@ -570,7 +570,9 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	if response.StatusCode >= 200 && response.StatusCode < 300 && strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
 		activity = &streamActivity{emit: emit, now: time.Now}
-		if err := adapted.Stream(requestCtx, activity.wrap(response.Body), emit); err != nil {
+		body := newSemanticTimeoutBody(activity.wrap(response.Body), time.Duration(state.cfg.ResponseIdleTimeoutSeconds)*time.Second, true)
+		defer body.Close()
+		if err := adapted.Stream(requestCtx, body, emit); err != nil {
 			return p.sendError(stream, upstreamResponseReadErrorCode(err, "TOOL_BRIDGE_STREAM_FAILED"), upstreamResponseReadErrorMessage(err), true)
 		}
 		if adapted.FailureCode != "" {
@@ -658,6 +660,26 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 		response.Header.Del("ETag")
 		response.ContentLength = -1
 	}
+	// Remote compaction v2 has a semantic output contract that cannot be
+	// validated from status codes or response.completed alone. Buffer this
+	// small control response, validate its item type/count, then deliver it
+	// unchanged to the client. The legacy summary route remains streaming and
+	// keeps its historical response contract.
+	bufferedCompaction := false
+	var compactionBody []byte
+	if response.StatusCode >= 200 && response.StatusCode < 300 && bridge.IsRemoteCompactionV2(body, headers.Get("x-codex-turn-metadata")) {
+		compactionBody, err = io.ReadAll(io.LimitReader(response.Body, bridge.MaxResponseBytes+1))
+		if err != nil || len(compactionBody) > bridge.MaxResponseBytes {
+			return p.sendError(stream, "UPSTREAM_RESPONSE_FAILED", "远程压缩响应读取失败或过大", true)
+		}
+		if err := bridge.ValidateRemoteCompactionResponse(compactionBody, response.Header.Get("Content-Type")); err != nil {
+			if diagnostic != nil {
+				diagnostic.fail("UPSTREAM_RESPONSE_INVALID")
+			}
+			return p.sendError(stream, "UPSTREAM_RESPONSE_INVALID", err.Error(), true)
+		}
+		bufferedCompaction = true
+	}
 	if err := stream.Send(&pluginv1.ForwardResponse{Frame: &pluginv1.ForwardResponse_Start{Start: responseStart(response)}}); err != nil {
 		return err
 	}
@@ -681,22 +703,36 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	if diagnostic != nil {
 		defer func() { diagnostic.entry.ResponseID = safeLogID(observer.responseID) }()
 	}
-	buffer := make([]byte, chunkSize)
-	for {
-		n, err := response.Body.Read(buffer)
-		if n > 0 {
-			if sendErr := emit(buffer[:n]); sendErr != nil {
-				return sendErr
-			}
-			if observeSemanticFailure {
-				observer.feed(buffer[:n])
-			}
+	if bufferedCompaction {
+		if err := emit(compactionBody); err != nil {
+			return err
 		}
-		if err == io.EOF {
-			break
+		if observeSemanticFailure {
+			observer.feed(compactionBody)
 		}
-		if err != nil {
-			return p.sendError(stream, upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(err), true)
+	} else {
+		var body io.ReadCloser = response.Body
+		if strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") {
+			body = newSemanticTimeoutBody(response.Body, time.Duration(state.cfg.ResponseIdleTimeoutSeconds)*time.Second, true)
+			defer body.Close()
+		}
+		buffer := make([]byte, chunkSize)
+		for {
+			n, err := body.Read(buffer)
+			if n > 0 {
+				if sendErr := emit(buffer[:n]); sendErr != nil {
+					return sendErr
+				}
+				if observeSemanticFailure {
+					observer.feed(buffer[:n])
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return p.sendError(stream, upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED"), upstreamResponseReadErrorMessage(err), true)
+			}
 		}
 	}
 	semanticFailure := observeSemanticFailure && observer.finish()

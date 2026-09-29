@@ -69,3 +69,31 @@ func TestNativeResponseHeadersUseOverallRequestBudget(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeSSECommentsDoNotResetSemanticIdleTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(": transport activity\n\n"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	cfg, err := json.Marshal(map[string]any{
+		"upstream_base_url": server.URL, "native_upstream_base_url": server.URL,
+		"proxy_mode": "disabled", "request_timeout_seconds": 10,
+		"response_idle_timeout_seconds": 1,
+	})
+	require.NoError(t, err)
+	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	raw, err := json.Marshal(map[string]any{"model": "gpt-6-sol", "input": "hello", "stream": true, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": "test", "schema": map[string]any{"type": "object"}}}})
+	require.NoError(t, err)
+	_, output, failure := forwardForTest(t, c, raw, ctx)
+	require.NotEmpty(t, output)
+	require.NotNil(t, failure)
+	require.Equal(t, "UPSTREAM_RESPONSE_TIMEOUT", failure.Code)
+}

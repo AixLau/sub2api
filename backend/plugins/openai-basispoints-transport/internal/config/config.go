@@ -36,6 +36,7 @@ type Config struct {
 	ProxyMode                    string            `json:"proxy_mode"`
 	RequestTimeoutSeconds        int               `json:"request_timeout_seconds"`
 	ResponseHeaderTimeoutSeconds int               `json:"response_header_timeout_seconds"`
+	ResponseIdleTimeoutSeconds   int               `json:"response_idle_timeout_seconds"`
 	IdleConnectionTimeoutSeconds int               `json:"idle_connection_timeout_seconds"`
 	MaxIdleConnections           int               `json:"max_idle_connections"`
 	MaxIdleConnectionsPerHost    int               `json:"max_idle_connections_per_host"`
@@ -106,8 +107,9 @@ func Defaults() Config {
 		UpstreamBaseURL:              DefaultUpstreamBaseURL,
 		AuthMode:                     DefaultAuthMode,
 		ProxyMode:                    DefaultProxyMode,
-		RequestTimeoutSeconds:        120,
+		RequestTimeoutSeconds:        600,
 		ResponseHeaderTimeoutSeconds: 30,
+		ResponseIdleTimeoutSeconds:   300,
 		IdleConnectionTimeoutSeconds: 90,
 		MaxIdleConnections:           100,
 		MaxIdleConnectionsPerHost:    20,
@@ -178,6 +180,9 @@ func applyDefaults(cfg *Config, defaults Config) {
 	if cfg.ResponseHeaderTimeoutSeconds == 0 {
 		cfg.ResponseHeaderTimeoutSeconds = defaults.ResponseHeaderTimeoutSeconds
 	}
+	if cfg.ResponseIdleTimeoutSeconds == 0 {
+		cfg.ResponseIdleTimeoutSeconds = defaults.ResponseIdleTimeoutSeconds
+	}
 	if cfg.IdleConnectionTimeoutSeconds == 0 {
 		cfg.IdleConnectionTimeoutSeconds = defaults.IdleConnectionTimeoutSeconds
 	}
@@ -243,10 +248,13 @@ func validate(cfg *Config) error {
 	if cfg.ProxyMode != "disabled" && cfg.ProxyMode != "account" {
 		return errors.New("proxy_mode 必须是 disabled 或 account")
 	}
-	if err := boundedInt("request_timeout_seconds", cfg.RequestTimeoutSeconds, 1, 600); err != nil {
+	if err := boundedInt("request_timeout_seconds", cfg.RequestTimeoutSeconds, 1, 3600); err != nil {
 		return err
 	}
 	if err := boundedInt("response_header_timeout_seconds", cfg.ResponseHeaderTimeoutSeconds, 1, 120); err != nil {
+		return err
+	}
+	if err := boundedInt("response_idle_timeout_seconds", cfg.ResponseIdleTimeoutSeconds, 1, 3600); err != nil {
 		return err
 	}
 	if err := boundedInt("idle_connection_timeout_seconds", cfg.IdleConnectionTimeoutSeconds, 1, 600); err != nil {

@@ -6,8 +6,8 @@
   var status = document.getElementById("status");
   var statusDetail = document.getElementById("status-detail");
   var busy = false;
-  var defaults = { upstream_base_url: "https://bps.openai.com/basispoints/api", proxy_mode: "account", request_timeout_seconds: 120, response_header_timeout_seconds: 30, idle_connection_timeout_seconds: 90, max_idle_connections: 100, max_idle_connections_per_host: 20, tls_min_version: "1.2", enable_http2: true, extra_headers: {}, model_mapping: {}, native_fallback: true, native_upstream_base_url: "", tools_via_native: false, bps_model_mode: "all", bps_models: [] };
-  var ids = ["upstream_base_url", "proxy_mode", "request_timeout_seconds", "response_header_timeout_seconds", "idle_connection_timeout_seconds", "max_idle_connections", "max_idle_connections_per_host", "tls_min_version", "native_upstream_base_url", "bps_model_mode"];
+  var defaults = { upstream_base_url: "https://bps.openai.com/basispoints/api", proxy_mode: "account", request_timeout_seconds: 600, response_header_timeout_seconds: 30, response_idle_timeout_seconds: 300, idle_connection_timeout_seconds: 90, max_idle_connections: 100, max_idle_connections_per_host: 20, tls_min_version: "1.2", enable_http2: true, extra_headers: {}, model_mapping: {}, native_fallback: true, native_upstream_base_url: "", tools_via_native: false, bps_model_mode: "all", bps_models: [] };
+  var ids = ["upstream_base_url", "proxy_mode", "request_timeout_seconds", "response_header_timeout_seconds", "response_idle_timeout_seconds", "idle_connection_timeout_seconds", "max_idle_connections", "max_idle_connections_per_host", "tls_min_version", "native_upstream_base_url", "bps_model_mode"];
 
   function setMessage(text, error) { message.textContent = text || ""; message.style.color = error ? "#dc2626" : "#2563eb"; }
   function updateModelSelection() { document.getElementById("bps_models").disabled = document.getElementById("bps_model_mode").value !== "selected"; }

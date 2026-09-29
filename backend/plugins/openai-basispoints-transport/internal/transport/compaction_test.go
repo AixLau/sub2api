@@ -75,3 +75,37 @@ func testCompactionBypassesInjectedToolSuite(t *testing.T, binary string) {
 		})
 	}
 }
+
+func TestRemoteCompactionV2KeepsToolsAndValidatesCompactionItem(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var responseBody atomic.Value
+	responseBody.Store(`{"id":"resp_v2","object":"response","status":"completed","output":[{"type":"compaction","encrypted_content":"opaque"}]}`)
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, responseBody.Load().(string))
+	}))
+	defer native.Close()
+	c := clientForTest(t, &testHostKV{values: map[string][]byte{}}, "")
+	cfg, err := json.Marshal(map[string]any{"upstream_base_url": native.URL, "native_upstream_base_url": native.URL, "proxy_mode": "disabled", "native_fallback": false})
+	require.NoError(t, err)
+	applied, err := c.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: cfg})
+	require.NoError(t, err)
+	require.True(t, applied.Applied)
+	body := map[string]any{
+		"model": "gpt-6-sol", "stream": false,
+		"tools":           []any{map[string]any{"type": "function", "name": "exec_command"}},
+		"client_metadata": map[string]any{"x-codex-turn-metadata": `{"request_kind":"compaction"}`},
+		"input":           []any{map[string]any{"type": "compaction_trigger"}, map[string]any{"role": "user", "content": "checkpoint"}},
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	_, output, failure := forwardForTest(t, c, raw, ctx)
+	require.Nil(t, failure)
+	require.Contains(t, string(output), `"type":"compaction"`)
+
+	responseBody.Store(`{"id":"resp_v2","object":"response","status":"completed","output":[{"type":"message","content":[]}]}`)
+	_, _, failure = forwardForTest(t, c, raw, ctx)
+	require.NotNil(t, failure)
+	require.Equal(t, "UPSTREAM_RESPONSE_INVALID", failure.Code)
+}

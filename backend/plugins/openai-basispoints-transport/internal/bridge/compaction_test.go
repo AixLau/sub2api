@@ -44,6 +44,13 @@ func TestContextCompactionRouting(t *testing.T) {
 			b["input"] = []any{map[string]any{"type": "additional_tools", "tools": []any{map[string]any{"type": "custom", "name": "exec"}}}}
 		}},
 		{name: "hosted tools remain authoritative", change: func(b map[string]any) { b["tools"] = []any{map[string]any{"type": "web_search"}} }},
+		{name: "remote v2 retains model-visible tools", change: func(b map[string]any) {
+			b["tools"] = []any{map[string]any{"type": "function", "name": "exec_command"}}
+			b["input"] = []any{map[string]any{"type": "compaction_trigger"}, map[string]any{"role": "user", "content": "Create a context checkpoint."}}
+		}, want: true},
+		{name: "remote v2 trigger is required when tools are present", change: func(b map[string]any) {
+			b["tools"] = []any{map[string]any{"type": "function", "name": "exec_command"}}
+		}, want: false},
 		{name: "invalid required catalog stays validation error", change: func(b map[string]any) { b["tool_choice"] = "required" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -60,6 +67,30 @@ func TestContextCompactionRouting(t *testing.T) {
 		})
 	}
 	require.False(t, IsContextCompaction([]byte("{"), marker))
+}
+
+func TestValidateRemoteCompactionResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		mime string
+		want bool
+	}{
+		{name: "json compaction", body: `{"output":[{"type":"compaction","encrypted_content":"opaque"}]}`, want: true},
+		{name: "json ordinary summary", body: `{"output":[{"type":"message","content":[]}]}`},
+		{name: "json duplicate", body: `{"output":[{"type":"compaction"},{"type":"compaction"}]}`},
+		{name: "sse output item", mime: "text/event-stream", body: "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"compaction\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n", want: true},
+		{name: "sse ordinary summary", mime: "text/event-stream", body: "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n\n", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateRemoteCompactionResponse([]byte(tc.body), tc.mime)
+			if tc.want {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
 }
 
 func TestDisabledCatalogDoesNotAdvertiseExecutor(t *testing.T) {
