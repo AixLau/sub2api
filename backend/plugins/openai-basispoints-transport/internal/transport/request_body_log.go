@@ -9,19 +9,24 @@ import (
 	hclog "github.com/hashicorp/go-hclog"
 )
 
-// Even JSON's worst-case six-byte escaping fits below go-plugin's 64 KiB
-// stderr line limit. Health retains only the first part, never whole bodies.
-const requestBodyPartBytes = 8 << 10
+// Keep each structured log line below go-plugin's stderr limit and cap the
+// total persisted body so one oversized request cannot fill the database.
+const (
+	requestBodyPartBytes         = 8 << 10
+	maxPersistedRequestBodyBytes = 256 << 10
+)
 
 type requestBodySnapshot struct {
-	Available        bool   `json:"available"`
-	Complete         bool   `json:"complete"`
-	Bytes            int    `json:"bytes"`
-	SHA256           string `json:"sha256,omitempty"`
-	Encoding         string `json:"encoding,omitempty"`
-	Parts            int    `json:"parts,omitempty"`
-	Preview          string `json:"preview"`
-	PreviewTruncated bool   `json:"preview_truncated"`
+	Available          bool   `json:"available"`
+	Complete           bool   `json:"complete"`
+	Bytes              int    `json:"bytes"`
+	PersistedBytes     int    `json:"persisted_bytes"`
+	PersistedTruncated bool   `json:"persisted_truncated"`
+	SHA256             string `json:"sha256,omitempty"`
+	Encoding           string `json:"encoding,omitempty"`
+	Parts              int    `json:"parts,omitempty"`
+	Preview            string `json:"preview"`
+	PreviewTruncated   bool   `json:"preview_truncated"`
 }
 
 func (d *requestDiagnostics) captureRequestBody() {
@@ -39,7 +44,13 @@ func (d *requestDiagnostics) captureRequestBody() {
 	if !utf8.Valid(d.requestBody) {
 		snapshot.Encoding = "base64"
 	}
-	for rest, first := d.requestBody, true; first || len(rest) > 0; first = false {
+	persisted := d.requestBody
+	if len(persisted) > maxPersistedRequestBodyBytes {
+		persisted = persisted[:maxPersistedRequestBodyBytes]
+		snapshot.PersistedTruncated = true
+	}
+	snapshot.PersistedBytes = len(persisted)
+	for rest, first := persisted, true; first || len(rest) > 0; first = false {
 		n := requestBodyPartLength(rest, snapshot.Encoding)
 		if first {
 			snapshot.Preview = encodeBodyPart(rest[:n], snapshot.Encoding)
@@ -74,6 +85,9 @@ func (d *requestDiagnostics) logRequestBody() {
 	d.bodyLogged = true
 	snapshot := d.entry.RequestBody
 	rest := d.requestBody
+	if len(rest) > snapshot.PersistedBytes {
+		rest = rest[:snapshot.PersistedBytes]
+	}
 	for part := 1; part <= snapshot.Parts; part++ {
 		n := requestBodyPartLength(rest, snapshot.Encoding)
 		d.p.diagnosticLogger.Log(hclog.Warn, "bps.failed_request_body",
@@ -82,6 +96,7 @@ func (d *requestDiagnostics) logRequestBody() {
 			"model", d.entry.Model, "route", d.entry.Route,
 			"error_code", d.entry.ErrorCode, "request_body_bytes", snapshot.Bytes, "request_body_sha256", snapshot.SHA256,
 			"request_body_complete", snapshot.Complete, "request_body_encoding", snapshot.Encoding,
+			"request_body_persisted_bytes", snapshot.PersistedBytes, "request_body_persisted_truncated", snapshot.PersistedTruncated,
 			"part", part, "parts", snapshot.Parts, "request_body", encodeBodyPart(rest[:n], snapshot.Encoding))
 		rest = rest[n:]
 	}

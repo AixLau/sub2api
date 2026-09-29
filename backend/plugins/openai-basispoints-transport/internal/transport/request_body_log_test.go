@@ -20,16 +20,17 @@ import (
 )
 
 type bodyLogPart struct {
-	Message   string `json:"@message"`
-	RequestID string `json:"request_id"`
-	TraceID   string `json:"trace_id"`
-	Body      string `json:"request_body"`
-	SHA256    string `json:"request_body_sha256"`
-	Encoding  string `json:"request_body_encoding"`
-	Complete  bool   `json:"request_body_complete"`
-	Bytes     int    `json:"request_body_bytes"`
-	Part      int    `json:"part"`
-	Parts     int    `json:"parts"`
+	Message        string `json:"@message"`
+	RequestID      string `json:"request_id"`
+	TraceID        string `json:"trace_id"`
+	Body           string `json:"request_body"`
+	SHA256         string `json:"request_body_sha256"`
+	Encoding       string `json:"request_body_encoding"`
+	Complete       bool   `json:"request_body_complete"`
+	Bytes          int    `json:"request_body_bytes"`
+	PersistedBytes int    `json:"request_body_persisted_bytes"`
+	Part           int    `json:"part"`
+	Parts          int    `json:"parts"`
 }
 
 func loggedBodyParts(t *testing.T, logs string) []bodyLogPart {
@@ -112,6 +113,22 @@ func TestFailedRequestBodyExactBytes(t *testing.T) {
 			require.Equal(t, len(parts), snapshot.Parts)
 		})
 	}
+}
+
+func TestFailedRequestBodyPersistenceIsBounded(t *testing.T) {
+	body := bytes.Repeat([]byte("x"), maxPersistedRequestBodyBytes+requestBodyPartBytes)
+	var logs lockedLogBuffer
+	p := New()
+	p.diagnosticLogger = hclog.New(&hclog.LoggerOptions{JSONFormat: true, Output: &logs, Level: hclog.Info})
+	_, d := p.startDiagnostics(context.Background(), &pluginv1.ForwardRequestStart{RequestId: "bounded_body"})
+	d.body(body, true)
+	d.fail("TEST_FAILURE")
+	parts := loggedBodyParts(t, logs.text())
+	require.NotEmpty(t, parts)
+	require.Equal(t, len(body), parts[0].Bytes)
+	require.Equal(t, maxPersistedRequestBodyBytes, parts[0].PersistedBytes)
+	require.Equal(t, maxPersistedRequestBodyBytes/requestBodyPartBytes, parts[0].Parts)
+	require.True(t, p.recentDiagnostics.snapshot()[0].RequestBody.PersistedTruncated)
 }
 
 func TestFailedRequestBodyUnavailable(t *testing.T) {
