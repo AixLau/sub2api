@@ -815,8 +815,15 @@ func applyExcelClientProfile(header http.Header) {
 
 // applyBPSClientIdentity keeps the BPS request aligned with the official
 // Excel client profile. BPS is not the native Codex endpoint: do not stamp
-// Codex-only originator/version/beta headers or rewrite the caller's UA.
+// Codex-only originator/version/beta headers. Default missing or blank UA and
+// Origin values after extra_headers have been applied, preserving explicit values.
 func applyBPSClientIdentity(header http.Header) {
+	if strings.TrimSpace(header.Get("User-Agent")) == "" {
+		header.Set("User-Agent", "Mozilla/5.0")
+	}
+	if strings.TrimSpace(header.Get("Origin")) == "" {
+		header.Set("Origin", "https://bps.openai.com")
+	}
 	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
 		header.Del(key)
 	}

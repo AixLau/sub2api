@@ -6,6 +6,10 @@
 
 ## 请求与回放协议
 
+### BPS 请求头默认值
+
+仅在 BPS 通道，当 `User-Agent` 或 `Origin` 缺失、为空或仅含空白时，分别补齐 `Mozilla/5.0` 和 `https://bps.openai.com`。默认值在宿主授权请求头和 `extra_headers` 合并后补齐，保留已提供的非空值；`extra_headers` 可显式覆盖这两个字段。原生通道不注入这些默认值，也不应用 BPS 的 `extra_headers`。不自动补充 `Referer` 或浏览器 Client Hints。
+
 ### 请求体大小
 
 请求体上限唯一来自宿主 gateway.max_body_size（宿主默认 256 MiB）。宿主通过专用 gRPC metadata 把当前配置传给插件；客户端 HTTP header 不能覆盖它。原始请求、转换后的 BPS 请求和工具反馈续请求都使用这个值，不再有插件私有的 64 MiB 请求上限。错误会显示生效的字节数。

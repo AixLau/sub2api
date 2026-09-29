@@ -94,6 +94,70 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
+	tests := []struct {
+		name                           string
+		incoming, host, extra          map[string]string
+		wantUA, wantOrigin             string
+		wantNativeUA, wantNativeOrigin string
+	}{
+		{name: "missing", wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com"},
+		{name: "empty", incoming: map[string]string{"User-Agent": "", "Origin": ""}, wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com"},
+		{name: "whitespace", incoming: map[string]string{"User-Agent": " \t", "Origin": " \t"}, wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com", wantNativeUA: " \t", wantNativeOrigin: " \t"},
+		{name: "caller values", incoming: map[string]string{"User-Agent": "excel-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: "excel-client/1.0", wantOrigin: "https://chatgpt.com", wantNativeUA: "excel-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "only origin missing", incoming: map[string]string{"User-Agent": "excel-client/1.0"}, wantUA: "excel-client/1.0", wantOrigin: "https://bps.openai.com", wantNativeUA: "excel-client/1.0"},
+		{name: "only UA missing", incoming: map[string]string{"Origin": "https://chatgpt.com"}, wantUA: "Mozilla/5.0", wantOrigin: "https://chatgpt.com", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "host values", host: map[string]string{"User-Agent": "host-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: "host-client/1.0", wantOrigin: "https://chatgpt.com", wantNativeUA: "host-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "explicit config", incoming: map[string]string{"User-Agent": "caller-client/1.0", "Origin": "https://chatgpt.com"}, extra: map[string]string{"User-Agent": "configured-client/1.0", "Origin": "https://bps.openai.com"}, wantUA: "configured-client/1.0", wantOrigin: "https://bps.openai.com", wantNativeUA: "caller-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := pluginconfig.Defaults()
+			cfg.ExtraHeaders = tt.extra
+			start := &pluginv1.ForwardRequestStart{Method: http.MethodPost, Headers: map[string]*pluginv1.HeaderValues{}}
+			for key, value := range tt.incoming {
+				start.Headers[key] = &pluginv1.HeaderValues{Values: []string{value}}
+			}
+			identity := outboundIdentity{token: "test-token", headers: make(http.Header)}
+			identity.headers.Set("Chatgpt-Account-Id", "test-account")
+			for key, value := range tt.host {
+				identity.headers.Set(key, value)
+			}
+			p := New()
+			target, err := url.Parse(cfg.UpstreamBaseURL + "/responses")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bps, err := p.buildRequest(context.Background(), start, target, cfg, identity, http.NoBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nativeTarget, err := url.Parse("https://chatgpt.com/backend-api/codex/responses")
+			if err != nil {
+				t.Fatal(err)
+			}
+			native, err := p.buildOutboundRequest(context.Background(), start, nativeTarget, cfg, identity, http.NoBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, check := range []struct {
+				request    *http.Request
+				ua, origin string
+			}{
+				{bps, tt.wantUA, tt.wantOrigin},
+				{native, tt.wantNativeUA, tt.wantNativeOrigin},
+			} {
+				if got := check.request.Header.Get("User-Agent"); got != check.ua {
+					t.Errorf("%s UA = %q, want %q", check.request.URL.Host, got, check.ua)
+				}
+				if got := check.request.Header.Get("Origin"); got != check.origin {
+					t.Errorf("%s Origin = %q, want %q", check.request.URL.Host, got, check.origin)
+				}
+			}
+		})
+	}
+}
+
 func TestApplyBPSClientIdentityDoesNotRewriteUserAgent(t *testing.T) {
 	h := http.Header{
 		"User-Agent":  []string{"excel-client/1.0"},
