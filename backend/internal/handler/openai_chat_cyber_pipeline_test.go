@@ -221,6 +221,10 @@ type openAIChatCyberPipelineCheckerSpy struct {
 	checkedKeys  []string
 }
 
+func (s *openAIChatCyberPipelineCheckerSpy) CyberPolicyLogOnly(context.Context, *service.APIKey) bool {
+	return false
+}
+
 func (s *openAIChatCyberPipelineCheckerSpy) FindCyberSessionBlockedForRequest(_ context.Context, apiKeyID int64, c *gin.Context, body []byte, _, _ string) string {
 	s.runtimeCalls++
 	key := service.CyberSessionExplicitBlockKey(apiKeyID, c, body)

@@ -2016,8 +2016,8 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	}
 	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, upstreamModel), s.RequestPayloadHash, s.CyberBlockBody)
 	if s.CyberBlockedThisConn != nil && s.CyberBlockPendingAfterFailover != nil {
-		*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover, service.GetOpsCyberPolicy(c) != nil, s.TurnErr)
-	} else if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
+		*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover, service.GetOpsCyberPolicy(c) != nil && !h.cyberPolicyLogOnly(c, s.APIKey), s.TurnErr)
+	} else if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil && !h.cyberPolicyLogOnly(c, s.APIKey) {
 		*s.CyberBlockedThisConn = true
 	}
 	if s.TurnErr != nil {

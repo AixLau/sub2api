@@ -750,6 +750,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ShowUserUsageRanking != after.ShowUserUsageRanking {
 		changed = append(changed, service.SettingKeyShowUserUsageRanking)
 	}
+	if before.CyberPolicyUserAllowlist != after.CyberPolicyUserAllowlist {
+		changed = append(changed, "cyber_policy_user_allowlist")
+	}
 	if before.CyberSessionBlockEnabled != after.CyberSessionBlockEnabled {
 		changed = append(changed, "cyber_session_block_enabled")
 	}

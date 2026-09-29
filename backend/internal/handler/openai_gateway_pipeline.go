@@ -617,6 +617,7 @@ func (p *OpenAIGatewayPipeline) webSocketFollowupFramePipelineStages(input openA
 }
 
 type openAIGatewayCyberSessionChecker interface {
+	CyberPolicyLogOnly(ctx context.Context, apiKey *service.APIKey) bool
 	FindCyberSessionBlockedForRequest(ctx context.Context, apiKeyID int64, c *gin.Context, body []byte, clientIP, userAgent string) string
 }
 
@@ -655,6 +656,9 @@ func (p *OpenAIGatewayPipeline) checkCyberSessionBlock(c *gin.Context, input ope
 	ctx := context.Background()
 	if c.Request != nil {
 		ctx = c.Request.Context()
+	}
+	if p.cyberSessionChecker.CyberPolicyLogOnly(ctx, input.APIKey) {
+		return result
 	}
 	clientIP, userAgent := "", ""
 	if c.Request != nil {

@@ -74,6 +74,27 @@ func TestOpenAIGatewayPipelineCheckCyberSessionAllowed(t *testing.T) {
 	require.Equal(t, []string{blockKey}, checker.checkedKeys)
 }
 
+func TestOpenAIGatewayPipelineCheckCyberSessionAllowlisted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, format := range []cyberSessionBlockFormat{cyberBlockFormatResponses, cyberBlockFormatChat, cyberBlockFormatAnthropic} {
+		body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"trusted-session","input":"hello"}`)
+		apiKey := &service.APIKey{ID: 7, UserID: 1751}
+		c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
+		blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
+		checker := &openAIGatewayPipelineCyberCheckerStub{
+			enabled: true, logOnly: true, blocked: map[string]bool{blockKey: true},
+		}
+		pipeline := newOpenAIGatewayPipeline(nil, checker)
+		result := pipeline.CheckCyberSession(c, zap.NewNop(), openAIGatewayCyberSessionInput{
+			APIKey: apiKey, Model: "gpt-5.1", Body: body, Format: format,
+		})
+		require.False(t, result.Blocked)
+		require.Empty(t, checker.checkedKeys, "allowlisted users must skip existing blocks")
+		require.Empty(t, w.Body.String())
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+}
+
 func TestOpenAIGatewayPipelineCheckCyberSessionExplicitBlockKeyStable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-session","input":"hello"}`)
@@ -207,8 +228,13 @@ func newOpenAIGatewayPipelineCyberContext(method, target string, body []byte) (*
 
 type openAIGatewayPipelineCyberCheckerStub struct {
 	enabled     bool
+	logOnly     bool
 	blocked     map[string]bool
 	checkedKeys []string
+}
+
+func (s *openAIGatewayPipelineCyberCheckerStub) CyberPolicyLogOnly(context.Context, *service.APIKey) bool {
+	return s.logOnly
 }
 
 func (s *openAIGatewayPipelineCyberCheckerStub) FindCyberSessionBlockedForRequest(_ context.Context, apiKeyID int64, c *gin.Context, body []byte, _, _ string) string {
