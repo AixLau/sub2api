@@ -245,7 +245,6 @@ func TestWireShapeMatchesExcelAddIn(t *testing.T) {
 		"top_p": 0.9,
 		"text": {"verbosity":"low"},
 		"include": ["reasoning.encrypted_content"],
-		"previous_response_id": "resp_x",
 		"prompt_cache_key": "pk-1",
 		"reasoning": {"effort":"x-high","summary":"auto"},
 		"metadata": {"client":"codex","n":3},
@@ -285,6 +284,21 @@ func TestWireShapeMatchesExcelAddIn(t *testing.T) {
 	require.NoError(t, err)
 	root2, _ := parseObject(r2.Body)
 	require.JSONEq(t, `[{"type":"compaction","compact_threshold":1000}]`, string(root2["context_management"]))
+}
+
+func TestPreviousResponseIDRejectsUnsupportedConversationContinuation(t *testing.T) {
+	for _, input := range []json.RawMessage{
+		encoded("根据刚才的代码继续修改"),
+		encoded([]any{messageItem("user", "根据刚才的代码继续修改")}),
+		encoded([]any{}),
+	} {
+		_, err := Prepare(context.Background(), encoded(map[string]any{
+			"model":                "gpt-6-astra",
+			"previous_response_id": "resp_previous",
+			"input":                input,
+		}), "previous-response", memoryStore{}, nil, 256<<20)
+		require.EqualError(t, err, "previous_response_id 增量续接尚未支持；请提交完整 input 历史并移除 previous_response_id")
+	}
 }
 
 func TestForeignToolHistoryRebuildsTransportEnvelope(t *testing.T) {

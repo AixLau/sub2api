@@ -105,7 +105,7 @@ func TestPrepareAgentMessagesTrackNewTurnsAndToolContinuations(t *testing.T) {
 		map[string]any{"type": "function_call_output", "call_id": stringValue(parentItem["call_id"]), "output": "18 C"},
 		agentMessage("/root", "/root/worker", "new task")}
 	prepare := func() *Request {
-		r, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input, "previous_response_id": "not-in-store"}), "session-a", store, nil, 256<<20)
+		r, err := Prepare(ctx, encoded(map[string]any{"tools": json.RawMessage(weatherTool), "input": input}), "session-a", store, nil, 256<<20)
 		require.NoError(t, err)
 		return r
 	}

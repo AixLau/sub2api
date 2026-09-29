@@ -285,19 +285,14 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 			restored = append(restored, cleanItem(raw))
 		}
 	}
-	if prev := stringValue(root["previous_response_id"]); prev != "" && continuation == nil && lastUser < 0 {
-		if store == nil {
-			return nil, errors.New("previous_response_id 需要宿主 KV 状态")
-		}
-		raw, found, err := store.Get(ctx, stateKey(scope, "response", prev))
-		if err != nil || !found {
-			return nil, errors.New("上一响应的 turn 状态不存在；请开始新会话")
-		}
-		var t Turn
-		if json.Unmarshal(raw, &t) != nil || t.ID == "" {
-			return nil, errors.New("上一响应的 turn 状态无效")
-		}
-		continuation = &t
+	// A response ID is only meaningful to the upstream that minted it. The
+	// BPS adapter currently persists tool replay anchors and Turn metadata, not
+	// a complete response conversation. Do not silently discard a generic
+	// previous_response_id and send only the new user message; that would look
+	// successful while losing the caller's prior context. Tool-result replay is
+	// the one supported continuation because it restores the call record above.
+	if prev := stringValue(root["previous_response_id"]); prev != "" && continuation == nil {
+		return nil, errors.New("previous_response_id 增量续接尚未支持；请提交完整 input 历史并移除 previous_response_id")
 	}
 	if continuation != nil {
 		r.Turn = *continuation
