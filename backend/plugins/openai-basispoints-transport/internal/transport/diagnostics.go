@@ -165,11 +165,17 @@ func (d *requestDiagnostics) finish(err error) {
 	if d.entry.Status >= 400 {
 		d.fail("UPSTREAM_HTTP_ERROR")
 	}
-	d.write("bps.request_finished", hclog.Info)
+	level := hclog.Info
+	if d.entry.ErrorCode != "" {
+		level = hclog.Warn
+	}
+	d.write("bps.request_finished", level)
 }
 
 func (d *requestDiagnostics) write(event string, level hclog.Level) {
-	if level >= hclog.Warn {
+	// A rejected tool may recover through feedback. Persist the original body
+	// only when Forward actually fails, never for a recoverable warning.
+	if event == "bps.request_failed" {
 		d.captureRequestBody()
 	}
 	entry := d.entry
@@ -178,8 +184,14 @@ func (d *requestDiagnostics) write(event string, level hclog.Level) {
 	if event == "bps.request_finished" {
 		d.p.recentRequests.add(entry)
 	}
-	if level >= hclog.Warn {
+	if level >= hclog.Warn && event != "bps.request_finished" {
 		d.p.recentDiagnostics.add(entry)
+	}
+	// Successful requests remain visible in the bounded Health ring and
+	// aggregate counters. Do not copy their per-attempt events to disk/Ops.
+	// Failed completion still emits the final route/retry correlation fields.
+	if level < hclog.Warn {
+		return
 	}
 	// Fields remain structured through go-plugin into the host's slog sink.
 	d.p.diagnosticLogger.Log(level, event, "plugin_id", PluginID, "plugin_version", PluginVersion,
@@ -189,7 +201,7 @@ func (d *requestDiagnostics) write(event string, level hclog.Level) {
 		"model", entry.Model, "route", entry.Route, "reason", entry.Reason, "attempt", entry.Attempt,
 		"stream", entry.Stream, "upstream_status", entry.Status, "upstream_request_id", entry.UpstreamRequestID,
 		"duration_ms", entry.DurationMS, "error_code", entry.ErrorCode, "tool", entry.Tool)
-	if level >= hclog.Warn {
+	if event == "bps.request_failed" {
 		d.logRequestBody()
 	}
 }

@@ -95,10 +95,11 @@ func testForwardDiagnosticLogs(t *testing.T, binary string) {
 			require.Contains(t, text, `"request_id":"req_diagnostic_test"`)
 			require.Contains(t, text, `"session_id":"client-diagnostic-session"`)
 			require.Contains(t, text, `"stage":"upstream_tool_code"`)
+			// The final failed request retains the body for diagnosis, while
+			// recoverable rejection entries do not duplicate it.
 			require.Contains(t, text, "private_prompt")
 			require.Contains(t, text, "private_schema")
-			require.Equal(t, string(body), d.RequestBody.Preview)
-			require.True(t, d.RequestBody.Complete)
+			require.Nil(t, d.RequestBody)
 			for _, secret := range []string{"private_summary", "private_call_id", "private_item_id", "private\\scity", "Bearer synthetic", "synthetic-account", "isolated-session"} {
 				require.NotContains(t, text, secret)
 				require.NotContains(t, health.StatusJson, secret)
