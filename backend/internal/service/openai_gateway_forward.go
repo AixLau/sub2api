@@ -20,6 +20,11 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	// HTTP-only context marker; enforce before plugin/native/compatibility
+	// routing so no fallback can send another account's replayed state.
+	if owner := HTTPAccountStateAccountID(ctx); owner > 0 && (account == nil || account.ID != owner) {
+		return nil, HTTPAccountStateUnavailable()
+	}
 	codexIdentityObservedAt := CaptureCodexIdentityObservedAt(c)
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
@@ -787,7 +792,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	lineageGroupID := getOpenAIGroupIDFromContext(c)
 	lineageEntryBody := body
 	lineageSessionHash := ""
-	if stateStore := s.getOpenAIWSStateStore(); stateStore != nil && stateStore.HasAnySessionInvalidEncryptedContent() {
+	if stateStore := s.getOpenAIWSStateStore(); HTTPAccountStateAccountID(ctx) == 0 && stateStore != nil && stateStore.HasAnySessionInvalidEncryptedContent() {
 		lineageSessionHash = s.GenerateSessionHash(c, body)
 		if invalidDigests := stateStore.GetSessionInvalidEncryptedContentDigests(lineageGroupID, lineageSessionHash); len(invalidDigests) > 0 {
 			strippedBody, strippedCount := s.stripSessionInvalidEncryptedContentLogged(
@@ -1154,7 +1159,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			respBody = s.redactAgentIdentitySensitiveBody(ctx, account, respBody)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			if !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
+			if HTTPAccountStateAccountID(ctx) == 0 && !httpInvalidEncryptedContentRetryTried && resp.StatusCode == http.StatusBadRequest && upstreamCode == "invalid_encrypted_content" {
 				decoded, decodeErr := ensureReqBody()
 				if decodeErr != nil {
 					return nil, decodeErr

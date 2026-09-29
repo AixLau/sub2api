@@ -417,6 +417,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	// Resolve the actual replayed artifacts before any wait/keepalive can send
+	// headers. Session affinity alone does not prove ownership of opaque input.
+	stateBinding, stateErr := h.gatewayService.ResolveHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, body)
+	if stateErr != nil {
+		h.writeHTTPAccountStateError(c, stateErr)
+		return
+	}
+	c.Request = c.Request.WithContext(service.WithHTTPAccountStateBinding(c.Request.Context(), stateBinding))
+	accountBound := stateBinding.AccountID > 0
+	stateWriter := &httpAccountStateWriter{ResponseWriter: c.Writer, record: func(accountID int64, keys []string) error {
+		return h.gatewayService.RecordHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, accountID, keys)
+	}}
+	c.Writer = stateWriter
 	if normalizedBody, changed := normalizeCodexAutomationBootstrap(body); changed {
 		body = normalizedBody
 		reqLog.Info("openai.codex_automation_bootstrap_normalized",
@@ -441,7 +454,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// body-signal compact：上游 unary 等待期间向下游发 SSE 注释行心跳，防止
 	// 反向代理空闲超时掐断长压缩连接（#3887）。首拍延迟一个心跳间隔，快速
 	// 失败仍走 JSON+状态码链路；未标记客户端流式或间隔为 0 时是 no-op。
-	stopCompactKeepalive := service.StartOpenAICompactSSEKeepalive(c, h.openAICompactKeepaliveInterval())
+	keepaliveInterval := h.openAICompactKeepaliveInterval()
+	if accountBound {
+		keepaliveInterval = 0
+	}
+	stopCompactKeepalive := service.StartOpenAICompactSSEKeepalive(c, keepaliveInterval)
 	defer stopCompactKeepalive()
 
 	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
@@ -617,6 +634,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			DisplayModel:               reqModel,
 			SessionHash:                &sessionHash,
 			PreviousResponseID:         previousResponseID,
+			AccountBoundState:          accountBound,
 			FailedAccountIDs:           failedAccountIDs,
 			RequiredTransport:          service.OpenAIUpstreamTransportAny,
 			RequiredCapability:         requiredCapability,
@@ -641,7 +659,21 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if routingRetry {
 			continue
 		}
+		if accountBound && account.ID != stateBinding.AccountID {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			h.writeHTTPAccountStateError(c, service.HTTPAccountStateUnavailable())
+			return
+		}
 		if previousResponseID != "" && requestPlatform == service.PlatformOpenAI && !account.IsOpenAIApiKey() {
+			if accountBound {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				h.writeHTTPAccountStateError(c, service.HTTPAccountStateUnavailable())
+				return
+			}
 			failedAccountIDs[account.ID] = struct{}{}
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -669,6 +701,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
+		stateWriter.selectAccount(account.ID)
 		stageResult := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
 			GatewayService:          h.gatewayService,
 			Kind:                    OpenAIHTTPForwardResponses,
@@ -679,6 +712,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			Result:                  &result,
 		})
 		err = stageResult.Err
+		if observationErr, _ := stateWriter.state(); observationErr != nil {
+			stateWriter.disable()
+			h.writeHTTPAccountStateError(c, observationErr)
+			return
+		}
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyHTTP = service.CyberSessionExplicitBlockKey(apiKey.ID, c, sessionHashBody)
@@ -748,6 +786,20 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if _, publishedState := stateWriter.state(); accountBound || publishedState {
+						h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
+						// An account-bound request may report a genuine transient
+						// upstream failure, but it must never turn that failure into
+						// a cross-account replay. Preserve the normal retryable HTTP
+						// status for transient failures; deterministic state failures
+						// use the explicit non-migratable error instead.
+						if httpAccountStateTransientFailover(failoverErr) {
+							h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						} else {
+							h.writeHTTPAccountStateError(c, service.HTTPAccountStateUnavailable())
+						}
+						return
+					}
 					if failoverClientGone(c) {
 						reqLog.Info("openai.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
@@ -1923,6 +1975,18 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 		return nil, false
 	}
 	return wrapReleaseOnDone(ctx, userReleaseFunc), true
+}
+
+// httpAccountStateTransientFailover preserves retryable upstream semantics
+// while the account binding still prevents selecting another account. Known
+// credential/account-state failures are deterministic even when their HTTP
+// status happens to be a 5xx.
+func httpAccountStateTransientFailover(err *service.UpstreamFailoverError) bool {
+	if err == nil || err.IsCredentialFailure() {
+		return false
+	}
+	return err.RetryableOnSameAccount || err.RequestScopedTransient ||
+		err.StatusCode == http.StatusTooManyRequests || err.StatusCode >= 500
 }
 
 // openAISlotAcquireResult 是账号槽位获取的三态结果。

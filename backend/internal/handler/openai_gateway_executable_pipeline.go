@@ -773,6 +773,7 @@ type OpenAIHTTPRoutingStage struct {
 	RequiredImageCapability    service.OpenAIImagesCapability
 	RequireCompact             bool
 	PreviousResponseCanMove    bool
+	AccountBoundState          bool
 	UseUpstreamTokenCost       bool
 	RequestPlatform            string
 	Stream                     bool
@@ -827,7 +828,17 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	var selection *service.AccountSelectionResult
 	var scheduleDecision service.OpenAIAccountScheduleDecision
 	var err error
-	if s.RequiredImageCapability != "" && s.RequiredCapability == "" {
+	if s.AccountBoundState {
+		selection, scheduleDecision, err = h.gatewayService.SelectHTTPAccountStateOwner(
+			ctx,
+			service.OpenAIAccountScheduleRequest{
+				GroupID: s.APIKey.GroupID, Platform: s.RequestPlatform,
+				RequestedModel: s.RequestedModel, RequiredTransport: s.RequiredTransport,
+				RequiredCapability: s.RequiredCapability, RequiredImageCapability: s.RequiredImageCapability,
+				RequireCompact: s.RequireCompact, ExcludedIDs: failedAccountIDs,
+			}, s.SubjectUserID,
+		)
+	} else if s.RequiredImageCapability != "" && s.RequiredCapability == "" {
 		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
 			ctx,
 			s.APIKey.GroupID,
@@ -856,6 +867,10 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 		)
 	}
 	if err != nil {
+		if s.AccountBoundState {
+			h.writeHTTPAccountStateError(c, err)
+			return ExecutableStageResult{Stop: true, Err: err}
+		}
 		fields := append(openAIAccountScheduleDecisionLogFields(scheduleDecision),
 			zap.Error(openAICompatibleSelectionErrorForLog(err, s.RequestPlatform)),
 			zap.Int("excluded_account_count", len(failedAccountIDs)),
@@ -888,6 +903,14 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	releaseFunc, refreshedAccount, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
+		if s.AccountBoundState && retryReason != openAISlotRetryNone {
+			if retryReason == openAISlotRetryCapacity {
+				s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "The original account is temporarily at capacity; this request cannot move to another account")
+			} else {
+				h.writeHTTPAccountStateError(c, service.HTTPAccountStateUnavailable())
+			}
+			return ExecutableStageResult{Stop: true}
+		}
 		if retryReason == openAISlotRetryProfitVeto && refreshedAccount != nil {
 			vetoCount := 0
 			if s.ProfitVetoCount != nil {

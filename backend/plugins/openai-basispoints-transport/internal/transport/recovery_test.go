@@ -110,7 +110,14 @@ func TestInvalidToolCallReturnsDiagnosticWithoutExecutableOutput(t *testing.T) {
 		require.Contains(t, string(out), "TOOL_BRIDGE_CALL_INVALID")
 		require.Contains(t, string(out), "参数映射")
 		if stream {
+			// The plugin has already forwarded the upstream SSE headers before
+			// the complete tool batch can be validated. Keep HTTP 200 and use
+			// Codex's known terminal stream error code instead of a reconnectable
+			// custom code.
 			require.Equal(t, int32(200), start.StatusCode)
+			require.Contains(t, string(out), "event: response.failed")
+			require.Contains(t, string(out), `"code":"invalid_prompt"`)
+			require.Contains(t, string(out), `"reason":"TOOL_BRIDGE_CALL_INVALID"`)
 		} else {
 			require.Equal(t, int32(400), start.StatusCode)
 		}

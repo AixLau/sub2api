@@ -129,7 +129,10 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 			return nil
 		}
 		raw, found, err := store.Get(ctx, stateKey(scope, "feedback", id))
-		if err != nil || !found {
+		if err != nil {
+			return stateStoreUnavailable("读取工具反馈回放状态失败")
+		}
+		if !found {
 			return errors.New("工具反馈回放状态不可用")
 		}
 		var record feedbackRecord
@@ -157,7 +160,7 @@ func Prepare(ctx context.Context, raw []byte, scope string, store Store, modelMa
 		if id := stringValue(item["id"]); id != "" && store != nil && !isToolCall(item) && typ != "function_call_output" && typ != "custom_tool_call_output" {
 			raw, found, err := store.Get(ctx, stateKey(scope, "feedback_item", id))
 			if err != nil {
-				return nil, errors.New("读取工具反馈锚点失败")
+				return nil, stateStoreUnavailable("读取工具反馈锚点失败")
 			}
 			if found {
 				var feedbackID string

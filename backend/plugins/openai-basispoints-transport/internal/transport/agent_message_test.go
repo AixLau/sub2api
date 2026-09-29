@@ -165,12 +165,8 @@ func TestForwardEncryptedAgentMessageFailsBeforeNetwork(t *testing.T) {
 			require.NoError(t, err)
 			start, out, failure := forwardForTest(t, c, body, ctx)
 			require.Nil(t, failure, "semantic failures must not trigger transport failover")
-			if stream {
-				require.Equal(t, int32(200), start.StatusCode)
-				require.Equal(t, 1, strings.Count(string(out), "event: response.failed"))
-			} else {
-				require.Equal(t, int32(400), start.StatusCode)
-			}
+			require.Equal(t, int32(400), start.StatusCode)
+			require.NotContains(t, string(out), "event: response.failed")
 			require.Contains(t, string(out), "TOOL_BRIDGE_REQUEST_INVALID")
 			require.Contains(t, string(out), "input[0].content[1]")
 			require.NotContains(t, string(out), "private")

@@ -34,7 +34,7 @@ func (r *Request) Stream(ctx context.Context, src io.Reader, emit func([]byte) e
 			s.request.Failed = true
 			s.request.FailureCode = FailureCode(err)
 			s.terminal = true
-			return s.send(object{"type": encoded("response.failed"), "response": FailureResponse(s.request.FailureCode, err, s.request.FailureSnapshot(s.snapshot))})
+			return s.send(object{"type": encoded("response.failed"), "response": streamFailureResponse(s.request.FailureCode, err, s.request.FailureSnapshot(s.snapshot))})
 		}
 		return err
 	}

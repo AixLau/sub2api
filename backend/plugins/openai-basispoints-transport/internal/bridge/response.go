@@ -72,6 +72,18 @@ func FailureResponse(code string, cause error, snapshot json.RawMessage) json.Ra
 	return encoded(response)
 }
 
+// Codex treats unknown SSE failure codes as reconnectable stream failures.
+// invalid_prompt is its terminal request-error contract; keep bridge details
+// in reason rather than relying on a custom retryable flag.
+func streamFailureResponse(code string, cause error, snapshot json.RawMessage) json.RawMessage {
+	response, _ := parseObject(FailureResponse(code, cause, snapshot))
+	detail, _ := parseObject(response["error"])
+	detail["reason"] = encoded(code)
+	detail["code"] = encoded("invalid_prompt")
+	response["error"] = encoded(detail)
+	return encoded(response)
+}
+
 // convertCall receives a COMPLETE output item. In particular, summary,
 // references, status, id and unknown future fields must survive in Original.
 // Every delivered call must resolve to a declared client tool. Invalid server

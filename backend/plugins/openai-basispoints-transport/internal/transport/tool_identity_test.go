@@ -59,12 +59,21 @@ func TestForwardToolIdentityAndDiagnostics(t *testing.T) {
 				}
 				var detail struct {
 					Code        string
+					Reason      string
 					Diagnostics struct {
 						Stage, Name, Namespace string
 					}
 				}
 				require.NoError(t, json.Unmarshal(response["error"], &detail))
-				require.Equal(t, "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", detail.Code)
+				if stream {
+					// Responses clients treat unknown stream error codes as
+					// reconnectable. The bridge emits the protocol-terminal
+					// invalid_prompt code and retains the bridge diagnosis in reason.
+					require.Equal(t, "invalid_prompt", detail.Code)
+					require.Equal(t, "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", detail.Reason)
+				} else {
+					require.Equal(t, "TOOL_BRIDGE_CAPABILITY_UNAVAILABLE", detail.Code)
+				}
 				require.Equal(t, "upstream_tool_capability", detail.Diagnostics.Stage)
 				require.Equal(t, name, detail.Diagnostics.Name)
 				require.Equal(t, "functions", detail.Diagnostics.Namespace)

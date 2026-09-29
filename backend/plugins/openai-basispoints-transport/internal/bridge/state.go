@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -26,6 +27,14 @@ const (
 type Store interface {
 	Get(context.Context, string) ([]byte, bool, error)
 	Put(context.Context, string, []byte) error
+}
+
+// A cache outage can recover on retry; an absent or corrupt replay record
+// cannot. Keep this distinction through Prepare and the HTTP response boundary.
+var ErrStateStoreUnavailable = errors.New("工具状态存储暂时不可用")
+
+func stateStoreUnavailable(message string) error {
+	return fmt.Errorf("%w: %s", ErrStateStoreUnavailable, message)
 }
 
 type Turn struct {
@@ -95,11 +104,11 @@ func isCleanItemID(id string) bool {
 
 func loadCall(ctx context.Context, store Store, scope, id string) (*callRecord, error) {
 	if store == nil {
-		return nil, errors.New("工具回放需要宿主 KV 服务")
+		return nil, stateStoreUnavailable("工具回放需要宿主 KV 服务")
 	}
 	raw, found, err := store.Get(ctx, stateKey(scope, "call", id))
 	if err != nil {
-		return nil, errors.New("读取工具回放状态失败")
+		return nil, stateStoreUnavailable("读取工具回放状态失败")
 	}
 	if !found {
 		return nil, errors.New("工具回放状态不存在或已过期；请开始新的会话")
@@ -120,21 +129,21 @@ func loadCall(ctx context.Context, store Store, scope, id string) (*callRecord, 
 // of pretending the record is durable when the host KV is unavailable.
 func renewState(ctx context.Context, store Store, key string, raw []byte) error {
 	if err := store.Put(ctx, key, raw); err != nil {
-		return errors.New("续期工具回放状态失败")
+		return stateStoreUnavailable("续期工具回放状态失败")
 	}
 	return nil
 }
 
 func putState(ctx context.Context, store Store, key string, value any) error {
 	if store == nil {
-		return errors.New("工具桥接需要宿主 KV 服务")
+		return stateStoreUnavailable("工具桥接需要宿主 KV 服务")
 	}
 	raw, err := json.Marshal(value)
 	if err != nil || len(raw) > MaxItemBytes {
 		return errors.New("工具回放状态超过宿主 KV 大小限制")
 	}
 	if err := store.Put(ctx, key, raw); err != nil {
-		return errors.New("保存工具回放状态失败")
+		return stateStoreUnavailable("保存工具回放状态失败")
 	}
 	return nil
 }
