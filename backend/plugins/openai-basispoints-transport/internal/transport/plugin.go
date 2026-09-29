@@ -428,6 +428,7 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	// Retry only pre-output errors; include ciphertext restored from KV.
 	encryptedRetried := false
+	degradedModelRetries := 0
 	for transientRetries := 0; ; {
 		// A BPS denial disables this protocol, not the underlying OAuth account.
 		// Before publishing any output, retry the original request natively so
@@ -476,6 +477,14 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 				return p.sendError(stream, upstreamResponseReadErrorCode(requestCtx.Err(), "UPSTREAM_REQUEST_FAILED"), upstreamResponseReadErrorMessage(requestCtx.Err()), true)
 			case <-time.After(tpmRateLimitRetryDelay):
 			}
+		} else if isInternalDegradedModelNotFound(response.StatusCode, adapted.Body, errorCode, message) && degradedModelRetries < maxDegradedModelRetries {
+			degradedModelRetries++
+			select {
+			case <-requestCtx.Done():
+				response.Body.Close()
+				return p.sendError(stream, upstreamResponseReadErrorCode(requestCtx.Err(), "UPSTREAM_REQUEST_FAILED"), upstreamResponseReadErrorMessage(requestCtx.Err()), true)
+			case <-time.After(degradedModelRetryDelay):
+			}
 		} else if response.StatusCode >= 400 && errorCode == "server_error" && strings.Contains(message, "An error occurred while processing") && transientRetries < maxTransientRetries {
 			transientRetries++
 			select {
@@ -485,6 +494,10 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			case <-time.After(transientRetryDelay):
 			}
 		} else {
+			if isInternalDegradedModelNotFound(response.StatusCode, adapted.Body, errorCode, message) {
+				diagnostic.fail("BPS_DEGRADED_MODEL_UNAVAILABLE")
+				response = degradedModelUnavailableResponse(response)
+			}
 			break
 		}
 		response.Body.Close()
@@ -872,8 +885,10 @@ func applyBPSClientIdentity(header http.Header) {
 // The upstream's transient processing failure ("An error occurred while
 // processing") invites a retry; long agent histories hit it intermittently.
 const (
-	maxTransientRetries = 10
-	transientRetryDelay = 250 * time.Millisecond
+	maxTransientRetries     = 10
+	transientRetryDelay     = 250 * time.Millisecond
+	maxDegradedModelRetries = 10
+	degradedModelRetryDelay = 300 * time.Millisecond
 	// TPM exhaustion is request-scoped. Retry the same idempotent Responses
 	// request before handing the final 429 to the host failover policy.
 	maxTPMRateLimitRetries = 10
