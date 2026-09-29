@@ -119,3 +119,10 @@ func responseFailure(raw []byte) (string, string) {
 	}
 	return value.Code, value.Message
 }
+
+func isTPMRateLimitMessage(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(lower, "tokens per min") ||
+		strings.Contains(lower, "tokens per minute") ||
+		strings.Contains(lower, "tpm")
+}

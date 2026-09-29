@@ -187,20 +187,20 @@ func (d *requestDiagnostics) write(event string, level hclog.Level) {
 	if level >= hclog.Warn && event != "bps.request_finished" {
 		d.p.recentDiagnostics.add(entry)
 	}
-	// Successful requests remain visible in the bounded Health ring and
-	// aggregate counters. Do not copy their per-attempt events to disk/Ops.
-	// Failed completion still emits the final route/retry correlation fields.
-	if level < hclog.Warn {
-		return
-	}
 	// Fields remain structured through go-plugin into the host's slog sink.
-	d.p.diagnosticLogger.Log(level, event, "plugin_id", PluginID, "plugin_version", PluginVersion,
+	args := []any{"plugin_id", PluginID, "plugin_version", PluginVersion,
 		"request_id", entry.RequestID, "trace_id", entry.TraceID, "account_id", entry.AccountID,
 		"session_id", entry.SessionID, "response_id", entry.ResponseID, "started_at", entry.StartedAt,
 		"config_revision", entry.ConfigRevision, "route_history", entry.RouteHistory, "retry_reason", entry.RetryReason,
 		"model", entry.Model, "route", entry.Route, "reason", entry.Reason, "attempt", entry.Attempt,
 		"stream", entry.Stream, "upstream_status", entry.Status, "upstream_request_id", entry.UpstreamRequestID,
-		"duration_ms", entry.DurationMS, "error_code", entry.ErrorCode, "tool", entry.Tool)
+		"duration_ms", entry.DurationMS, "error_code", entry.ErrorCode, "tool", entry.Tool}
+	if level < hclog.Warn {
+		// Keep the event available to the plugin's diagnostic stream while
+		// preventing high-volume successful requests from entering Ops storage.
+		args = append(args, "ops_system_log_skip", true)
+	}
+	d.p.diagnosticLogger.Log(level, event, args...)
 	if event == "bps.request_failed" {
 		d.logRequestBody()
 	}

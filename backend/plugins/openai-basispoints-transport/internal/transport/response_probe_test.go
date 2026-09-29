@@ -44,3 +44,9 @@ func TestFailureProbePreservesBytesAndClose(t *testing.T) {
 		})
 	}
 }
+
+func TestTPMRateLimitMessage(t *testing.T) {
+	require.True(t, isTPMRateLimitMessage("Rate limit reached on tokens per min (TPM)"))
+	require.True(t, isTPMRateLimitMessage("tokens per minute limit reached"))
+	require.False(t, isTPMRateLimitMessage("Rate limit exceeded"))
+}

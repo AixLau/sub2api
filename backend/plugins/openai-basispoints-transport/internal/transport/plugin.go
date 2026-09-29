@@ -468,6 +468,14 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 			diagnostic.route("native", "encrypted_retry_rejected")
 			response.Body.Close()
 			return p.forwardNative(stream, start, state, body, headers)
+		} else if response.StatusCode == http.StatusTooManyRequests && errorCode == "rate_limit_exceeded" && isTPMRateLimitMessage(message) && transientRetries < maxTPMRateLimitRetries {
+			transientRetries++
+			select {
+			case <-requestCtx.Done():
+				response.Body.Close()
+				return p.sendError(stream, upstreamResponseReadErrorCode(requestCtx.Err(), "UPSTREAM_REQUEST_FAILED"), upstreamResponseReadErrorMessage(requestCtx.Err()), true)
+			case <-time.After(tpmRateLimitRetryDelay):
+			}
 		} else if response.StatusCode >= 400 && errorCode == "server_error" && strings.Contains(message, "An error occurred while processing") && transientRetries < maxTransientRetries {
 			transientRetries++
 			select {
@@ -811,6 +819,10 @@ func applyExcelClientProfile(header http.Header) {
 const (
 	maxTransientRetries = 10
 	transientRetryDelay = 250 * time.Millisecond
+	// TPM exhaustion is request-scoped. Retry the same idempotent Responses
+	// request before handing the final 429 to the host failover policy.
+	maxTPMRateLimitRetries = 10
+	tpmRateLimitRetryDelay = 400 * time.Millisecond
 )
 
 // Codex identity the upstream validates: originator must pair with the
