@@ -41,6 +41,12 @@ func (c *Coordinator) check(ctx context.Context, req Request, legacy *LegacyDeci
 	if c == nil {
 		return allowDecision(legacy, nil)
 	}
+	if isPromptAuditExcludedModel(req.Model) {
+		if !legacyProvided {
+			legacy, _ = c.checkLegacy(ctx, req)
+		}
+		return prioritize(legacy, nil)
+	}
 	mode := ModeOff
 	if c.prompt != nil {
 		mode = c.prompt.EffectiveMode()
@@ -169,7 +175,7 @@ func unavailablePromptDecision(code string) *PromptDecision {
 // CheckSelectedAccount runs only the deferred prompt audit. Legacy moderation
 // has its own selected-account gate and must not be executed twice here.
 func (c *Coordinator) CheckSelectedAccount(ctx context.Context, req Request) *Decision {
-	if c == nil || c.prompt == nil {
+	if c == nil || c.prompt == nil || isPromptAuditExcludedModel(req.Model) {
 		return nil
 	}
 	scoped, ok := c.prompt.(interface{ RequiresSelectedAccount() bool })

@@ -93,6 +93,38 @@ func TestCoordinatorDoesNotMutateRequestBody(t *testing.T) {
 	require.Equal(t, original, body)
 }
 
+func TestCoordinatorSkipsPromptAuditForCodexAutoReview(t *testing.T) {
+	for _, mode := range []Mode{ModeOff, ModeAsync, ModeBlocking} {
+		t.Run(string(mode), func(t *testing.T) {
+			legacy := &fakeLegacyEngine{decision: &LegacyDecision{Allowed: true}}
+			prompt := &fakePromptEngine{
+				mode:     mode,
+				decision: &PromptDecision{Kind: DecisionBlock},
+				captures: true,
+			}
+
+			decision := NewCoordinator(legacy, prompt).Check(context.Background(), Request{Model: " codex-auto-review "})
+
+			require.Equal(t, DecisionAllow, decision.Kind)
+			require.True(t, decision.AllowNextStage)
+			require.Equal(t, int64(1), legacy.calls.Load())
+			require.Zero(t, prompt.enqueues.Load())
+			require.Zero(t, prompt.evaluates.Load())
+		})
+	}
+}
+
+func TestCoordinatorSelectedAccountSkipsPromptAuditForCodexAutoReview(t *testing.T) {
+	prompt := &fakePromptEngine{mode: ModeBlocking}
+	decision := NewCoordinator(nil, prompt).CheckSelectedAccount(
+		context.Background(), Request{Model: "CODEX-AUTO-REVIEW"},
+	)
+
+	require.Nil(t, decision)
+	require.Zero(t, prompt.enqueues.Load())
+	require.Zero(t, prompt.evaluates.Load())
+}
+
 func TestCoordinatorReusesLegacyDecisionWithoutSkippingPromptEngine(t *testing.T) {
 	legacy := &fakeLegacyEngine{decision: &LegacyDecision{Blocked: true}}
 	prompt := &fakePromptEngine{

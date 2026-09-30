@@ -2,6 +2,7 @@ package securityaudit
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -21,7 +22,15 @@ const (
 	ErrorCodeRequiresEnabled       = "prompt_guard_requires_audit_enabled"
 
 	DefaultGuardModel = "sileader/qwen3guard:0.6b"
+
+	// PromptAuditExcludedModel is an internal model used for Codex review
+	// workflows. Its requests must not be sent to the prompt-audit engine.
+	PromptAuditExcludedModel = "codex-auto-review"
 )
+
+func isPromptAuditExcludedModel(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), PromptAuditExcludedModel)
+}
 
 type Mode string
 
