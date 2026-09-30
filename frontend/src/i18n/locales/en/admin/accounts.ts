@@ -1699,6 +1699,11 @@ export default {
       openaiQuotaReset: {
         count: 'Credits',
         reset: 'Reset',
+        points: 'Points',
+        pointsUnlimited: 'Unlimited',
+        pointsAvailable: 'Available',
+        pointsTooltip: 'Click to refresh Codex points',
+        pointsUpdatedAt: 'Updated: {time}',
         countTooltipLoad: 'Click to load the available reset-credit count',
         countTooltipRefresh: 'Click to refresh the available reset-credit count',
         resetTooltipReady: 'Consume 1 reset credit to immediately restore the window',

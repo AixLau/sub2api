@@ -564,6 +564,11 @@ export default {
       openaiQuotaReset: {
         count: '次数',
         reset: '重置',
+        points: '点数',
+        pointsUnlimited: '无限',
+        pointsAvailable: '可用',
+        pointsTooltip: '点击刷新 Codex 点数',
+        pointsUpdatedAt: '更新于：{time}',
         countTooltipLoad: '点击查询剩余重置次数',
         countTooltipRefresh: '点击刷新剩余重置次数',
         resetTooltipReady: '消耗 1 次重置次数以立即恢复当前窗口',

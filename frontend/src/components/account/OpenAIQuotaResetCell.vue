@@ -73,7 +73,6 @@
         {{ t('admin.accounts.openaiQuotaReset.points') }}
         <span class="truncate tabular-nums">{{ creditsDisplay }}</span>
       </button>
-      <OpenAIReferralCell :account="account" />
     </div>
 
     <div v-if="creditsCacheWarning" class="text-[10px] text-amber-600 dark:text-amber-400">
@@ -191,7 +190,6 @@ import {
   type OpenAIQuotaResetResult
 } from '@/api/admin/accounts'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import OpenAIReferralCell from '@/components/account/OpenAIReferralCell.vue'
 
 const props = defineProps<{
   account: Account
@@ -230,10 +228,10 @@ const creditsDisplay = computed(() => {
   const credits = creditsData.value?.credits
   if (!credits) return '—'
   if (credits.unlimited) return t('admin.accounts.openaiQuotaReset.pointsUnlimited')
-  if (!credits.has_credits) return '0'
+  if (!credits.has_credits) return '0.00'
   const balance = credits.balance?.trim()
-  // Keep the upstream decimal string intact, including fractional points.
-  if (balance && Number.isFinite(Number(balance)) && Number(balance) >= 0) return balance
+  // Normalize all numeric point balances to two decimal places.
+  if (balance && Number.isFinite(Number(balance)) && Number(balance) >= 0) return Number(balance).toFixed(2)
   return t('admin.accounts.openaiQuotaReset.pointsAvailable')
 })
 const creditsButtonTitle = computed(() => {
