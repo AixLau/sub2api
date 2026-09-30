@@ -81,7 +81,7 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 	if strings.Contains(request.Header.Get("Authorization"), "client-value") {
 		t.Fatal("client authorization leaked into the upstream request")
 	}
-	if got := request.Header.Get("User-Agent"); got != "Mozilla/5.0 ExcelWebView/1.0" {
+	if got := request.Header.Get("User-Agent"); got != bpsWebViewUserAgent {
 		t.Fatalf("BPS user-agent was rewritten: %q", got)
 	}
 	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
@@ -101,14 +101,14 @@ func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 		wantUA, wantOrigin             string
 		wantNativeUA, wantNativeOrigin string
 	}{
-		{name: "missing", wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com"},
-		{name: "empty", incoming: map[string]string{"User-Agent": "", "Origin": ""}, wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com"},
-		{name: "whitespace", incoming: map[string]string{"User-Agent": " \t", "Origin": " \t"}, wantUA: "Mozilla/5.0", wantOrigin: "https://bps.openai.com", wantNativeUA: " \t", wantNativeOrigin: " \t"},
-		{name: "caller values", incoming: map[string]string{"User-Agent": "excel-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: "excel-client/1.0", wantOrigin: "https://chatgpt.com", wantNativeUA: "excel-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "only origin missing", incoming: map[string]string{"User-Agent": "excel-client/1.0"}, wantUA: "excel-client/1.0", wantOrigin: "https://bps.openai.com", wantNativeUA: "excel-client/1.0"},
-		{name: "only UA missing", incoming: map[string]string{"Origin": "https://chatgpt.com"}, wantUA: "Mozilla/5.0", wantOrigin: "https://chatgpt.com", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "host values", host: map[string]string{"User-Agent": "host-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: "host-client/1.0", wantOrigin: "https://chatgpt.com", wantNativeUA: "host-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "explicit config", incoming: map[string]string{"User-Agent": "caller-client/1.0", "Origin": "https://chatgpt.com"}, extra: map[string]string{"User-Agent": "configured-client/1.0", "Origin": "https://bps.openai.com"}, wantUA: "configured-client/1.0", wantOrigin: "https://bps.openai.com", wantNativeUA: "caller-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "missing", wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com"},
+		{name: "empty", incoming: map[string]string{"User-Agent": "", "Origin": ""}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com"},
+		{name: "whitespace", incoming: map[string]string{"User-Agent": " \t", "Origin": " \t"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: " \t", wantNativeOrigin: " \t"},
+		{name: "caller values", incoming: map[string]string{"User-Agent": "excel-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeUA: "excel-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "only origin missing", incoming: map[string]string{"User-Agent": "excel-client/1.0"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: "excel-client/1.0"},
+		{name: "only UA missing", incoming: map[string]string{"Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "host values", host: map[string]string{"User-Agent": "host-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeUA: "host-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "explicit config", incoming: map[string]string{"User-Agent": "caller-client/1.0", "Origin": "https://chatgpt.com"}, extra: map[string]string{"User-Agent": "configured-client/1.0", "Origin": "https://bps.openai.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: "caller-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,7 +158,7 @@ func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 	}
 }
 
-func TestApplyBPSClientIdentityDoesNotRewriteUserAgent(t *testing.T) {
+func TestApplyBPSClientIdentityUsesFixedWebViewUserAgent(t *testing.T) {
 	h := http.Header{
 		"User-Agent":  []string{"excel-client/1.0"},
 		"Originator":  []string{"codex-tui"},
@@ -166,8 +166,8 @@ func TestApplyBPSClientIdentityDoesNotRewriteUserAgent(t *testing.T) {
 		"OpenAI-Beta": []string{"responses=experimental"},
 	}
 	applyBPSClientIdentity(h)
-	if got := h.Get("User-Agent"); got != "excel-client/1.0" {
-		t.Fatalf("user-agent was rewritten: %q", got)
+	if got := h.Get("User-Agent"); got != bpsWebViewUserAgent {
+		t.Fatalf("user-agent = %q, want %q", got, bpsWebViewUserAgent)
 	}
 	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
 		if got := h.Get(key); got != "" {

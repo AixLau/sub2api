@@ -12,7 +12,7 @@
 
 ### BPS 请求头默认值
 
-仅在 BPS 通道，当 `User-Agent` 或 `Origin` 缺失、为空或仅含空白时，分别补齐 `Mozilla/5.0` 和 `https://bps.openai.com`。默认值在宿主授权请求头和 `extra_headers` 合并后补齐，保留已提供的非空值；`extra_headers` 可显式覆盖这两个字段。原生通道不注入这些默认值，也不应用 BPS 的 `extra_headers`。不自动补充 `Referer` 或浏览器 Client Hints。
+仅在 BPS 通道固定使用完整的 Windows Edge WebView2 风格 UA：`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.37`，并在缺失时使用 `https://bps.openai.com` 作为 Origin。该 UA 会覆盖宿主请求和 `extra_headers` 中的 User-Agent；原生通道保留宿主原始 UA，也不应用 BPS 的 `extra_headers`。不自动补充 `Referer` 或浏览器 Client Hints。
 
 ### 请求体大小
 
