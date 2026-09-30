@@ -1,11 +1,11 @@
 schema_version: 1
 verified_upstream: 96f4c115c9749078f90cbf210a01d39baf3f53b6
 target_upstream: 96f4c115c9749078f90cbf210a01d39baf3f53b6
-merge_commit: 716d28a1d
-product_head: 716d28a1d
+merge_commit: 716d28a1db43154d7cab13379a4aaf740d03281a
+product_head: a32800eaedf5cc0cc184218062de0dfd22ae532f
 product_branch: main
 upstream_remote: upstream
 upstream_branch: main
-recorded_at: "2026-09-30T23:20:00+08:00"
+recorded_at: "2026-09-30T23:50:22+08:00"
 upstream_version: v0.2.11
 product_version: v0.2.11-local
