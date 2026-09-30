@@ -3,11 +3,18 @@ import { flushPromises, mount } from '@vue/test-utils'
 import OpenAIQuotaResetCell from '../OpenAIQuotaResetCell.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { Account } from '@/types'
-import { refreshOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
+import {
+  refreshOpenAIQuota,
+  resetOpenAIQuota,
+  refreshOpenAIReferrals,
+  sendOpenAIReferralInvite,
+} from '@/api/admin/accounts'
 
 vi.mock('@/api/admin/accounts', () => ({
   refreshOpenAIQuota: vi.fn(),
   resetOpenAIQuota: vi.fn(),
+  refreshOpenAIReferrals: vi.fn(),
+  sendOpenAIReferralInvite: vi.fn(),
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -62,9 +69,38 @@ const resetButton = (wrapper: ReturnType<typeof mount>) =>
 beforeEach(() => {
   vi.mocked(refreshOpenAIQuota).mockReset()
   vi.mocked(resetOpenAIQuota).mockReset()
+  vi.mocked(refreshOpenAIReferrals).mockReset()
+  vi.mocked(sendOpenAIReferralInvite).mockReset()
 })
 
 describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
+  it('显示缓存的 Codex 点数和账号邀请入口', () => {
+    const account = makeAccount({
+      parent_account_id: null,
+      extra: {
+        codex_credits_snapshot: {
+          credits: { has_credits: true, unlimited: false, balance: '123.45' },
+          fetched_at: 1770000000,
+        },
+        codex_referral_snapshot: {
+          should_show: true,
+          remaining_send_capacity: 2,
+          remaining_reward_capacity: 2,
+          requires_explicit_confirmation: true,
+          program_id: 'codex_referral_consumer',
+          available_invites: 2,
+          fetched_at: 1770000000,
+        },
+      },
+    })
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
+
+    expect(wrapper.get('[data-testid="codex-credits"]').text()).toContain('123.45')
+    expect(wrapper.get('[data-testid="referral-count"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="referral-open"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('影子账号(parent_account_id 非空)的 reset 按钮被禁用且提示在母账号重置', () => {
     const account = makeAccount({ parent_account_id: 100 })
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
