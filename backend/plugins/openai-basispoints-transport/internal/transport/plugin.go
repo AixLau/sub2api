@@ -673,8 +673,9 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 		response.Header.Del("ETag")
 		response.ContentLength = -1
 	}
+	remoteCompaction := response.StatusCode >= 200 && response.StatusCode < 300 && bridge.IsRemoteCompactionV2(body, headers.Get("x-codex-turn-metadata"))
 	var responseBody io.ReadCloser = response.Body
-	if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
+	if remoteCompaction || strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
 		responseBody = newSemanticTimeoutBody(response.Body, time.Duration(state.cfg.ResponseIdleTimeoutSeconds)*time.Second, true)
 		defer responseBody.Close()
 	}
@@ -686,7 +687,7 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	// keeps its historical response contract.
 	bufferedCompaction := false
 	var compactionBody []byte
-	if response.StatusCode >= 200 && response.StatusCode < 300 && bridge.IsRemoteCompactionV2(body, headers.Get("x-codex-turn-metadata")) {
+	if remoteCompaction {
 		compactionBody, err = bridge.ReadRemoteCompactionResponse(responseBody, response.Header.Get("Content-Type"))
 		if err != nil {
 			code := upstreamResponseReadErrorCode(err, "UPSTREAM_RESPONSE_FAILED")
@@ -720,7 +721,8 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	// Forward the response body untouched. text/event-stream is copied chunk by
 	// chunk without bridge.Stream() so no SSE events are rewritten here.
 	observeSemanticFailure := response.StatusCode >= 200 && response.StatusCode < 300
-	observer := nativeFailureObserver{sse: strings.Contains(response.Header.Get("Content-Type"), "text/event-stream")}
+	observer := nativeFailureObserver{sse: strings.Contains(response.Header.Get("Content-Type"), "text/event-stream") ||
+		(bufferedCompaction && bridge.IsCompactionSSE(compactionBody, response.Header.Get("Content-Type")))}
 	if diagnostic != nil {
 		defer func() { diagnostic.entry.ResponseID = safeLogID(observer.responseID) }()
 	}

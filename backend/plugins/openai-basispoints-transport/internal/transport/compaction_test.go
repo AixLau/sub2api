@@ -117,13 +117,16 @@ func TestRemoteCompactionV2SSETerminalContract(t *testing.T) {
 	failed := wireEvent("response.failed", map[string]any{"response": map[string]any{"id": "resp_v2", "status": "failed", "error": map[string]any{"code": "context_length_exceeded", "message": "too long"}}})
 	for _, tc := range []struct {
 		name, response, wantFailure string
+		contentType                 string
 		holdOpen, upstreamFailed    bool
 	}{
 		{name: "completed without HTTP EOF", response: done + completed, holdOpen: true},
+		{name: "completed with JSON Content-Type", response: done + completed, contentType: "application/json", holdOpen: true},
 		{name: "snapshot without done", response: wireEvent("response.completed", map[string]any{"response": map[string]any{"id": "resp_v2", "output": []any{item}}}), holdOpen: true, wantFailure: "UPSTREAM_RESPONSE_INVALID"},
 		{name: "done without completed", response: done, wantFailure: "UPSTREAM_RESPONSE_FAILED"},
 		{name: "duplicate done", response: done + done + completed, holdOpen: true, wantFailure: "UPSTREAM_RESPONSE_INVALID"},
 		{name: "context limit failure", response: failed, holdOpen: true, upstreamFailed: true},
+		{name: "context limit failure with JSON Content-Type", response: failed, contentType: "application/json", holdOpen: true, upstreamFailed: true},
 		{name: "failure before output validation", response: done + done + failed, holdOpen: true, upstreamFailed: true},
 		{name: "quota failure", response: wireEvent("error", map[string]any{"error": map[string]any{"code": "insufficient_quota", "message": "quota exhausted"}}), holdOpen: true, upstreamFailed: true},
 		{name: "incomplete", response: wireEvent("response.incomplete", map[string]any{"response": map[string]any{"id": "resp_v2", "status": "incomplete", "incomplete_details": map[string]any{"reason": "max_output_tokens"}}}), holdOpen: true, upstreamFailed: true},
@@ -142,7 +145,11 @@ func TestRemoteCompactionV2SSETerminalContract(t *testing.T) {
 					return
 				}
 				requestBody <- raw
-				w.Header().Set("Content-Type", "text/event-stream")
+				contentType := tc.contentType
+				if contentType == "" {
+					contentType = "text/event-stream"
+				}
+				w.Header().Set("Content-Type", contentType)
 				_, _ = io.WriteString(w, tc.response)
 				w.(http.Flusher).Flush()
 				if tc.holdOpen {
@@ -197,7 +204,9 @@ func TestRemoteCompactionV2SSEIdleTimeout(t *testing.T) {
 	defer cancel()
 	release := make(chan struct{})
 	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
+		// Exercise the same mislabeled streaming response that can otherwise be
+		// mistaken for a JSON compaction response by the transport.
+		w.Header().Set("Content-Type", "application/json")
 		ticker := time.NewTicker(25 * time.Millisecond)
 		defer ticker.Stop()
 		for {

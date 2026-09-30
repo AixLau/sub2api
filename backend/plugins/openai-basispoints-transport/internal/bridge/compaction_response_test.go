@@ -23,6 +23,7 @@ func TestReadRemoteCompactionResponse(t *testing.T) {
 		wantErr                    error
 	}{
 		{name: "sse valid done then completed", body: done(item) + completed},
+		{name: "sse mislabeled as JSON", mime: "application/json", body: done(item) + completed},
 		{name: "sse compaction alias", body: done(itemAlias) + completed},
 		{name: "sse comments and multiline data", body: ": progress\n\nevent: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\ndata: \"item\":" + item + "}\n\n" + completed},
 		{name: "sse CRLF byte identical", body: strings.ReplaceAll(done(item)+completed, "\n", "\r\n")},

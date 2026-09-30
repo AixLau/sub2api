@@ -23,7 +23,19 @@ var ErrCompactionResponseInvalid = errors.New("远程压缩响应无效")
 // The caller owns cancellation, idle deadlines and closing src.
 func ReadRemoteCompactionResponse(src io.Reader, contentType string) ([]byte, error) {
 	src = io.LimitReader(src, MaxResponseBytes+1)
-	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+	if isEventStreamContentType(contentType) {
+		return readCompactionSSE(src)
+	}
+	// Some gateways incorrectly label a streaming Responses body as JSON. The
+	// wire framing is authoritative here: preserve the prefix and inspect its
+	// first SSE field before falling back to the JSON response contract.
+	reader := bufio.NewReader(src)
+	prefix, isSSE, err := sniffSSEPrefix(reader)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	src = io.MultiReader(bytes.NewReader(prefix), reader)
+	if isSSE {
 		return readCompactionSSE(src)
 	}
 	body, err := io.ReadAll(src)
@@ -59,6 +71,64 @@ func ReadRemoteCompactionResponse(src io.Reader, contentType string) ([]byte, er
 		return nil, err
 	}
 	return body, nil
+}
+
+// IsCompactionSSE reports whether a buffered compaction response uses SSE
+// framing, even when the upstream Content-Type is missing or mislabeled.
+// Native forwarding uses this to keep failure observation aligned with the
+// parser that validated the response.
+func IsCompactionSSE(body []byte, contentType string) bool {
+	if isEventStreamContentType(contentType) {
+		return true
+	}
+	_, isSSE, _ := sniffSSEPrefix(bufio.NewReader(bytes.NewReader(body)))
+	return isSSE
+}
+
+func isEventStreamContentType(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
+}
+
+func sniffSSEPrefix(reader *bufio.Reader) ([]byte, bool, error) {
+	const maxPrefix = 4 << 10
+	var prefix []byte
+	for len(prefix) < maxPrefix {
+		b, err := reader.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return prefix, false, nil
+			}
+			return prefix, false, err
+		}
+		prefix = append(prefix, b)
+		if b == ' ' || b == '\t' || b == '\r' || b == '\n' {
+			continue
+		}
+		if b != ':' && b != 'd' && b != 'e' && b != 'i' && b != 'r' {
+			return prefix, false, nil
+		}
+		for len(prefix) < maxPrefix {
+			b, err = reader.ReadByte()
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					return prefix, false, err
+				}
+				break
+			}
+			prefix = append(prefix, b)
+			if b == '\n' {
+				break
+			}
+		}
+		line := strings.TrimLeft(string(prefix), "\ufeff \t\r\n")
+		for _, field := range []string{"data:", "event:", "id:", "retry:", ":"} {
+			if strings.HasPrefix(line, field) {
+				return prefix, true, nil
+			}
+		}
+		return prefix, false, nil
+	}
+	return prefix, false, nil
 }
 
 func readCompactionSSE(src io.Reader) ([]byte, error) {
