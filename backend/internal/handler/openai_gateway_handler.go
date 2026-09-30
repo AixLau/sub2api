@@ -149,6 +149,11 @@ type grokMediaEligibilityProber interface {
 
 const maxOpenAIFirstOutputTimeoutSwitches = 1
 
+// openAIHTTPAccountStateGuardEnabled 控制"把 Responses 重放状态绑定到账号"的守卫。
+// 关闭时不再解析归属、不再拒绝请求、不再把请求钉在原账号，也不再写入归属索引，
+// 即恢复 09-30 之前由账号调度自行决定的语义。置为 true 可恢复该守卫行为。
+const openAIHTTPAccountStateGuardEnabled = false
+
 func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bool {
 	return result.SucceededForScheduling()
 }
@@ -427,17 +432,25 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	// Resolve the actual replayed artifacts before any wait/keepalive can send
 	// headers. Session affinity alone does not prove ownership of opaque input.
-	stateBinding, stateErr := h.gatewayService.ResolveHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, body)
-	if stateErr != nil {
-		h.writeHTTPAccountStateError(c, stateErr)
-		return
+	stateBinding := service.HTTPAccountStateBinding{}
+	if openAIHTTPAccountStateGuardEnabled {
+		var stateErr error
+		stateBinding, stateErr = h.gatewayService.ResolveHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, body)
+		if stateErr != nil {
+			h.writeHTTPAccountStateError(c, stateErr)
+			return
+		}
 	}
 	c.Request = c.Request.WithContext(service.WithHTTPAccountStateBinding(c.Request.Context(), stateBinding))
 	accountBound := stateBinding.AccountID > 0
 	stateWriter := &httpAccountStateWriter{ResponseWriter: c.Writer, record: func(accountID int64, keys []string) error {
 		return h.gatewayService.RecordHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, accountID, keys)
 	}}
-	c.Writer = stateWriter
+	// 未启用守卫时不装配 writer：它的两个拒绝出口（记录失败、以及 publishedState
+	// 触发的禁止换号）都独立于 accountBound，只关解析仍会漏拒绝。
+	if openAIHTTPAccountStateGuardEnabled {
+		c.Writer = stateWriter
+	}
 	if normalizedBody, changed := normalizeCodexAutomationBootstrap(body); changed {
 		body = normalizedBody
 		reqLog.Info("openai.codex_automation_bootstrap_normalized",
