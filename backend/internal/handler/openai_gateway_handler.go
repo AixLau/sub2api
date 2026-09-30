@@ -544,7 +544,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	seedOpenAIForwardImageIntentHint(c, channelMapping.Mapped, imageIntent)
 	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
 	c.Request = c.Request.WithContext(service.WithOpenAIForwardModel(
-		c.Request.Context(),
+		requestCtx,
 		forwardModel,
 		legacyCompact,
 	))
@@ -601,6 +601,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	defer inflightRelease()
+	requestCtx = c.Request.Context()
 
 	// Generate session hash (header first; fallback to prompt_cache_key).
 	// The pre-forward pipeline already rejects blocked cyber sessions.

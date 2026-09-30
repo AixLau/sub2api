@@ -145,6 +145,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	defer inflightRelease()
+	requestCtx = c.Request.Context()
 
 	// Parse request for session hash
 	bodyRef := service.NewRequestBodyRef(body)

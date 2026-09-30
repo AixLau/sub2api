@@ -1237,13 +1237,9 @@ func normalizeGPT6ResponsesSampling(body []byte, model string) ([]byte, bool, er
 	return out, changed, nil
 }
 
-func normalizeOpenAIResponsesReasoningMode(body []byte, modelArgs ...string) ([]byte, bool, error) {
+func normalizeOpenAIResponsesReasoningMode(body []byte, model string) ([]byte, bool, error) {
 	if len(body) == 0 {
 		return body, false, nil
-	}
-	model := ""
-	if len(modelArgs) > 0 {
-		model = modelArgs[0]
 	}
 	if model == "" {
 		model = gjson.GetBytes(body, "model").String()
@@ -1341,7 +1337,7 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 		changed = true
 	}
 	if account != nil && account.IsOpenAI() && account.IsOAuth() {
-		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningMode(normalized); err != nil {
+		if reasoningBody, reasoningChanged, err := normalizeOpenAIResponsesReasoningMode(normalized, account.GetMappedModel(gjson.GetBytes(normalized, "model").String())); err != nil {
 			return body, false, err
 		} else if reasoningChanged {
 			normalized = reasoningBody
@@ -1447,7 +1443,7 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	if err != nil {
 		return body, false, err
 	}
-	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(normalized); reasoningErr != nil {
+	if reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(normalized, ""); reasoningErr != nil {
 		return body, false, reasoningErr
 	} else if reasoningChanged {
 		normalized = reasoningBody
@@ -2427,7 +2423,7 @@ func normalizeOpenAIReasoningEffortForModel(raw, model string) string {
 // supportsOpenAIReasoningEffortMax reports model families whose upstream scale
 // has a distinct max level. Other models keep the legacy max -> xhigh behavior.
 func supportsOpenAIReasoningEffortMax(model string) bool {
-	if isOpenAIGPT6AstraModel(model) || isOpenAIGPT56Model(model) {
+	if isOpenAIGPT6Model(model) || isOpenAIGPT56Model(model) {
 		return true
 	}
 

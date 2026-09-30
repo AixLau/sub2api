@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -83,18 +84,22 @@ func TestGatewayOpenAICompatibleHandlersClaudeCodeOnlyFallback(t *testing.T) {
 	}
 
 	endpoints := []struct {
-		name string
-		path string
-		body string
-		call func(*GatewayHandler, *gin.Context)
+		name     string
+		path     string
+		body     string
+		handler  string
+		protocol string
+		call     func(*GatewayHandler, *gin.Context)
 	}{
 		{
 			name: "responses", path: "/v1/responses",
+			handler: "GatewayHandler.Responses", protocol: service.ContentModerationProtocolOpenAIResponses,
 			body: `{"model":"claude-sonnet-4-5","input":"hello","stream":false}`,
 			call: (*GatewayHandler).Responses,
 		},
 		{
 			name: "chat completions", path: "/v1/chat/completions",
+			handler: "GatewayHandler.ChatCompletions", protocol: service.ContentModerationProtocolOpenAIChat,
 			body: `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}],"stream":false}`,
 			call: (*GatewayHandler).ChatCompletions,
 		},
@@ -156,6 +161,10 @@ func TestGatewayOpenAICompatibleHandlersClaudeCodeOnlyFallback(t *testing.T) {
 				req := httptest.NewRequest(http.MethodPost, ep.path, bytes.NewBufferString(ep.body)).WithContext(ctx)
 				req.Header.Set("Content-Type", "application/json")
 				c.Request = req
+				moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
+					Method: http.MethodPost, Path: ep.path, Handler: ep.handler, Protocol: ep.protocol,
+					Pipeline: moderationcoverage.PipelineGatewayPreForward,
+				}))
 				c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 				c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
 
