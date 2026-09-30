@@ -45,6 +45,7 @@ UI 到宿主：
 | `config.save` | `config` 对象 | 规范化后的 `config` |
 | `config.test` | 无 | `result` |
 | `plugin.status` | 无 | `result`（`Health`：`{healthy, message, status_json}`） |
+| `plugin.bps403.clear` | 无 | `result`（`{cleared}`） |
 | `ui.resize` | `height` | 无响应 |
 | `ui.notify` | `level`、`message` | 无响应 |
 

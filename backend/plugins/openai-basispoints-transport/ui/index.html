@@ -96,6 +96,9 @@
         <span id="status">加载中…</span>
       </section>
       <p id="status-detail" aria-live="polite"></p>
+      <div class="status-actions">
+        <button id="clear-bps403" type="button" class="secondary" hidden>清除 BPS 403 隔离状态</button>
+      </div>
       <details class="diagnostics">
         <summary>最近 100 条已完成请求链路</summary>
         <p>每个请求一条，含请求/会话/响应 ID、最终通道、原因、重试及完整通道切换历史；不包含正文。按完成时间保留，重启后清空。未进入插件的宿主直连请求不计入；跨重启记录请查询宿主日志 bps.request_finished。</p>

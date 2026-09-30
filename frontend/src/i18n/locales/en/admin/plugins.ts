@@ -56,6 +56,7 @@ export default {
     disableSuccess: 'Plugin disabled',
     uninstallSuccess: 'Plugin uninstalled',
     testSuccess: 'Plugin test passed',
+    bps403ClearSuccess: 'BPS 403 isolation state cleared',
     confirmDisable: 'Disable this plugin? New OAuth requests immediately return to the built-in Sub2API path.',
     confirmUninstall: 'Uninstall this plugin? It must be disabled first. Installed files and configuration will be removed.',
     confirmUntested: 'This plugin is compatible but has not declared the current Sub2API version as tested. Enable it anyway?',

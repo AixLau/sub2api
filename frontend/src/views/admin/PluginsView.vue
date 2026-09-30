@@ -648,7 +648,8 @@ async function handleBridgeMessage(event: MessageEvent): Promise<void> {
     message.type === "config.load" ||
     message.type === "config.save" ||
     message.type === "config.test" ||
-    message.type === "plugin.status";
+    message.type === "plugin.status" ||
+    message.type === "plugin.bps403.clear";
   if (expectsResponse) {
     if (!requestID || pendingBridgeRequests.has(requestID)) return;
     registerBridgeRequest(requestID);
@@ -703,6 +704,14 @@ async function handleBridgeMessage(event: MessageEvent): Promise<void> {
         // channel for any plugin to surface live state without abusing config.test.
         const result = await adminAPI.plugins.status(configPlugin.value!.id);
         postBridgeResult(message, { ok: true, result });
+        break;
+      }
+      case "plugin.bps403.clear": {
+        const result = await pluginStepUp.run(() =>
+          adminAPI.plugins.clearBPS403State(configPlugin.value!.id),
+        );
+        postBridgeResult(message, { ok: true, result });
+        appStore.showSuccess(t("admin.plugins.bps403ClearSuccess"));
         break;
       }
       case "ui.resize": {

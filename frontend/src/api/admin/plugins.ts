@@ -150,6 +150,11 @@ export async function status(id: number): Promise<PluginStatusResult> {
   return data
 }
 
+export async function clearBPS403State(id: number): Promise<{ cleared: number }> {
+  const { data } = await apiClient.post<{ cleared: number }>(`/admin/plugins/${id}/bps-403/clear`)
+  return data
+}
+
 export async function createUISession(id: number): Promise<PluginUISession> {
   const { data } = await apiClient.post<PluginUISession>(`/admin/plugins/${id}/ui-session`)
   return data
@@ -165,5 +170,6 @@ export default {
   saveConfig,
   test,
   status,
+  clearBPS403State,
   createUISession
 }

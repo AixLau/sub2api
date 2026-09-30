@@ -199,6 +199,19 @@ func (h *PluginHandler) Status(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *PluginHandler) ClearBPS403State(c *gin.Context) {
+	id, ok := pluginIDParam(c)
+	if !ok {
+		return
+	}
+	count, err := h.manager.ClearBPS403State(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"cleared": count})
+}
+
 func (h *PluginHandler) CreateUISession(c *gin.Context) {
 	id, ok := pluginIDParam(c)
 	if !ok {

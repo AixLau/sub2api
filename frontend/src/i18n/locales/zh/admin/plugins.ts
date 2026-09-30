@@ -56,6 +56,7 @@ export default {
     disableSuccess: '插件已停用',
     uninstallSuccess: '插件已卸载',
     testSuccess: '插件测试通过',
+    bps403ClearSuccess: 'BPS 403 隔离状态已清除',
     confirmDisable: '确定停用此插件吗？新的 OAuth 请求会立即恢复 Sub2API 原有路径。',
     confirmUninstall: '确定卸载此插件吗？插件必须先停用。此操作会移除安装文件和配置。',
     confirmUntested: '该插件兼容当前版本范围，但未声明已测试当前 Sub2API 版本。确定承担风险并启用吗？',

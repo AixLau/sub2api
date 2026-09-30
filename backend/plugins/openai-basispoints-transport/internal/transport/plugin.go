@@ -31,10 +31,11 @@ import (
 )
 
 const (
-	PluginID      = "local.sub2api.openai-transport"
-	PluginVersion = "0.6.16"
-	Capability    = "openai.oauth.outbound_transport.v1"
-	chunkSize     = 32 * 1024
+	PluginID            = "local.sub2api.openai-transport"
+	PluginVersion       = "0.6.17"
+	Capability          = "openai.oauth.outbound_transport.v1"
+	chunkSize           = 32 * 1024
+	bps403ProbeInterval = 10 * time.Minute
 )
 
 type proxyContextKey struct{}
@@ -92,7 +93,81 @@ func New() *Plugin {
 		panic(err)
 	}
 	p.state.Store(state)
+	go p.autoClearBPS403Loop()
 	return p
+}
+
+func (p *Plugin) autoClearBPS403Loop() {
+	ticker := time.NewTicker(bps403ProbeInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		p.autoClearBPS403Once()
+	}
+}
+
+func (p *Plugin) autoClearBPS403Once() {
+	p.blockedMu.RLock()
+	ids := make([]int64, 0, len(p.blocked403))
+	for id := range p.blocked403 {
+		ids = append(ids, id)
+	}
+	p.blockedMu.RUnlock()
+	for _, accountID := range ids {
+		if p.bps403Probe(accountID) {
+			p.clearBPS403(accountID)
+		}
+	}
+}
+
+func (p *Plugin) bps403Probe(accountID int64) bool {
+	state := p.state.Load()
+	client := p.hostClient()
+	if state == nil || client == nil || accountID <= 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	identity, err := client.ResolveOutboundIdentity(ctx, &pluginv1.ResolveOutboundIdentityRequest{AccountId: accountID})
+	if err != nil || identity == nil || !identity.Found {
+		return false
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(state.cfg.UpstreamBaseURL, "/"), http.NoBody)
+	if err != nil {
+		return false
+	}
+	for key, values := range headersFromProto(identity.Headers) {
+		for _, value := range values {
+			request.Header.Add(key, value)
+		}
+	}
+	if strings.TrimSpace(identity.Token) != "" {
+		request.Header.Set("Authorization", "Bearer "+identity.Token)
+	}
+	request.Header.Set("chatgpt-account-id", strconv.FormatInt(accountID, 10))
+	request.Header.Set("x-openai-account-id", strconv.FormatInt(accountID, 10))
+	applyBPSClientIdentity(request.Header)
+	if proxy := strings.TrimSpace(identity.ProxyUrl); proxy != "" {
+		request = request.WithContext(context.WithValue(request.Context(), proxyContextKey{}, proxy))
+	}
+	response, err := state.client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	return response.StatusCode != http.StatusForbidden
+}
+
+func (p *Plugin) clearBPS403(accountID int64) {
+	p.blockedMu.Lock()
+	delete(p.blocked403, accountID)
+	p.blockedMu.Unlock()
+	client := p.hostClient()
+	if client == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = client.KVDelete(ctx, &pluginv1.KVDeleteRequest{Namespace: bps403StateNamespace, Key: strconv.FormatInt(accountID, 10)})
 }
 
 func (p *Plugin) SetHostBroker(broker *hcplugin.GRPCBroker) {
@@ -111,11 +186,12 @@ func (p *Plugin) GetInfo(context.Context, *pluginv1.GetInfoRequest) (*pluginv1.G
 	}, nil
 }
 
-func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.HealthResponse, error) {
+func (p *Plugin) Health(ctx context.Context, _ *pluginv1.HealthRequest) (*pluginv1.HealthResponse, error) {
 	state := p.state.Load()
 	if state == nil {
 		return &pluginv1.HealthResponse{Healthy: false, Message: "传输配置未初始化"}, nil
 	}
+	p.pruneBPS403State(ctx)
 	statusJSON, _ := json.Marshal(map[string]any{
 		"upstream_base_url":        state.cfg.UpstreamBaseURL,
 		"proxy_mode":               state.cfg.ProxyMode,
@@ -135,6 +211,33 @@ func (p *Plugin) Health(context.Context, *pluginv1.HealthRequest) (*pluginv1.Hea
 		"bps_403_blocked_accounts": p.blocked403Snapshot(),
 	})
 	return &pluginv1.HealthResponse{Healthy: true, Message: "OpenAI OAuth 传输插件已就绪", StatusJson: string(statusJSON)}, nil
+}
+
+func (p *Plugin) pruneBPS403State(ctx context.Context) {
+	client := p.hostClient()
+	if client == nil {
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	resp, err := client.KVList(callCtx, &pluginv1.KVListRequest{Namespace: bps403StateNamespace, Limit: 1000})
+	if err != nil {
+		return
+	}
+	active := make(map[int64]struct{}, len(resp.Keys))
+	for _, key := range resp.Keys {
+		id, err := strconv.ParseInt(key, 10, 64)
+		if err == nil && id > 0 {
+			active[id] = struct{}{}
+		}
+	}
+	p.blockedMu.Lock()
+	for id := range p.blocked403 {
+		if _, ok := active[id]; !ok {
+			delete(p.blocked403, id)
+		}
+	}
+	p.blockedMu.Unlock()
 }
 
 func (p *Plugin) ValidateConfig(_ context.Context, request *pluginv1.ValidateConfigRequest) (*pluginv1.ValidateConfigResponse, error) {
@@ -1147,17 +1250,20 @@ func (p *Plugin) isBPS403Blocked(accountID int64) bool {
 	p.blockedMu.RLock()
 	_, ok := p.blocked403[accountID]
 	p.blockedMu.RUnlock()
-	if ok {
-		return true
-	}
 	client := p.hostClient()
 	if client == nil {
-		return false
+		return ok
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	resp, err := client.KVGet(ctx, &pluginv1.KVGetRequest{Namespace: bps403StateNamespace, Key: strconv.FormatInt(accountID, 10)})
-	if err != nil || !resp.Found {
+	if err != nil {
+		return ok
+	}
+	if !resp.Found {
+		p.blockedMu.Lock()
+		delete(p.blocked403, accountID)
+		p.blockedMu.Unlock()
 		return false
 	}
 	var state bps403State

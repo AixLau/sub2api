@@ -60,6 +60,9 @@
       var health = result.result || {};
       status.textContent = health.healthy ? (health.message || "运行中") : (health.message || "未运行");
       var details = health.status_json ? JSON.parse(health.status_json) : {};
+      var blocked = details.bps_403_blocked_accounts || {};
+      var clearButton = document.getElementById("clear-bps403");
+      clearButton.hidden = Object.keys(blocked).length === 0;
       statusDetail.textContent = health.healthy ? "请求 " + (details.requests_total || 0) + " · 成功 " + (details.requests_succeeded || 0) + " · 失败 " + (details.requests_failed || 0) + " · 最近 HTTP " + (details.last_status_code || "—") + " · 工具回放存储：" + (details.host_kv ? "已连接" : "未连接") + (details.last_bridge_error ? " · 最近桥接错误：" + details.last_bridge_error : "") + (details.omitted_hosted_tools ? " · 未支持的托管工具：" + details.omitted_hosted_tools : "") : "";
       var recent = (details.recent_requests || []).slice(-5).reverse().map(function (s) { return (s.route || "未路由") + ":" + (s.model || "未知模型") + " (" + (s.reason || s.error_code || "未选择") + ")"; }).join(", ");
       if (recent) { statusDetail.textContent += " · 最近通路: " + recent; }
@@ -75,6 +78,12 @@
       document.getElementById("diagnostics-detail").textContent = "无法刷新诊断：" + error.message;
     }
   }
+  async function clearBPS403() {
+    if (!window.confirm("确定清除所有账号的 BPS 403 隔离状态吗？")) return;
+    var result = await bridge.request("plugin.bps403.clear");
+    setMessage("已清除 " + ((result.result && result.result.cleared) || 0) + " 个账号的隔离状态");
+    await refreshStatus();
+  }
   async function run(action) {
     if (busy) return;
     busy = true;
@@ -86,6 +95,7 @@
   document.getElementById("bps_model_mode").addEventListener("change", updateModelSelection);
   form.addEventListener("submit", function (event) { event.preventDefault(); void run(save); });
   document.getElementById("test").addEventListener("click", function () { void run(test); });
+  document.getElementById("clear-bps403").addEventListener("click", function () { void run(clearBPS403); });
   var statusTimer = setInterval(refreshStatus, 10000);
   window.addEventListener("pagehide", function () { clearInterval(statusTimer); bridge.dispose(); });
   bridge.resize(720);

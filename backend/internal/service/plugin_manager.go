@@ -951,6 +951,33 @@ func (m *PluginManager) Status(ctx context.Context, id int64) (*pluginv1.HealthR
 	return runtime.status(statusCtx)
 }
 
+// ClearBPS403State removes the persisted BPS 403 isolation markers for a
+// plugin. The transport re-checks the host KV marker on the next request, so
+// this also clears the in-memory marker without restarting the plugin.
+func (m *PluginManager) ClearBPS403State(ctx context.Context, id int64) (int, error) {
+	installation, err := m.repo.GetByID(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	if installation.Manifest.ID != "local.sub2api.openai-transport" {
+		return 0, errors.New("该插件不支持 BPS 403 隔离状态")
+	}
+	if m.kvStore == nil {
+		return 0, errors.New("插件键值存储不可用")
+	}
+	const namespace = "basispoints-403-v1"
+	keys, err := m.kvStore.List(ctx, installation.PluginKey, namespace, "", 1000)
+	if err != nil {
+		return 0, fmt.Errorf("读取 BPS 403 状态失败: %w", err)
+	}
+	for _, key := range keys {
+		if err := m.kvStore.Delete(ctx, installation.PluginKey, namespace, key); err != nil {
+			return 0, fmt.Errorf("清除 BPS 403 状态失败: %w", err)
+		}
+	}
+	return len(keys), nil
+}
+
 type pluginUIAssetClaims struct {
 	Version  int   `json:"version"`
 	PluginID int64 `json:"plugin_id"`
