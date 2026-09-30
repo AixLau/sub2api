@@ -185,13 +185,6 @@ export default {
         windowWithReset: '{percent} used, resets {reset}', loadFailed: 'Failed to load OpenCode Go usage settings',
         autoRefreshFailed: 'Failed to update automatic usage refresh', refreshSuccess: 'OpenCode Go usage refreshed', refreshFailed: 'Failed to refresh OpenCode Go usage',
       },
-      openaiReferral: {
-        available: 'Invites left', invite: 'Invite user', fromAccount: 'Inviting account:', email: 'Recipient email',
-        consent: 'I have this person’s consent to send them an invitation.', send: 'Send invitation', sending: 'Sending…',
-        sent: 'Invitation sent to {email}', queryHint: 'Click to query remaining invitations', checkedAt: 'Checked: {time}. Click to refresh.',
-        unavailable: 'Invitations are unavailable.', sendUnknown: 'The invitation outcome is unknown.', shadowHint: 'Send invitations from the parent account.',
-        cacheFailed: 'Live capacity was fetched, but the cache could not be saved.', refreshFailed: 'Remaining capacity could not be refreshed.',
-      },
       cnProviders: {
         accountMode: {
           title: 'Account Type',
@@ -1704,6 +1697,7 @@ export default {
         pointsAvailable: 'Available',
         pointsTooltip: 'Click to refresh Codex points',
         pointsUpdatedAt: 'Updated: {time}',
+        pointsCachePersistFailed: 'Live points were fetched, but the cache could not be saved.',
         countTooltipLoad: 'Click to load the available reset-credit count',
         countTooltipRefresh: 'Click to refresh the available reset-credit count',
         resetTooltipReady: 'Consume 1 reset credit to immediately restore the window',

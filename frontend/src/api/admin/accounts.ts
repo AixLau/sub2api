@@ -4,7 +4,6 @@
  */
 
 import { apiClient } from '../client'
-import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
 import type {
   Account,
   AccountListItem,
@@ -997,23 +996,6 @@ export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
 export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefreshResult> {
   const { data } = await apiClient.post<OpenAIQuotaRefreshResult>(
     `/admin/openai/accounts/${id}/quota/refresh`
-  )
-  return data
-}
-
-export async function refreshOpenAIReferrals(id: number): Promise<OpenAIReferralRefreshResult> {
-  const { data } = await apiClient.post<OpenAIReferralRefreshResult>(
-    `/admin/openai/accounts/${id}/referrals/refresh`
-  )
-  return data
-}
-
-export async function sendOpenAIReferralInvite(
-  id: number,
-  input: { email: string; program_id: string; confirmed: boolean }
-): Promise<OpenAIReferralSendResult> {
-  const { data } = await apiClient.post<OpenAIReferralSendResult>(
-    `/admin/openai/accounts/${id}/referrals/invite`, input, { timeout: 90_000 }
   )
   return data
 }
