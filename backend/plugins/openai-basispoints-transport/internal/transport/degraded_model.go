@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// BPS can internally route a request to a generated degrade model. A 404 for
-// that internal target does not establish that the client's requested model
-// is unavailable on this account.
+// BPS can internally route a request to generated degrade or Codex abuse
+// models. A 404 for one of those internal targets does not establish that the
+// client's requested model is unavailable on this account.
 func isInternalDegradedModelNotFound(status int, requestBody []byte, code, message string) bool {
 	if status != http.StatusNotFound || code != "model_not_found" {
 		return false
@@ -29,6 +29,9 @@ func isInternalDegradedModelNotFound(status int, requestBody []byte, code, messa
 	if !ok || !strings.HasPrefix(rest, " does not exist or you do not have access to it.") {
 		return false
 	}
+	if suffix, ok := strings.CutPrefix(rejected, request.Model+"-codex-abuse-1p-codexswic-"); ok && isModelNameSuffix(suffix) {
+		return true
+	}
 	suffix, ok := strings.CutPrefix(rejected, request.Model+"-degrade")
 	if !ok {
 		return false
@@ -37,8 +40,27 @@ func isInternalDegradedModelNotFound(status int, requestBody []byte, code, messa
 	if !ok || digits == "" || separator == "" {
 		return false
 	}
-	for _, digit := range digits {
+	return isDecimalModelSuffix(digits)
+}
+
+func isDecimalModelSuffix(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, digit := range value {
 		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isModelNameSuffix(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' {
 			return false
 		}
 	}
