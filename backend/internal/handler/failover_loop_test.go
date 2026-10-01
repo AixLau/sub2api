@@ -88,6 +88,27 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 	})
 }
 
+func TestOpenAIOAuthCapacityShedRetryPolicy(t *testing.T) {
+	err := &service.UpstreamFailoverError{
+		RetryableOnSameAccount: true,
+		RequestScopedTransient: true,
+		ResponseBody:           []byte(`{"error":{"message":"Our servers are currently overloaded. Please try again later."}}`),
+	}
+	oauth := &service.Account{Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+
+	require.True(t, err.IsOpenAICapacityShed())
+	require.Equal(t, 10, effectiveSameAccountRetryLimit(err, oauth))
+	for retryCount := 1; retryCount <= 10; retryCount++ {
+		require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayForAccount(err, oauth, retryCount))
+	}
+
+	// The OAuth-specific policy must not change the generic request-scoped
+	// backoff used by other account types.
+	apiKey := &service.Account{Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
+	require.Equal(t, apiKey.GetPoolModeRetryCount(), effectiveSameAccountRetryLimit(err, apiKey))
+	require.Equal(t, time.Second, sameAccountRetryDelayForAccount(err, apiKey, 2))
+}
+
 func TestSameAccountRetryAllowedUsesDeadlineInsteadOfPoolCount(t *testing.T) {
 	err := &service.UpstreamFailoverError{
 		RetryableOnSameAccount:   true,

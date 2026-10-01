@@ -866,7 +866,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
 						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
-							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+							retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
@@ -1432,7 +1432,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
 						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
-							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+							retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai_messages.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
@@ -2662,7 +2662,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	wsAttemptMessage := append([]byte(nil), firstMessage...)
 	waitForWSSameAccountRetry := func(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
-		if account == nil || failoverErr == nil || failoverErr.StatusCode != http.StatusTooManyRequests || failoverErr.SameAccountRetryDeadline.IsZero() {
+		if account == nil || failoverErr == nil {
+			return false
+		}
+		capacityShedRetry := isOpenAIOAuthCapacityShedRetry(failoverErr, account)
+		if !capacityShedRetry && (failoverErr.StatusCode != http.StatusTooManyRequests || failoverErr.SameAccountRetryDeadline.IsZero()) {
 			return false
 		}
 		retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
@@ -2670,7 +2674,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		sameAccountRetryCount[account.ID]++
-		retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+		retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
 		reqLog.Warn("openai.websocket.same_account_retry",
 			zap.Int64("account_id", account.ID),
 			zap.Int("upstream_status", failoverErr.StatusCode),

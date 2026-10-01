@@ -57,6 +57,13 @@ const (
 	// 取值与 maxAccountSwitches 默认值一致：混合定价的大分组仍有充分重选机会，
 	// 同时把整池越线时的无谓选号开销限制在常数级。
 	maxProfitVetoAttempts = 10
+	// openAIOAuthCapacityShedRetryLimit is the number of additional attempts
+	// for the OpenAI OAuth capacity-shed response. OAuth accounts are not pool
+	// mode accounts, so this request-scoped policy must be explicit here.
+	openAIOAuthCapacityShedRetryLimit = 10
+	// openAIOAuthCapacityShedRetryDelay keeps capacity-shed retries on a fixed
+	// short interval instead of applying the generic exponential backoff.
+	openAIOAuthCapacityShedRetryDelay = 500 * time.Millisecond
 )
 
 // profitVetoExhaustedMessage 是利润否决次数耗尽时返回给客户端的文案。
@@ -116,9 +123,16 @@ func sameAccountRetryDeadlineAllows(failoverErr *service.UpstreamFailoverError) 
 	return failoverErr == nil || failoverErr.SameAccountRetryDeadline.IsZero() || time.Now().Before(failoverErr.SameAccountRetryDeadline)
 }
 
+func isOpenAIOAuthCapacityShedRetry(failoverErr *service.UpstreamFailoverError, account *service.Account) bool {
+	return account != nil && account.IsOpenAIOAuth() && failoverErr != nil && failoverErr.IsOpenAICapacityShed()
+}
+
 // effectiveSameAccountRetryLimit gives explicit request-scoped provider failures
 // their own budget. Other failures retain the account setting, including zero.
 func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
+	if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
+		return openAIOAuthCapacityShedRetryLimit
+	}
 	if failoverErr != nil {
 		switch failoverErr.Reason {
 		case service.OpenAIResponseProtectionUnavailableReason, service.OpenAIProcessingFailureReason:
@@ -133,6 +147,13 @@ func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, 
 		return failoverErr.SameAccountRetryMax
 	}
 	return limit
+}
+
+func sameAccountRetryDelayForAccount(failoverErr *service.UpstreamFailoverError, account *service.Account, retryCount int) time.Duration {
+	if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
+		return openAIOAuthCapacityShedRetryDelay
+	}
+	return sameAccountRetryDelayFor(failoverErr, retryCount)
 }
 
 // FailoverState 跨循环迭代共享的 failover 状态
