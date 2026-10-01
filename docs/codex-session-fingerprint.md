@@ -107,3 +107,83 @@ Root 和 side 首次请求的 `turn_id == root_turn_id` 保持成立；child 的
 新建 OAuth 账号仍默认使用 `device`；管理员需要显式选择 `session`。本次不修改 WS、旧 `/responses/compact`、兼容消息桥接和探测的 session 策略，也不调整 Spark shadow。`off`、`device` 的原有 v2 隔离映射和存量 key 保持现有行为。
 
 实现复用现有 Redis 和 UUID 库；原子写入与到期语义参见 [Redis SET 文档](https://redis.io/docs/latest/commands/set/)。
+
+## 会话绑定模型（`gateway.codex_identity.session_binding = binding`）
+
+默认值是 `legacy`：**部署本改动不会让现网进入新语义**，既有解析器逐字节不变。
+只有把该开关显式设为 `binding`，下面的模型才会接管普通 HTTP 的会话身份解析
+（WS、旧 `/responses/compact` 与兼容消息桥接沿用既有策略，不在本模型范围内）。
+
+### 为什么需要它
+
+账号级 `codex_fingerprint_mode` 原本每次请求重读，管理员一改就同时切换所有在途
+会话的规则。而 `session` 依赖 `v3:`/`v4:` 命名空间，与 `device` 使用的 `v2`
+互不相交；解析器又刻意拒绝为带 parent/fork 引用的请求创建映射——于是切模式会让
+在途会话立刻失败。更根本的是，只固定"模式"并不能固定**归属**：一个不带 fork
+信息的 side child 若先到达会被归入普通 period，root 到达后重试又漂到 side，而
+模式全程未变。
+
+因此模型固定的是**归属、代次与真实引用**，而不是模式：
+
+- **身份实体**：`v4:period-session:<epoch>:<hash>`（同一 user+account+epoch 下所有
+  raw session **共享**同一个上游 session id 与规则）、`v4:side-session:v2:<hash>`
+  （per-raw-session，永久）、`v4:flat-entity:0:<rule>:<hash>`
+  （off/device/full 没有自然周期，代次恒为 0、永不换代）。**flat 实体键含规则**：
+  否则首个创建者会把规则永久钉死，`device→full` 这类 flat 内部切换对**新会话**也
+  永不生效——那会直接违背"新会话使用新规则"。
+- **归属绑定**：`v4:session-binding:<attribution>:<generation>:<hash>`，**不可变**，
+  跨代次只建新记录、绝不改写旧记录。
+- **寻址指针**：`v4:session-current:<hash>`，唯一可变项，仅换代时向前推进。
+- **thread 两级**：`v4:thread-exact`（权威、不可变）优先于 `v4:thread-latest`
+  （候选线索）。**latest 命中不构成来源已确定**。
+
+### 解析顺序（先确认归属，再分配身份）
+
+1. 已提交绑定优先；`current` 缺失时**探测并修复**，绝不判定为新会话。
+2. 未提交时按证据判定：原生 side 证据 → side（必须解析出**真实** fork 源）；
+   带 parent 引用 → 继承父绑定的归属/代次/实体；两者都不成立 → root。
+3. root 的归属类别由当前模式决定：`session` → period；`off`/`device`/`full` → flat。
+4. **证据不足一律明确失败**（不分配身份、不写 key），绝不默认当普通会话。
+
+### 不变量
+
+- 随机身份首次分配后固定；同代次归属不漂移；跨代次建立新身份、旧绑定不被改写。
+- 旧 side 的投影（session id、fork 源、`preserve_v3_threads`）**原值接管**，不重算。
+- **不合成 fork 来源**：缺证据时明确失败，绝不写入一个没有历史依据的目标。
+- 存储故障、owner 已退休、记录版本不支持一律**明确失败**，不回退账号当前模式。
+- 归属冲突（同一 raw session 出现不同 attribution）明确失败，绝不静默选边。
+
+### 运维
+
+- `gateway.codex_identity.force_account_rule`（默认 `false`）：忽略已提交绑定，
+  完全按账号当前模式处理（即 legacy 行为），用于回滚与 drain。**改动需重启**，
+  配置在加载时解码，没有热更新。
+- 新键族与既有 `v3`/`v4` 键并存：新键为权威，旧键只读；期间只写新键、只读旧键。
+
+### 旧值接管（gate 切换必须保持身份连续）
+
+绑定模型与既有 `v3`/`v4` 键并存，**既有记录是权威**，首次遇到时按原值接管、绝不重算：
+
+- **period**：`adoptLegacyCodexPeriodSessionEntity` 读取 legacy 的裸 period 键
+  （`period.key`），若存有 UUIDv7 就以**该值**建立 `v4:period-session` 实体。
+  没有这一步，gate 一打开，已在 `session` 模式下的在途会话会**静默换掉上游 session id**。
+- **side**：side 分支在解析新家族的 fork 源之前，先经 `readCodexLegacySideProjection`
+  读 `v3:side-session:` + `v4:side-fork:`，命中则由 `adoptCodexLegacySideEntity`
+  原值接管 session id、已固定的 fork 源与 `preserve_v3_threads`。缺这一步时，gate
+  打开会让带原生 side 证据的在途会话直接以 `ErrCodexBindingUnresolvedSource` 断流。
+
+### 上线前置条件与覆盖范围
+
+1. **先开 gate，后改账号模式，中间要留出真实流量。** 在途会话必须在切换前已经
+   提交过绑定，否则引用型请求会明确失败。**同时**开 gate 与改模式（没有任何已提交
+   绑定）仍会失败——此时失败是 `ErrCodexBindingUnresolvedAttribution`，不写任何 key、
+   不偷偷分配其它 lineage 的身份，但**客户端仍会看到一次失败**。
+2. **覆盖范围**：只有普通 HTTP `/responses`（含 passthrough，非 compact）经过本模型。
+   以下形态**不经过**：legacy `/responses/compact`、兼容消息桥接形态、`/v1/chat/completions`、
+   `/v1/messages`、WS。它们用既有的无状态投影或自愈的 v2 mapper——**不会**产生
+   `ErrCodexSessionIdentityNotFound`，但身份/缓存亲和可能与绑定模型的会话不一致。
+3. **证据不足不再一律硬失败**：请求完全没有会话标识（无 raw session）时保守回退
+   device 投影，与 legacy 一致；只有"声称有 parent 引用但给不出 parent 线程标识"或
+   "引用的线程无任何已提交证据"才明确失败。
+4. 回滚：`force_account_rule=true`（需重启）或把 gate 改回 `legacy`；后者对在
+   binding 模式下新建的会话同样是一次会话边界（新模型只写新键族，legacy 不读它们）。

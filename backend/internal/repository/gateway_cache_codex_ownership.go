@@ -21,6 +21,8 @@ const (
 var codexIdentityKinds = []string{
 	"period_session", "thread_current", "thread_history", "side_session", "side_fork",
 	"side_thread_current", "side_lifecycle", "legacy_v2", "legacy_v3",
+	"session_binding", "session_current", "thread_exact", "thread_latest",
+	"flat_entity", "period_session_entity", "side_session_entity",
 }
 
 // All index scores are the data key's absolute expiry, not the last GET time.
@@ -122,6 +124,20 @@ return {changed, current, registered}
 `)
 
 func codexIdentityKeyKind(key string, legacy bool) string {
+	// 绑定模型新增的键族必须先于通用判定，否则会落到 period_session 被误计数。
+	for _, entry := range []struct{ prefix, kind string }{
+		{"v4:session-binding:", "session_binding"},
+		{"v4:session-current:", "session_current"},
+		{"v4:thread-exact:", "thread_exact"},
+		{"v4:thread-latest:", "thread_latest"},
+		{"v4:flat-entity:", "flat_entity"},
+		{"v4:period-session:", "period_session_entity"},
+		{"v4:side-session:v2:", "side_session_entity"},
+	} {
+		if strings.HasPrefix(key, entry.prefix) {
+			return entry.kind
+		}
+	}
 	for _, kind := range []string{"thread-current", "thread-history", "side-fork", "side-lifecycle"} {
 		if strings.HasPrefix(key, "v4:"+kind+":") {
 			return strings.ReplaceAll(kind, "-", "_")

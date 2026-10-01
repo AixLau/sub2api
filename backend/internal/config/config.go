@@ -988,12 +988,30 @@ const (
 
 const DefaultCodexIdentityHistoryRetentionDays = 180
 
+// Session-identity resolution models. "legacy" is the default and keeps the
+// pre-existing resolver; "binding" selects the authoritative binding model.
+const (
+	CodexSessionBindingLegacy  = "legacy"
+	CodexSessionBindingBinding = "binding"
+)
+
 // CodexIdentityConfig only governs historical HTTP identity lookup. Side
 // graphs are reclaimed as a whole when their account or user owner is removed.
 type CodexIdentityConfig struct {
 	// HistoryRetentionDays starts at the latest actual client observation of a
 	// raw thread. Reading a fork source never renews that retention window.
 	HistoryRetentionDays int `mapstructure:"history_retention_days"`
+	// SessionBinding selects the session-identity resolution model.
+	// Empty or "legacy" keeps the existing resolver exactly as it is, so
+	// shipping this code does not move the running fleet into the new
+	// semantics; "binding" enables the authoritative session-binding model,
+	// which resolves attribution before allocating any identity.
+	SessionBinding string `mapstructure:"session_binding"`
+	// ForceAccountRule ignores committed bindings and applies the account's
+	// codex_fingerprint_mode to every request. Escape hatch for rollback, and
+	// for draining sessions that never end. Only meaningful in "binding" mode.
+	// Changing it requires a restart: config is decoded once at load time.
+	ForceAccountRule bool `mapstructure:"force_account_rule"`
 }
 
 // HistoryRetention supplies the production default to manually built configs.
@@ -1999,6 +2017,15 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if cfg.Gateway.CodexSessionIdentityMapping != "v2" && cfg.Gateway.CodexSessionIdentityMapping != "legacy" {
 		return nil, fmt.Errorf("gateway.codex_session_identity_mapping: unsupported value %q (want v2 or legacy)", cfg.Gateway.CodexSessionIdentityMapping)
 	}
+	cfg.Gateway.CodexIdentity.SessionBinding = strings.ToLower(strings.TrimSpace(cfg.Gateway.CodexIdentity.SessionBinding))
+	if cfg.Gateway.CodexIdentity.SessionBinding == "" {
+		cfg.Gateway.CodexIdentity.SessionBinding = CodexSessionBindingLegacy
+	}
+	if cfg.Gateway.CodexIdentity.SessionBinding != CodexSessionBindingLegacy &&
+		cfg.Gateway.CodexIdentity.SessionBinding != CodexSessionBindingBinding {
+		return nil, fmt.Errorf("gateway.codex_identity.session_binding: unsupported value %q (want %s or %s)",
+			cfg.Gateway.CodexIdentity.SessionBinding, CodexSessionBindingLegacy, CodexSessionBindingBinding)
+	}
 
 	// 兼容旧键 gateway.openai_ws.sticky_previous_response_ttl_seconds。
 	// 新键未配置（<=0）时回退旧键；新键优先。
@@ -2481,6 +2508,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_session_identity_mapping", "v2")
 	viper.SetDefault("gateway.codex_identity.history_retention_days", DefaultCodexIdentityHistoryRetentionDays)
+	viper.SetDefault("gateway.codex_identity.session_binding", CodexSessionBindingLegacy)
+	viper.SetDefault("gateway.codex_identity.force_account_rule", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.5")
@@ -3391,6 +3420,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.CodexIdentity.HistoryRetentionDays < 1 || c.Gateway.CodexIdentity.HistoryRetentionDays > 36500 {
 		return fmt.Errorf("gateway.codex_identity.history_retention_days must be between 1 and 36500 days")
+	}
+	switch c.Gateway.CodexIdentity.SessionBinding {
+	case "", CodexSessionBindingLegacy, CodexSessionBindingBinding:
+	default:
+		return fmt.Errorf("gateway.codex_identity.session_binding must be %q or %q",
+			CodexSessionBindingLegacy, CodexSessionBindingBinding)
 	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")

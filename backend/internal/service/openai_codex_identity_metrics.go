@@ -49,7 +49,7 @@ func newCodexIdentityMetrics() *codexIdentityMetrics {
 
 func boundedCodexIdentityOperation(value string) string {
 	switch value {
-	case "period_session", "side_session", "thread_current", "thread_history", "side_fork", "current_parent", "fork_history", "identity_store", "ownership", "cleanup", "side_lifecycle":
+	case "period_session", "side_session", "thread_current", "thread_history", "side_fork", "current_parent", "fork_history", "identity_store", "ownership", "cleanup", "side_lifecycle", "session_binding":
 		return value
 	default:
 		return "other"
@@ -58,7 +58,7 @@ func boundedCodexIdentityOperation(value string) string {
 
 func boundedCodexIdentityResult(value string) string {
 	switch value {
-	case "created", "reused", "advanced", "stale_rejected", "contention", "pinned", "missing", "conflict", "error", "deleted", "observed", "registered":
+	case "created", "reused", "advanced", "stale_rejected", "contention", "pinned", "missing", "conflict", "error", "deleted", "observed", "registered", "restored", "forced", "unresolved_attribution", "unresolved_source":
 		return value
 	default:
 		return "other"
@@ -67,7 +67,8 @@ func boundedCodexIdentityResult(value string) string {
 
 func boundedCodexIdentityKeyKind(value string) string {
 	switch value {
-	case "period_session", "thread_current", "thread_history", "side_session", "side_fork", "side_thread_current", "side_lifecycle", "legacy_v2", "legacy_v3", "ownership":
+	case "period_session", "thread_current", "thread_history", "side_session", "side_fork", "side_thread_current", "side_lifecycle", "legacy_v2", "legacy_v3", "ownership",
+		"session_binding", "session_current", "thread_exact", "thread_latest", "flat_entity", "period_session_entity", "side_session_entity":
 		return value
 	default:
 		return "other"
