@@ -20,9 +20,9 @@ const (
 	defaultDashboardAggregationBackfillTimeout = 30 * time.Minute
 	dashboardAggregationRetentionInterval      = 6 * time.Hour
 
-	// dashboardAggregationLeaderLockKey 保证多副本部署中每个周期只有一个实例执行聚合。
+	// dashboardAggregationLeaderLockKey 保证多副本部署中每个保留清理周期只有一个实例执行。
 	dashboardAggregationLeaderLockKey = "dashboard:aggregation:leader"
-	// TTL 必须覆盖 dashboard 聚合与分组日汇总两个有界阶段，避免任务中途失锁。
+	// TTL 必须覆盖保留清理任务的有界执行时间，避免任务中途失锁。
 	dashboardAggregationLeaderLockTTL = 5 * time.Minute
 
 	// 启动回填耗时可能远长于周期聚合，因此使用独立锁并让 TTL 严格大于回填超时。
@@ -80,8 +80,8 @@ func NewDashboardAggregationService(repo DashboardAggregationRepository, timingW
 	}
 }
 
-// SetLeaderLock injects the leader-lock cache and DB used to elect a single
-// instance for the periodic scheduled aggregation. When both are nil the job runs
+// SetLeaderLock injects the leader-lock cache and DB used by scheduled retention
+// and startup group-usage synchronization. When both are nil those jobs run
 // ungated (single-instance / test behavior).
 func (s *DashboardAggregationService) SetLeaderLock(lockCache LeaderLockCache, db *sql.DB) {
 	if s == nil {
@@ -230,13 +230,6 @@ func (s *DashboardAggregationService) runScheduledAggregation() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultDashboardAggregationTimeout)
 	defer cancel()
 
-	// Multi-instance guard: only the leader runs the periodic aggregation; peers
-	// skip this cycle to avoid N× redundant GROUP BY queries and watermark races.
-	release, ok := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, dashboardAggregationLeaderLockKey, s.instanceID, dashboardAggregationLeaderLockTTL)
-	if !ok {
-		return
-	}
-	defer release()
 	defer s.runScheduledGroupUsageSync()
 
 	now := time.Now().UTC()
