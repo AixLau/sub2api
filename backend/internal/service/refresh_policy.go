@@ -12,27 +12,15 @@ const (
 	ProviderRefreshErrorUseExistingToken
 )
 
-// ProviderLockHeldAction 定义 provider 在刷新锁被占用时的处理动作。
-type ProviderLockHeldAction int
-
-const (
-	// ProviderLockHeldUseExistingToken 直接使用现有 token。
-	ProviderLockHeldUseExistingToken ProviderLockHeldAction = iota
-	// ProviderLockHeldWaitForCache 等待后重试缓存读取。
-	ProviderLockHeldWaitForCache
-)
-
 // ProviderRefreshPolicy 描述 provider 的平台差异策略。
 type ProviderRefreshPolicy struct {
 	OnRefreshError ProviderRefreshErrorAction
-	OnLockHeld     ProviderLockHeldAction
 	FailureTTL     time.Duration
 }
 
 func ClaudeProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorUseExistingToken,
-		OnLockHeld:     ProviderLockHeldWaitForCache,
 		FailureTTL:     time.Minute,
 	}
 }
@@ -40,7 +28,6 @@ func ClaudeProviderRefreshPolicy() ProviderRefreshPolicy {
 func OpenAIProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorUseExistingToken,
-		OnLockHeld:     ProviderLockHeldWaitForCache,
 		FailureTTL:     time.Minute,
 	}
 }
@@ -48,7 +35,6 @@ func OpenAIProviderRefreshPolicy() ProviderRefreshPolicy {
 func GeminiProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorReturn,
-		OnLockHeld:     ProviderLockHeldUseExistingToken,
 		FailureTTL:     0,
 	}
 }
@@ -56,7 +42,6 @@ func GeminiProviderRefreshPolicy() ProviderRefreshPolicy {
 func AntigravityProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorReturn,
-		OnLockHeld:     ProviderLockHeldUseExistingToken,
 		FailureTTL:     0,
 	}
 }
@@ -64,7 +49,6 @@ func AntigravityProviderRefreshPolicy() ProviderRefreshPolicy {
 func GrokProviderRefreshPolicy() ProviderRefreshPolicy {
 	return ProviderRefreshPolicy{
 		OnRefreshError: ProviderRefreshErrorReturn,
-		OnLockHeld:     ProviderLockHeldWaitForCache,
 		FailureTTL:     0,
 	}
 }
@@ -81,22 +65,13 @@ const (
 
 // BackgroundRefreshPolicy 描述后台刷新服务的调用侧策略。
 type BackgroundRefreshPolicy struct {
-	OnLockHeld       BackgroundSkipAction
 	OnAlreadyRefresh BackgroundSkipAction
 }
 
 func DefaultBackgroundRefreshPolicy() BackgroundRefreshPolicy {
 	return BackgroundRefreshPolicy{
-		OnLockHeld:       BackgroundSkipAsSkipped,
 		OnAlreadyRefresh: BackgroundSkipAsSkipped,
 	}
-}
-
-func (p BackgroundRefreshPolicy) handleLockHeld() error {
-	if p.OnLockHeld == BackgroundSkipAsSuccess {
-		return nil
-	}
-	return errRefreshSkipped
 }
 
 func (p BackgroundRefreshPolicy) handleAlreadyRefreshed() error {

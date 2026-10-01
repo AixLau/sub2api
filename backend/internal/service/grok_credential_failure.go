@@ -506,11 +506,11 @@ func (s *OpenAIGatewayService) validateCurrentGrokCredentialFailure(
 	return "", nil
 }
 
-func (s *OpenAIGatewayService) grokCredentialMutationLock(accountID int64) *oauthRefreshLocalLock {
-	actual, _ := s.grokCredentialMutationLocks.LoadOrStore(accountID, newOAuthRefreshLocalLock())
-	mu, ok := actual.(*oauthRefreshLocalLock)
+func (s *OpenAIGatewayService) grokCredentialMutationLock(accountID int64) *contextMutex {
+	actual, _ := s.grokCredentialMutationLocks.LoadOrStore(accountID, newContextMutex())
+	mu, ok := actual.(*contextMutex)
 	if !ok {
-		mu = newOAuthRefreshLocalLock()
+		mu = newContextMutex()
 		s.grokCredentialMutationLocks.Store(accountID, mu)
 	}
 	return mu

@@ -4,33 +4,21 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"math/rand/v2"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
 const (
-	openAITokenRefreshSkew    = 3 * time.Minute
-	openAITokenCacheSkew      = 5 * time.Minute
-	openAILockInitialWait     = 20 * time.Millisecond
-	openAILockMaxWait         = 120 * time.Millisecond
-	openAILockMaxAttempts     = 5
-	openAILockJitterRatio     = 0.2
-	openAILockWarnThresholdMs = 250
+	openAITokenRefreshSkew = 3 * time.Minute
+	openAITokenCacheSkew   = 5 * time.Minute
 )
 
-// OpenAITokenRuntimeMetrics is a snapshot of refresh and lock contention metrics.
+// OpenAITokenRuntimeMetrics is a snapshot of refresh metrics.
 type OpenAITokenRuntimeMetrics struct {
 	RefreshRequests    int64
 	RefreshSuccess     int64
 	RefreshFailure     int64
-	LockAcquireFailure int64
-	LockContention     int64
-	LockWaitSamples    int64
-	LockWaitTotalMs    int64
-	LockWaitHit        int64
-	LockWaitMiss       int64
 	LastObservedUnixMs int64
 }
 
@@ -38,12 +26,6 @@ type openAITokenRuntimeMetricsStore struct {
 	refreshRequests    atomic.Int64
 	refreshSuccess     atomic.Int64
 	refreshFailure     atomic.Int64
-	lockAcquireFailure atomic.Int64
-	lockContention     atomic.Int64
-	lockWaitSamples    atomic.Int64
-	lockWaitTotalMs    atomic.Int64
-	lockWaitHit        atomic.Int64
-	lockWaitMiss       atomic.Int64
 	lastObservedUnixMs atomic.Int64
 }
 
@@ -55,12 +37,6 @@ func (m *openAITokenRuntimeMetricsStore) snapshot() OpenAITokenRuntimeMetrics {
 		RefreshRequests:    m.refreshRequests.Load(),
 		RefreshSuccess:     m.refreshSuccess.Load(),
 		RefreshFailure:     m.refreshFailure.Load(),
-		LockAcquireFailure: m.lockAcquireFailure.Load(),
-		LockContention:     m.lockContention.Load(),
-		LockWaitSamples:    m.lockWaitSamples.Load(),
-		LockWaitTotalMs:    m.lockWaitTotalMs.Load(),
-		LockWaitHit:        m.lockWaitHit.Load(),
-		LockWaitMiss:       m.lockWaitMiss.Load(),
 		LastObservedUnixMs: m.lastObservedUnixMs.Load(),
 	}
 }
@@ -181,19 +157,6 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			slog.Warn("openai_token_refresh_failed", "account_id", account.ID, "error", err)
 			p.metrics.refreshFailure.Add(1)
 			refreshFailed = true
-		} else if result.LockHeld {
-			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache {
-				p.metrics.lockContention.Add(1)
-				p.metrics.touchNow()
-				token, waitErr := p.waitForTokenAfterLockRace(ctx, cacheKey)
-				if waitErr != nil {
-					return "", waitErr
-				}
-				if strings.TrimSpace(token) != "" {
-					slog.Debug("openai_token_cache_hit_after_wait", "account_id", account.ID)
-					return token, nil
-				}
-			}
 		} else if result.Refreshed {
 			p.metrics.refreshSuccess.Add(1)
 			account = result.Account
@@ -201,29 +164,6 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		} else {
 			account = result.Account
 			expiresAt = account.GetCredentialAsTime("expires_at")
-		}
-	} else if needsRefresh && p.tokenCache != nil {
-		// Backward-compatible test path when refreshAPI is not injected.
-		p.metrics.refreshRequests.Add(1)
-		p.metrics.touchNow()
-		locked, lockErr := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
-		if lockErr == nil && locked {
-			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
-		} else if lockErr != nil {
-			p.metrics.lockAcquireFailure.Add(1)
-			p.metrics.touchNow()
-			slog.Warn("openai_token_lock_failed", "account_id", account.ID, "error", lockErr)
-		} else {
-			p.metrics.lockContention.Add(1)
-			p.metrics.touchNow()
-			token, waitErr := p.waitForTokenAfterLockRace(ctx, cacheKey)
-			if waitErr != nil {
-				return "", waitErr
-			}
-			if strings.TrimSpace(token) != "" {
-				slog.Debug("openai_token_cache_hit_after_wait", "account_id", account.ID)
-				return token, nil
-			}
 		}
 	}
 
@@ -304,65 +244,4 @@ func (p *OpenAITokenProvider) disableAccountMissingRefreshToken(account *Account
 		"account_id", account.ID,
 		"reason", reason,
 	)
-}
-
-func (p *OpenAITokenProvider) waitForTokenAfterLockRace(ctx context.Context, cacheKey string) (string, error) {
-	wait := openAILockInitialWait
-	totalWaitMs := int64(0)
-	for i := 0; i < openAILockMaxAttempts; i++ {
-		actualWait := jitterLockWait(wait)
-		timer := time.NewTimer(actualWait)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			return "", ctx.Err()
-		case <-timer.C:
-		}
-
-		waitMs := actualWait.Milliseconds()
-		if waitMs < 0 {
-			waitMs = 0
-		}
-		totalWaitMs += waitMs
-		p.metrics.lockWaitSamples.Add(1)
-		p.metrics.lockWaitTotalMs.Add(waitMs)
-		p.metrics.touchNow()
-
-		token, err := p.tokenCache.GetAccessToken(ctx, cacheKey)
-		if err == nil && strings.TrimSpace(token) != "" {
-			p.metrics.lockWaitHit.Add(1)
-			if totalWaitMs >= openAILockWarnThresholdMs {
-				slog.Warn("openai_token_lock_wait_high", "wait_ms", totalWaitMs, "attempts", i+1)
-			}
-			return token, nil
-		}
-
-		if wait < openAILockMaxWait {
-			wait *= 2
-			if wait > openAILockMaxWait {
-				wait = openAILockMaxWait
-			}
-		}
-	}
-
-	p.metrics.lockWaitMiss.Add(1)
-	if totalWaitMs >= openAILockWarnThresholdMs {
-		slog.Warn("openai_token_lock_wait_high", "wait_ms", totalWaitMs, "attempts", openAILockMaxAttempts)
-	}
-	return "", nil
-}
-
-func jitterLockWait(base time.Duration) time.Duration {
-	if base <= 0 {
-		return 0
-	}
-	minFactor := 1 - openAILockJitterRatio
-	maxFactor := 1 + openAILockJitterRatio
-	factor := minFactor + rand.Float64()*(maxFactor-minFactor)
-	return time.Duration(float64(base) * factor)
 }

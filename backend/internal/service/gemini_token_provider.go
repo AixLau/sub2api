@@ -79,24 +79,9 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
 				return "", err
 			}
-		} else if result.LockHeld {
-			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache && p.tokenCache != nil {
-				if token, cacheErr := p.tokenCache.GetAccessToken(ctx, cacheKey); cacheErr == nil && strings.TrimSpace(token) != "" {
-					return token, nil
-				}
-			}
-			slog.Debug("gemini_token_lock_held_use_old", "account_id", account.ID)
 		} else {
 			account = result.Account
 			expiresAt = account.GetCredentialAsTime("expires_at")
-		}
-	} else if needsRefresh && p.tokenCache != nil {
-		// Backward-compatible test path when refreshAPI is not injected.
-		locked, lockErr := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
-		if lockErr == nil && locked {
-			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
-		} else if lockErr != nil {
-			slog.Warn("gemini_token_lock_failed", "account_id", account.ID, "error", lockErr)
 		}
 	}
 

@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	oauthTokenKeyPrefix       = "oauth:token:"
-	oauthRefreshLockKeyPrefix = "oauth:refresh_lock:"
+	oauthTokenKeyPrefix = "oauth:token:"
 )
 
 type geminiTokenCache struct {
@@ -35,15 +34,5 @@ func (c *geminiTokenCache) SetAccessToken(ctx context.Context, cacheKey string, 
 
 func (c *geminiTokenCache) DeleteAccessToken(ctx context.Context, cacheKey string) error {
 	key := fmt.Sprintf("%s%s", oauthTokenKeyPrefix, cacheKey)
-	return c.rdb.Del(ctx, key).Err()
-}
-
-func (c *geminiTokenCache) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (bool, error) {
-	key := fmt.Sprintf("%s%s", oauthRefreshLockKeyPrefix, cacheKey)
-	return c.rdb.SetNX(ctx, key, 1, ttl).Result()
-}
-
-func (c *geminiTokenCache) ReleaseRefreshLock(ctx context.Context, cacheKey string) error {
-	key := fmt.Sprintf("%s%s", oauthRefreshLockKeyPrefix, cacheKey)
 	return c.rdb.Del(ctx, key).Err()
 }

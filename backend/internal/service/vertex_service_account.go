@@ -9,11 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
@@ -27,9 +27,10 @@ const (
 	vertexDefaultTokenURL         = "https://oauth2.googleapis.com/token"
 	vertexCloudPlatformScope      = "https://www.googleapis.com/auth/cloud-platform"
 	vertexServiceAccountCacheSkew = 5 * time.Minute
-	vertexLockWaitTime            = 200 * time.Millisecond
 	vertexAnthropicVersion        = "vertex-2023-10-16"
 )
+
+var vertexServiceAccountLocalLocks sync.Map // key: cache key -> *contextMutex
 
 var (
 	vertexLocationPattern                = regexp.MustCompile(`^[a-z0-9-]+$`)
@@ -146,7 +147,7 @@ func vertexServiceAccountCacheKey(account *Account, key *vertexServiceAccountKey
 }
 
 // getVertexServiceAccountAccessToken obtains an access token for a Vertex service account,
-// using the shared cache and distributed lock to avoid redundant exchanges.
+// using the shared cache and a process-local mutex to avoid redundant exchanges.
 func getVertexServiceAccountAccessToken(ctx context.Context, cache GeminiTokenCache, account *Account) (string, error) {
 	key, err := parseVertexServiceAccountKey(account)
 	if err != nil {
@@ -160,19 +161,20 @@ func getVertexServiceAccountAccessToken(ctx context.Context, cache GeminiTokenCa
 		}
 	}
 
-	locked := false
+	actual, _ := vertexServiceAccountLocalLocks.LoadOrStore(cacheKey, newContextMutex())
+	localLock, ok := actual.(*contextMutex)
+	if !ok {
+		return "", errors.New("vertex service account local lock has invalid state")
+	}
+	if err := localLock.Lock(ctx); err != nil {
+		return "", err
+	}
+	defer localLock.Unlock()
+
+	// Recheck after waiting for another in-process exchange to publish its token.
 	if cache != nil {
-		var lockErr error
-		locked, lockErr = cache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
-		if lockErr == nil && locked {
-			defer func() { _ = cache.ReleaseRefreshLock(ctx, cacheKey) }()
-		} else if lockErr != nil {
-			slog.Warn("vertex_service_account_token_lock_failed", "account_id", account.ID, "error", lockErr)
-		} else {
-			time.Sleep(vertexLockWaitTime)
-			if token, err := cache.GetAccessToken(ctx, cacheKey); err == nil && strings.TrimSpace(token) != "" {
-				return token, nil
-			}
+		if token, err := cache.GetAccessToken(ctx, cacheKey); err == nil && strings.TrimSpace(token) != "" {
+			return token, nil
 		}
 	}
 

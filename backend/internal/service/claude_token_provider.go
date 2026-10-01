@@ -11,7 +11,6 @@ import (
 const (
 	claudeTokenRefreshSkew = 3 * time.Minute
 	claudeTokenCacheSkew   = 5 * time.Minute
-	claudeLockWaitTime     = 200 * time.Millisecond
 )
 
 // ClaudeTokenCache token cache interface.
@@ -90,31 +89,9 @@ func (p *ClaudeTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			}
 			slog.Warn("claude_token_refresh_failed", "account_id", account.ID, "error", err)
 			refreshFailed = true
-		} else if result.LockHeld {
-			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache && p.tokenCache != nil {
-				time.Sleep(claudeLockWaitTime)
-				if token, cacheErr := p.tokenCache.GetAccessToken(ctx, cacheKey); cacheErr == nil && strings.TrimSpace(token) != "" {
-					slog.Debug("claude_token_cache_hit_after_wait", "account_id", account.ID)
-					return token, nil
-				}
-			}
 		} else {
 			account = result.Account
 			expiresAt = account.GetCredentialAsTime("expires_at")
-		}
-	} else if needsRefresh && p.tokenCache != nil {
-		// Backward-compatible test path when refreshAPI is not injected.
-		locked, lockErr := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
-		if lockErr == nil && locked {
-			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
-		} else if lockErr != nil {
-			slog.Warn("claude_token_lock_failed", "account_id", account.ID, "error", lockErr)
-		} else {
-			time.Sleep(claudeLockWaitTime)
-			if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && strings.TrimSpace(token) != "" {
-				slog.Debug("claude_token_cache_hit_after_wait", "account_id", account.ID)
-				return token, nil
-			}
 		}
 	}
 

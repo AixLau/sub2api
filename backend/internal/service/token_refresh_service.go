@@ -31,7 +31,6 @@ const (
 	maxTokenRefreshRetryBackoff                 = 30 * time.Second
 	defaultTokenRefreshAttemptTimeout           = 15 * time.Second
 	maxTokenRefreshAttemptTimeout               = 5 * time.Minute
-	maxTokenRefreshLockSafetyMargin             = 5 * time.Second
 	defaultTokenRefreshCycleTimeout             = 4 * time.Minute
 	maxTokenRefreshCycleTimeout                 = time.Hour
 	defaultTokenRefreshCleanupTimeout           = 2 * time.Second
@@ -773,30 +772,6 @@ func (s *TokenRefreshService) attemptTimeout() time.Duration {
 		seconds := min(s.cfg.AttemptTimeoutSeconds, int(maxTokenRefreshAttemptTimeout/time.Second))
 		timeout = time.Duration(seconds) * time.Second
 	}
-	if s.refreshAPI != nil && s.refreshAPI.tokenCache != nil {
-		timeout = clampRefreshAttemptToLockLease(timeout, s.refreshAPI.lockTTL)
-	}
-	return timeout
-}
-
-func clampRefreshAttemptToLockLease(timeout, lease time.Duration) time.Duration {
-	if timeout <= 0 || lease <= 0 {
-		return timeout
-	}
-	margin := lease / 10
-	if margin > maxTokenRefreshLockSafetyMargin {
-		margin = maxTokenRefreshLockSafetyMargin
-	}
-	if margin <= 0 {
-		margin = time.Nanosecond
-	}
-	leaseBudget := lease - margin
-	if leaseBudget <= 0 {
-		leaseBudget = lease / 2
-	}
-	if leaseBudget > 0 && timeout > leaseBudget {
-		return leaseBudget
-	}
 	return timeout
 }
 
@@ -857,7 +832,7 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 		shortCircuit := false
 		credentialsPersisted := false
 
-		// 优先使用统一 API（带分布式锁 + DB 重读保护）
+		// 优先使用统一 API（带进程内互斥、DB 重读和版本保护）
 		if s.refreshAPI != nil && executor != nil {
 			actualExecutor := executor
 			if acquireRate != nil {
@@ -872,10 +847,6 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 			}
 			if refreshErr != nil {
 				err = refreshErr
-			} else if result.LockHeld {
-				// 锁被其他 worker 持有，由调用侧策略决定如何计数
-				err = s.refreshPolicy.handleLockHeld()
-				shortCircuit = true
 			} else if !result.Refreshed {
 				// 已被其他路径刷新，由调用侧策略决定如何计数
 				err = s.refreshPolicy.handleAlreadyRefreshed()

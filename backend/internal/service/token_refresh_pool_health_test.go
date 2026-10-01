@@ -786,17 +786,6 @@ func TestTokenRefreshService_ConfigBounds(t *testing.T) {
 	require.Equal(t, maxGrokOAuthReconcilePageSize, svc.grokOAuthReconcileMaxPageSize())
 }
 
-func TestTokenRefreshService_AttemptTimeoutStaysInsideDistributedLockLease(t *testing.T) {
-	cache := &poolHealthTokenCacheStub{}
-	svc := &TokenRefreshService{
-		cfg:        &config.TokenRefreshConfig{AttemptTimeoutSeconds: int(maxTokenRefreshAttemptTimeout / time.Second)},
-		refreshAPI: NewOAuthRefreshAPI(&poolHealthAccountRepo{}, cache),
-	}
-
-	require.Equal(t, 55*time.Second, svc.attemptTimeout())
-	require.Less(t, svc.attemptTimeout(), defaultRefreshLockTTL)
-}
-
 func TestTokenRefreshService_SharedProviderFailureContainsCycleWithoutAccountMutation(t *testing.T) {
 	accounts := make([]Account, 0, 5)
 	for id := int64(1); id <= 5; id++ {

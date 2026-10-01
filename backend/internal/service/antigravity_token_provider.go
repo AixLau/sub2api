@@ -108,22 +108,9 @@ func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
 				return "", err
 			}
-		} else if result.LockHeld {
-			if p.refreshPolicy.OnLockHeld == ProviderLockHeldWaitForCache && p.tokenCache != nil {
-				if token, cacheErr := p.tokenCache.GetAccessToken(ctx, cacheKey); cacheErr == nil && strings.TrimSpace(token) != "" {
-					return token, nil
-				}
-			}
-			// default policy: continue with existing token.
 		} else {
 			account = result.Account
 			expiresAt = account.GetCredentialAsTime("expires_at")
-		}
-	} else if needsRefresh && p.tokenCache != nil {
-		// Backward-compatible test path when refreshAPI is not injected.
-		locked, err := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
-		if err == nil && locked {
-			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
 		}
 	}
 

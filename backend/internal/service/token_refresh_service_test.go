@@ -955,9 +955,6 @@ func TestIsNonRetryableRefreshError(t *testing.T) {
 
 // mockTokenCacheForRefreshAPI 用于 Path A 测试的 GeminiTokenCache mock
 type mockTokenCacheForRefreshAPI struct {
-	lockResult   bool
-	lockErr      error
-	releaseCalls int
 	deleteCalls  int
 	deleteCtxErr error
 }
@@ -973,15 +970,6 @@ func (m *mockTokenCacheForRefreshAPI) SetAccessToken(_ context.Context, _ string
 func (m *mockTokenCacheForRefreshAPI) DeleteAccessToken(ctx context.Context, _ string) error {
 	m.deleteCalls++
 	m.deleteCtxErr = ctx.Err()
-	return nil
-}
-
-func (m *mockTokenCacheForRefreshAPI) AcquireRefreshLock(_ context.Context, _ string, _ time.Duration) (bool, error) {
-	return m.lockResult, m.lockErr
-}
-
-func (m *mockTokenCacheForRefreshAPI) ReleaseRefreshLock(_ context.Context, _ string) error {
-	m.releaseCalls++
 	return nil
 }
 
@@ -1021,15 +1009,14 @@ func TestPathA_Success(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 
 	service, refresher := buildPathAService(repo, cache, invalidator)
 
 	err := service.refreshWithRetry(context.Background(), account, refresher, refresher, time.Hour)
 	require.NoError(t, err)
-	require.Equal(t, 1, repo.updateCalls)   // DB 更新被调用
-	require.Equal(t, 1, invalidator.calls)  // 缓存失效被调用
-	require.Equal(t, 1, cache.releaseCalls) // 锁被释放
+	require.Equal(t, 1, repo.updateCalls)  // DB 更新被调用
+	require.Equal(t, 1, invalidator.calls) // 缓存失效被调用
 }
 
 func TestPathA_GrokSuccessPersistenceFailureContainsProviderWithoutRetryOrMutation(t *testing.T) {
@@ -1132,7 +1119,7 @@ func TestPathA_GrokCancelAfterSuccessCASUsesDetachedDurableStateAndInvalidatesCa
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
 	scheduler := &tokenRefreshSchedulerCache{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 	cfg := &config.Config{TokenRefresh: config.TokenRefreshConfig{MaxRetries: 1}}
 	svc := NewTokenRefreshService(repo, nil, nil, nil, nil, invalidator, scheduler, cfg, nil)
 	svc.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache))
@@ -1222,7 +1209,7 @@ func TestPathA_ParentCancellationAfterPersistStillSynchronizesCacheState(t *test
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
 	scheduler := &tokenRefreshSchedulerCache{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 	service, refresher := buildPathAService(repo, cache, invalidator)
 	service.schedulerCache = scheduler
 
@@ -1234,26 +1221,6 @@ func TestPathA_ParentCancellationAfterPersistStillSynchronizesCacheState(t *test
 	require.NoError(t, invalidator.ctxErr, "post-persist invalidation must use bounded cleanup context")
 	require.Equal(t, 1, scheduler.setAccountCalls)
 	require.NoError(t, scheduler.ctxErr, "scheduler sync must use bounded cleanup context")
-}
-
-// TestPathA_LockHeld 锁被其他 worker 持有 → 返回 errRefreshSkipped
-func TestPathA_LockHeld(t *testing.T) {
-	account := &Account{
-		ID:       101,
-		Platform: PlatformGemini,
-		Type:     AccountTypeOAuth,
-		Status:   StatusActive,
-	}
-	repo := &tokenRefreshAccountRepo{}
-	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: false} // 锁获取失败（被占）
-
-	service, refresher := buildPathAService(repo, cache, invalidator)
-
-	err := service.refreshWithRetry(context.Background(), account, refresher, refresher, time.Hour)
-	require.ErrorIs(t, err, errRefreshSkipped)
-	require.Equal(t, 0, repo.updateCalls)  // 不应更新 DB
-	require.Equal(t, 0, invalidator.calls) // 不应触发缓存失效
 }
 
 // TestPathA_AlreadyRefreshed 二次检查发现已被其他路径刷新 → 返回 errRefreshSkipped
@@ -1268,7 +1235,7 @@ func TestPathA_AlreadyRefreshed(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 
 	service, _ := buildPathAService(repo, cache, invalidator)
 
@@ -1308,7 +1275,7 @@ func TestPathA_NonRetryableError(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 
 	service, _ := buildPathAService(repo, cache, invalidator)
 
@@ -1334,7 +1301,7 @@ func TestPathA_RetryableErrorExhausted(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 
 	cfg := &config.Config{
 		TokenRefresh: config.TokenRefreshConfig{
@@ -1406,7 +1373,7 @@ func TestPathA_GrokPermanentFailureCASLetsConcurrentAccountRepairWin(t *testing.
 			repo.accountsByID = map[int64]*Account{account.ID: account}
 			tt.configure(repo)
 			invalidator := &tokenCacheInvalidatorStub{}
-			cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+			cache := &mockTokenCacheForRefreshAPI{}
 			service, _ := buildPathAService(repo, cache, invalidator)
 			blocker := &tokenRefreshRuntimeBlocker{}
 			service.SetAccountRuntimeBlocker(blocker)
@@ -1475,7 +1442,7 @@ func TestPathA_GrokTransientFailureCASLetsConcurrentAccountRepairWin(t *testing.
 			repo.accountsByID = map[int64]*Account{account.ID: account}
 			tt.configure(repo)
 			invalidator := &tokenCacheInvalidatorStub{}
-			cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+			cache := &mockTokenCacheForRefreshAPI{}
 			service, _ := buildPathAService(repo, cache, invalidator)
 			blocker := &tokenRefreshRuntimeBlocker{}
 			service.SetAccountRuntimeBlocker(blocker)
@@ -1618,7 +1585,7 @@ func TestPathA_DBUpdateFailed(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{updateErr: errors.New("db connection lost")}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
 	invalidator := &tokenCacheInvalidatorStub{}
-	cache := &mockTokenCacheForRefreshAPI{lockResult: true}
+	cache := &mockTokenCacheForRefreshAPI{}
 
 	service, refresher := buildPathAService(repo, cache, invalidator)
 

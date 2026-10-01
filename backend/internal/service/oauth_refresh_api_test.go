@@ -149,13 +149,9 @@ func (e *refreshAPIExecutorStub) CacheKey(account *Account) string {
 
 // refreshAPICacheStub implements GeminiTokenCache for OAuthRefreshAPI tests.
 type refreshAPICacheStub struct {
-	lockResult    bool
-	lockErr       error
-	releaseCalls  int
-	releaseCtxErr error
-	deleteCalls   int
-	deleteKey     string
-	deleteCtxErr  error
+	deleteCalls  int
+	deleteKey    string
+	deleteCtxErr error
 }
 
 func (c *refreshAPICacheStub) GetAccessToken(context.Context, string) (string, error) {
@@ -173,22 +169,12 @@ func (c *refreshAPICacheStub) DeleteAccessToken(ctx context.Context, key string)
 	return nil
 }
 
-func (c *refreshAPICacheStub) AcquireRefreshLock(context.Context, string, time.Duration) (bool, error) {
-	return c.lockResult, c.lockErr
-}
-
-func (c *refreshAPICacheStub) ReleaseRefreshLock(ctx context.Context, _ string) error {
-	c.releaseCalls++
-	c.releaseCtxErr = ctx.Err()
-	return nil
-}
-
 // ========== RefreshIfNeeded tests ==========
 
 func TestRefreshIfNeeded_Success(t *testing.T) {
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Status: StatusActive}
 	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials:  map[string]any{"access_token": "new-token"},
@@ -204,7 +190,6 @@ func TestRefreshIfNeeded_Success(t *testing.T) {
 	require.NotNil(t, result.NewCredentials["_token_version"]) // version stamp set
 	require.Equal(t, 1, repo.updateCalls)                      // DB updated
 	require.Equal(t, 1, repo.updateCredentialsCalls)
-	require.Equal(t, 1, cache.releaseCalls) // lock released
 	require.Equal(t, 1, executor.refreshCalls)
 }
 
@@ -218,7 +203,7 @@ func TestRefreshIfNeeded_UpdateCredentialsPreservesRateLimitState(t *testing.T) 
 		RateLimitResetAt: &resetAt,
 	}
 	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials:  map[string]any{"access_token": "safe-token"},
@@ -232,41 +217,6 @@ func TestRefreshIfNeeded_UpdateCredentialsPreservesRateLimitState(t *testing.T) 
 	require.Equal(t, 1, repo.updateCredentialsCalls)
 	require.NotNil(t, repo.account.RateLimitResetAt)
 	require.WithinDuration(t, resetAt, *repo.account.RateLimitResetAt, time.Second)
-}
-
-func TestRefreshIfNeeded_LockHeld(t *testing.T) {
-	account := &Account{ID: 2, Platform: PlatformAnthropic, Status: StatusActive}
-	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: false} // lock not acquired
-	executor := &refreshAPIExecutorStub{needsRefresh: true}
-
-	api := NewOAuthRefreshAPI(repo, cache)
-	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
-
-	require.NoError(t, err)
-	require.True(t, result.LockHeld)
-	require.False(t, result.Refreshed)
-	require.Equal(t, 0, repo.updateCalls)
-	require.Equal(t, 0, executor.refreshCalls)
-}
-
-func TestRefreshIfNeeded_LockErrorDegrades(t *testing.T) {
-	account := &Account{ID: 3, Platform: PlatformGemini, Type: AccountTypeOAuth, Status: StatusActive}
-	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockErr: errors.New("redis down")} // lock error
-	executor := &refreshAPIExecutorStub{
-		needsRefresh: true,
-		credentials:  map[string]any{"access_token": "degraded-token"},
-	}
-
-	api := NewOAuthRefreshAPI(repo, cache)
-	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
-
-	require.NoError(t, err)
-	require.True(t, result.Refreshed)       // still refreshed (degraded mode)
-	require.Equal(t, 1, repo.updateCalls)   // DB updated
-	require.Equal(t, 0, cache.releaseCalls) // no lock to release
-	require.Equal(t, 1, executor.refreshCalls)
 }
 
 func TestRefreshIfNeeded_NoCacheNoLock(t *testing.T) {
@@ -288,7 +238,7 @@ func TestRefreshIfNeeded_NoCacheNoLock(t *testing.T) {
 func TestRefreshIfNeeded_AlreadyRefreshed(t *testing.T) {
 	account := &Account{ID: 5, Platform: PlatformAnthropic, Status: StatusActive}
 	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{needsRefresh: false} // already refreshed
 
 	api := NewOAuthRefreshAPI(repo, cache)
@@ -296,7 +246,6 @@ func TestRefreshIfNeeded_AlreadyRefreshed(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, result.Refreshed)
-	require.False(t, result.LockHeld)
 	require.NotNil(t, result.Account) // returns fresh account
 	require.Equal(t, 0, repo.updateCalls)
 	require.Equal(t, 0, executor.refreshCalls)
@@ -305,7 +254,7 @@ func TestRefreshIfNeeded_AlreadyRefreshed(t *testing.T) {
 func TestRefreshIfNeeded_RefreshError(t *testing.T) {
 	account := &Account{ID: 6, Platform: PlatformAnthropic, Status: StatusActive}
 	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		err:          errors.New("invalid_grant: token revoked"),
@@ -319,8 +268,7 @@ func TestRefreshIfNeeded_RefreshError(t *testing.T) {
 	require.NotNil(t, result.Account)
 	require.Equal(t, account.ID, result.Account.ID)
 	require.Contains(t, err.Error(), "invalid_grant")
-	require.Equal(t, 0, repo.updateCalls)   // no DB update on refresh error
-	require.Equal(t, 1, cache.releaseCalls) // lock still released via defer
+	require.Equal(t, 0, repo.updateCalls) // no DB update on refresh error
 }
 
 func TestRefreshIfNeeded_DBUpdateError(t *testing.T) {
@@ -329,7 +277,7 @@ func TestRefreshIfNeeded_DBUpdateError(t *testing.T) {
 		account:   account,
 		updateErr: errors.New("db connection lost"),
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials:  map[string]any{"access_token": "token"},
@@ -440,7 +388,7 @@ func TestRefreshIfNeeded_GrokSuccessDurableRereadFailureIsProviderContainment(t 
 		getByIDErrAfterCall:    2,
 		getByIDErrAfterCallErr: errors.New("durable state unavailable"),
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials: map[string]any{
@@ -467,7 +415,7 @@ func TestRefreshIfNeeded_DBRereadFails(t *testing.T) {
 		account:    nil, // GetByID returns nil
 		getByIDErr: errors.New("db timeout"),
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials:  map[string]any{"access_token": "fallback-token"},
@@ -482,13 +430,12 @@ func TestRefreshIfNeeded_DBRereadFails(t *testing.T) {
 	require.Nil(t, result)
 	require.Zero(t, executor.refreshCalls, "a failed DB reread must not refresh stale credentials")
 	require.Zero(t, repo.updateCalls)
-	require.Equal(t, 1, cache.releaseCalls)
 }
 
 func TestRefreshIfNeeded_RequestPathDBRereadNilFailsClosed(t *testing.T) {
 	account := &Account{ID: 81, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
 	repo := &refreshAPIAccountRepo{}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{needsRefresh: true}
 
 	api := NewOAuthRefreshAPI(repo, cache)
@@ -498,7 +445,6 @@ func TestRefreshIfNeeded_RequestPathDBRereadNilFailsClosed(t *testing.T) {
 	require.Nil(t, result)
 	require.Zero(t, executor.refreshCalls)
 	require.Zero(t, repo.updateCalls)
-	require.Equal(t, 1, cache.releaseCalls)
 }
 
 func TestRefreshIfNeeded_RequestPathDBRereadInactiveFailsClosed(t *testing.T) {
@@ -559,25 +505,6 @@ func TestRefreshIfNeeded_LocalLockWaitHonorsContext(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Nil(t, result)
 	require.Zero(t, executor.refreshCalls)
-}
-
-func TestRefreshIfNeeded_ReleasesDistributedLockAfterParentCancellation(t *testing.T) {
-	account := &Account{ID: 81, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive}
-	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
-	ctx, cancel := context.WithCancel(context.Background())
-	executor := &refreshAPIExecutorStub{
-		needsRefresh: true,
-		err:          errors.New("temporary provider error"),
-		onRefresh:    cancel,
-	}
-	api := NewOAuthRefreshAPI(repo, cache)
-
-	_, err := api.RefreshIfNeeded(ctx, account, executor, time.Hour)
-
-	require.Error(t, err)
-	require.Equal(t, 1, cache.releaseCalls)
-	require.NoError(t, cache.releaseCtxErr, "lock cleanup must not reuse the canceled attempt context")
 }
 
 func TestRefreshIfNeeded_RevalidatesFreshAccountBeforeRefresh(t *testing.T) {
@@ -655,7 +582,7 @@ func TestRefreshIfNeeded_LateSuccessAfterDeadlineDoesNotPersist(t *testing.T) {
 func TestRefreshIfNeeded_NilCredentials(t *testing.T) {
 	account := &Account{ID: 9, Platform: PlatformGemini, Type: AccountTypeOAuth, Status: StatusActive}
 	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		credentials:  nil, // Refresh returns nil credentials
@@ -801,7 +728,7 @@ func TestRefreshIfNeeded_InvalidGrantRaceRecovered(t *testing.T) {
 		refreshAPIAccountRepo: refreshAPIAccountRepo{account: account},
 		raceAccount:           racedAccount,
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		err:          errors.New("invalid_grant: refresh token not found or invalid"),
@@ -812,7 +739,6 @@ func TestRefreshIfNeeded_InvalidGrantRaceRecovered(t *testing.T) {
 
 	require.NoError(t, err, "race-recovered invalid_grant should not return error")
 	require.False(t, result.Refreshed)
-	require.False(t, result.LockHeld)
 	require.NotNil(t, result.Account)
 	require.Equal(t, "new-rt", result.Account.GetCredential("refresh_token"))
 	require.Equal(t, 0, repo.updateCalls) // no DB update needed, another worker did it
@@ -831,7 +757,7 @@ func TestRefreshIfNeeded_InvalidGrantGenuine(t *testing.T) {
 		refreshAPIAccountRepo: refreshAPIAccountRepo{account: account},
 		raceAccount:           account, // same refresh_token on re-read
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		err:          errors.New("invalid_grant: refresh token revoked"),
@@ -859,7 +785,7 @@ func TestRefreshIfNeeded_InvalidGrantDBRereadFailsOnRecovery(t *testing.T) {
 		refreshAPIAccountRepo: refreshAPIAccountRepo{account: account},
 		raceAccount:           nil, // GetByID returns nil on recovery attempt
 	}
-	cache := &refreshAPICacheStub{lockResult: true}
+	cache := &refreshAPICacheStub{}
 	executor := &refreshAPIExecutorStub{
 		needsRefresh: true,
 		err:          errors.New("invalid_grant"),
@@ -975,42 +901,6 @@ func TestRefreshIfNeeded_LocalLockWaitHonorsContextCancellation(t *testing.T) {
 	require.NoError(t, <-firstDone)
 }
 
-func TestRefreshIfNeeded_ReleasesDistributedLockWithCleanupContext(t *testing.T) {
-	account := &Account{
-		ID:       22,
-		Platform: PlatformGrok,
-		Type:     AccountTypeOAuth,
-		Status:   StatusActive,
-		Credentials: map[string]any{
-			"access_token":  "old-access",
-			"refresh_token": "old-refresh",
-		},
-	}
-	repo := &refreshAPIAccountRepo{account: account}
-	cache := &refreshAPICacheStub{lockResult: true}
-	ctx, cancel := context.WithCancel(context.Background())
-	executor := &dynamicRefreshExecutor{
-		canRefresh:       true,
-		cacheKey:         "test:cleanup:grok",
-		needsRefreshFunc: func() bool { return true },
-		refreshFunc: func(context.Context, *Account) (map[string]any, error) {
-			cancel()
-			return map[string]any{"access_token": "new-at"}, nil
-		},
-	}
-	api := NewOAuthRefreshAPI(repo, cache)
-
-	result, err := api.RefreshIfNeeded(ctx, account, executor, 3*time.Minute)
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.Nil(t, result)
-	require.Zero(t, repo.updateCalls)
-	require.Equal(t, "old-access", account.GetGrokAccessToken())
-	require.Zero(t, account.GetCredentialAsInt64("_token_version"))
-	require.Equal(t, 1, cache.releaseCalls)
-	require.NoError(t, cache.releaseCtxErr)
-}
-
 // dynamicRefreshExecutor is a test helper with function-based NeedsRefresh and Refresh.
 type dynamicRefreshExecutor struct {
 	canRefresh       bool
@@ -1033,23 +923,6 @@ func (e *dynamicRefreshExecutor) CacheKey(_ *Account) string {
 	return e.cacheKey
 }
 
-// ========== NewOAuthRefreshAPI TTL tests ==========
-
-func TestNewOAuthRefreshAPI_DefaultTTL(t *testing.T) {
-	api := NewOAuthRefreshAPI(nil, nil)
-	require.Equal(t, defaultRefreshLockTTL, api.lockTTL)
-}
-
-func TestNewOAuthRefreshAPI_CustomTTL(t *testing.T) {
-	api := NewOAuthRefreshAPI(nil, nil, 90*time.Second)
-	require.Equal(t, 90*time.Second, api.lockTTL)
-}
-
-func TestNewOAuthRefreshAPI_ZeroTTLUsesDefault(t *testing.T) {
-	api := NewOAuthRefreshAPI(nil, nil, 0)
-	require.Equal(t, defaultRefreshLockTTL, api.lockTTL)
-}
-
 // ========== isInvalidGrantError tests ==========
 
 func TestIsInvalidGrantError(t *testing.T) {
@@ -1064,17 +937,14 @@ func TestIsInvalidGrantError(t *testing.T) {
 func TestBackgroundRefreshPolicy_DefaultSkips(t *testing.T) {
 	p := DefaultBackgroundRefreshPolicy()
 
-	require.ErrorIs(t, p.handleLockHeld(), errRefreshSkipped)
 	require.ErrorIs(t, p.handleAlreadyRefreshed(), errRefreshSkipped)
 }
 
 func TestBackgroundRefreshPolicy_SuccessOverride(t *testing.T) {
 	p := BackgroundRefreshPolicy{
-		OnLockHeld:       BackgroundSkipAsSuccess,
 		OnAlreadyRefresh: BackgroundSkipAsSuccess,
 	}
 
-	require.NoError(t, p.handleLockHeld())
 	require.NoError(t, p.handleAlreadyRefreshed())
 }
 
@@ -1083,27 +953,23 @@ func TestBackgroundRefreshPolicy_SuccessOverride(t *testing.T) {
 func TestClaudeProviderRefreshPolicy(t *testing.T) {
 	p := ClaudeProviderRefreshPolicy()
 	require.Equal(t, ProviderRefreshErrorUseExistingToken, p.OnRefreshError)
-	require.Equal(t, ProviderLockHeldWaitForCache, p.OnLockHeld)
 	require.Equal(t, time.Minute, p.FailureTTL)
 }
 
 func TestOpenAIProviderRefreshPolicy(t *testing.T) {
 	p := OpenAIProviderRefreshPolicy()
 	require.Equal(t, ProviderRefreshErrorUseExistingToken, p.OnRefreshError)
-	require.Equal(t, ProviderLockHeldWaitForCache, p.OnLockHeld)
 	require.Equal(t, time.Minute, p.FailureTTL)
 }
 
 func TestGeminiProviderRefreshPolicy(t *testing.T) {
 	p := GeminiProviderRefreshPolicy()
 	require.Equal(t, ProviderRefreshErrorReturn, p.OnRefreshError)
-	require.Equal(t, ProviderLockHeldUseExistingToken, p.OnLockHeld)
 	require.Equal(t, time.Duration(0), p.FailureTTL)
 }
 
 func TestAntigravityProviderRefreshPolicy(t *testing.T) {
 	p := AntigravityProviderRefreshPolicy()
 	require.Equal(t, ProviderRefreshErrorReturn, p.OnRefreshError)
-	require.Equal(t, ProviderLockHeldUseExistingToken, p.OnLockHeld)
 	require.Equal(t, time.Duration(0), p.FailureTTL)
 }

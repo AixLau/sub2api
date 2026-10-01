@@ -12,11 +12,11 @@ import (
 )
 
 // OAuthRefreshExecutor 各平台实现的 OAuth 刷新执行器
-// TokenRefresher 接口的超集：增加了 CacheKey 方法用于分布式锁
+// TokenRefresher 接口的超集：增加了 CacheKey 方法用于进程内互斥和缓存清理
 type OAuthRefreshExecutor interface {
 	TokenRefresher
 
-	// CacheKey 返回用于分布式锁的缓存键（与 TokenProvider 使用的一致）
+	// CacheKey 返回与 TokenProvider 使用一致的稳定缓存键。
 	CacheKey(account *Account) string
 }
 
@@ -35,8 +35,6 @@ type GrokOAuthRefreshSuccessRepository interface {
 }
 
 const (
-	defaultRefreshLockTTL                   = 60 * time.Second
-	defaultRefreshLockReleaseTimeout        = 2 * time.Second
 	defaultRefreshPostPersistCleanupTimeout = 2 * time.Second
 )
 
@@ -57,18 +55,6 @@ func isOAuthRefreshRequestPath(ctx context.Context) bool {
 	return requestPath
 }
 
-type contextMutex struct {
-	token chan struct{}
-}
-
-// Keep the request-path credential mutation lock API introduced by #4212
-// while sharing the context-aware mutex implementation used by pool refresh.
-type oauthRefreshLocalLock = contextMutex
-
-func newOAuthRefreshLocalLock() *oauthRefreshLocalLock {
-	return newContextMutex()
-}
-
 type oauthRefreshStateUnavailableError struct {
 	err error
 }
@@ -84,29 +70,11 @@ func (e *oauthRefreshStateUnavailableError) Unwrap() error {
 	return e.err
 }
 
-func newContextMutex() *contextMutex {
-	return &contextMutex{token: make(chan struct{}, 1)}
-}
-
-func (m *contextMutex) Lock(ctx context.Context) error {
-	select {
-	case m.token <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (m *contextMutex) Unlock() {
-	<-m.token
-}
-
 // OAuthRefreshResult 统一刷新结果
 type OAuthRefreshResult struct {
 	Refreshed      bool           // 实际执行了刷新
 	NewCredentials map[string]any // 刷新后的 credentials（nil 表示未刷新）
 	Account        *Account       // 成功时为最新 account；刷新错误时为实际尝试的凭据快照
-	LockHeld       bool           // 锁被其他 worker 持有（未执行刷新）
 }
 
 func snapshotOAuthRefreshAccount(account *Account) *Account {
@@ -123,25 +91,18 @@ func snapshotOAuthRefreshAccount(account *Account) *Account {
 }
 
 // OAuthRefreshAPI 统一的 OAuth Token 刷新入口
-// 封装分布式锁、进程内互斥锁、DB 重读、已刷新检查、竞争恢复等通用逻辑
+// 封装进程内互斥锁、DB 重读、已刷新检查、竞争恢复等通用逻辑
 type OAuthRefreshAPI struct {
 	accountRepo AccountRepository
-	tokenCache  GeminiTokenCache // 可选，nil = 无分布式锁
-	lockTTL     time.Duration
-	localLocks  sync.Map // key: cacheKey string -> value: *contextMutex
+	tokenCache  GeminiTokenCache // 可选，仅用于 access-token 缓存
+	localLocks  sync.Map         // key: cacheKey string -> value: *contextMutex
 }
 
 // NewOAuthRefreshAPI 创建统一刷新 API
-// 可选传入 lockTTL 覆盖默认的 60s 分布式锁 TTL
-func NewOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache, lockTTL ...time.Duration) *OAuthRefreshAPI {
-	ttl := defaultRefreshLockTTL
-	if len(lockTTL) > 0 && lockTTL[0] > 0 {
-		ttl = lockTTL[0]
-	}
+func NewOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return &OAuthRefreshAPI{
 		accountRepo: accountRepo,
 		tokenCache:  tokenCache,
-		lockTTL:     ttl,
 	}
 }
 
@@ -156,15 +117,14 @@ func (api *OAuthRefreshAPI) getLocalLock(cacheKey string) *contextMutex {
 	return mu
 }
 
-// RefreshIfNeeded 在分布式锁保护下按需刷新 OAuth token
+// RefreshIfNeeded 在进程内互斥保护下按需刷新 OAuth token
 //
 // 流程:
-//  1. 获取分布式锁
+//  1. 获取进程内互斥锁
 //  2. 从 DB 重读最新 account（防止使用过时的 refresh_token）
 //  3. 二次检查是否仍需刷新
 //  4. 调用 executor.Refresh() 执行平台特定刷新逻辑
 //  5. 设置 _token_version + 更新 DB
-//  6. 释放锁
 func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	ctx context.Context,
 	account *Account,
@@ -190,25 +150,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	}
 	defer localMu.Unlock()
 
-	// 1. 获取分布式锁
-	if api.tokenCache != nil {
-		acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
-		if lockErr != nil {
-			// Redis 错误，降级为无锁刷新（进程内互斥锁仍生效）
-			slog.Warn("oauth_refresh_lock_failed_degraded",
-				"account_id", account.ID,
-				"cache_key", cacheKey,
-				"error", lockErr,
-			)
-		} else if !acquired {
-			// 锁被其他 worker 持有
-			return &OAuthRefreshResult{LockHeld: true}, nil
-		} else {
-			defer api.releaseRefreshLock(ctx, cacheKey)
-		}
-	}
-
-	// 2. 从 DB 重读最新 account（锁保护下，确保使用最新的 refresh_token）
+	// 1. 从 DB 重读最新 account，确保使用最新的 refresh_token。
 	freshAccount, err := api.accountRepo.GetByID(ctx, account.ID)
 	if err != nil {
 		if requestPath {
@@ -246,14 +188,14 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return &OAuthRefreshResult{Account: freshAccount}, nil
 	}
 
-	// 3. 二次检查是否仍需刷新（另一条路径可能已刷新）
+	// 2. 二次检查是否仍需刷新。
 	if !executor.NeedsRefresh(freshAccount, refreshWindow) {
 		return &OAuthRefreshResult{
 			Account: freshAccount,
 		}, nil
 	}
 
-	// 4. 执行平台特定刷新逻辑
+	// 3. 执行平台特定刷新逻辑
 	attemptedAccount := snapshotOAuthRefreshAccount(freshAccount)
 	newCredentials, refreshErr := executor.Refresh(ctx, freshAccount)
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -290,7 +232,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return result, refreshErr
 	}
 
-	// 5. 设置版本号 + 更新 DB
+	// 4. 设置版本号 + 更新 DB
 	if newCredentials != nil {
 		newCredentials["_token_version"] = time.Now().UnixMilli()
 		if freshAccount.IsGrokOAuth() {
@@ -370,18 +312,6 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		NewCredentials: newCredentials,
 		Account:        freshAccount,
 	}, nil
-}
-
-func (api *OAuthRefreshAPI) releaseRefreshLock(parent context.Context, cacheKey string) {
-	cleanupParent := context.Background()
-	if parent != nil {
-		cleanupParent = context.WithoutCancel(parent)
-	}
-	ctx, cancel := context.WithTimeout(cleanupParent, defaultRefreshLockReleaseTimeout)
-	defer cancel()
-	if err := api.tokenCache.ReleaseRefreshLock(ctx, cacheKey); err != nil {
-		slog.Warn("oauth_refresh_lock_release_failed", "cache_key", cacheKey, "error", err)
-	}
 }
 
 func (api *OAuthRefreshAPI) loadGrokDurableAccountAfterPersist(parent context.Context, cacheKey string, accountID int64) (*Account, error) {
