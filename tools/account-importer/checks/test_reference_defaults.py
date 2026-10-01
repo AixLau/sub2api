@@ -52,7 +52,8 @@ class ReferenceDefaultsTests(unittest.IsolatedAsyncioTestCase):
                     response = await http.get("/api/reference/0/models")
                     self.assertEqual(response.status_code, 200)
                     self.assertEqual(response.json()["model_mapping"], default_import_profile()["credentials"]["model_mapping"])
-                    self.assertEqual(len(response.json()["model_mapping"]), 9)
+                    self.assertEqual(response.json()["model_mapping"]["gpt-6.1-sol"], "gpt-6.1-sol")
+                    self.assertEqual(len(response.json()["model_mapping"]), 10)
             finally:
                 await app.state.manager.close()
 
@@ -133,7 +134,7 @@ class ReferenceDefaultsTests(unittest.IsolatedAsyncioTestCase):
         profile["group_ids"].clear()
         profile["credentials"]["model_mapping"].clear()
         self.assertEqual(len(default_import_profile()["group_ids"]), 7)
-        self.assertEqual(len(default_import_profile()["credentials"]["model_mapping"]), 9)
+        self.assertEqual(len(default_import_profile()["credentials"]["model_mapping"]), 10)
 
     async def test_api_imports_use_builtin_default_with_omitted_or_zero_selection(self):
         for mode in ("file", "credentials"):
