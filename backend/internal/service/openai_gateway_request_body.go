@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -130,15 +131,27 @@ func deleteOpenAIResponsesNoneReasoningEffortFromObject(account *Account, body m
 // Responses 均不支持服务端状态存储，携带这些字段会被拒绝）。
 // 非原生 Responses 协议账号原样返回。
 func normalizeDeepSeekResponsesRequestBody(account *Account, body []byte) []byte {
-	if account == nil || !account.UsesNativeCNResponses() {
+	if account == nil {
+		return body
+	}
+	nativeCN := account.UsesNativeCNResponses()
+	deepSeek := isDeepSeekResponsesAccount(account)
+	if !nativeCN && !deepSeek {
 		return body
 	}
 	normalized, err := sjson.SetBytes(body, "store", false)
 	if err != nil {
 		return body
 	}
-	if stripped, err := sjson.DeleteBytes(normalized, "previous_response_id"); err == nil {
-		normalized = stripped
+	if nativeCN {
+		if stripped, err := sjson.DeleteBytes(normalized, "previous_response_id"); err == nil {
+			normalized = stripped
+		}
+	} else {
+		// OpenAI API-key accounts mapped to the DeepSeek Responses endpoint
+		// still need image-shape normalization, but their upstream may support
+		// server-side response state and must retain store/previous_response_id.
+		normalized = body
 	}
 
 	var requestBody map[string]any
@@ -149,16 +162,148 @@ func normalizeDeepSeekResponsesRequestBody(account *Account, body []byte) []byte
 	if !exists {
 		return normalized
 	}
+	inputChanged := false
+	if isDeepSeekResponsesAccount(account) {
+		if normalizedInput, changed := normalizeDeepSeekResponsesInputImages(input); changed {
+			requestBody["input"] = normalizedInput
+			input = normalizedInput
+			inputChanged = true
+		}
+	}
 	liftedInput, changed := apicompat.LiftResponsesToolOutputMedia(input)
-	if !changed {
+	if !changed && !inputChanged {
 		return normalized
 	}
-	requestBody["input"] = liftedInput
+	if changed && isDeepSeekResponsesAccount(account) {
+		liftedInput, _ = normalizeDeepSeekResponsesInputImages(liftedInput)
+		inputChanged = true
+	}
+	if changed {
+		requestBody["input"] = liftedInput
+		inputChanged = true
+	}
+	if !inputChanged {
+		return normalized
+	}
 	rebuilt, err := marshalOpenAIUpstreamJSON(requestBody)
 	if err != nil {
 		return normalized
 	}
 	return rebuilt
+}
+
+func isDeepSeekResponsesAccount(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform == PlatformDeepseek {
+		protocol := account.GetAPIProtocol()
+		return protocol == APIProtocolResponses || protocol == APIProtocolAdaptive
+	}
+	if account.Platform != PlatformOpenAI {
+		return false
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(account.GetOpenAIBaseURL()), "/")
+	return strings.EqualFold(baseURL, strings.TrimRight(DefaultDeepseekBaseURL, "/")) &&
+		openai_compat.ShouldUseResponsesAPI(account.Extra)
+}
+
+func normalizeDeepSeekResponsesInputImages(input any) (any, bool) {
+	items, ok := input.([]any)
+	if !ok {
+		return input, false
+	}
+	changed := false
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, contentChanged := normalizeDeepSeekResponsesContent(item["content"])
+		if contentChanged {
+			item["content"] = content
+			changed = true
+		}
+	}
+	return items, changed
+}
+
+func normalizeDeepSeekResponsesContent(content any) (any, bool) {
+	changed := false
+	switch parts := content.(type) {
+	case []any:
+		for index, rawPart := range parts {
+			part, ok := rawPart.(map[string]any)
+			if !ok || !normalizeDeepSeekResponsesImagePart(part) {
+				continue
+			}
+			parts[index] = part
+			changed = true
+		}
+		return parts, changed
+	case []map[string]any:
+		for _, part := range parts {
+			if normalizeDeepSeekResponsesImagePart(part) {
+				changed = true
+			}
+		}
+		return parts, changed
+	}
+	return content, false
+}
+
+func normalizeDeepSeekResponsesImagePart(part map[string]any) bool {
+	partType := strings.TrimSpace(stringValue(part["type"]))
+	if partType != "input_image" && partType != "image_url" && partType != "image" {
+		return false
+	}
+	if partType == "image" {
+		source, ok := part["source"].(map[string]any)
+		if !ok || strings.TrimSpace(stringValue(source["type"])) != "base64" {
+			return false
+		}
+		data := strings.TrimSpace(stringValue(source["data"]))
+		if data == "" {
+			return false
+		}
+		mediaType := strings.TrimSpace(stringValue(source["media_type"]))
+		if mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		part["type"] = "input_image"
+		part["image_url"] = "data:" + mediaType + ";base64," + data
+		part["url"] = part["image_url"]
+		delete(part, "source")
+		return true
+	}
+
+	imageURL, detail := deepSeekImageURLValue(part["image_url"])
+	if imageURL == "" {
+		return false
+	}
+	if detail != "" && strings.TrimSpace(stringValue(part["detail"])) == "" {
+		part["detail"] = detail
+	}
+	changed := partType != "input_image" || stringValue(part["image_url"]) != imageURL || stringValue(part["url"]) != imageURL
+	part["type"] = "input_image"
+	part["image_url"] = imageURL
+	part["url"] = imageURL
+	return changed
+}
+
+func deepSeekImageURLValue(value any) (string, string) {
+	if raw, ok := value.(string); ok {
+		return strings.TrimSpace(raw), ""
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	url := strings.TrimSpace(stringValue(object["url"]))
+	if url == "" {
+		url = strings.TrimSpace(stringValue(object["image_url"]))
+	}
+	return url, strings.TrimSpace(stringValue(object["detail"]))
 }
 
 // normalizeOpenAIResponsesReasoningContent removes the non-standard content
