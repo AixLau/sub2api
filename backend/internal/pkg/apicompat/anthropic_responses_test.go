@@ -240,6 +240,17 @@ func TestResponsesToAnthropic_TextOnly(t *testing.T) {
 	assert.Equal(t, 5, anth.Usage.OutputTokens)
 }
 
+func TestResponsesToAnthropic_RefusalBecomesText(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID: "resp_refusal", Model: "gpt-5.2", Status: "completed",
+		Output: []ResponsesOutput{{Type: "message", Content: []ResponsesContentPart{{Type: "refusal", Refusal: "I can't help with that."}}}},
+	}
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+	require.Len(t, anth.Content, 1)
+	assert.Equal(t, "text", anth.Content[0].Type)
+	assert.Equal(t, "I can't help with that.", anth.Content[0].Text)
+}
+
 func TestResponsesToAnthropic_CachedTokensUseAnthropicInputSemantics(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_cached",
@@ -567,6 +578,28 @@ func TestStreamingTextOnly(t *testing.T) {
 	assert.Equal(t, 10, events[0].Usage.InputTokens)
 	assert.Equal(t, 5, events[0].Usage.OutputTokens)
 	assert.Equal(t, "message_stop", events[1].Type)
+}
+
+func TestStreamingRefusalBecomesAnthropicText(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	state.MessageStartSent = true
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.refusal.delta", OutputIndex: 0, ContentIndex: 0, Delta: "blocked",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_start", events[0].Type)
+	assert.Equal(t, "text", events[0].ContentBlock.Type)
+	assert.Equal(t, "content_block_delta", events[1].Type)
+	assert.Equal(t, "blocked", events[1].Delta.Text)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type: "response.refusal.done", OutputIndex: 0, ContentIndex: 0, Refusal: "blocked by policy",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.Equal(t, " by policy", events[0].Delta.Text)
+	assert.Equal(t, "content_block_stop", events[1].Type)
 }
 
 func TestResponsesEventToAnthropicEvents_ResponseDone(t *testing.T) {

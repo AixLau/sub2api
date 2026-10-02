@@ -31,6 +31,7 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 	}
 
 	var contentText string
+	var refusalText string
 	var reasoningText string
 	var toolCalls []ChatToolCall
 
@@ -38,8 +39,15 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 		switch item.Type {
 		case "message":
 			for _, part := range item.Content {
-				if part.Type == "output_text" && part.Text != "" {
-					contentText += part.Text
+				switch part.Type {
+				case "output_text":
+					if part.Text != "" {
+						contentText += part.Text
+					}
+				case "refusal":
+					if part.Refusal != "" {
+						refusalText += part.Refusal
+					}
 				}
 			}
 		case "function_call":
@@ -69,6 +77,9 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 	if contentText != "" {
 		raw, _ := json.Marshal(contentText)
 		msg.Content = raw
+	}
+	if refusalText != "" {
+		msg.Refusal = refusalText
 	}
 	if reasoningText != "" {
 		msg.ReasoningContent = reasoningText
@@ -123,10 +134,12 @@ type ResponsesEventToChatState struct {
 	SentRole               bool
 	SawToolCall            bool
 	SawText                bool
+	SawRefusal             bool
 	Finalized              bool        // true after finish chunk has been emitted
 	NextToolCallIndex      int         // next sequential tool_call index to assign
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
 	OutputIndexToArguments map[int]string
+	RefusalByPart          map[responsesTextPart]*strings.Builder
 	IncludeUsage           bool
 	Usage                  *ChatUsage
 }
@@ -138,6 +151,7 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 		Created:                time.Now().Unix(),
 		OutputIndexToToolIndex: make(map[int]int),
 		OutputIndexToArguments: make(map[int]string),
+		RefusalByPart:          make(map[responsesTextPart]*strings.Builder),
 	}
 }
 
@@ -149,8 +163,14 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 		return resToChatHandleCreated(evt, state)
 	case "response.output_text.delta":
 		return resToChatHandleTextDelta(evt, state)
+	case "response.refusal.delta":
+		return resToChatHandleRefusalDelta(evt, state)
+	case "response.refusal.done":
+		return resToChatHandleRefusalDone(evt, state)
 	case "response.output_item.added":
 		return resToChatHandleOutputItemAdded(evt, state)
+	case "response.output_item.done":
+		return resToChatHandleOutputItemDone(evt, state)
 	case "response.function_call_arguments.delta",
 		// custom/freeform 工具（如新版 apply_patch）的输入增量与 function_call 参数增量同形，
 		// 均按 OutputIndex 累加到对应工具调用。
@@ -248,6 +268,46 @@ func resToChatHandleTextDelta(evt *ResponsesStreamEvent, state *ResponsesEventTo
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{Content: &content})}
 }
 
+func resToChatHandleRefusalDelta(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if evt.Delta == "" {
+		return nil
+	}
+	part := responsesTextPart{OutputIndex: evt.OutputIndex, ContentIndex: evt.ContentIndex}
+	builder := state.RefusalByPart[part]
+	if builder == nil {
+		builder = &strings.Builder{}
+		state.RefusalByPart[part] = builder
+	}
+	_, _ = builder.WriteString(evt.Delta)
+	state.SawRefusal = true
+	refusal := evt.Delta
+	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{Refusal: &refusal})}
+}
+
+func resToChatHandleRefusalDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	final := evt.Refusal
+	if final == "" {
+		return nil
+	}
+	part := responsesTextPart{OutputIndex: evt.OutputIndex, ContentIndex: evt.ContentIndex}
+	builder := state.RefusalByPart[part]
+	if builder == nil {
+		builder = &strings.Builder{}
+		state.RefusalByPart[part] = builder
+	}
+	current := builder.String()
+	if current == final || !strings.HasPrefix(final, current) {
+		return nil
+	}
+	tail := final[len(current):]
+	if tail == "" {
+		return nil
+	}
+	_, _ = builder.WriteString(tail)
+	state.SawRefusal = true
+	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{Refusal: &tail})}
+}
+
 func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
 	// function_call 与 custom_tool_call（custom/freeform 工具）均按工具调用注册，
 	// 以便后续 *_input.delta / *_arguments.delta 能映射到正确的工具索引。
@@ -270,6 +330,22 @@ func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 			},
 		}},
 	})}
+}
+
+func resToChatHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	if evt.Item == nil || evt.Item.Type != "message" {
+		return nil
+	}
+	var chunks []ChatCompletionsChunk
+	for contentIndex, part := range evt.Item.Content {
+		if part.Type != "refusal" || part.Refusal == "" {
+			continue
+		}
+		chunks = append(chunks, resToChatHandleRefusalDone(&ResponsesStreamEvent{
+			Type: "response.refusal.done", OutputIndex: evt.OutputIndex, ContentIndex: contentIndex, Refusal: part.Refusal,
+		}, state)...)
+	}
+	return chunks
 }
 
 func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
@@ -330,6 +406,21 @@ func resToChatHandleReasoningDelta(evt *ResponsesStreamEvent, state *ResponsesEv
 
 func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
 	state.Finalized = true
+	var chunks []ChatCompletionsChunk
+	if evt.Response != nil {
+		for outputIndex, item := range evt.Response.Output {
+			if item.Type != "message" {
+				continue
+			}
+			for contentIndex, part := range item.Content {
+				if part.Type != "refusal" || part.Refusal == "" {
+					continue
+				}
+				event := &ResponsesStreamEvent{Type: "response.refusal.done", OutputIndex: outputIndex, ContentIndex: contentIndex, Refusal: part.Refusal}
+				chunks = append(chunks, resToChatHandleRefusalDone(event, state)...)
+			}
+		}
+	}
 	finishReason := "stop"
 
 	if evt.Usage != nil {
@@ -362,7 +453,6 @@ func resToChatHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		finishReason = "tool_calls"
 	}
 
-	var chunks []ChatCompletionsChunk
 	chunks = append(chunks, makeChatFinishChunk(state, finishReason))
 
 	if state.IncludeUsage && state.Usage != nil {
@@ -496,6 +586,7 @@ type bufferedFuncCall struct {
 // (response.completed / response.done) carries an empty output array.
 type BufferedResponseAccumulator struct {
 	text                 strings.Builder
+	refusal              strings.Builder
 	reasoning            strings.Builder
 	funcCalls            []bufferedFuncCall
 	outputIndexToFuncIdx map[int]int
@@ -517,6 +608,15 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 		if event.Delta != "" {
 			_, _ = a.text.WriteString(event.Delta)
 		}
+	case "response.refusal.delta":
+		if event.Delta != "" {
+			_, _ = a.refusal.WriteString(event.Delta)
+		}
+	case "response.refusal.done":
+		if event.Refusal != "" {
+			a.refusal.Reset()
+			_, _ = a.refusal.WriteString(event.Refusal)
+		}
 	case "response.output_item.added":
 		if event.Item != nil && (event.Item.Type == "function_call" || event.Item.Type == "custom_tool_call") {
 			idx := len(a.funcCalls)
@@ -526,6 +626,12 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 				CallID:      event.Item.CallID,
 				Name:        event.Item.Name,
 			})
+		} else if event.Item != nil && event.Item.Type == "message" {
+			for _, part := range event.Item.Content {
+				if part.Type == "refusal" && part.Refusal != "" {
+					_, _ = a.refusal.WriteString(part.Refusal)
+				}
+			}
 		}
 	case "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
 		if event.Delta != "" {
@@ -553,12 +659,12 @@ func (a *BufferedResponseAccumulator) ProcessEvent(event *ResponsesStreamEvent) 
 
 // HasContent reports whether any content has been accumulated.
 func (a *BufferedResponseAccumulator) HasContent() bool {
-	return a.text.Len() > 0 || len(a.funcCalls) > 0 || a.reasoning.Len() > 0
+	return a.text.Len() > 0 || a.refusal.Len() > 0 || len(a.funcCalls) > 0 || a.reasoning.Len() > 0
 }
 
 // BuildOutput constructs a []ResponsesOutput from the accumulated delta
 // content. The order matches what ResponsesToChatCompletions expects:
-// reasoning → message → function_calls.
+// reasoning → message (text/refusal) → function_calls.
 func (a *BufferedResponseAccumulator) BuildOutput() []ResponsesOutput {
 	var out []ResponsesOutput
 
@@ -572,14 +678,24 @@ func (a *BufferedResponseAccumulator) BuildOutput() []ResponsesOutput {
 		})
 	}
 
-	if a.text.Len() > 0 {
-		out = append(out, ResponsesOutput{
-			Type: "message",
-			Role: "assistant",
-			Content: []ResponsesContentPart{{
+	if a.text.Len() > 0 || a.refusal.Len() > 0 {
+		content := make([]ResponsesContentPart, 0, 2)
+		if a.text.Len() > 0 {
+			content = append(content, ResponsesContentPart{
 				Type: "output_text",
 				Text: a.text.String(),
-			}},
+			})
+		}
+		if a.refusal.Len() > 0 {
+			content = append(content, ResponsesContentPart{
+				Type:    "refusal",
+				Refusal: a.refusal.String(),
+			})
+		}
+		out = append(out, ResponsesOutput{
+			Type:    "message",
+			Role:    "assistant",
+			Content: content,
 		})
 	}
 
@@ -626,6 +742,15 @@ func (a *BufferedResponseAccumulator) SupplementResponseOutput(resp *ResponsesRe
 			})
 		}
 	}
+	if a.refusal.Len() > 0 && !responsesOutputHasRefusal(resp.Output) {
+		if !fillResponsesOutputRefusal(resp.Output, a.refusal.String()) {
+			resp.Output = append(resp.Output, ResponsesOutput{
+				Type:    "message",
+				Role:    "assistant",
+				Content: []ResponsesContentPart{{Type: "refusal", Refusal: a.refusal.String()}},
+			})
+		}
+	}
 
 	for outputIndex := range resp.Output {
 		item := &resp.Output[outputIndex]
@@ -662,6 +787,20 @@ func responsesOutputHasText(output []ResponsesOutput) bool {
 	return false
 }
 
+func responsesOutputHasRefusal(output []ResponsesOutput) bool {
+	for i := range output {
+		if output[i].Type != "message" {
+			continue
+		}
+		for _, part := range output[i].Content {
+			if part.Type == "refusal" && strings.TrimSpace(part.Refusal) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // fillResponsesOutputText writes text into the first empty output_text part of
 // the first message item, adding an output_text part when that message has
 // none. It returns false when the output holds no message item, leaving the
@@ -684,6 +823,26 @@ func fillResponsesOutputText(output []ResponsesOutput, text string) bool {
 			Type: "output_text",
 			Text: text,
 		})
+		return true
+	}
+	return false
+}
+
+func fillResponsesOutputRefusal(output []ResponsesOutput, refusal string) bool {
+	for i := range output {
+		if output[i].Type != "message" {
+			continue
+		}
+		for j := range output[i].Content {
+			if output[i].Content[j].Type != "refusal" {
+				continue
+			}
+			if strings.TrimSpace(output[i].Content[j].Refusal) == "" {
+				output[i].Content[j].Refusal = refusal
+			}
+			return true
+		}
+		output[i].Content = append(output[i].Content, ResponsesContentPart{Type: "refusal", Refusal: refusal})
 		return true
 	}
 	return false

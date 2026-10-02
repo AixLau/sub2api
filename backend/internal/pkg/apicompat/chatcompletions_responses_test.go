@@ -815,6 +815,26 @@ func TestChatCompletionsToResponses_AssistantArrayContentPreserved(t *testing.T)
 	assert.Equal(t, "AB", parts[0].Text)
 }
 
+func TestChatCompletionsToResponses_AssistantRefusalPreserved(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Hi"`)},
+			{Role: "assistant", Refusal: "I can't help with that."},
+		},
+	}
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 2)
+	var parts []ResponsesContentPart
+	require.NoError(t, json.Unmarshal(items[1].Content, &parts))
+	require.Len(t, parts, 1)
+	assert.Equal(t, "refusal", parts[0].Type)
+	assert.Equal(t, "I can't help with that.", parts[0].Refusal)
+}
+
 func TestChatCompletionsToResponses_AssistantThinkingTagPreserved(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",
@@ -904,6 +924,29 @@ func TestResponsesToChatCompletions_BasicText(t *testing.T) {
 	assert.Equal(t, 10, chat.Usage.PromptTokens)
 	assert.Equal(t, 5, chat.Usage.CompletionTokens)
 	assert.Equal(t, 15, chat.Usage.TotalTokens)
+}
+
+func TestResponsesToChatCompletionsRequest_AssistantRefusalHistory(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-4o",
+		Input: json.RawMessage(`[{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"blocked"}]}]`),
+	}
+	chatReq, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 1)
+	assert.Equal(t, "assistant", chatReq.Messages[0].Role)
+	assert.Equal(t, "blocked", chatReq.Messages[0].Refusal)
+}
+
+func TestResponsesToChatCompletions_Refusal(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID: "resp_refusal", Status: "completed",
+		Output: []ResponsesOutput{{Type: "message", Content: []ResponsesContentPart{{Type: "refusal", Refusal: "I can't help with that."}}}},
+	}
+	chat := ResponsesToChatCompletions(resp, "gpt-4o")
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "I can't help with that.", chat.Choices[0].Message.Refusal)
+	assert.Empty(t, chat.Choices[0].Message.Content)
 }
 
 func TestResponsesToChatCompletions_ToolCalls(t *testing.T) {
@@ -1207,6 +1250,42 @@ func TestResponsesEventToChatChunks_TextDelta(t *testing.T) {
 	require.Len(t, chunks, 1)
 	require.NotNil(t, chunks[0].Choices[0].Delta.Content)
 	assert.Equal(t, "Hello", *chunks[0].Choices[0].Delta.Content)
+}
+
+func TestResponsesEventToChatChunks_RefusalDeltaAndDone(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+	state.SentRole = true
+
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.refusal.delta", OutputIndex: 0, ContentIndex: 0, Delta: "I can't",
+	}, state)
+	require.Len(t, chunks, 1)
+	require.NotNil(t, chunks[0].Choices[0].Delta.Refusal)
+	assert.Equal(t, "I can't", *chunks[0].Choices[0].Delta.Refusal)
+
+	chunks = ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.refusal.done", OutputIndex: 0, ContentIndex: 0, Refusal: "I can't help.",
+	}, state)
+	require.Len(t, chunks, 1)
+	require.NotNil(t, chunks[0].Choices[0].Delta.Refusal)
+	assert.Equal(t, " help.", *chunks[0].Choices[0].Delta.Refusal)
+}
+
+func TestResponsesEventToChatChunks_CompletedRecoversTerminalRefusal(t *testing.T) {
+	state := NewResponsesEventToChatState()
+	state.Model = "gpt-4o"
+	state.SentRole = true
+	chunks := ResponsesEventToChatChunks(&ResponsesStreamEvent{
+		Type: "response.completed",
+		Response: &ResponsesResponse{Status: "completed", Output: []ResponsesOutput{{
+			Type: "message", Content: []ResponsesContentPart{{Type: "refusal", Refusal: "blocked"}},
+		}}},
+	}, state)
+	require.Len(t, chunks, 2)
+	require.NotNil(t, chunks[0].Choices[0].Delta.Refusal)
+	assert.Equal(t, "blocked", *chunks[0].Choices[0].Delta.Refusal)
+	assert.Equal(t, "stop", *chunks[1].Choices[0].FinishReason)
 }
 
 func TestResponsesEventToChatChunks_ToolCallDelta(t *testing.T) {
@@ -1635,6 +1714,19 @@ func TestBufferedResponseAccumulator_TextOnly(t *testing.T) {
 	require.Len(t, output[0].Content, 1)
 	assert.Equal(t, "output_text", output[0].Content[0].Type)
 	assert.Equal(t, "Hello, world!", output[0].Content[0].Text)
+}
+
+func TestBufferedResponseAccumulator_Refusal(t *testing.T) {
+	acc := NewBufferedResponseAccumulator()
+	acc.ProcessEvent(&ResponsesStreamEvent{Type: "response.refusal.delta", Delta: "blocked"})
+	acc.ProcessEvent(&ResponsesStreamEvent{Type: "response.refusal.done", Refusal: "blocked by policy"})
+	require.True(t, acc.HasContent())
+	output := acc.BuildOutput()
+	require.Len(t, output, 1)
+	require.Equal(t, "message", output[0].Type)
+	require.Len(t, output[0].Content, 1)
+	assert.Equal(t, "refusal", output[0].Content[0].Type)
+	assert.Equal(t, "blocked by policy", output[0].Content[0].Refusal)
 }
 
 func TestBufferedResponseAccumulator_ToolCalls(t *testing.T) {

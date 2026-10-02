@@ -600,6 +600,13 @@ func convertResponsesAssistantToAnthropicContent(raw json.RawMessage) (json.RawM
 					Text: p.Text,
 				})
 			}
+		case "refusal":
+			if p.Refusal != "" {
+				blocks = append(blocks, AnthropicContentBlock{
+					Type: "text",
+					Text: p.Refusal,
+				})
+			}
 		}
 	}
 

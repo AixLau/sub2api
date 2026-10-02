@@ -135,16 +135,21 @@ func TestResponsesToAnthropic_UserMessageWithOnlyUnknownPartsIsDropped(t *testin
 	require.Empty(t, messages)
 }
 
-// assistant 侧同理：以前会退化成单个空 text 块，Anthropic 同样拒收。
-func TestResponsesToAnthropic_AssistantMessageWithOnlyUnknownPartsIsDropped(t *testing.T) {
+// A refusal is a protocol-defined assistant output. Anthropic has no refusal
+// block, so preserve its explanation as a text block instead of dropping it.
+func TestResponsesToAnthropic_AssistantMessageWithRefusalIsPreserved(t *testing.T) {
 	messages := responsesToAnthropicMessages(t, `[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},
 		{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"no"}]}
 	]`)
 
 	requireAnthropicMessagesAreSendable(t, messages)
-	require.Len(t, messages, 1)
-	require.Equal(t, "user", messages[0].Role)
+	require.Len(t, messages, 2)
+	require.Equal(t, "assistant", messages[1].Role)
+	blocks := parseContentBlocks(messages[1].Content)
+	require.Len(t, blocks, 1)
+	require.Equal(t, "text", blocks[0].Type)
+	require.Equal(t, "no", blocks[0].Text)
 }
 
 // 完整的 Codex 工具续接回放：tool_use / tool_result 配对必须保持不变，

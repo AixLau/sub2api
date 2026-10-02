@@ -93,6 +93,49 @@ func TestWire_ContentPartCarriesAnnotationsLogprobs(t *testing.T) {
 	require.Contains(t, part, "logprobs")
 }
 
+func TestWire_RefusalEventsAndPartsUseRefusalField(t *testing.T) {
+	delta := marshalEvent(t, ResponsesStreamEvent{
+		Type: "response.refusal.delta", OutputIndex: 0, ContentIndex: 0, ItemID: "msg_1", Delta: "I can't help",
+	})
+	require.Equal(t, "response.refusal.delta", delta["type"])
+	require.Equal(t, "I can't help", delta["delta"])
+	require.Contains(t, delta, "output_index")
+	require.Contains(t, delta, "content_index")
+	require.NotContains(t, delta, "refusal")
+
+	done := marshalEvent(t, ResponsesStreamEvent{
+		Type: "response.refusal.done", OutputIndex: 0, ContentIndex: 0, ItemID: "msg_1", Refusal: "I can't help",
+	})
+	require.Equal(t, "I can't help", done["refusal"])
+	require.NotContains(t, done, "delta")
+
+	partEvent := marshalEvent(t, ResponsesStreamEvent{
+		Type: "response.content_part.done", OutputIndex: 0, ContentIndex: 0, ItemID: "msg_1",
+		Part: &ResponsesContentPart{Type: "refusal", Refusal: "I can't help"},
+	})
+	part, ok := partEvent["part"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "refusal", part["type"])
+	require.Equal(t, "I can't help", part["refusal"])
+	require.NotContains(t, part, "text")
+}
+
+func TestResponsesOutputUnmarshal_RefusalPart(t *testing.T) {
+	var response ResponsesResponse
+	require.NoError(t, json.Unmarshal([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"blocked"}]}]}`), &response))
+	require.Len(t, response.Output, 1)
+	require.Equal(t, "refusal", response.Output[0].Content[0].Type)
+	require.Equal(t, "blocked", response.Output[0].Content[0].Refusal)
+
+	wire, err := json.Marshal(response.Output[0])
+	require.NoError(t, err)
+	var item map[string]any
+	require.NoError(t, json.Unmarshal(wire, &item))
+	content := item["content"].([]any)
+	require.Equal(t, "refusal", content[0].(map[string]any)["type"])
+	require.Equal(t, "blocked", content[0].(map[string]any)["refusal"])
+}
+
 // TestWire_ArgumentsDonePresentEvenEmpty guards arguments presence on done.
 func TestWire_ArgumentsDonePresentEvenEmpty(t *testing.T) {
 	m := marshalEvent(t, ResponsesStreamEvent{

@@ -175,7 +175,8 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 		content = "<thinking>" + m.ReasoningContent + "</thinking>"
 	}
 
-	// Emit assistant message with output_text if content is non-empty.
+	// Emit assistant message with output_text and/or an explicit refusal part.
+	var parts []ResponsesContentPart
 	if len(m.Content) > 0 {
 		s, err := parseAssistantContent(m.Content)
 		if err != nil {
@@ -190,7 +191,12 @@ func chatAssistantToResponses(m ChatMessage) ([]ResponsesInputItem, error) {
 	}
 
 	if content != "" {
-		parts := []ResponsesContentPart{{Type: "output_text", Text: content}}
+		parts = append(parts, ResponsesContentPart{Type: "output_text", Text: content})
+	}
+	if strings.TrimSpace(m.Refusal) != "" {
+		parts = append(parts, ResponsesContentPart{Type: "refusal", Refusal: m.Refusal})
+	}
+	if len(parts) > 0 {
 		partsJSON, err := json.Marshal(parts)
 		if err != nil {
 			return nil, err

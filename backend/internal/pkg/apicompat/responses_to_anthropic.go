@@ -45,11 +45,23 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 			}
 		case "message":
 			for _, part := range item.Content {
-				if part.Type == "output_text" && part.Text != "" {
+				switch part.Type {
+				case "output_text":
+					if part.Text == "" {
+						continue
+					}
 					blocks = append(blocks, AnthropicContentBlock{
 						Type: "text",
 						Text: part.Text,
 					})
+				case "refusal":
+					if part.Refusal == "" {
+						continue
+					}
+					// Anthropic has no refusal content-part type. A refusal is
+					// still model output, so expose the provider's explanation as
+					// an ordinary text block rather than dropping it.
+					blocks = append(blocks, AnthropicContentBlock{Type: "text", Text: part.Refusal})
 				}
 			}
 		case "function_call":
@@ -200,6 +212,10 @@ type ResponsesEventToAnthropicState struct {
 	// so that a done payload can be reconciled against it. It outlives the
 	// content block; closeCurrentBlock must not reset it.
 	textByPart map[responsesTextPart]*strings.Builder
+	// refusalByPart tracks explicit refusal events separately from output_text.
+	// Both are rendered as Anthropic text blocks, but a refusal.done event must
+	// still be recoverable after an earlier output_text part was delivered.
+	refusalByPart map[responsesTextPart]*strings.Builder
 	// textDelivered records whether any assistant text reached the client.
 	textDelivered bool
 
@@ -218,6 +234,7 @@ func NewResponsesEventToAnthropicState() *ResponsesEventToAnthropicState {
 	return &ResponsesEventToAnthropicState{
 		OutputIndexToBlockIdx: make(map[int]int),
 		textByPart:            make(map[responsesTextPart]*strings.Builder),
+		refusalByPart:         make(map[responsesTextPart]*strings.Builder),
 		Created:               time.Now().Unix(),
 	}
 }
@@ -235,8 +252,12 @@ func ResponsesEventToAnthropicEvents(
 		return resToAnthHandleOutputItemAdded(evt, state)
 	case "response.output_text.delta":
 		return resToAnthHandleTextDelta(evt, state)
+	case "response.refusal.delta":
+		return resToAnthHandleRefusalDelta(evt, state)
 	case "response.output_text.done":
 		return resToAnthHandleTextDone(evt, state)
+	case "response.refusal.done":
+		return resToAnthHandleRefusalDone(evt, state)
 	case "response.function_call_arguments.delta",
 		// custom/freeform 工具的输入增量与 function_call 参数增量同形。
 		"response.custom_tool_call_input.delta":
@@ -495,6 +516,53 @@ func resToAnthHandleTextDone(evt *ResponsesStreamEvent, state *ResponsesEventToA
 	return append(events, resToAnthHandleBlockDone(state)...)
 }
 
+func resToAnthHandleRefusalDelta(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	return resToAnthEmitRefusal(evt.Delta, resToAnthTextPartOf(evt), state)
+}
+
+func resToAnthHandleRefusalDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if state.MessageStopSent {
+		return nil
+	}
+	part := resToAnthTextPartOf(evt)
+	text := evt.Refusal
+	if text != "" {
+		return append(resToAnthRecoverRefusal(text, part, state), resToAnthHandleBlockDone(state)...)
+	}
+	return resToAnthHandleBlockDone(state)
+}
+
+func resToAnthEmitRefusal(text string, part responsesTextPart, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if text == "" {
+		return nil
+	}
+	builder := state.refusalByPart[part]
+	if builder == nil {
+		builder = &strings.Builder{}
+		state.refusalByPart[part] = builder
+	}
+	_, _ = builder.WriteString(text)
+	return resToAnthEmitText(text, part, state)
+}
+
+func resToAnthRecoverRefusal(text string, part responsesTextPart, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
+	if text == "" {
+		return nil
+	}
+	builder, known := state.refusalByPart[part]
+	delivered := ""
+	if known {
+		delivered = builder.String()
+	}
+	if text == delivered {
+		return nil
+	}
+	if known && !strings.HasPrefix(text, delivered) {
+		return nil
+	}
+	return resToAnthEmitRefusal(text[len(delivered):], part, state)
+}
+
 func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
 	if evt.Delta == "" {
 		return nil
@@ -618,6 +686,19 @@ func resToAnthHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEv
 	if evt.Item == nil {
 		return nil
 	}
+	if evt.Item.Type == "message" {
+		var events []AnthropicStreamEvent
+		for contentIndex, part := range evt.Item.Content {
+			if part.Type != "refusal" || part.Refusal == "" {
+				continue
+			}
+			events = append(events, resToAnthRecoverRefusal(part.Refusal, responsesTextPart{OutputIndex: evt.OutputIndex, ContentIndex: contentIndex}, state)...)
+		}
+		if len(events) > 0 {
+			events = append(events, resToAnthHandleBlockDone(state)...)
+			return events
+		}
+	}
 
 	// Handle web_search_call → synthesize server_tool_use + web_search_tool_result blocks.
 	if evt.Item.Type == "web_search_call" && evt.Item.Status == "completed" {
@@ -701,21 +782,32 @@ func resToAnthHandleWebSearchDone(evt *ResponsesStreamEvent, state *ResponsesEve
 // them part by part risks repeating an answer the client already has, which is
 // worse than leaving a partially streamed response as it is.
 func resToAnthRecoverTerminalText(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
-	if state.textDelivered || evt.Response == nil {
+	if evt.Response == nil {
 		return nil
 	}
 
+	textWasStreamed := state.textDelivered
 	var events []AnthropicStreamEvent
 	for outputIndex, item := range evt.Response.Output {
 		if item.Type != "message" {
 			continue
 		}
 		for contentIndex, content := range item.Content {
-			if content.Type != "output_text" {
+			if content.Type != "output_text" && content.Type != "refusal" {
 				continue
 			}
 			part := responsesTextPart{OutputIndex: outputIndex, ContentIndex: contentIndex}
-			events = append(events, resToAnthEmitText(content.Text, part, state)...)
+			text := content.Text
+			if content.Type == "refusal" {
+				text = content.Refusal
+				events = append(events, resToAnthRecoverRefusal(text, part, state)...)
+				continue
+			}
+			if textWasStreamed {
+				events = append(events, resToAnthRecoverText(text, part, state)...)
+			} else {
+				events = append(events, resToAnthEmitText(text, part, state)...)
+			}
 		}
 	}
 	if len(events) > 0 {

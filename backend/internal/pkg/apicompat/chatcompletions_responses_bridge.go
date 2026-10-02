@@ -633,6 +633,9 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			return nil, nil, err
 		}
 		msg := ChatMessage{Role: role, Content: chatContent}
+		if role == "assistant" {
+			msg.Refusal = responsesContentRefusal(content)
+		}
 		// DeepSeek thinking mode requires the reasoning_content from a prior
 		// reasoning-only / plain-text assistant turn to be passed back on its
 		// assistant message; dropping it yields 400 "The `reasoning_content` in
@@ -651,6 +654,25 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 	}
 
 	return messages, mediaByCallID, nil
+}
+
+func responsesContentRefusal(raw json.RawMessage) string {
+	raw = bytesTrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var parts []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return ""
+	}
+	var refusal strings.Builder
+	for _, part := range parts {
+		if rawString(part["type"]) != "refusal" {
+			continue
+		}
+		_, _ = refusal.WriteString(rawString(part["refusal"]))
+	}
+	return refusal.String()
 }
 
 // agentMessageText 按原顺序拼接 agent_message 里 input_text 与 encrypted_content 片段的文本。
@@ -1413,16 +1435,23 @@ func chatMessageToResponsesOutput(message ChatMessage, customTools, functionTool
 	if text == "" && strings.TrimSpace(reasoning) != "" && len(message.ToolCalls) == 0 {
 		text = reasoning
 	}
-	if text != "" || len(message.ToolCalls) == 0 {
+	if message.Refusal != "" || text != "" || len(message.ToolCalls) == 0 {
+		content := make([]ResponsesContentPart, 0, 2)
+		if text != "" {
+			content = append(content, ResponsesContentPart{Type: "output_text", Text: text})
+		}
+		if message.Refusal != "" {
+			content = append(content, ResponsesContentPart{Type: "refusal", Refusal: message.Refusal})
+		}
+		if len(content) == 0 {
+			content = append(content, ResponsesContentPart{Type: "output_text", Text: ""})
+		}
 		outputs = append(outputs, ResponsesOutput{
-			Type: "message",
-			ID:   generateItemID(),
-			Role: "assistant",
-			Content: []ResponsesContentPart{{
-				Type: "output_text",
-				Text: text,
-			}},
-			Status: "completed",
+			Type:    "message",
+			ID:      generateItemID(),
+			Role:    "assistant",
+			Content: content,
+			Status:  "completed",
 		})
 	}
 
@@ -1587,12 +1616,14 @@ type ChatCompletionsToResponsesStreamState struct {
 	ReasoningDone   bool
 
 	// Message item + output_text content-part lifecycle.
-	MessageItemID string
-	MessageIndex  int
-	TextPartOpen  bool
+	MessageItemID   string
+	MessageIndex    int
+	TextPartOpen    bool
+	RefusalPartOpen bool
 
 	Text      strings.Builder
 	Reasoning strings.Builder
+	Refusal   strings.Builder
 
 	// Tool-call lifecycle, keyed by the upstream tool_call index.
 	ToolCalls       map[int]*ChatToolCall
@@ -1739,6 +1770,26 @@ func ChatCompletionsChunkToResponsesEvents(
 				ItemID:       state.MessageItemID,
 			}))
 		}
+		if choice.Delta.Refusal != nil && *choice.Delta.Refusal != "" {
+			events = append(events, closeChatReasoningItem(state)...)
+			events = append(events, ensureChatToResponsesMessageItem(state)...)
+			contentIndex := 0
+			if state.TextPartOpen {
+				contentIndex = 1
+			}
+			if !state.RefusalPartOpen {
+				state.RefusalPartOpen = true
+				events = append(events, chatToResponsesEvent(state, "response.content_part.added", &ResponsesStreamEvent{
+					OutputIndex: state.MessageIndex, ContentIndex: contentIndex, ItemID: state.MessageItemID,
+					Part: &ResponsesContentPart{Type: "refusal"},
+				}))
+			}
+			_, _ = state.Refusal.WriteString(*choice.Delta.Refusal)
+			events = append(events, chatToResponsesEvent(state, "response.refusal.delta", &ResponsesStreamEvent{
+				OutputIndex: state.MessageIndex, ContentIndex: contentIndex, ItemID: state.MessageItemID,
+				Delta: *choice.Delta.Refusal,
+			}))
+		}
 		for _, toolCall := range choice.Delta.ToolCalls {
 			idx := 0
 			if toolCall.Index != nil {
@@ -1826,13 +1877,33 @@ func FinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesStr
 				Part:         &ResponsesContentPart{Type: "output_text", Text: state.Text.String()},
 			}))
 		}
+		if state.RefusalPartOpen {
+			contentIndex := 0
+			if state.TextPartOpen {
+				contentIndex = 1
+			}
+			events = append(events, chatToResponsesEvent(state, "response.refusal.done", &ResponsesStreamEvent{
+				OutputIndex: state.MessageIndex, ContentIndex: contentIndex, ItemID: state.MessageItemID,
+				Refusal: state.Refusal.String(),
+			}), chatToResponsesEvent(state, "response.content_part.done", &ResponsesStreamEvent{
+				OutputIndex: state.MessageIndex, ContentIndex: contentIndex, ItemID: state.MessageItemID,
+				Part: &ResponsesContentPart{Type: "refusal", Refusal: state.Refusal.String()},
+			}))
+		}
+		parts := make([]ResponsesContentPart, 0, 2)
+		if state.TextPartOpen || !state.RefusalPartOpen {
+			parts = append(parts, ResponsesContentPart{Type: "output_text", Text: state.Text.String()})
+		}
+		if state.RefusalPartOpen {
+			parts = append(parts, ResponsesContentPart{Type: "refusal", Refusal: state.Refusal.String()})
+		}
 		events = append(events, chatToResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
 			OutputIndex: state.MessageIndex,
 			Item: &ResponsesOutput{
 				Type:    "message",
 				ID:      state.MessageItemID,
 				Role:    "assistant",
-				Content: []ResponsesContentPart{{Type: "output_text", Text: state.Text.String()}},
+				Content: parts,
 				Status:  "completed",
 			},
 		}))
@@ -2179,15 +2250,19 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 		})
 	}
 	if state.MessageItemID != "" || len(state.ToolCalls) == 0 {
+		parts := make([]ResponsesContentPart, 0, 2)
+		if state.Text.Len() > 0 || !state.RefusalPartOpen {
+			parts = append(parts, ResponsesContentPart{Type: "output_text", Text: state.Text.String()})
+		}
+		if state.RefusalPartOpen {
+			parts = append(parts, ResponsesContentPart{Type: "refusal", Refusal: state.Refusal.String()})
+		}
 		outputs = append(outputs, ResponsesOutput{
-			Type: "message",
-			ID:   nonEmpty(state.MessageItemID, generateItemID()),
-			Role: "assistant",
-			Content: []ResponsesContentPart{{
-				Type: "output_text",
-				Text: state.Text.String(),
-			}},
-			Status: "completed",
+			Type:    "message",
+			ID:      nonEmpty(state.MessageItemID, generateItemID()),
+			Role:    "assistant",
+			Content: parts,
+			Status:  "completed",
 		})
 	}
 	for i := 0; i < len(state.ToolCalls); i++ {

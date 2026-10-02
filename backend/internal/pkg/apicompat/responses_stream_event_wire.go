@@ -35,12 +35,24 @@ func (e ResponsesStreamEvent) MarshalJSON() ([]byte, error) {
 		}
 		return json.Marshal(m)
 
+	case "response.refusal.delta", "response.refusal.done":
+		m := e.wireBase()
+		e.putItemID(m)
+		m["output_index"] = e.OutputIndex
+		m["content_index"] = e.ContentIndex
+		if e.Type == "response.refusal.done" {
+			m["refusal"] = e.Refusal
+		} else {
+			m["delta"] = e.Delta
+		}
+		return json.Marshal(m)
+
 	case "response.content_part.added", "response.content_part.done":
 		m := e.wireBase()
 		e.putItemID(m)
 		m["output_index"] = e.OutputIndex
 		m["content_index"] = e.ContentIndex
-		m["part"] = outputTextPartWire(e.Part)
+		m["part"] = contentPartWire(e.Part)
 		return json.Marshal(m)
 
 	case "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done":
@@ -140,6 +152,19 @@ func outputTextPartWire(part *ResponsesContentPart) map[string]any {
 	}
 }
 
+// contentPartWire renders either an output_text or refusal content part. The
+// Responses protocol uses `refusal` (rather than `text`) for refusal parts and
+// does not include output_text-only annotations/logprobs on them.
+func contentPartWire(part *ResponsesContentPart) map[string]any {
+	if part != nil && part.Type == "refusal" {
+		return map[string]any{
+			"type":    "refusal",
+			"refusal": part.Refusal,
+		}
+	}
+	return outputTextPartWire(part)
+}
+
 // summaryTextPartWire renders a reasoning summary part.
 func summaryTextPartWire(part *ResponsesContentPart) map[string]any {
 	text := ""
@@ -213,6 +238,10 @@ func messageContentWire(parts []ResponsesContentPart) []map[string]any {
 		typ := p.Type
 		if typ == "" {
 			typ = "output_text"
+		}
+		if typ == "refusal" {
+			out = append(out, map[string]any{"type": "refusal", "refusal": p.Refusal})
+			continue
 		}
 		out = append(out, map[string]any{"type": typ, "text": p.Text})
 	}
