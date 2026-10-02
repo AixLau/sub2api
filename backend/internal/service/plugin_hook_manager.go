@@ -34,9 +34,22 @@ func (e *PluginHookRejectedError) Error() string {
 }
 
 const (
-	// Ticket plugins are deliberately limited to this header. Authorization,
-	// cookies, account identity, proxy and billing headers remain host-owned.
+	// Ticket plugins are deliberately limited to this header plus the structured
+	// route-cookie signal below. Authorization, arbitrary cookies, account
+	// identity, proxy and billing headers remain host-owned.
 	pluginOutboundTicketHeader = "x-codex-turn-state"
+	// Plugins cannot set Cookie directly. This private signal is consumed by the
+	// host and merged only for the two edge-routing cookies (__cflb/__oailb).
+	pluginOutboundRouteCookieHeader = "x-codex-route-cookie"
+	// Only the two routing cookies are exposed to a hook as a mint seed; the
+	// host never forwards the caller's general Cookie header to the plugin.
+	pluginOutboundRouteCookieSeedHeader = "x-codex-route-cookie-seed"
+	// These synthetic headers carry response-body semantics through the existing
+	// header-only observer RPC. They are never forwarded upstream or exposed to
+	// clients; the host creates them only after parsing an OpenAI response event.
+	pluginObservedServedModelHeader = "x-sub2api-served-model"
+	pluginObservedEventHeader       = "x-sub2api-response-event"
+	pluginObservedCompleteHeader    = "x-sub2api-body-complete"
 )
 
 func (route *pluginHookRoute) matchesAccount(account *Account) bool {
@@ -229,6 +242,9 @@ func (m *PluginManager) PrepareOpenAIOutbound(ctx context.Context, request *http
 	if m == nil || request == nil || account == nil {
 		return false, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	route := m.hookRoute.Load()
 	if !route.matchesAccount(account) {
 		return false, nil
@@ -245,6 +261,9 @@ func (m *PluginManager) PrepareOpenAIOutbound(ctx context.Context, request *http
 		case "authorization", "cookie", "proxy-authorization", "x-api-key":
 			delete(hookHeaders, key)
 		}
+	}
+	if seed, ok := extractPluginRouteCookieSeed(headerValueCaseInsensitive(request.Header, "Cookie")); ok {
+		hookHeaders[pluginOutboundRouteCookieSeedHeader] = &pluginv1.HeaderValues{Values: []string{seed}}
 	}
 	prepared := &pluginv1.PrepareOutboundRequest{
 		RequestId: requestID, Method: request.Method, Url: request.URL.String(), Host: request.Host,
@@ -278,7 +297,21 @@ func applyPluginOutboundHeaderMutation(headers http.Header, response *pluginv1.P
 		return
 	}
 	for key, values := range response.GetHeadersToSet() {
-		if !strings.EqualFold(strings.TrimSpace(key), pluginOutboundTicketHeader) || values == nil {
+		key = strings.TrimSpace(key)
+		if values == nil {
+			continue
+		}
+		if strings.EqualFold(key, pluginOutboundRouteCookieHeader) {
+			for _, value := range values.GetValues() {
+				if merged, ok := mergePluginRouteCookies(headerValueCaseInsensitive(headers, "Cookie"), value); ok {
+					deleteHeaderCaseInsensitive(headers, "Cookie")
+					headers[http.CanonicalHeaderKey("Cookie")] = []string{merged}
+					break
+				}
+			}
+			continue
+		}
+		if !strings.EqualFold(key, pluginOutboundTicketHeader) {
 			continue
 		}
 		clean := make([]string, 0, len(values.GetValues()))
@@ -289,14 +322,124 @@ func applyPluginOutboundHeaderMutation(headers http.Header, response *pluginv1.P
 			clean = append(clean, value)
 		}
 		if len(clean) > 0 {
+			// Remove any non-canonical map entry first. Requests assembled by
+			// middleware can contain a lower-case key directly, and leaving it
+			// beside the replacement would serialize two competing ticket values.
+			deleteHeaderCaseInsensitive(headers, pluginOutboundTicketHeader)
 			headers[http.CanonicalHeaderKey(pluginOutboundTicketHeader)] = clean
 		}
 	}
 	for _, key := range response.GetHeadersToDelete() {
 		if strings.EqualFold(strings.TrimSpace(key), pluginOutboundTicketHeader) {
-			headers.Del(pluginOutboundTicketHeader)
+			deleteHeaderCaseInsensitive(headers, pluginOutboundTicketHeader)
 		}
 	}
+}
+
+func deleteHeaderCaseInsensitive(headers http.Header, name string) {
+	for key := range headers {
+		if strings.EqualFold(key, name) {
+			delete(headers, key)
+		}
+	}
+}
+
+func headerValueCaseInsensitive(headers http.Header, name string) string {
+	for key, values := range headers {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
+}
+
+func extractPluginRouteCookieSeed(raw string) (string, bool) {
+	values := map[string]string{}
+	for _, segment := range strings.Split(raw, ";") {
+		name, value, ok := strings.Cut(strings.TrimSpace(segment), "=")
+		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+		canonical := ""
+		switch strings.ToLower(strings.TrimLeft(name, "_")) {
+		case "cflb":
+			canonical = "__cflb"
+		case "oailb":
+			canonical = "__oailb"
+		}
+		if canonical == "" {
+			continue
+		}
+		if !ok || value == "" || strings.ContainsAny(value, "\r\n,\t ") {
+			return "", false
+		}
+		if _, duplicate := values[canonical]; duplicate {
+			return "", false
+		}
+		values[canonical] = value
+	}
+	if values["__cflb"] == "" || values["__oailb"] == "" {
+		return "", false
+	}
+	return "__cflb=" + values["__cflb"] + "; __oailb=" + values["__oailb"], true
+}
+
+// mergePluginRouteCookies is intentionally small and host-owned. It accepts
+// only an RFC-cookie-header-shaped list containing __cflb/__oailb values and
+// preserves all existing non-route cookies. A malformed value is rejected
+// before it can reach the upstream request.
+func mergePluginRouteCookies(existing, incoming string) (string, bool) {
+	type pair struct{ name, value string }
+	items := make([]pair, 0, 8)
+	positions := make(map[string]int, 8)
+	for _, segment := range strings.Split(existing, ";") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		name, value, ok := strings.Cut(segment, "=")
+		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+		if !ok || name == "" || strings.ContainsAny(name, "=; \t\r\n,") || strings.ContainsAny(value, "\r\n") {
+			return "", false
+		}
+		if _, seen := positions[name]; seen {
+			continue
+		}
+		positions[name] = len(items)
+		items = append(items, pair{name: name, value: value})
+	}
+	accepted := false
+	incomingNames := make(map[string]struct{}, 2)
+	for _, segment := range strings.Split(incoming, ";") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		name, value, ok := strings.Cut(segment, "=")
+		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+		if !ok || (name != "__cflb" && name != "__oailb") || value == "" || strings.ContainsAny(value, "\r\n,\t ") {
+			return "", false
+		}
+		if _, exists := incomingNames[name]; exists {
+			// A plugin response is a single structured route signal; duplicate
+			// names would make the resulting Cookie header ambiguous.
+			return "", false
+		}
+		incomingNames[name] = struct{}{}
+		accepted = true
+		if at, exists := positions[name]; exists {
+			items[at].value = value
+		} else {
+			positions[name] = len(items)
+			items = append(items, pair{name: name, value: value})
+		}
+	}
+	if !accepted {
+		return "", false
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, item.name+"="+item.value)
+	}
+	return strings.Join(parts, "; "), true
 }
 
 // ObserveOpenAIOutboundResponse gives the active ticket hook response-header
@@ -305,6 +448,9 @@ func applyPluginOutboundHeaderMutation(headers http.Header, response *pluginv1.P
 func (m *PluginManager) ObserveOpenAIOutboundResponse(ctx context.Context, account *Account, model, transport string, response *http.Response, sentTicketState string) {
 	if m == nil || account == nil || response == nil {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	route := m.hookRoute.Load()
 	if !route.matchesAccount(account) || route.runtime == nil || route.runtime.client == nil || route.runtime.client.Exited() || !route.runtime.beginRequest() {
@@ -323,4 +469,48 @@ func (m *PluginManager) ObserveOpenAIOutboundResponse(ctx context.Context, accou
 		// Deliberately do not return an error after response headers are visible.
 		return
 	}
+}
+
+// ObserveOpenAIOutboundSemantic reports a model declaration extracted from an
+// OpenAI response body. The plugin protocol intentionally remains header-only;
+// semantic values are bounded, synthetic headers understood only by the
+// capability-local plugin. A true result means the plugin explicitly asked
+// the host to withhold the degraded response.
+func (m *PluginManager) ObserveOpenAIOutboundSemantic(ctx context.Context, account *Account, model, transport, servedModel, eventType string, complete bool, sentTicketState ...string) (blocked bool, reason string) {
+	if m == nil || account == nil || strings.TrimSpace(servedModel) == "" {
+		return false, ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	route := m.hookRoute.Load()
+	if !route.matchesAccount(account) || route.runtime == nil || route.runtime.client == nil || route.runtime.client.Exited() || !route.runtime.beginRequest() {
+		return false, ""
+	}
+	defer route.runtime.finishRequest()
+	requestID, _ := ctx.Value(ctxkey.RequestID).(string)
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	sentState := ""
+	if len(sentTicketState) > 0 {
+		sentState = strings.TrimSpace(sentTicketState[0])
+	}
+	response, err := route.runtime.api.ObserveOutboundResponse(callCtx, &pluginv1.ObserveOutboundResponseRequest{
+		RequestId: requestID, AccountId: account.ID, Model: model, Transport: transport,
+		StatusCode: http.StatusOK, Status: "200 OK", RequestSent: true,
+		SentTicketState: sentState,
+		Headers: map[string]*pluginv1.HeaderValues{
+			pluginObservedServedModelHeader: {Values: []string{strings.TrimSpace(servedModel)}},
+			pluginObservedEventHeader:       {Values: []string{strings.TrimSpace(eventType)}},
+			pluginObservedCompleteHeader:    {Values: []string{fmt.Sprintf("%t", complete)}},
+		},
+		Platform: account.Platform, AccountType: account.Type,
+	})
+	if err != nil || response == nil {
+		return false, ""
+	}
+	if response.GetReasonCode() == "DEGRADED_MODEL" {
+		return true, response.GetMessage()
+	}
+	return false, response.GetReasonCode()
 }

@@ -322,6 +322,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			c.Set(OpsOpenAIWSConnIDKey, connID)
 		}
 	}
+	s.observeOpenAIPluginWSHandshake(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), lease.HandshakeHeaders(), turnState)
 
 	handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
 	logOpenAIWSModeDebug(
@@ -396,6 +397,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	firstEventType := ""
 	lastEventType := ""
 	upstreamTerminalEvent := ""
+	pluginSemanticModelSeen := ""
 	clientDisconnected := false
 	clientDisconnectDrainStartedAt := time.Time{}
 	readTimeout := s.openAIWSReadTimeout()
@@ -620,12 +622,32 @@ readLoop:
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {
 			message = normalized
 		}
+		s.observeOpenAIPluginWSMetadata(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), message, turnState)
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
 			continue
 		}
 		responseModelObserver.ObserveOpenAI(message, eventType)
+		if servedModel := firstValidTrimmedGJSONString(message, "response.model", "model"); servedModel != "" && !strings.EqualFold(servedModel, pluginSemanticModelSeen) {
+			pluginSemanticModelSeen = servedModel
+			requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+			if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "websocket", servedModel, eventType, isUpstreamResponseModelTerminalEvent(eventType), turnState); semanticErr != nil {
+				if reqStream && !wroteDownstream && !clientDisconnected {
+					bufferedStreamEvents = bufferedStreamEvents[:0]
+					flushBufferedStreamEvents("degraded_model")
+					pluginErr, ok := pluginSemanticTransportError(semanticErr)
+					if !ok {
+						lease.MarkBroken()
+						return resultWithUsage(), semanticErr
+					}
+					payload := pluginSemanticFailurePayload(responseID, requestedModel, pluginErr)
+					emitStreamMessage(payload, true)
+				}
+				lease.MarkBroken()
+				return resultWithUsage(), semanticErr
+			}
+		}
 		eventCount++
 		if firstEventType == "" {
 			firstEventType = eventType

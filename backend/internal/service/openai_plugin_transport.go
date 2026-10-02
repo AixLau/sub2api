@@ -20,7 +20,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 	transport := openAIOutboundRequestTransport(request)
 	sentTicketState := ""
 	if s.pluginManager != nil {
-		sentTicketState = request.Header.Get(pluginOutboundTicketHeader)
+		sentTicketState = headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 		if _, hookErr := s.pluginManager.PrepareOpenAIOutbound(request.Context(), request, proxyURL, account, model, transport); hookErr != nil {
 			if _, rejected := hookErr.(*PluginHookRejectedError); rejected {
 				return nil, hookErr
@@ -28,7 +28,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 			// Hook runtime errors are fail-open by design; the native transport
 			// remains available while the ticket worker recovers.
 		}
-		sentTicketState = request.Header.Get(pluginOutboundTicketHeader)
+		sentTicketState = headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 	}
 	var (
 		response *http.Response
@@ -68,7 +68,7 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 				return nil, hookErr
 			}
 		}
-		sentTicketState = request.Header.Get(pluginOutboundTicketHeader)
+		sentTicketState = headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
 			if err == nil {

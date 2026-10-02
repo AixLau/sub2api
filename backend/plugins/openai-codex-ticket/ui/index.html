@@ -17,7 +17,10 @@
         <label class="checkbox"><input id="enabled" type="checkbox" /> <span>启用 Codex ticket 采集和请求注入</span></label>
 
         <div class="grid">
-          <label><span>Ticket 长度</span><select id="target_length"><option value="292">292（个人）</option><option value="780">780（含 Cookie / Gateway）</option></select></label>
+          <label><span>运行角色</span><select id="role"><option value="business">business（注入）</option><option value="probe">probe（只观测）</option></select></label>
+          <label><span>Ticket 长度</span><select id="target_length"><option value="292">292（个人）</option><option value="332">332（Business）</option><option value="780">780（含 Cookie / Gateway）</option></select></label>
+          <label><span>模板长度</span><input id="template_length" type="number" min="1" max="4096" /></label>
+          <label><span>替代长度</span><input id="replace_length" type="number" min="1" max="4096" /></label>
           <label><span>传输协议</span><select id="transport"><option value="sse">SSE</option><option value="websocket">WebSocket</option></select></label>
           <label><span>目标 Gateway</span><input id="target_gateway" type="text" maxlength="128" /></label>
         </div>
@@ -30,6 +33,7 @@
 
         <div class="grid">
           <label><span>Ticket 有效期（秒）</span><input id="ttl_seconds" type="number" min="60" max="604800" /></label>
+          <label><span>路由 Cookie 有效期（秒）</span><input id="route_cookie_ttl_seconds" type="number" min="60" max="604800" /></label>
           <label><span>提前刷新（秒）</span><input id="refresh_before_seconds" type="number" min="0" /></label>
           <label><span>探测间隔（秒）</span><input id="harvest_probe_interval_seconds" type="number" min="30" /></label>
           <label><span>失败冷却（秒）</span><input id="harvest_cooldown_seconds" type="number" min="0" /></label>
@@ -42,17 +46,49 @@
           <input id="harvest_proxy_url" type="text" placeholder="socks5h://user:pass@host:port 或 ip-pool" autocomplete="off" />
           <small>支持 HTTP、HTTPS、SOCKS5/SOCKS5H 或 ip-pool。仅采票使用；业务请求仍使用账号代理。凭据不会显示在状态摘要中。</small>
         </label>
+        <label>
+          <span>采票代理池（每行一个）</span>
+          <textarea id="harvest_proxy_pool" rows="3" spellcheck="false" placeholder="socks5h://proxy-a:1080\nsocks5h://proxy-b:1080"></textarea>
+          <small>当代理模式为 pool 时按轮次轮换；每个出口只用于采票。</small>
+        </label>
+        <div class="grid">
+          <label><span>采票代理模式</span><select id="harvest_proxy_mode"><option value="static">static</option><option value="api">api</option><option value="pool">pool</option></select></label>
+          <label><span>代理 API URL</span><input id="harvest_proxy_api_url" type="url" placeholder="https://proxy.example/api/next" /></label>
+        </div>
         <div class="grid">
           <label><span>Ticket 接口 URL</span><input id="ticket_url" type="url" required /></label>
           <label><span>采集接口 URL</span><input id="harvest_url" type="url" required /></label>
         </div>
 
         <div class="checks">
+          <label class="checkbox"><input id="dry_run" type="checkbox" /> <span>Dry run（只记录决策，不修改请求）</span></label>
+          <label class="checkbox"><input id="log_decisions" type="checkbox" /> <span>记录采集、引导和观测决策</span></label>
           <label class="checkbox"><input id="fail_closed" type="checkbox" /> <span>无有效 ticket 时阻止目标模型调度（fail-closed）</span></label>
           <label class="checkbox"><input id="cookie_validation" type="checkbox" /> <span>校验 780 ticket 的 Cookie 新鲜度</span></label>
           <label class="checkbox"><input id="gateway_validation" type="checkbox" /> <span>校验 780 ticket 的 Gateway</span></label>
           <label class="checkbox"><input id="team_plan_blocked" type="checkbox" /> <span>阻止 Team / Business / Enterprise 账号采票</span></label>
+          <label class="checkbox"><input id="block_degraded" type="checkbox" /> <span>上游返回不同模型时阻止响应（降级门禁）</span></label>
         </div>
+
+        <details class="advanced">
+          <summary>云端 Mint Relay（可选）</summary>
+          <label class="checkbox"><input id="cloud_mint_enabled" type="checkbox" /> <span>缓存不可用时从 Relay 获取 ticket</span></label>
+          <div class="grid">
+            <label><span>Relay URL</span><input id="cloud_mint_url" type="url" placeholder="https://relay.example/mint" /></label>
+            <label><span>Relay Proxy URL</span><input id="cloud_mint_proxy_url" type="text" autocomplete="off" /></label>
+            <label><span>Relay Proxy 环境变量</span><input id="cloud_mint_proxy_env" type="text" /></label>
+            <label><span>Relay Key 环境变量</span><input id="cloud_mint_key_env" type="text" /></label>
+            <label><span>Mint 模型</span><input id="cloud_mint_mint_model" type="text" /></label>
+            <label><span>传输协议</span><select id="cloud_mint_transport"><option value="sse">SSE</option><option value="websocket">WebSocket</option></select></label>
+            <label><span>Gateway</span><input id="cloud_mint_gateway" type="text" /></label>
+            <label><span>Ticket 长度</span><input id="cloud_mint_ticket_length" type="number" min="1" max="4096" /></label>
+            <label><span>TTL（秒）</span><input id="cloud_mint_ttl_seconds" type="number" min="1" max="3600" /></label>
+            <label><span>等待（毫秒）</span><input id="cloud_mint_wait_ms" type="number" min="1" max="10000" /></label>
+            <label><span>超时（毫秒）</span><input id="cloud_mint_timeout_ms" type="number" min="1" max="180000" /></label>
+          </div>
+          <label class="checkbox"><input id="cloud_mint_fail_closed" type="checkbox" /> <span>Relay 失败时阻止请求</span></label>
+          <small>密钥只从宿主环境变量读取；UI 不接收、保存或显示密钥值。Relay 只接收当前 OAuth 身份和两枚路由 Cookie。</small>
+        </details>
 
         <div class="actions">
           <button id="save" type="submit">保存配置</button>
@@ -69,6 +105,21 @@
         <summary>Ticket 摘要</summary>
         <p>这里只显示长度、模型、出口、协议和剩余时间等摘要，绝不展示 ticket state、Cookie 或 OAuth 凭据。</p>
         <div id="tickets-detail" class="ticket-grid">暂无有效 ticket 摘要</div>
+      </details>
+      <details class="diagnostics">
+        <summary>路由 Cookie 池</summary>
+        <p>只显示指纹、Gateway、健康评分和剩余时间；不会显示 Cookie 值。</p>
+        <div id="routes-detail" class="ticket-grid">暂无路由 Cookie</div>
+      </details>
+      <details class="diagnostics">
+        <summary>响应形状观测</summary>
+        <p>记录自然响应、注入响应和重复出现的 envelope 长度；不会显示 ticket state 或 Cookie 值。</p>
+        <div id="observations-detail" class="ticket-grid">暂无响应观测</div>
+      </details>
+      <details class="diagnostics">
+        <summary>最近响应事件</summary>
+        <p>显示最近的 ticket envelope 与 served-model 观测；只显示长度、分类和模型，不显示凭据内容。</p>
+        <div id="observation-recent-detail" class="event-list">暂无最近响应事件</div>
       </details>
       <details class="diagnostics" open>
         <summary>最近采票流水</summary>

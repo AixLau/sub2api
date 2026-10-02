@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/plugins/openai-codex-ticket/internal/routecookie"
 	"github.com/stretchr/testify/require"
 )
 
@@ -153,15 +154,19 @@ func TestTicketValidateChecks780CookiesAndIdentity(t *testing.T) {
 		ExpiresAt:        now.Add(time.Hour),
 		Transport:        "sse",
 		Gateway:          "unified-88",
-		HarvestCookies:   []string{"__Secure-next-auth.session-token=abc"},
+		HarvestCookies:   []string{"__cflb=edge", "__oailb=token"},
 		HarvestCookiesAt: now.Add(-time.Minute),
-		Identity:         "identity-a",
+		RoutePair: &routecookie.Pair{Values: map[string]string{
+			routecookie.CFLB: "edge", routecookie.OAILB: "token",
+		}, SeenAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), Gateway: "unified-88"},
+		Identity: "identity-a",
 	}
 	require.NoError(t, value.Validate(now, 780, "sse", "unified-88", true, true))
 	require.True(t, value.IdentityMatches("identity-a"))
 	require.False(t, value.IdentityMatches("identity-b"))
 
 	value.HarvestCookiesAt = now.Add(-CredentialTTL - time.Second)
+	value.RoutePair.ExpiresAt = now.Add(-time.Second)
 	require.EqualError(t, value.Validate(now, 780, "sse", "unified-88", true, true), "ticket cookies expired")
 	value.Identity = ""
 	require.True(t, value.IdentityMatches("any-identity"), "legacy/unbound tickets remain identity-agnostic")

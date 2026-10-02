@@ -643,6 +643,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	bareErrorMessage := ""
 	failureAccountSideEffectsApplied := false
 	mappedModel := actualModel
+	pluginSemanticModelSeen := ""
 	needModelReplace := false
 	var mappedModelBytes []byte
 	if originalModel != "" {
@@ -758,8 +759,34 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 			upstreamMessage = normalized
 		}
+		s.observeOpenAIPluginWSMetadata(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), upstreamMessage, sentOpenAICodexTurnState(resp, c))
 		eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 		responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
+		if servedModel := firstValidTrimmedGJSONString(upstreamMessage, "response.model", "model"); servedModel != "" && !strings.EqualFold(servedModel, pluginSemanticModelSeen) {
+			pluginSemanticModelSeen = servedModel
+			requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+			if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "websocket", servedModel, eventType, isUpstreamResponseModelTerminalEvent(eventType), sentOpenAICodexTurnState(resp, c)); semanticErr != nil {
+				if !clientDisconnected && !wroteDownstream {
+					pendingClientMessages = nil
+					pendingClientMessageBytes = 0
+					pluginErr, ok := pluginSemanticTransportError(semanticErr)
+					if ok {
+						failure := pluginSemanticFailurePayload(responseID, requestedModel, pluginErr)
+						if writeErr := writeClientMessage(failure); writeErr != nil {
+							if isOpenAIWSClientDisconnectError(writeErr) {
+								clientDisconnected = true
+							} else {
+								return nil, wrapOpenAIWSIngressTurnError("degraded_model", writeErr, wroteDownstream)
+							}
+						} else {
+							wroteDownstream = true
+							markOpenAIWSClientVisibleFailure(c, "response.failed", failure)
+						}
+					}
+				}
+				return resultWithUsage(), semanticErr
+			}
+		}
 		if responseID == "" && eventResponseID != "" {
 			responseID = eventResponseID
 		}

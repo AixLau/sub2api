@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/plugins/openai-codex-ticket/internal/routecookie"
 )
 
 const (
@@ -70,8 +73,12 @@ type Ticket struct {
 	HarvestCookies        []string             `json:"harvest_cookies,omitempty"`
 	HarvestCookiesAt      time.Time            `json:"harvest_cookies_at,omitempty"`
 	HarvestCookieExpiries map[string]time.Time `json:"harvest_cookie_expiries,omitempty"`
-	Standby               *Ticket              `json:"standby,omitempty"`
-	Revoked               bool                 `json:"revoked,omitempty"`
+	// RoutePair is the only cookie material that may be injected into a live
+	// request. HarvestCookies remains a bounded diagnostic record for existing
+	// status output, while RoutePair is parsed and validated structurally.
+	RoutePair *routecookie.Pair `json:"route_pair,omitempty"`
+	Standby   *Ticket           `json:"standby,omitempty"`
+	Revoked   bool              `json:"revoked,omitempty"`
 }
 
 func (t *Ticket) Normalize() {
@@ -91,6 +98,14 @@ func (t *Ticket) Normalize() {
 	}
 	if t.Standby != nil {
 		t.Standby.Normalize()
+	}
+	if t.RoutePair != nil {
+		if t.RoutePair.Values == nil {
+			t.RoutePair.Values = map[string]string{}
+		}
+		if t.RoutePair.Gateway == "" {
+			t.RoutePair.Gateway = routecookie.Gateway(t.RoutePair.Values)
+		}
 	}
 }
 
@@ -134,7 +149,12 @@ func (t *Ticket) RemainingUntil() time.Time {
 }
 func (t *Ticket) CookieExpiry() time.Time {
 	if t == nil || len(t.HarvestCookies) == 0 {
-		return time.Time{}
+		if t == nil || t.RoutePair == nil {
+			return time.Time{}
+		}
+	}
+	if t.RoutePair != nil && !t.RoutePair.ExpiresAt.IsZero() {
+		return t.RoutePair.ExpiresAt
 	}
 	if len(t.HarvestCookieExpiries) > 0 {
 		var exp time.Time
@@ -155,7 +175,70 @@ func (t *Ticket) CookieExpiry() time.Time {
 	return at.Add(CredentialTTL)
 }
 func (t *Ticket) CookiesFresh(now time.Time) bool {
-	return len(t.HarvestCookies) > 0 && now.Before(t.CookieExpiry())
+	if t == nil || t.RoutePair == nil || !t.RoutePair.HasValue() {
+		return false
+	}
+	if !t.RoutePair.ExpiresAt.IsZero() {
+		return now.Before(t.RoutePair.ExpiresAt)
+	}
+	expiry := t.CookieExpiry()
+	return !expiry.IsZero() && now.Before(expiry)
+}
+
+// RouteCookieHeader returns the allow-listed pair in Cookie header form.
+func (t *Ticket) RouteCookieHeader() string {
+	if t == nil || t.RoutePair == nil {
+		return ""
+	}
+	return t.RoutePair.Header()
+}
+
+// MergeRouteCookies learns a rotated pair from response headers. It never
+// stores arbitrary session cookies and returns whether a complete pair changed.
+func (t *Ticket) MergeRouteCookies(headers http.Header, now time.Time) bool {
+	if t == nil {
+		return false
+	}
+	changed := false
+	if routecookie.HasDeletion(headers, now) {
+		if t.RoutePair != nil {
+			t.RoutePair = nil
+			changed = true
+		}
+		// The reference runtime treats a deletion signal as authoritative for
+		// the whole routing credential.  Some edge responses contain a stale
+		// issuance beside the deletion; accepting that issuance would
+		// immediately resurrect the pair we just revoked.
+		return changed
+	}
+	incoming := routecookie.ParseHeaders(headers, now)
+	if len(incoming.Values) == 0 {
+		return changed
+	}
+	if t.RoutePair == nil {
+		copy := incoming.Clone()
+		t.RoutePair = &copy
+		return true
+	}
+	if t.RoutePair.Values == nil {
+		t.RoutePair.Values = map[string]string{}
+	}
+	for name, value := range incoming.Values {
+		if t.RoutePair.Values[name] != value {
+			t.RoutePair.Values[name] = value
+			changed = true
+		}
+	}
+	newer := incoming.SeenAt.After(t.RoutePair.SeenAt)
+	if newer {
+		t.RoutePair.SeenAt = incoming.SeenAt
+	}
+	if !incoming.ExpiresAt.IsZero() && (t.RoutePair.ExpiresAt.IsZero() || newer || incoming.ExpiresAt.Before(t.RoutePair.ExpiresAt)) {
+		t.RoutePair.ExpiresAt = incoming.ExpiresAt
+		changed = true
+	}
+	t.RoutePair.Gateway = routecookie.Gateway(t.RoutePair.Values)
+	return changed
 }
 
 func (t *Ticket) Validate(now time.Time, targetLength int, transport, gateway string, requireCookies, requireGateway bool) error {
@@ -208,7 +291,11 @@ func (t *Ticket) Validate(now time.Time, targetLength int, transport, gateway st
 		if requireCookies && !t.CookiesFresh(now) {
 			return errors.New("ticket cookies expired")
 		}
-		if requireGateway && !GatewayAllowed(t.Gateway, gateway) {
+		actualGateway := t.Gateway
+		if t.RoutePair != nil && t.RoutePair.Complete() && t.RoutePair.Gateway != "" {
+			actualGateway = t.RoutePair.Gateway
+		}
+		if requireGateway && !GatewayAllowed(actualGateway, gateway) {
 			return errors.New("ticket gateway mismatch")
 		}
 	}
@@ -286,7 +373,12 @@ func ParseHarvest(headers map[string][]string, body []byte, accountID int64, mod
 			if state == "" {
 				return nil, errors.New("harvest response missing x-codex-turn-state")
 			}
-			t := &Ticket{AccountID: accountID, Model: model, State: state, CapturedAt: now, ExpiresAt: now.Add(ttl), HarvestSessionID: payload.SessionID, Gateway: payload.Gateway, Transport: payload.Transport, HarvestCookies: payload.Cookies}
+			t := &Ticket{AccountID: accountID, Model: model, State: state, CapturedAt: now, ExpiresAt: now.Add(ttl), HarvestSessionID: payload.SessionID, Gateway: payload.Gateway, Transport: payload.Transport}
+			t.MergeRouteCookies(cookieHeaderFromLines(payload.Cookies), now)
+			if pair, pairErr := routecookie.ParseCookieHeader(strings.Join(payload.Cookies, "; "), now); pairErr == nil {
+				t.RoutePair = &pair
+			}
+			t.HarvestCookies = routecookie.SetCookieLines(t.RoutePair)
 			t.Normalize()
 			return t, nil
 		}
@@ -295,8 +387,26 @@ func ParseHarvest(headers map[string][]string, body []byte, accountID int64, mod
 		return nil, errors.New("harvest response missing x-codex-turn-state")
 	}
 	t := &Ticket{AccountID: accountID, Model: model, State: state, CapturedAt: now, ExpiresAt: now.Add(ttl)}
+	t.MergeRouteCookies(headerMap(headers), now)
+	t.HarvestCookies = routecookie.SetCookieLines(t.RoutePair)
 	t.Normalize()
 	return t, nil
+}
+
+func headerMap(headers map[string][]string) http.Header {
+	out := make(http.Header, len(headers))
+	for key, values := range headers {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
+}
+
+func cookieHeaderFromLines(lines []string) http.Header {
+	out := make(http.Header)
+	for _, line := range lines {
+		out.Add("Set-Cookie", line)
+	}
+	return out
 }
 
 type Summary struct {
@@ -327,7 +437,11 @@ func (t *Ticket) Summary(now time.Time, targetLength int, transport, gateway str
 	s.Transport = t.Transport
 	s.Gateway = t.Gateway
 	s.EdgeIP = t.EdgeIP
-	s.CookieCount = len(t.HarvestCookies)
+	if t.RoutePair != nil {
+		s.CookieCount = len(t.RoutePair.Values)
+	} else {
+		s.CookieCount = len(t.HarvestCookies)
+	}
 	if e := t.CookieExpiry(); !e.IsZero() {
 		s.CookieExpiresAt = &e
 	}

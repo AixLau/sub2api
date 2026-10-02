@@ -1930,6 +1930,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	var bareErrorPayload []byte
 	bareErrorAccountSideEffectsPending := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+	pluginSemanticModelSeen := ""
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
 	pendingLines := make([]string, 0, 8)
 
@@ -2051,6 +2052,26 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			trimmedData := strings.TrimSpace(data)
 			rawEventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
 			observer.ObserveOpenAI(dataBytes, rawEventType)
+			s.observeOpenAIPluginSSEMetadata(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), dataBytes, sentOpenAICodexTurnState(resp, c))
+			if servedModel := firstValidTrimmedGJSONString(dataBytes, "response.model", "model"); servedModel != "" && !strings.EqualFold(servedModel, pluginSemanticModelSeen) {
+				pluginSemanticModelSeen = servedModel
+				requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+				if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "sse", servedModel, rawEventType, isUpstreamResponseModelTerminalEvent(rawEventType), sentOpenAICodexTurnState(resp, c)); semanticErr != nil {
+					if !clientOutputStarted && !clientDisconnected {
+						pendingLines = pendingLines[:0]
+						pluginErr, ok := pluginSemanticTransportError(semanticErr)
+						if !ok {
+							return resultWithUsage(), semanticErr
+						}
+						payload := pluginSemanticFailurePayload(responseID, requestedModel, pluginErr)
+						if _, writeErr := fmt.Fprintf(w, "event: response.failed\ndata: %s\n\n", payload); writeErr == nil {
+							MarkResponseCommitted(c)
+							flusher.Flush()
+						}
+					}
+					return resultWithUsage(), semanticErr
+				}
+			}
 			if needModelReplace && mappedModel != "" && strings.Contains(data, "\"model\"") {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 				if replacedData, replaced := extractOpenAISSEDataLine(line); replaced {
@@ -2362,6 +2383,13 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		observeOpenAISSEBody(observer, string(body))
 	} else {
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
+	}
+	if servedModel := observer.Model(); servedModel != "" {
+		requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+		if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "http", servedModel, "response.completed", true, sentOpenAICodexTurnState(resp, c)); semanticErr != nil {
+			writeOpenAIPluginDegradedResponse(c, semanticErr)
+			return nil, semanticErr
+		}
 	}
 
 	// Detect SSE responses from upstream and convert to JSON.

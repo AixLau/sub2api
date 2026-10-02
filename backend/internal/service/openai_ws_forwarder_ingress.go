@@ -1010,6 +1010,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, acquireErr
 		}
 		connID := strings.TrimSpace(lease.ConnID())
+		s.observeOpenAIPluginWSHandshake(ctx, account, ingressSessionOriginalModel, lease.HandshakeHeaders(), turnState)
 		if handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader)); handshakeTurnState != "" {
 			turnState = handshakeTurnState
 			if stateStore != nil && sessionHash != "" {
@@ -1079,6 +1080,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		replayCollector := &openAIWSToolCallReplayCollector{}
 		firstEventType := ""
 		lastEventType := ""
+		pluginSemanticModelSeen := ""
 		needModelReplace := false
 		clientDisconnected := false
 		mappedModel := ""
@@ -1106,9 +1108,30 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
 				upstreamMessage = normalized
 			}
+			s.observeOpenAIPluginWSMetadata(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), upstreamMessage, turnState)
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
+			if servedModel := firstValidTrimmedGJSONString(upstreamMessage, "response.model", "model"); servedModel != "" && !strings.EqualFold(servedModel, pluginSemanticModelSeen) {
+				pluginSemanticModelSeen = servedModel
+				requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+				if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "websocket", servedModel, eventType, isUpstreamResponseModelTerminalEvent(eventType), turnState); semanticErr != nil {
+					if !wroteDownstream && !clientDisconnected {
+						pluginErr, ok := pluginSemanticTransportError(semanticErr)
+						if !ok {
+							lease.MarkBroken()
+							return nil, wrapOpenAIWSIngressTurnError("degraded_model", semanticErr, wroteDownstream)
+						}
+						payload := pluginSemanticFailurePayload(responseID, requestedModel, pluginErr)
+						if writeErr := writeClientMessage(payload); writeErr == nil {
+							wroteDownstream = true
+							markOpenAIWSClientVisibleFailure(c, "response.failed", payload)
+						}
+					}
+					lease.MarkBroken()
+					return nil, wrapOpenAIWSIngressTurnError("degraded_model", semanticErr, wroteDownstream)
+				}
+			}
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
 			}

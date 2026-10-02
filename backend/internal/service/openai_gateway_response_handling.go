@@ -267,6 +267,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	codexFailureTerminal := account != nil && account.IsOpenAIOAuthLike()
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamEarlyErr error
+	pluginSemanticModelSeen := ""
 	terminalFailurePending := false
 	failureDelivered := false
 	suppressCurrentEvent := false
@@ -546,6 +547,33 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				suppressCurrentEvent = true
 			}
 			observer.ObserveOpenAI(dataBytes, eventType)
+			s.observeOpenAIPluginSSEMetadata(ctx, account, preferredOpenAIPluginModel(originalModel, mappedModel), dataBytes, sentOpenAICodexTurnState(resp, c))
+			if servedModel := firstValidTrimmedGJSONString(dataBytes, "response.model", "model"); servedModel != "" && !strings.EqualFold(servedModel, pluginSemanticModelSeen) {
+				pluginSemanticModelSeen = servedModel
+				requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+				if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "sse", servedModel, eventType, isUpstreamResponseModelTerminalEvent(eventType), sentOpenAICodexTurnState(resp, c)); semanticErr != nil {
+					pluginErr, ok := pluginSemanticTransportError(semanticErr)
+					if !ok {
+						streamEarlyErr = semanticErr
+						return
+					}
+					// A guarded stream may still have response.created and other
+					// pre-output events in the first-output spool.  A degraded-model
+					// verdict must replace that staged prefix atomically; otherwise
+					// clients see a successful prefix followed by the synthetic
+					// failure and may commit the wrong model.
+					if !clientSemanticOutputStarted() {
+						if firstOutputStage != nil && !firstOutputStage.closed {
+							_ = firstOutputStage.Close()
+						}
+						bufferedWriter.Reset(w)
+					}
+					payload := pluginSemanticFailurePayload(responseID, originalModel, pluginErr)
+					sendErrorEvent("degraded_model_blocked", payload)
+					streamEarlyErr = semanticErr
+					return
+				}
+			}
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
 			if openAIStreamEventIsTerminalWithType(data, eventType) {
 				sawTerminalEvent = true
@@ -1768,6 +1796,13 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		observeOpenAISSEBody(observer, string(body))
 	} else {
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
+	}
+	if servedModel := observer.Model(); servedModel != "" {
+		requestedModel := preferredOpenAIPluginModel(originalModel, mappedModel)
+		if semanticErr := s.observeOpenAIPluginSemantic(ctx, account, requestedModel, "http", servedModel, "response.completed", true, sentOpenAICodexTurnState(resp, c)); semanticErr != nil {
+			writeOpenAIPluginDegradedResponse(c, semanticErr)
+			return nil, semanticErr
+		}
 	}
 
 	// Detect SSE responses for ALL account types via Content-Type header.
