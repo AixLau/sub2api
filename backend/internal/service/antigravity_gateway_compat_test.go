@@ -308,7 +308,7 @@ func TestBuildAntigravityCompatGeminiBody_ConfiguresMixedToolInvocations(t *test
 	}
 }
 
-func TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations(t *testing.T) {
+func TestAntigravityCompatChatMixedBuiltInToolsDropBuiltIns(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &queuedHTTPUpstreamStub{responses: []*http.Response{antigravityCompatSuccessResponse()}}
 	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, upstream)
@@ -331,10 +331,13 @@ func TestAntigravityCompatChatMixedBuiltInToolsEnableServerSideInvocations(t *te
 	require.NotNil(t, result)
 	require.Len(t, upstream.requestBodies, 1)
 	requestBody := upstream.requestBodies[0]
-	require.True(t, gjson.GetBytes(requestBody, "request.toolConfig.includeServerSideToolInvocations").Bool())
+	// Antigravity v1internal rejects built-in tools mixed with client function
+	// declarations, even when includeServerSideToolInvocations is enabled. The
+	// compatibility bridge keeps the client tools and drops the built-ins so the
+	// request remains usable for agent sessions.
+	require.False(t, gjson.GetBytes(requestBody, "request.toolConfig.includeServerSideToolInvocations").Exists())
 	require.Len(t, gjson.GetBytes(requestBody, "request.tools.0.functionDeclarations").Array(), 2)
-	require.True(t, gjson.GetBytes(requestBody, "request.tools.1.googleSearch").Exists())
-	require.True(t, gjson.GetBytes(requestBody, "request.tools.2.codeExecution").Exists())
+	require.False(t, gjson.GetBytes(requestBody, "request.tools.1").Exists())
 }
 
 func TestAntigravityCompatPreservesChatTokenLimit(t *testing.T) {
