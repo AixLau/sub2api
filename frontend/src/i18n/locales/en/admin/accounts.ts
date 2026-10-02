@@ -168,6 +168,31 @@ export default {
         opencode_go: 'OpenCode',
         typesafe: 'TypeSafe / Jev',
       },
+      opencodeGo: {
+        accountMode: {
+          zen: 'Zen',
+          zenDesc: 'Pay-as-you-go gateway. Consumes account credits, billed per token.',
+          go: 'GO',
+          goDesc: 'Subscription gateway, rate-limited by 5-hour / weekly / monthly usage windows.',
+        },
+        protocolRules: {
+          title: 'Model protocol routing',
+          hint: 'In adaptive mode, each model is sent to a native upstream protocol. Use an exact ID or a trailing * glob (e.g. grok-*, qwen*). The first matching rule wins; unmatched models use Chat Completions.',
+          patternPlaceholder: 'grok-* or deepseek-v4-flash',
+          add: 'Add rule',
+          remove: 'Remove rule',
+          restoreDefaults: 'Restore defaults',
+          fallback: 'Unmatched models → Chat Completions (/v1/chat/completions)',
+        },
+        title: 'OpenCode Go usage',
+        panelHint: 'Usage windows reported by the upstream OpenCode Go account.',
+        notRefreshed: 'Not refreshed', refreshNow: 'Refresh usage', autoRefresh: 'Automatic usage refresh',
+        autoRefreshHint: 'Runs only when the account switch and the global switch are both enabled.',
+        rolling: '5 hour', rollingShort: '5h', weekly: 'Week', weeklyShort: '7d', monthly: 'Month', monthlyShort: '1m',
+        status: 'Status', updatedAt: 'Updated', ok: 'Current', unauthorized: 'Session expired', failed: 'Refresh failed',
+        windowWithReset: '{percent} used, resets {reset}', loadFailed: 'Failed to load OpenCode Go usage settings',
+        autoRefreshFailed: 'Failed to update automatic usage refresh', refreshSuccess: 'OpenCode Go usage refreshed', refreshFailed: 'Failed to refresh OpenCode Go usage',
+      },
       cnProviders: {
         accountMode: {
           title: 'Account Type',
