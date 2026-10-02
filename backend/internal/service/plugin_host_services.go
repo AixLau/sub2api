@@ -10,6 +10,7 @@ import (
 	"time"
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,12 +43,13 @@ type PluginKVStore interface {
 // PluginOutboundIdentity 是宿主为某账号解析出的、可直接用于出站请求的身份材料：
 // 访问令牌、宿主会附加的出站请求头，以及账号代理。
 type PluginOutboundIdentity struct {
-	AccountID   int64
-	Platform    string
-	AccountType string
-	ProxyURL    string
-	Token       string
-	Headers     http.Header
+	AccountID     int64
+	Platform      string
+	AccountType   string
+	ProxyURL      string
+	Token         string
+	Headers       http.Header
+	ClientHeaders http.Header
 }
 
 // PluginAccountInfo 是宿主向插件公开的、单个账号的「可读、非机密」视图。它绝不包含
@@ -360,6 +362,15 @@ func (s *pluginHostServiceServer) ResolveOutboundIdentity(ctx context.Context, r
 	}
 	if identity == nil {
 		return &pluginv1.ResolveOutboundIdentityResponse{Found: false}, nil
+	}
+	if len(identity.ClientHeaders) > 0 {
+		md, err := pluginv1.AccountClientHeadersMetadata(identity.ClientHeaders)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "账号客户端身份无效")
+		}
+		if err := grpc.SetHeader(ctx, md); err != nil {
+			return nil, err
+		}
 	}
 	return &pluginv1.ResolveOutboundIdentityResponse{
 		Found:       true,

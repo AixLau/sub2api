@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/basispoints"
 )
 
 const bps403SuspectedAtExtraKey = "bps_403_suspected_at"
@@ -166,13 +168,18 @@ func (s *OpenAIGatewayService) ResolvePluginOutboundIdentity(ctx context.Context
 		headers.Set("Originator", identity.originator)
 		headers.Set("Version", identity.version)
 	}
+	clientHeaders, err := basispoints.CredentialHeaders(account.Credentials)
+	if err != nil {
+		return nil, err
+	}
 	return &PluginOutboundIdentity{
-		AccountID:   account.ID,
-		Platform:    account.Platform,
-		AccountType: account.Type,
-		ProxyURL:    resolveAccountProxyURL(account),
-		Token:       token,
-		Headers:     headers,
+		AccountID:     account.ID,
+		Platform:      account.Platform,
+		AccountType:   account.Type,
+		ProxyURL:      resolveAccountProxyURL(account),
+		Token:         token,
+		Headers:       headers,
+		ClientHeaders: clientHeaders,
 	}, nil
 }
 

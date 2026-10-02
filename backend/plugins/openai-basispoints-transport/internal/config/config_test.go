@@ -62,6 +62,14 @@ func TestParseRejectsProtectedHeadersAndInvalidLimits(t *testing.T) {
 	}
 }
 
+func TestExtraHeadersCannotOverrideAccountIdentity(t *testing.T) {
+	for _, key := range []string{"Authorization", "Chatgpt-Account-Id", "X-OpenAI-Account-Id", "X-OpenAI-Account-User-Id", "X-Basispoints-Auth-Mode", "Cookie", "Set-Cookie"} {
+		cfg := Defaults()
+		cfg.ExtraHeaders[key] = "should-not-be-sent"
+		require.Error(t, validate(&cfg), key)
+	}
+}
+
 func TestTLSVersion(t *testing.T) {
 	if got, err := TLSVersion("1.2"); err != nil || got != 0x0303 {
 		t.Fatalf("TLS 1.2: got %x, err %v", got, err)

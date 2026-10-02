@@ -49,7 +49,7 @@ type testClientOptions struct {
 	logger hclog.Logger
 }
 
-func clientForTest(t *testing.T, store *testHostKV, binary string, options ...testClientOptions) *pluginv1.TransportClient {
+func clientForTest(t *testing.T, store pluginv1.HostServiceServer, binary string, options ...testClientOptions) *pluginv1.TransportClient {
 	t.Helper()
 	opts := testClientOptions{logger: hclog.NewNullLogger()}
 	if len(options) > 0 {

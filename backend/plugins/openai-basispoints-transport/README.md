@@ -12,7 +12,17 @@
 
 ### BPS 请求头默认值
 
-仅在 BPS 通道固定使用完整的 Windows Edge WebView2 风格 UA：`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.37`，并在缺失时使用 `https://bps.openai.com` 作为 Origin。该 UA 会覆盖宿主请求和 `extra_headers` 中的 User-Agent；原生通道保留宿主原始 UA，也不应用 BPS 的 `extra_headers`。不自动补充 `Referer` 或浏览器 Client Hints。
+BPS 按当前账号凭据生成客户端身份，参考 CPA 的 headers / captured_headers 分层：先读取账号 credentials.headers，再用 credentials.captured_headers 覆盖同名头（不区分大小写）。允许 UA、BPS browser/Excel profile、Stainless 和账号用户 ID；支持字符串或字符串数组。空值忽略，控制字符、重复大小写键和超过 32 KiB 的快照会被拒绝，错误信息不包含凭据内容。
+
+Authorization 与两个账号 ID 始终来自宿主本次已授权请求；捕获的 Authorization、账号 ID、Cookie、Origin、Content-Type 及未知头不参与客户端身份。客户端请求或宿主 Codex 的 UA 不被当作 Excel 抓包结果。主请求、附件上传和同次重试共用不可变快照；403 检测从同一账号重新解析最新身份，使用真实 ChatGPT 账号 ID。
+
+BPS 出口固定使用完整浏览器 UA：
+
+    Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.37
+
+UA 在全部账号捕获头和 extra_headers 应用之后强制设置；客户端、宿主、headers、captured_headers 和 extra_headers 均不能覆盖它。主请求、附件上传、重试及 403 检测共用此规则，未配置捕获头时也使用同一个完整 UA。其余允许覆盖的客户端字段优先级为：账号捕获值 > 插件 extra_headers 默认值 > 缺失时的 Excel profile 默认值。extra_headers 不允许设置 OAuth 身份、账号用户 ID 或 Cookie。Origin 固定为 https://bps.openai.com；不合成 Referer 或浏览器 Client Hints。
+
+账号捕获头通过宿主/插件私有 gRPC metadata 传递，不会进入普通 HTTP 请求头或账号目录公开元数据。**使用账号捕获头需要同步更新宿主和插件**。原生通道继续保留宿主构造的请求头。此改动统一 HTTP 身份信息，不模拟浏览器 TLS 指纹，也不保证消除上游权限或风控导致的 403。
 
 ### 请求体大小
 

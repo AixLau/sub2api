@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/basispoints"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/bridge"
 	pluginconfig "github.com/Wei-Shaw/sub2api/plugins/openai-basispoints-transport/internal/config"
@@ -28,6 +29,7 @@ import (
 	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -36,9 +38,7 @@ const (
 	Capability          = "openai.oauth.outbound_transport.v1"
 	chunkSize           = 32 * 1024
 	bps403ProbeInterval = 10 * time.Minute
-	// BPS requests use a fixed Windows Edge WebView2-shaped UA. The version is
-	// pinned with the Edge stable build used for the plugin release so BPS sees
-	// a complete browser signature instead of the incomplete Mozilla/5.0 token.
+	// Pin the complete BPS browser UA after all account/config header overrides.
 	bpsWebViewUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.37"
 )
 
@@ -131,27 +131,24 @@ func (p *Plugin) bps403Probe(accountID int64) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	identity, err := client.ResolveOutboundIdentity(ctx, &pluginv1.ResolveOutboundIdentityRequest{AccountId: accountID})
+	var responseMD metadata.MD
+	identity, err := client.ResolveOutboundIdentity(ctx, &pluginv1.ResolveOutboundIdentityRequest{AccountId: accountID}, grpc.Header(&responseMD))
 	if err != nil || identity == nil || !identity.Found {
 		return false
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(state.cfg.UpstreamBaseURL, "/"), http.NoBody)
+	clientHeaders, err := pluginv1.AccountClientHeaders(responseMD)
 	if err != nil {
 		return false
 	}
-	for key, values := range headersFromProto(identity.Headers) {
-		for _, value := range values {
-			request.Header.Add(key, value)
-		}
+	target, err := url.Parse(strings.TrimRight(state.cfg.UpstreamBaseURL, "/"))
+	if err != nil {
+		return false
 	}
-	if strings.TrimSpace(identity.Token) != "" {
-		request.Header.Set("Authorization", "Bearer "+identity.Token)
-	}
-	request.Header.Set("chatgpt-account-id", strconv.FormatInt(accountID, 10))
-	request.Header.Set("x-openai-account-id", strconv.FormatInt(accountID, 10))
-	applyBPSClientIdentity(request.Header)
-	if proxy := strings.TrimSpace(identity.ProxyUrl); proxy != "" {
-		request = request.WithContext(context.WithValue(request.Context(), proxyContextKey{}, proxy))
+	request, err := p.buildRequest(ctx, &pluginv1.ForwardRequestStart{Method: http.MethodGet}, target, state.cfg, outboundIdentity{
+		token: identity.Token, headers: headersFromProto(identity.Headers), clientHeaders: clientHeaders, proxy: identity.ProxyUrl,
+	}, http.NoBody)
+	if err != nil {
+		return false
 	}
 	response, err := state.client.Do(request)
 	if err != nil {
@@ -436,7 +433,15 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 	}
 	// The host has already authorized this exact outbound request. Do not mint
 	// another token or query unrelated accounts through HostService.
-	identity := outboundIdentity{headers: headers, proxy: start.ProxyUrl}
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	clientHeaders, err := pluginv1.AccountClientHeaders(md)
+	if err == nil {
+		clientHeaders, err = basispoints.CredentialHeaders(map[string]any{"captured_headers": clientHeaders})
+	}
+	if err != nil {
+		return p.sendError(stream, "BPS_CLIENT_IDENTITY_INVALID", err.Error(), false)
+	}
+	identity := outboundIdentity{headers: headers, clientHeaders: clientHeaders, proxy: start.ProxyUrl}
 	// Inline images become attachment references only after Prepare derived the
 	// turn identity from the original request bytes; upload ids must not change
 	// task/turn state.
@@ -475,6 +480,16 @@ func (p *Plugin) Forward(stream grpc.BidiStreamingServer[pluginv1.ForwardRequest
 		}
 		request.ContentLength = int64(len(wireBody))
 		request.Header.Set("Content-Type", "application/json")
+		var acceptBody struct {
+			Stream bool `json:"stream"`
+		}
+		if err := json.Unmarshal(wireBody, &acceptBody); err != nil {
+			return nil, err
+		}
+		request.Header.Set("Accept", "application/json")
+		if acceptBody.Stream {
+			request.Header.Set("Accept", "text/event-stream")
+		}
 		request.Header.Set("Accept-Encoding", "identity")
 		if bridge.HasImageInput(wireBody) {
 			request.Header.Set("Copilot-Vision-Request", "true")
@@ -869,14 +884,32 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 }
 
 type outboundIdentity struct {
-	token   string
-	headers http.Header
-	proxy   string
+	token         string
+	headers       http.Header
+	clientHeaders http.Header
+	proxy         string
 }
 
 // buildRequest adds the BPS profile only on the Basis Points channel.
 func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardRequestStart, target *url.URL, cfg pluginconfig.Config, identity outboundIdentity, body io.ReadCloser) (*http.Request, error) {
-	request, err := p.buildOutboundRequest(ctx, start, target, cfg, identity, body)
+	// BPS gets a fresh header set. Native/client request headers (including UA,
+	// cookies and Codex identity) must not be mistaken for captured Excel headers.
+	clientHeaders, err := basispoints.CredentialHeaders(map[string]any{"captured_headers": identity.clientHeaders})
+	if err != nil {
+		return nil, err
+	}
+	requestIdentity := outboundIdentity{token: identity.token, proxy: identity.proxy, headers: make(http.Header)}
+	for key, values := range identity.headers {
+		switch strings.ToLower(key) {
+		case "authorization", "chatgpt-account-id", "x-openai-account-id", "x-openai-fedramp":
+			for _, value := range values {
+				requestIdentity.headers.Add(key, value)
+			}
+		}
+	}
+	bpsStart := *start
+	bpsStart.Headers = nil
+	request, err := p.buildOutboundRequest(ctx, &bpsStart, target, cfg, requestIdentity, body)
 	if err != nil {
 		return nil, err
 	}
@@ -896,6 +929,9 @@ func (p *Plugin) buildRequest(ctx context.Context, start *pluginv1.ForwardReques
 	}
 	for key, value := range cfg.ExtraHeaders {
 		request.Header.Set(key, value)
+	}
+	for key, values := range clientHeaders {
+		request.Header[key] = append([]string(nil), values...)
 	}
 	applyBPSClientIdentity(request.Header)
 	return request, nil
@@ -948,10 +984,8 @@ func (p *Plugin) buildOutboundRequest(ctx context.Context, start *pluginv1.Forwa
 	return request, nil
 }
 
-// applyExcelClientProfile stamps the official Excel add-in client identity on
-// outbound requests. The backend keys parts of its behavior — including which
-// executor tool set it injects (run_officejs vs the generic suite) — off this
-// profile, and it removes the most obvious non-browser tells.
+// applyExcelClientProfile fills missing profile fields without overwriting
+// account-specific browser, OS or Office identity captured from the client.
 func applyExcelClientProfile(header http.Header) {
 	for key, value := range map[string]string{
 		"x-openai-internal-basispoints-client-agent-profile":  "excel",
@@ -970,19 +1004,17 @@ func applyExcelClientProfile(header http.Header) {
 		"x-stainless-retry-count":     "0",
 		"x-stainless-runtime":         "browser:chrome",
 	} {
-		header.Set(key, value)
+		if strings.TrimSpace(header.Get(key)) == "" {
+			header.Set(key, value)
+		}
 	}
 }
 
-// applyBPSClientIdentity keeps the BPS request aligned with the official
-// Excel client profile. BPS is not the native Codex endpoint: do not stamp
-// Codex-only originator/version/beta headers. Default missing or blank UA and
-// Origin values after extra_headers have been applied, preserving explicit values.
+// applyBPSClientIdentity applies the fixed BPS UA after captured/config headers
+// so every BPS request uses the same complete browser UA, including probes.
 func applyBPSClientIdentity(header http.Header) {
 	header.Set("User-Agent", bpsWebViewUserAgent)
-	if strings.TrimSpace(header.Get("Origin")) == "" {
-		header.Set("Origin", "https://bps.openai.com")
-	}
+	header.Set("Origin", "https://bps.openai.com")
 	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
 		header.Del(key)
 	}
@@ -1137,40 +1169,17 @@ func (p *Plugin) uploadImage(ctx context.Context, endpoint string, cfg plugincon
 	if err := writer.Close(); err != nil {
 		return "", errors.New("附件表单编码失败")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload.Bytes()))
+	target, err := url.Parse(endpoint)
 	if err != nil {
 		return "", errors.New("附件上传请求无效")
 	}
-	request.ContentLength = int64(payload.Len())
-	for key, values := range identity.headers {
-		if isHopByHopHeader(key) {
-			continue
-		}
-		for _, value := range values {
-			request.Header.Add(key, value)
-		}
+	request, err := p.buildRequest(ctx, &pluginv1.ForwardRequestStart{Method: http.MethodPost, HasBody: true, ContentLength: int64(payload.Len())}, target, cfg, identity, io.NopCloser(bytes.NewReader(payload.Bytes())))
+	if err != nil {
+		return "", err
 	}
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
-	request.Header.Set("x-basispoints-auth-mode", cfg.AuthMode)
-	applyBPSClientIdentity(request.Header)
-	accountID := strings.TrimSpace(request.Header.Get("chatgpt-account-id"))
-	if accountID == "" {
-		accountID = strings.TrimSpace(request.Header.Get("x-openai-account-id"))
-	}
-	if accountID != "" {
-		request.Header.Set("chatgpt-account-id", accountID)
-		request.Header.Set("x-openai-account-id", accountID)
-	}
-	if request.Header.Get("Authorization") == "" || accountID == "" {
-		return "", errors.New("Basis Points 附件上传需要 OAuth 授权和 ChatGPT 账号 ID")
-	}
-	if cfg.ProxyMode == "account" {
-		if proxy := strings.TrimSpace(identity.proxy); proxy != "" {
-			request = request.WithContext(context.WithValue(request.Context(), proxyContextKey{}, proxy))
-		}
-	}
 	response, err := p.state.Load().client.Do(request)
 	if err != nil {
 		return "", redactAttachmentError(errors.New("附件上传失败或超时"), data, request.Header.Get("Authorization"))

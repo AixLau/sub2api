@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/basispoints"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	hcplugin "github.com/hashicorp/go-plugin"
@@ -290,6 +291,21 @@ func (r *pluginRuntime) roundTrip(ctx context.Context, request *http.Request, pr
 	// Keep the original client session separate from rewritten upstream headers.
 	md, _ := metadata.FromOutgoingContext(ctx)
 	md = md.Copy()
+	// Capture the selected account alongside the already-authorized request.
+	// Keep these fields out of HTTP headers so native routing remains unchanged.
+	clientHeaders := make(http.Header)
+	if account.IsOpenAIOAuthLike() {
+		var err error
+		clientHeaders, err = basispoints.CredentialHeaders(account.Credentials)
+		if err != nil {
+			return nil, err
+		}
+	}
+	identityMD, err := pluginv1.AccountClientHeadersMetadata(clientHeaders)
+	if err != nil {
+		return nil, err
+	}
+	md.Set(pluginv1.AccountClientHeadersMetadataKey, identityMD.Get(pluginv1.AccountClientHeadersMetadataKey)...)
 	sessionID, _ := request.Context().Value(ctxkey.ClientSessionID).(string)
 	md.Set(pluginv1.ClientSessionIDMetadataKey, sanitizeSessionID(sessionID))
 	streamCtx, cancel := context.WithCancel(metadata.NewOutgoingContext(ctx, md))

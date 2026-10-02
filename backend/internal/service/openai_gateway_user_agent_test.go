@@ -198,6 +198,7 @@ func TestOpenAIAuxiliaryRequestsUseGlobalUserAgent(t *testing.T) {
 func TestPluginOutboundIdentityUsesGlobalUserAgent(t *testing.T) {
 	account := Account{ID: 17, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{
 		"access_token": "test-token", "chatgpt_account_id": "test-account", "user_agent": "account/1.0",
+		"captured_headers": map[string]any{"user-agent": "captured-browser/1.0", "Authorization": "Bearer stale-token", "Cookie": "discard-cookie"},
 	}}
 	settings := newOpenAICodexUASettingService("codex_vscode/0.200.1 (Linux; x86_64) terminal")
 	gateway := &OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}}, settingService: settings}
@@ -208,4 +209,6 @@ func TestPluginOutboundIdentityUsesGlobalUserAgent(t *testing.T) {
 	require.Equal(t, "codex_vscode", identity.Headers.Get("Originator"))
 	require.Equal(t, "test-token", identity.Token)
 	require.Equal(t, "test-account", identity.Headers.Get("Chatgpt-Account-Id"))
+	require.Equal(t, "captured-browser/1.0", identity.ClientHeaders.Get("User-Agent"))
+	require.Len(t, identity.ClientHeaders, 1)
 }

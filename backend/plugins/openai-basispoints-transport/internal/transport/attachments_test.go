@@ -15,6 +15,7 @@ import (
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 // The official contract: data-URL images in user messages are uploaded as a
@@ -23,10 +24,24 @@ import (
 func TestForwardUploadsInlineImagesAsAttachments(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	md, err := pluginv1.AccountClientHeadersMetadata(http.Header{
+		"User-Agent": {"captured-browser/1.0"},
+		"X-OpenAI-Internal-Basispoints-Office-Platform": {"Mac"},
+		"Cookie":        {"discard-captured-cookie"},
+		"Authorization": {"Bearer discard-captured-token"},
+	})
+	require.NoError(t, err)
+	ctx = metadata.NewOutgoingContext(ctx, md)
 	var uploads, responses atomic.Int32
 	var uploaded []byte
 	var adapted map[string]json.RawMessage
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		require.Equal(t, bpsWebViewUserAgent, req.UserAgent())
+		require.Equal(t, "Mac", req.Header.Get("X-OpenAI-Internal-Basispoints-Office-Platform"))
+		require.Equal(t, "Bearer synthetic", req.Header.Get("Authorization"))
+		require.Empty(t, req.Header.Get("Cookie"))
+		require.Equal(t, "https://bps.openai.com", req.Header.Get("Origin"))
+		require.Equal(t, "application/json", req.Header.Get("Accept"))
 		switch req.URL.Path {
 		case "/attachments":
 			uploads.Add(1)

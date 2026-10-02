@@ -352,7 +352,7 @@ func isValidHeaderName(name string) bool {
 func isProtectedHeader(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "authorization", "proxy-authorization", "host", "content-length", "transfer-encoding", "connection",
-		"chatgpt-account-id", "x-openai-account-id", "x-basispoints-auth-mode":
+		"chatgpt-account-id", "x-openai-account-id", "x-openai-account-user-id", "x-basispoints-auth-mode", "cookie", "set-cookie":
 		return true
 	default:
 		return false

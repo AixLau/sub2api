@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -64,7 +65,9 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 		token: "host-token",
 		headers: http.Header{
 			"chatgpt-account-id": []string{"acct-own"},
+			"Cookie":             []string{"native-cookie"},
 		},
+		clientHeaders: http.Header{"User-Agent": {"captured-browser/1.0"}, "Authorization": {"Bearer stale-capture"}, "Chatgpt-Account-Id": {"other-account"}},
 	}, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
@@ -82,9 +85,9 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 		t.Fatal("client authorization leaked into the upstream request")
 	}
 	if got := request.Header.Get("User-Agent"); got != bpsWebViewUserAgent {
-		t.Fatalf("BPS user-agent was rewritten: %q", got)
+		t.Fatalf("BPS user-agent is not the pinned browser UA: %q", got)
 	}
-	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
+	for _, key := range []string{"Originator", "Version", "OpenAI-Beta", "Cookie"} {
 		if got := request.Header.Get(key); got != "" {
 			t.Fatalf("BPS request retained Codex header %s=%q", key, got)
 		}
@@ -96,19 +99,18 @@ func TestBuildRequestUsesHostIdentityAndBasisPointsHeaders(t *testing.T) {
 
 func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 	tests := []struct {
-		name                           string
-		incoming, host, extra          map[string]string
-		wantUA, wantOrigin             string
-		wantNativeUA, wantNativeOrigin string
+		name                            string
+		incoming, host, extra, captured map[string]string
+		wantOrigin                      string
+		wantNativeUA, wantNativeOrigin  string
 	}{
-		{name: "missing", wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com"},
-		{name: "empty", incoming: map[string]string{"User-Agent": "", "Origin": ""}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com"},
-		{name: "whitespace", incoming: map[string]string{"User-Agent": " \t", "Origin": " \t"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: " \t", wantNativeOrigin: " \t"},
-		{name: "caller values", incoming: map[string]string{"User-Agent": "excel-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeUA: "excel-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "only origin missing", incoming: map[string]string{"User-Agent": "excel-client/1.0"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: "excel-client/1.0"},
-		{name: "only UA missing", incoming: map[string]string{"Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "host values", host: map[string]string{"User-Agent": "host-client/1.0", "Origin": "https://chatgpt.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://chatgpt.com", wantNativeUA: "host-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
-		{name: "explicit config", incoming: map[string]string{"User-Agent": "caller-client/1.0", "Origin": "https://chatgpt.com"}, extra: map[string]string{"User-Agent": "configured-client/1.0", "Origin": "https://bps.openai.com"}, wantUA: bpsWebViewUserAgent, wantOrigin: "https://bps.openai.com", wantNativeUA: "caller-client/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "missing", wantOrigin: "https://bps.openai.com"},
+		{name: "empty", incoming: map[string]string{"User-Agent": "", "Origin": ""}, wantOrigin: "https://bps.openai.com"},
+		{name: "caller values", incoming: map[string]string{"User-Agent": "caller/1.0", "Origin": "https://chatgpt.com"}, wantOrigin: "https://bps.openai.com", wantNativeUA: "caller/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "host values", host: map[string]string{"User-Agent": "codex/1.0", "Origin": "https://chatgpt.com"}, wantOrigin: "https://bps.openai.com", wantNativeUA: "codex/1.0", wantNativeOrigin: "https://chatgpt.com"},
+		{name: "explicit config", extra: map[string]string{"User-Agent": "configured/1.0", "Origin": "https://chatgpt.com"}, wantOrigin: "https://bps.openai.com"},
+		{name: "captured cannot override fixed UA", host: map[string]string{"User-Agent": "codex/1.0"}, extra: map[string]string{"User-Agent": "configured/1.0"}, captured: map[string]string{"user-agent": "captured-browser/1.0"}, wantOrigin: "https://bps.openai.com", wantNativeUA: "codex/1.0"},
+		{name: "blank configured and captured UA", extra: map[string]string{"User-Agent": ""}, captured: map[string]string{"User-Agent": " "}, wantOrigin: "https://bps.openai.com"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,7 +120,10 @@ func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 			for key, value := range tt.incoming {
 				start.Headers[key] = &pluginv1.HeaderValues{Values: []string{value}}
 			}
-			identity := outboundIdentity{token: "test-token", headers: make(http.Header)}
+			identity := outboundIdentity{token: "test-token", headers: make(http.Header), clientHeaders: make(http.Header)}
+			for key, value := range tt.captured {
+				identity.clientHeaders.Set(key, value)
+			}
 			identity.headers.Set("Chatgpt-Account-Id", "test-account")
 			for key, value := range tt.host {
 				identity.headers.Set(key, value)
@@ -144,7 +149,7 @@ func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 				request    *http.Request
 				ua, origin string
 			}{
-				{bps, tt.wantUA, tt.wantOrigin},
+				{bps, bpsWebViewUserAgent, tt.wantOrigin},
 				{native, tt.wantNativeUA, tt.wantNativeOrigin},
 			} {
 				if got := check.request.Header.Get("User-Agent"); got != check.ua {
@@ -158,16 +163,21 @@ func TestBuildRequestBPSHeaderDefaults(t *testing.T) {
 	}
 }
 
-func TestApplyBPSClientIdentityUsesFixedWebViewUserAgent(t *testing.T) {
+func TestApplyBPSClientIdentityPinsUAAndPreservesCapturedProfile(t *testing.T) {
 	h := http.Header{
 		"User-Agent":  []string{"excel-client/1.0"},
 		"Originator":  []string{"codex-tui"},
 		"Version":     []string{"0.158.0"},
 		"OpenAI-Beta": []string{"responses=experimental"},
 	}
+	h.Set("X-OpenAI-Internal-Basispoints-Office-Platform", "Mac")
+	h.Set("X-Stainless-Runtime", "browser:safari")
 	applyBPSClientIdentity(h)
+	if h.Get("X-OpenAI-Internal-Basispoints-Office-Platform") != "Mac" || h.Get("X-Stainless-Runtime") != "browser:safari" {
+		t.Fatal("captured platform was overwritten")
+	}
 	if got := h.Get("User-Agent"); got != bpsWebViewUserAgent {
-		t.Fatalf("user-agent = %q, want %q", got, bpsWebViewUserAgent)
+		t.Fatalf("BPS user-agent is not the pinned browser UA: %q", got)
 	}
 	for _, key := range []string{"Originator", "Version", "OpenAI-Beta"} {
 		if got := h.Get(key); got != "" {
@@ -176,5 +186,45 @@ func TestApplyBPSClientIdentityUsesFixedWebViewUserAgent(t *testing.T) {
 	}
 	if got := h.Get("x-openai-internal-basispoints-client-agent-profile"); got != "excel" {
 		t.Fatalf("client profile: %q", got)
+	}
+}
+
+func TestBPSFixedUserAgentOnHTTPVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		http2 bool
+		major int
+	}{{"HTTP1", false, 1}, {"HTTP2", true, 2}} {
+		t.Run(tc.name, func(t *testing.T) {
+			seen := make(chan string, 1)
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen <- r.UserAgent()
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			server.EnableHTTP2 = tc.http2
+			server.StartTLS()
+			defer server.Close()
+			target, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := New().buildRequest(context.Background(), &pluginv1.ForwardRequestStart{Method: http.MethodGet}, target, pluginconfig.Defaults(), outboundIdentity{
+				token: "synthetic-token", headers: http.Header{"Chatgpt-Account-Id": {"synthetic-account"}},
+			}, http.NoBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := server.Client().Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.ProtoMajor != tc.major {
+				t.Fatalf("HTTP version = %d, want %d", response.ProtoMajor, tc.major)
+			}
+			if got := <-seen; got != bpsWebViewUserAgent {
+				t.Fatalf("wire UA = %q, want fixed browser UA", got)
+			}
+		})
 	}
 }
