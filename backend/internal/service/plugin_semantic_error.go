@@ -29,6 +29,9 @@ func pluginSemanticTransportError(err error) (*PluginTransportError, bool) {
 }
 
 func isOpenAINonRetryableProtocolFailure(payload []byte) bool {
+	if isOpenAIExplicitRefusal(payload) {
+		return true
+	}
 	code := gjson.GetBytes(payload, "response.error.code").String()
 	if code == "" {
 		code = gjson.GetBytes(payload, "error.code").String()

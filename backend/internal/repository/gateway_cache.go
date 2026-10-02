@@ -635,3 +635,47 @@ func (c *gatewayCache) MarkLiveCallClosed(ctx context.Context, callHash string, 
 	result, err := markLiveCallClosedScript.Run(ctx, c.rdb, []string{liveCallKey(callHash)}, int64(ttl.Seconds())).Int()
 	return result == 1, err
 }
+
+const codexTurnStateOriginPrefix = "codex_turn_state_origin:"
+
+// Compile-time assertion: gatewayCache must implement the Codex turn-state
+// origin store so the outbound echo guard survives restarts and multi-instance
+// deployments (openai_codex_turn_state.go).
+var _ service.CodexTurnStateOriginStore = (*gatewayCache)(nil)
+
+// SetCodexTurnStateOrigin 记录某个下游会话最近一次收到的 x-codex-turn-state
+// 由谁铸造（账号 + 出站身份）。键已由 service 做单向摘要，raw 的 API Key 与
+// 客户端会话标识不会进入 Redis 键名。写入是覆盖语义：同名会话在 failover
+// 后换了铸造账号，记录必须跟着走，否则守卫会剥离客户端合法持有的新 blob。
+func (c *gatewayCache) SetCodexTurnStateOrigin(ctx context.Context, key, value string, ttl time.Duration) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" || ttl <= 0 {
+		return nil
+	}
+	return c.rdb.Set(ctx, codexTurnStateOriginPrefix+key, value, ttl).Err()
+}
+
+// GetCodexTurnStateOrigin 返回溯源记录；未命中返回
+// service.ErrCodexTurnStateOriginNotFound，使 service 层区分"无记录"（守卫
+// 放行）与真实读取失败。过期由 Redis TTL 承担，无需调用方清扫。
+func (c *gatewayCache) GetCodexTurnStateOrigin(ctx context.Context, key string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", service.ErrCodexTurnStateOriginNotFound
+	}
+	value, err := c.rdb.Get(ctx, codexTurnStateOriginPrefix+key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", service.ErrCodexTurnStateOriginNotFound
+		}
+		return "", err
+	}
+	return value, nil
+}

@@ -438,13 +438,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, mapping, maxLineSize)
 		}
 
-		// x-codex-turn-state 溯源：下游回传由 writeOpenAIPassthroughResponseHeaders
-		// 在各 handler 的写头点强制放行，铸造账号在此统一记录，供出站守卫剥离
-		// failover 换号后的跨账号回带（openai_codex_turn_state.go）。
-		if extractOpenAICodexTurnState(resp.Header) != "" {
-			s.noteOpenAICodexTurnStateProvenance(c, account)
-		}
-
 		if reqStream {
 			result, handleErr := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 			if handleErr != nil {
@@ -499,6 +492,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			imageCount = result.imageCount
 			imageOutputSizes = result.imageOutputSizes
 		}
+		// x-codex-turn-state 溯源：下游回传由 writeOpenAIPassthroughResponseHeaders
+		// 各 handler 的写头点强制放行，但记账必须等到响应真正写给客户端之后——
+		// 上游刚回头时客户端一个字节都没收到，该 attempt 仍可能被 failover 丢弃。
+		// 见 notePassthroughOpenAICodexTurnStateCommitted（openai_codex_turn_state.go）。
+		s.notePassthroughOpenAICodexTurnStateCommitted(c, account, resp)
 		break
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -780,6 +778,9 @@ func stripOpenAILegacyResponsesBeta(headers http.Header) {
 }
 
 func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, responseBody []byte) bool {
+	if isOpenAIExplicitRefusal(responseBody) {
+		return false
+	}
 	if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
 		return false
 	}
@@ -960,6 +961,10 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 			UpstreamStatus: resp.StatusCode,
 		})
 	}
+	refusalHit, refusalCode, refusalMsg := detectOpenAIExplicitRefusal(body)
+	if refusalHit {
+		MarkOpenAIRefusal(c, OpenAIRefusalMark{Code: refusalCode, Reason: refusalMsg, Body: string(body), UpstreamStatus: resp.StatusCode})
+	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -975,7 +980,7 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
 	// 错误体虽不会原样透传，运行态账号状态仍需更新，避免粘性路由继续复用
 	// 刚被限流的账号。cyber 例外：不冷却账号。
-	if !cyberHit {
+	if !cyberHit && !refusalHit {
 		reqModel, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
 		canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, canonicalModel)
@@ -994,6 +999,14 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: truncateString(string(body), 4096),
 	})
+	if refusalHit {
+		if refusalMsg == "" {
+			refusalMsg = "Request was refused by the upstream safety system"
+		}
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Data(resp.StatusCode, "application/json", body)
+		return fmt.Errorf("openai refusal: %s", refusalMsg)
+	}
 	// context-window 超限是确定性请求失败（shouldFailoverOpenAIPassthroughResponse
 	// 已保证不切号），其文案对客户端可操作（如触发自动压缩）；在净化信封内保留
 	// 脱敏后的上游消息，而不是抹成通用文案。
@@ -1381,7 +1394,9 @@ func sanitizeOpenAICapacityShedErrorCodeForClient(payload []byte) ([]byte, bool)
 }
 
 func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
-	if isOpenAIContextWindowError(message, payload) {
+	if isOpenAIContextWindowError(message, payload) || isOpenAINonRetryableProtocolFailure(payload) ||
+		strings.EqualFold(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()), "invalid_request") ||
+		strings.EqualFold(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()), "invalid_request") {
 		return http.StatusBadRequest
 	}
 
@@ -1391,7 +1406,7 @@ func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
 	}
 	combined := strings.TrimSpace(errType + " " + code + " " + strings.ToLower(strings.TrimSpace(message)))
-	for _, path := range []string{"response.error.status_code", "error.status_code", "status_code"} {
+	for _, path := range []string{"response.error.status_code", "error.status_code", "status_code", "response.error.status", "error.status", "status"} {
 		if status := int(gjson.GetBytes(payload, path).Int()); status == http.StatusUnauthorized ||
 			status == http.StatusForbidden || status == http.StatusTooManyRequests || status == 529 {
 			return status
@@ -1442,7 +1457,7 @@ func openAIStreamCredentialAuthFailure(payload []byte) bool {
 	if len(bytes.TrimSpace(payload)) == 0 || !gjson.ValidBytes(payload) {
 		return false
 	}
-	for _, path := range []string{"response.error.status_code", "error.status_code", "status_code"} {
+	for _, path := range []string{"response.error.status_code", "error.status_code", "status_code", "response.error.status", "error.status", "status"} {
 		if int(gjson.GetBytes(payload, path).Int()) == http.StatusUnauthorized {
 			return true
 		}
@@ -1577,23 +1592,18 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if errType == "" {
 		errType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()))
 	}
-	combined := strings.ToLower(strings.TrimSpace(message + " " + code + " " + errType))
-	if combined == "" {
+	if strings.TrimSpace(code+" "+errType) == "" && strings.TrimSpace(message) == "" {
 		return true
 	}
-	nonRetryableMarkers := []string{
-		"invalid_request",
-		"content_policy",
-		"policy",
-		"safety",
-		"high-risk cyber",
-		"not allowed",
-		"violat",
-	}
-	for _, marker := range nonRetryableMarkers {
-		if strings.Contains(combined, marker) {
-			return false
-		}
+	// A structured error without a recognized transient/access status is
+	// request-scoped by default. Free-form messages are deliberately ignored:
+	// providers may echo user text containing words such as "policy" or
+	// "safety", which must never decide account failover.
+	if strings.EqualFold(errType, "invalid_request_error") ||
+		strings.EqualFold(code, "invalid_request_error") ||
+		strings.EqualFold(code, "invalid_request") ||
+		isOpenAIExplicitRefusal(payload) {
+		return false
 	}
 	return true
 }
@@ -2065,6 +2075,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 			}
 			eventType := effectiveOpenAISSEEventType(dataBytes, rawEventType)
+			markOpenAIExplicitRefusal(c, dataBytes, resp.StatusCode)
 			if codexFailureTerminal && sawBareError && !sawResponseFailed && eventType != "response.failed" {
 				suppressCurrentEvent = true
 			}
@@ -2336,6 +2347,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, err
 	}
+	markOpenAIExplicitRefusal(c, body, resp.StatusCode)
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -2403,6 +2415,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
+	markOpenAIExplicitRefusal(c, body, resp.StatusCode)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 	if terminalOK && (terminalType == "response.failed" || terminalType == "error") {

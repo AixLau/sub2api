@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,6 +29,61 @@ func newTurnStateTestContext(t *testing.T, apiKeyID int64, sessionID string) (*g
 	return c, rec
 }
 
+// turnStateTestCache 嵌入 GatewayCache 接口以复用其余方法集（与
+// stickyGatewayCacheHotpathStub 同样的手法），只实现溯源存储的两个方法。
+// 生产实现是 repository.gatewayCache 的 Redis 版本，这里验证的是 service 侧的
+// 读写契约与判定语义。
+type turnStateTestCache struct {
+	GatewayCache
+	origins map[string]string
+	ttls    map[string]time.Duration
+}
+
+func newTurnStateTestCache() *turnStateTestCache {
+	return &turnStateTestCache{origins: map[string]string{}, ttls: map[string]time.Duration{}}
+}
+
+func (c *turnStateTestCache) SetCodexTurnStateOrigin(_ context.Context, key, value string, ttl time.Duration) error {
+	c.origins[key] = value
+	c.ttls[key] = ttl
+	return nil
+}
+
+func (c *turnStateTestCache) GetCodexTurnStateOrigin(_ context.Context, key string) (string, error) {
+	value, ok := c.origins[key]
+	if !ok {
+		return "", ErrCodexTurnStateOriginNotFound
+	}
+	return value, nil
+}
+
+// origin 按下游会话 seed 读回溯源记录，供断言使用。
+func (c *turnStateTestCache) origin(t *testing.T, seed string) (openAICodexTurnStateOrigin, bool) {
+	t.Helper()
+	raw, ok := c.origins[codexTurnStateOriginKey(seed)]
+	if !ok {
+		return openAICodexTurnStateOrigin{}, false
+	}
+	var origin openAICodexTurnStateOrigin
+	require.NoError(t, json.Unmarshal([]byte(raw), &origin))
+	return origin, true
+}
+
+func newTurnStateTestService() (*OpenAIGatewayService, *turnStateTestCache) {
+	cache := newTurnStateTestCache()
+	return &OpenAIGatewayService{cache: cache}, cache
+}
+
+// codexTurnStateTestAccount 必须是 OAuth 类型：stagedCodexFingerprintIDs 只对
+// Codex 协议的账号返回暂存的收敛 ID，身份戳因此才有值。
+func codexTurnStateTestAccount(id int64) *Account {
+	return &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+}
+
+func stageCodexTurnStateIdentity(c *gin.Context, account *Account, mode codexFingerprintMode, sessionID string) {
+	stageCodexFingerprintIDs(c, &codexFingerprintIDs{accountID: account.ID, mode: mode, sessionID: sessionID})
+}
+
 func TestOpenAICodexTurnStateSeed(t *testing.T) {
 	c, _ := newTurnStateTestContext(t, 7, "sess-1")
 	require.Equal(t, "7\x00sess-1", openAICodexTurnStateSeed(c))
@@ -43,9 +99,19 @@ func TestOpenAICodexTurnStateSeed(t *testing.T) {
 	require.Empty(t, openAICodexTurnStateSeed(nil))
 }
 
+// 溯源键是 seed 的单向摘要：raw 的 API Key ID 与客户端会话标识不得进入键名。
+func TestCodexTurnStateOriginKey_HidesRawIdentifiers(t *testing.T) {
+	key := codexTurnStateOriginKey("7\x00sess-raw")
+	require.NotContains(t, key, "sess-raw")
+	require.NotContains(t, key, "\x00")
+	require.Equal(t, key, codexTurnStateOriginKey("7\x00sess-raw"), "同一 seed 必须稳定映射到同一键")
+	require.NotEqual(t, key, codexTurnStateOriginKey("7\x00sess-other"))
+	require.NotEqual(t, key, codexTurnStateOriginKey("8\x00sess-raw"), "API Key 必须参与区分")
+}
+
 func TestRelayOpenAICodexTurnState_SetsHeaderAndRecordsProvenance(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 42}
+	svc, cache := newTurnStateTestService()
+	account := codexTurnStateTestAccount(42)
 	c, _ := newTurnStateTestContext(t, 7, "sess-relay")
 
 	upstream := http.Header{}
@@ -54,29 +120,28 @@ func TestRelayOpenAICodexTurnState_SetsHeaderAndRecordsProvenance(t *testing.T) 
 
 	require.Equal(t, "blob-A", c.Writer.Header().Get("X-Codex-Turn-State"))
 
-	raw, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-relay")
+	origin, ok := cache.origin(t, "7\x00sess-relay")
 	require.True(t, ok)
-	origin, ok := raw.(openAICodexTurnStateOrigin)
-	require.True(t, ok)
-	require.Equal(t, int64(42), origin.accountID)
-	require.True(t, origin.expiresAt.After(time.Now()))
+	require.Equal(t, int64(42), origin.AccountID)
+	require.Equal(t, openaiStickySessionTTL, cache.ttls[codexTurnStateOriginKey("7\x00sess-relay")],
+		"TTL 沿用粘性会话窗口，过期交由 Redis 承担")
 }
 
 func TestRelayOpenAICodexTurnState_ClearsStaleValueWhenUpstreamAbsent(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	svc, cache := newTurnStateTestService()
 	c, _ := newTurnStateTestContext(t, 7, "sess-stale")
 	// 模拟上一 failover attempt 残留的值
 	c.Writer.Header().Set("X-Codex-Turn-State", "blob-old")
 
-	svc.relayOpenAICodexTurnState(c, &Account{ID: 43}, http.Header{})
+	svc.relayOpenAICodexTurnState(c, codexTurnStateTestAccount(43), http.Header{})
 
 	require.Empty(t, c.Writer.Header().Get("X-Codex-Turn-State"))
-	_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-stale")
+	_, ok := cache.origin(t, "7\x00sess-stale")
 	require.False(t, ok)
 }
 
 func TestStageOpenAICodexTurnState_StagedHeaders(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	svc, cache := newTurnStateTestService()
 	c, _ := newTurnStateTestContext(t, 9, "sess-staged")
 
 	// nil 集合 + 上游有值 → 创建集合并写入，但此刻还不记录溯源
@@ -86,16 +151,14 @@ func TestStageOpenAICodexTurnState_StagedHeaders(t *testing.T) {
 	stageOpenAICodexTurnState(&staged, upstream)
 	require.NotNil(t, staged)
 	require.Equal(t, "blob-B", staged.Get("X-Codex-Turn-State"))
-	_, noted := svc.openaiCodexTurnStateOrigins.Load("9\x00sess-staged")
+	_, noted := cache.origin(t, "9\x00sess-staged")
 	require.False(t, noted, "暂存阶段不得记录溯源：该 attempt 仍可能 failover 丢弃")
 
 	// 真正提交时才记录
-	svc.noteStagedOpenAICodexTurnStateCommitted(c, &Account{ID: 44}, staged)
-	raw, ok := svc.openaiCodexTurnStateOrigins.Load("9\x00sess-staged")
+	svc.noteStagedOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(44), staged)
+	origin, ok := cache.origin(t, "9\x00sess-staged")
 	require.True(t, ok)
-	origin, ok := raw.(openAICodexTurnStateOrigin)
-	require.True(t, ok)
-	require.Equal(t, int64(44), origin.accountID)
+	require.Equal(t, int64(44), origin.AccountID)
 
 	// 上游无值 → 清除已暂存的值；nil 集合保持 nil
 	stageOpenAICodexTurnState(&staged, http.Header{})
@@ -108,7 +171,7 @@ func TestStageOpenAICodexTurnState_StagedHeaders(t *testing.T) {
 // 首输出超时导致 attempt 被丢弃时，溯源不得被该 attempt 污染——否则后续
 // 请求会把客户端持有的合法 blob 误判成跨账号回带而剥离。
 func TestStagedTurnState_AbandonedAttemptDoesNotPoisonProvenance(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	svc, cache := newTurnStateTestService()
 	c, _ := newTurnStateTestContext(t, 11, "sess-abandoned")
 
 	// 账号 A 的 attempt 暂存了 blob，但从未提交（首输出超时 → failover）
@@ -118,30 +181,98 @@ func TestStagedTurnState_AbandonedAttemptDoesNotPoisonProvenance(t *testing.T) {
 	stageOpenAICodexTurnState(&staged, upstreamA)
 
 	// 账号 B 接手并真正提交
-	svc.relayOpenAICodexTurnState(c, &Account{ID: 52}, upstreamA)
+	accountB := codexTurnStateTestAccount(52)
+	svc.relayOpenAICodexTurnState(c, accountB, upstreamA)
 
 	// 客户端回带的 blob 来自 B，出站到 B 时不得被剥离
 	h := http.Header{}
 	h.Set("x-codex-turn-state", "blob-A")
-	svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 52}, h)
+	svc.guardOpenAICodexTurnStateEcho(c, accountB, h)
 	require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 
-	raw, ok := svc.openaiCodexTurnStateOrigins.Load("11\x00sess-abandoned")
+	origin, ok := cache.origin(t, "11\x00sess-abandoned")
 	require.True(t, ok)
-	origin, ok := raw.(openAICodexTurnStateOrigin)
-	require.True(t, ok)
-	require.Equal(t, int64(52), origin.accountID)
+	require.Equal(t, int64(52), origin.AccountID)
 }
 
 func TestNoteStagedOpenAICodexTurnStateCommitted_NoopWithoutState(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	svc, cache := newTurnStateTestService()
 	c, _ := newTurnStateTestContext(t, 12, "sess-nostate")
 
-	svc.noteStagedOpenAICodexTurnStateCommitted(c, &Account{ID: 60}, nil)
-	svc.noteStagedOpenAICodexTurnStateCommitted(c, &Account{ID: 60}, http.Header{"X-Request-Id": []string{"rid"}})
+	svc.noteStagedOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(60), nil)
+	svc.noteStagedOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(60), http.Header{"X-Request-Id": []string{"rid"}})
 
-	_, ok := svc.openaiCodexTurnStateOrigins.Load("12\x00sess-nostate")
+	_, ok := cache.origin(t, "12\x00sess-nostate")
 	require.False(t, ok)
+}
+
+// 透传路径曾在拿到上游 200 响应头时就记账，但那时客户端一个字节都没收到
+// （首个可见输出前 pendingLines 全缓冲），而首输出失败、断流、空终止事件都会
+// 触发 failover 丢弃该 attempt。记账必须等到响应真正提交。
+func TestNotePassthroughOpenAICodexTurnStateCommitted(t *testing.T) {
+	const seed = "7\x00sess-passthrough"
+
+	newResp := func(state string) *http.Response {
+		resp := &http.Response{Header: http.Header{}}
+		if state != "" {
+			resp.Header.Set(openAICodexTurnStateHeader, state)
+		}
+		return resp
+	}
+	// gin 的 WriteHeader 只设 status，Written() 要等真正写出 body 才为 true——
+	// 生产路径的 c.Data / pendingLines / keepalive 都会真写字节。
+	commitResponse := func(t *testing.T, c *gin.Context) {
+		t.Helper()
+		_, err := c.Writer.WriteString("data: {}\n\n")
+		require.NoError(t, err)
+		require.True(t, c.Writer.Written())
+	}
+
+	t.Run("uncommitted_response_does_not_record", func(t *testing.T) {
+		svc, cache := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-passthrough")
+
+		svc.notePassthroughOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(42), newResp("blob-A"))
+
+		require.False(t, c.Writer.Written())
+		_, ok := cache.origin(t, seed)
+		require.False(t, ok, "响应尚未提交，被丢弃的 attempt 不得留下溯源")
+	})
+
+	t.Run("committed_response_records", func(t *testing.T) {
+		svc, cache := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-passthrough")
+		commitResponse(t, c)
+
+		svc.notePassthroughOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(42), newResp("blob-A"))
+
+		origin, ok := cache.origin(t, seed)
+		require.True(t, ok)
+		require.Equal(t, int64(42), origin.AccountID)
+	})
+
+	t.Run("upstream_without_blob_does_not_record", func(t *testing.T) {
+		svc, cache := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-passthrough")
+		commitResponse(t, c)
+
+		svc.notePassthroughOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(42), newResp(""))
+
+		_, ok := cache.origin(t, seed)
+		require.False(t, ok, "上游没给 blob，客户端手里也没有，无需记账")
+	})
+
+	t.Run("nil_response_is_noop", func(t *testing.T) {
+		svc, cache := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-passthrough")
+		commitResponse(t, c)
+
+		require.NotPanics(t, func() {
+			svc.notePassthroughOpenAICodexTurnStateCommitted(c, codexTurnStateTestAccount(42), nil)
+		})
+		_, ok := cache.origin(t, seed)
+		require.False(t, ok)
+	})
 }
 
 func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
@@ -154,88 +285,129 @@ func TestGuardOpenAICodexTurnStateEcho(t *testing.T) {
 	}
 
 	t.Run("same_account_keeps_echo", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+		svc, _ := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "sess-g1")
 		upstream := http.Header{}
 		upstream.Set("x-codex-turn-state", "blob-A")
-		svc.relayOpenAICodexTurnState(c, &Account{ID: 42}, upstream)
+		svc.relayOpenAICodexTurnState(c, codexTurnStateTestAccount(42), upstream)
 
 		h := newOutbound("blob-A")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 42}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(42), h)
 		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 	})
 
 	t.Run("foreign_account_strips_echo", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+		svc, _ := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "sess-g2")
 		upstream := http.Header{}
 		upstream.Set("x-codex-turn-state", "blob-A")
-		svc.relayOpenAICodexTurnState(c, &Account{ID: 42}, upstream)
+		svc.relayOpenAICodexTurnState(c, codexTurnStateTestAccount(42), upstream)
 
 		// failover 换到账号 43：blob 由 42 铸造，必须剥离
 		h := newOutbound("blob-A")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
 		require.Empty(t, h.Get("x-codex-turn-state"))
 	})
 
 	t.Run("no_provenance_passthrough", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+		svc, _ := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "sess-g3")
 		h := newOutbound("blob-unknown")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
 		require.Equal(t, "blob-unknown", h.Get("x-codex-turn-state"))
 	})
 
-	t.Run("expired_provenance_passthrough_and_pruned", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+	t.Run("corrupted_provenance_passthrough", func(t *testing.T) {
+		svc, cache := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "sess-g4")
-		svc.openaiCodexTurnStateOrigins.Store("7\x00sess-g4", openAICodexTurnStateOrigin{
-			accountID: 42,
-			expiresAt: time.Now().Add(-time.Minute),
-		})
+		cache.origins[codexTurnStateOriginKey("7\x00sess-g4")] = "{not json"
+
 		h := newOutbound("blob-A")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
 		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
-		_, ok := svc.openaiCodexTurnStateOrigins.Load("7\x00sess-g4")
-		require.False(t, ok)
 	})
 
 	t.Run("no_session_seed_noop", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+		svc, _ := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "")
 		h := newOutbound("blob-A")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
 		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 	})
 
 	t.Run("no_echo_noop", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
+		svc, _ := newTurnStateTestService()
 		c, _ := newTurnStateTestContext(t, 7, "sess-g5")
 		h := newOutbound("")
-		svc.guardOpenAICodexTurnStateEcho(c, &Account{ID: 43}, h)
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
 		require.Empty(t, h.Get("x-codex-turn-state"))
+	})
+
+	t.Run("store_unavailable_passthrough", func(t *testing.T) {
+		// 无 cache（未实现可选接口）时溯源退化为不追踪，与本机制引入前一致。
+		svc := &OpenAIGatewayService{}
+		c, _ := newTurnStateTestContext(t, 7, "sess-g6")
+		h := newOutbound("blob-A")
+		require.NotPanics(t, func() {
+			svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(43), h)
+		})
+		require.Equal(t, "blob-A", h.Get("x-codex-turn-state"))
 	})
 }
 
-func TestSweepOpenAICodexTurnStateOrigins_PrunesExpiredEntries(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	svc.openaiCodexTurnStateOrigins.Store("expired", openAICodexTurnStateOrigin{
-		accountID: 1,
-		expiresAt: time.Now().Add(-time.Minute),
-	})
-	svc.openaiCodexTurnStateOrigins.Store("alive", openAICodexTurnStateOrigin{
-		accountID: 2,
-		expiresAt: time.Now().Add(time.Hour),
+// 同账号不足以证明可回放：device→session 模式切换、period 换代、main↔side
+// 切换都会在同一账号下换掉上游 session_id，旧 blob 属于另一个上游会话。
+func TestGuardOpenAICodexTurnStateEcho_StripsOnIdentityChange(t *testing.T) {
+	echoGuard := func(t *testing.T, mintMode codexFingerprintMode, mintSession string, reqMode codexFingerprintMode, reqSession string) string {
+		t.Helper()
+		svc, _ := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-ident")
+		account := codexTurnStateTestAccount(42)
+
+		stageCodexTurnStateIdentity(c, account, mintMode, mintSession)
+		upstream := http.Header{}
+		upstream.Set("x-codex-turn-state", "blob-minted")
+		svc.relayOpenAICodexTurnState(c, account, upstream)
+
+		stageCodexTurnStateIdentity(c, account, reqMode, reqSession)
+		h := http.Header{}
+		h.Set("x-codex-turn-state", "blob-minted")
+		svc.guardOpenAICodexTurnStateEcho(c, account, h)
+		return h.Get("x-codex-turn-state")
+	}
+
+	t.Run("device_to_session_switch_strips", func(t *testing.T) {
+		// 切换到 session 模式后上游 session 由 period 分配，与 device 时期不同
+		require.Empty(t, echoGuard(t, codexFingerprintDevice, "", codexFingerprintSession, "upstream-session-X"))
 	})
 
-	// 计数器推进到触发清扫的边界
-	svc.openaiCodexTurnStateWrites.Store(255)
-	svc.sweepOpenAICodexTurnStateOrigins()
+	t.Run("period_rollover_strips", func(t *testing.T) {
+		require.Empty(t, echoGuard(t, codexFingerprintSession, "upstream-session-1", codexFingerprintSession, "upstream-session-2"))
+	})
 
-	_, expiredOK := svc.openaiCodexTurnStateOrigins.Load("expired")
-	require.False(t, expiredOK)
-	_, aliveOK := svc.openaiCodexTurnStateOrigins.Load("alive")
-	require.True(t, aliveOK)
+	t.Run("main_to_side_strips", func(t *testing.T) {
+		require.Empty(t, echoGuard(t, codexFingerprintSession, "upstream-main", codexFingerprintSession, "upstream-side"))
+	})
+
+	t.Run("same_identity_keeps_echo", func(t *testing.T) {
+		require.Equal(t, "blob-minted", echoGuard(t, codexFingerprintSession, "upstream-session-1", codexFingerprintSession, "upstream-session-1"))
+	})
+
+	t.Run("unknown_identity_falls_back_to_account", func(t *testing.T) {
+		// 记账时拿不到收敛 ID（如非 Codex 协议账号）→ 身份未知，只按账号判定
+		svc, _ := newTurnStateTestService()
+		c, _ := newTurnStateTestContext(t, 7, "sess-ident-unknown")
+		plain := &Account{ID: 42}
+		upstream := http.Header{}
+		upstream.Set("x-codex-turn-state", "blob-minted")
+		svc.relayOpenAICodexTurnState(c, plain, upstream)
+
+		stageCodexTurnStateIdentity(c, codexTurnStateTestAccount(42), codexFingerprintSession, "upstream-session-X")
+		h := http.Header{}
+		h.Set("x-codex-turn-state", "blob-minted")
+		svc.guardOpenAICodexTurnStateEcho(c, codexTurnStateTestAccount(42), h)
+		require.Equal(t, "blob-minted", h.Get("x-codex-turn-state"), "身份未知一侧不参与判定")
+	})
 }
 
 func TestWriteOpenAIPassthroughResponseHeaders_RelaysAndClearsTurnState(t *testing.T) {

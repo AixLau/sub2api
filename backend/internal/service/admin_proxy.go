@@ -68,6 +68,11 @@ func (s *adminServiceImpl) CreateProxy(ctx context.Context, input *CreateProxyIn
 	if input.ExpiryWarnDays < 0 {
 		return nil, infraerrors.BadRequest("PROXY_WARN_DAYS_INVALID", "expiry_warn_days must be >= 0")
 	}
+	// 与公告排期同一条边界：PostgreSQL 存得下、time.Time 却无法按 RFC 3339
+	// 序列化到 API 响应（见 isJSONTimeInRange）。
+	if !isJSONTimeInRange(input.ExpiresAt) {
+		return nil, infraerrors.BadRequest("PROXY_EXPIRY_YEAR_INVALID", "proxy expiry year must be between 0 and 9999")
+	}
 
 	proxy := &Proxy{
 		Name:           input.Name,
@@ -94,6 +99,10 @@ func (s *adminServiceImpl) UpdateProxy(ctx context.Context, id int64, input *Upd
 	// 校验：backup_proxy_id 不能是自身
 	if input.BackupProxyID != nil && *input.BackupProxyID == id {
 		return nil, infraerrors.BadRequest("PROXY_BACKUP_SELF", "backup proxy cannot be itself")
+	}
+	// 与 CreateProxy 同一条边界，且必须在读取既有记录之前——越界日期不该先落库再拒绝。
+	if !isJSONTimeInRange(input.ExpiresAt) {
+		return nil, infraerrors.BadRequest("PROXY_EXPIRY_YEAR_INVALID", "proxy expiry year must be between 0 and 9999")
 	}
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {

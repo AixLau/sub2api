@@ -27,6 +27,7 @@ type openAIChatSilentRefusalDetector struct {
 	sawUsage        bool
 	sawError        bool
 	sawReasoning    bool
+	sawRefusal      bool
 	sawFinish       bool
 	finishReason    string
 }
@@ -72,6 +73,9 @@ func (d *openAIChatSilentRefusalDetector) ObservePayload(payload []byte) {
 	if gjson.GetBytes(payload, "error").Exists() {
 		d.sawError = true
 	}
+	if hit, _, _ := detectOpenAIExplicitRefusal(payload); hit {
+		d.sawRefusal = true
+	}
 	if usage := gjson.GetBytes(payload, "usage"); usage.Exists() && usage.IsObject() {
 		d.sawUsage = true
 	}
@@ -98,6 +102,9 @@ func (d *openAIChatSilentRefusalDetector) ObserveChatChunk(chunk apicompat.ChatC
 		if delta.Content != nil && *delta.Content != "" {
 			d.sawContent = true
 		}
+		if delta.Refusal != nil && *delta.Refusal != "" {
+			d.sawRefusal = true
+		}
 		if delta.ReasoningContent != nil {
 			d.sawReasoning = true
 		}
@@ -111,7 +118,7 @@ func (d *openAIChatSilentRefusalDetector) ShouldReleaseClientOutput() bool {
 	if d == nil || !d.enabled {
 		return true
 	}
-	if d.sawContent || d.sawToolCall || d.sawFunctionCall || d.sawUsage || d.sawError || d.sawReasoning {
+	if d.sawContent || d.sawToolCall || d.sawFunctionCall || d.sawUsage || d.sawError || d.sawReasoning || d.sawRefusal {
 		return true
 	}
 	return d.sawFinish && d.finishReason != "" && d.finishReason != "stop"
@@ -127,6 +134,7 @@ func (d *openAIChatSilentRefusalDetector) IsSilentRefusal() bool {
 		!d.sawUsage &&
 		!d.sawError &&
 		!d.sawReasoning &&
+		!d.sawRefusal &&
 		d.sawFinish &&
 		d.finishReason == "stop"
 }
@@ -138,6 +146,9 @@ func (d *openAIChatSilentRefusalDetector) observeEventType(eventType string) {
 	}
 	if eventType == "error" || eventType == "response.failed" {
 		d.sawError = true
+	}
+	if eventType == "response.refusal.delta" || eventType == "response.refusal.done" {
+		d.sawRefusal = true
 	}
 	if strings.Contains(eventType, "reasoning") || strings.Contains(eventType, "reasoning_summary") {
 		d.sawReasoning = true
@@ -189,6 +200,14 @@ func (d *openAIChatSilentRefusalDetector) observeResponsesPayload(payload []byte
 		if gjson.GetBytes(payload, "delta").String() != "" {
 			d.sawContent = true
 		}
+	case "response.refusal.delta":
+		if gjson.GetBytes(payload, "delta").String() != "" {
+			d.sawRefusal = true
+		}
+	case "response.refusal.done":
+		if gjson.GetBytes(payload, "refusal").String() != "" {
+			d.sawRefusal = true
+		}
 	case "response.output_item.added":
 		switch strings.TrimSpace(gjson.GetBytes(payload, "item.type").String()) {
 		case "function_call":
@@ -228,6 +247,10 @@ func (d *openAIChatSilentRefusalDetector) observeResponseMessageItem(item gjson.
 		return
 	}
 	for _, part := range content.Array() {
+		if strings.EqualFold(strings.TrimSpace(part.Get("type").String()), "refusal") && part.Get("refusal").String() != "" {
+			d.sawRefusal = true
+			return
+		}
 		if part.Get("text").String() != "" {
 			d.sawContent = true
 			return

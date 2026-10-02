@@ -96,6 +96,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
+	// A protocol-confirmed content refusal belongs to this request. It is not
+	// evidence that the credential, workspace, or account is unhealthy.
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIExplicitRefusal(responseBody) {
+		return false
+	}
 	// Any non-2xx upstream HTTP response means the model request was actually sent.
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
