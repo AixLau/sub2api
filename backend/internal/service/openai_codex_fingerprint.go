@@ -601,7 +601,7 @@ func rewriteCodexMetadataJSONFields(raw string, fields map[string]any) (string, 
 		return raw, false
 	}
 
-	rebuilt, err := json.Marshal(metadata)
+	rebuilt, err := marshalCodexRawTurnMetadata(metadata)
 	if err != nil {
 		return raw, false
 	}

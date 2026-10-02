@@ -244,6 +244,14 @@ func normalizeImageSizeBreakdown(in map[string]int) map[string]int {
 	return out
 }
 
+func cloneImageSizeBreakdown(in map[string]int) map[string]int {
+	out := make(map[string]int, len(in)+1)
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func SortedImageBillingBreakdownKeys(breakdown map[string]int) []string {
 	keys := make([]string, 0, len(breakdown))
 	for key := range breakdown {

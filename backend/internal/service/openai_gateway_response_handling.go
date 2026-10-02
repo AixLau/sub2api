@@ -869,6 +869,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
+			// A complete terminal event is sufficient to finish the response; do not
+			// wait for an upstream connection that may remain open after the SSE stream.
+			// Codex bare error sequences can be followed by response.failed or a
+			// successful completed event, so they must continue to EOF.
+			if sawTerminalEvent && !eventInProgress && !(codexFailureTerminal && sawBareError) {
+				return finalizeStream()
+			}
 		}
 		if result, err, done := handleScanErr(documentScanner.Err()); done {
 			return result, err
@@ -955,6 +962,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			markEventProcessed(&ev)
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
+			}
+			if sawTerminalEvent && !eventInProgress && !(codexFailureTerminal && sawBareError) {
+				_ = resp.Body.Close()
+				return finalizeStream()
 			}
 
 		case <-intervalCh:

@@ -11,6 +11,18 @@ func marshalCodexTurnMetadata(metadata map[string]any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return escapeCodexTurnMetadataASCII(raw), nil
+}
+
+func marshalCodexRawTurnMetadata(metadata map[string]json.RawMessage) ([]byte, error) {
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, err
+	}
+	return escapeCodexTurnMetadataASCII(raw), nil
+}
+
+func escapeCodexTurnMetadataASCII(raw []byte) []byte {
 	for i, b := range raw {
 		if b < 0x7f {
 			continue
@@ -33,7 +45,7 @@ func marshalCodexTurnMetadata(metadata map[string]any) ([]byte, error) {
 				appendEscape(low)
 			}
 		}
-		return out, nil
+		return out
 	}
-	return raw, nil
+	return raw
 }

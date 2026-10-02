@@ -144,23 +144,26 @@ func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
 // resolveCodexOutboundIdentityWithCanonicalUA uses an explicit canonical identity
 // when the caller already has request-scoped access to the active settings.
 func resolveCodexOutboundIdentityWithCanonicalUA(candidateUA, canonicalUA string) codexOutboundIdentity {
-	canonical := strings.TrimSpace(canonicalUA)
-	if canonical == "" {
-		canonical = codexCLIUserAgent
+	canonicalRaw := canonicalUA
+	if strings.TrimSpace(canonicalRaw) == "" {
+		canonicalRaw = codexCLIUserAgent
 	}
-	ua := strings.TrimSpace(candidateUA)
-	if ua == "" {
-		ua = canonical
+	canonicalOriginator, canonicalPairedUA, canonicalOK := openai.PairCodexClientIdentity(canonicalRaw)
+	if !canonicalOK {
+		canonicalRaw = codexCLIUserAgent
+		canonicalOriginator, canonicalPairedUA = openai.CodexDefaultOriginator, codexCLIUserAgent
+	}
+	ua := candidateUA
+	if strings.TrimSpace(ua) == "" {
+		ua = canonicalRaw
 	}
 	originator, pairedUA, ok := openai.PairCodexClientIdentity(ua)
 	if !ok {
-		if originator, pairedUA, ok = openai.PairCodexClientIdentity(canonical); !ok {
-			originator, pairedUA = openai.CodexDefaultOriginator, codexCLIUserAgent
-		}
+		originator, pairedUA = canonicalOriginator, canonicalPairedUA
 	}
 	// 生效版本只有一个来源：规范身份（面板版本号 → 自动同步值 → 内置常量，见
 	// SettingService.GetOpenAICodexClientVersion）。UA 与 version 头由此同源派生。
-	version := codexClientVersionFromUA(canonical)
+	version := codexClientVersionFromUA(canonicalRaw)
 	if rebuilt := openai.SetCodexUserAgentVersion(pairedUA, version); rebuilt != "" {
 		pairedUA = rebuilt
 	}

@@ -153,13 +153,24 @@ func DetectModelPlatform(model string) (string, bool) {
 	case strings.HasPrefix(normalized, "deepseek-"):
 		return PlatformDeepseek, true
 	case strings.HasPrefix(normalized, "minimax-"),
-		strings.HasPrefix(normalized, "abab"):
+		isLegacyMiniMaxABABModel(normalized):
 		return PlatformMiniMax, true
 	case normalized == "jev-latest" || strings.HasPrefix(normalized, "jev-"):
 		return PlatformTypeSafe, true
 	default:
 		return "", false
 	}
+}
+
+func isLegacyMiniMaxABABModel(model string) bool {
+	for _, prefix := range []string{
+		"abab5.5-", "abab5.5s-", "abab6-", "abab6.5-", "abab6.5s-", "abab7-",
+	} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func hasOpenAISeriesPrefix(model string) bool {
