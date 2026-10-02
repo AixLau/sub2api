@@ -190,12 +190,25 @@ func (s *OpenAIGatewayService) resolveCodexHTTPFingerprintIDs(ctx context.Contex
 		case resultErr == nil, errors.Is(resultErr, ErrCodexSessionIdentityNotFound), errors.Is(resultErr, errCodexSideForkConflict):
 		case errors.Is(resultErr, ErrCodexIdentityOwnerRetired):
 			RecordCodexIdentityEvent("ownership", "stale_rejected")
+		case errors.Is(resultErr, ErrCodexBindingUnresolvedAttribution):
+			// 归属证据不足是可重试的明确失败，必须与存储故障区分开。
+			RecordCodexIdentityEvent("session_binding", "unresolved_attribution")
+		case errors.Is(resultErr, ErrCodexBindingUnresolvedSource):
+			RecordCodexIdentityEvent("session_binding", "unresolved_source")
+		case errors.Is(resultErr, ErrCodexBindingAttributionConflict):
+			RecordCodexIdentityEvent("session_binding", "conflict")
 		default:
 			RecordCodexIdentityEvent("identity_store", "error")
 		}
 	}()
 	if account == nil {
 		return nil, nil
+	}
+	if s.codexSessionBindingEnabled() && !s.codexForceAccountRule() {
+		// 门控开启时才走权威绑定模型；默认 legacy 下这段不会执行，
+		// 下面的既有解析逐字节不变。强制开关同样绕过绑定——它的语义就是
+		// "忽略已提交绑定，完全按账号当前模式"，即 legacy 行为，因此也不读写绑定。
+		return s.resolveCodexBindingFingerprintIDs(ctx, c, account, now)
 	}
 	mode := account.GetCodexFingerprintMode()
 	if mode != codexFingerprintSession {
