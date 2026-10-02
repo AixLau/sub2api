@@ -246,3 +246,97 @@ func TestCodexBindingFlatModeChangeAppliesToNewSessionsOnly(t *testing.T) {
 	require.Equal(t, codexFingerprintFull, fresh.mode,
 		"新会话必须采用新的 flat 规则，否则 flat 内切换对新会话永不生效")
 }
+
+func codexBindingForkRequest(t *testing.T, userID, apiKeyID int64, rawSession, rawThread, rawFork string) *gin.Context {
+	t.Helper()
+	c := newCodexSessionIdentityV2Context(t, userID, apiKeyID)
+	c.Request.Header.Set("session-id", rawSession)
+	c.Request.Header.Set("thread-id", rawThread)
+	c.Request.Header.Set("x-codex-turn-metadata",
+		`{"forked_from_thread_id":"`+rawFork+`","forked_from_ordinal_exclusive":1}`)
+	stageCodexSessionIdentityInputMap(c, nil)
+	return c
+}
+
+func TestCodexBindingFlatModesFallbackOnMissingLineage(t *testing.T) {
+	for _, mode := range []codexFingerprintMode{
+		codexFingerprintDevice,
+		codexFingerprintFull,
+		codexFingerprintOff,
+	} {
+		t.Run(string(mode)+"-parent", func(t *testing.T) {
+			server := miniredis.RunT(t)
+			svc := newCodexBindingService(t, server)
+			account := newTestOAuthAccount(9200, map[string]any{codexFingerprintModeExtraKey: string(mode)})
+			rawSession := newCodexUUIDv7ForTest(t)
+			rawThread := newCodexUUIDv7ForTest(t)
+
+			before := codexBindingKeySnapshot(server)
+			ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+				codexBindingRequest(t, 9200, 92001, rawSession, rawThread, newCodexUUIDv7ForTest(t)), account, time.Now())
+
+			require.NoError(t, err)
+			if mode == codexFingerprintOff {
+				require.Nil(t, ids)
+			} else {
+				require.NotNil(t, ids)
+				require.Equal(t, mode, ids.mode)
+				expected := resolveCodexFingerprintIDs(account, rawSession, mode)
+				require.NotNil(t, expected)
+				require.Equal(t, expected.installationID, ids.installationID)
+				require.Equal(t, expected.sessionID, ids.sessionID)
+				require.Equal(t, expected.threadID, ids.threadID)
+			}
+			require.Equal(t, before, codexBindingKeySnapshot(server), "flat fallback must not write lineage records")
+		})
+
+		t.Run(string(mode)+"-fork", func(t *testing.T) {
+			server := miniredis.RunT(t)
+			svc := newCodexBindingService(t, server)
+			account := newTestOAuthAccount(9201, map[string]any{codexFingerprintModeExtraKey: string(mode)})
+			rawSession := newCodexUUIDv7ForTest(t)
+			rawThread := newCodexUUIDv7ForTest(t)
+			before := codexBindingKeySnapshot(server)
+
+			ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+				codexBindingForkRequest(t, 9201, 92011, rawSession, rawThread, newCodexUUIDv7ForTest(t)), account, time.Now())
+
+			require.NoError(t, err)
+			if mode == codexFingerprintOff {
+				require.Nil(t, ids)
+			} else {
+				require.NotNil(t, ids)
+				require.Equal(t, mode, ids.mode)
+			}
+			require.Equal(t, before, codexBindingKeySnapshot(server), "flat fallback must not write lineage records")
+		})
+	}
+}
+
+func TestCodexBindingSessionMissingForkSourceRemainsStrict(t *testing.T) {
+	server := miniredis.RunT(t)
+	svc := newCodexBindingService(t, server)
+	account := newTestOAuthAccount(9202, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintSession)})
+
+	ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+		codexBindingForkRequest(t, 9202, 92021, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)), account, time.Now())
+
+	require.ErrorIs(t, err, ErrCodexBindingUnresolvedSource)
+	require.Nil(t, ids)
+}
+
+func TestCodexBindingFlatMissingLineageDoesNotHideStoreFailure(t *testing.T) {
+	svc := &OpenAIGatewayService{
+		cache: codexBindingFailingStore{},
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			CodexIdentity: config.CodexIdentityConfig{SessionBinding: config.CodexSessionBindingBinding},
+		}},
+	}
+	account := newTestOAuthAccount(9203, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintDevice)})
+
+	ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+		codexBindingRequest(t, 9203, 92031, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)), account, time.Now())
+
+	require.Error(t, err)
+	require.Nil(t, ids)
+}

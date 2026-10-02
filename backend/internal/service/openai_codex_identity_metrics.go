@@ -58,7 +58,7 @@ func boundedCodexIdentityOperation(value string) string {
 
 func boundedCodexIdentityResult(value string) string {
 	switch value {
-	case "created", "reused", "advanced", "stale_rejected", "contention", "pinned", "missing", "conflict", "error", "deleted", "observed", "registered", "restored", "forced", "unresolved_attribution", "unresolved_source":
+	case "created", "reused", "advanced", "stale_rejected", "contention", "pinned", "missing", "conflict", "error", "deleted", "observed", "registered", "restored", "forced", "unresolved_attribution", "unresolved_source", "fallback":
 		return value
 	default:
 		return "other"

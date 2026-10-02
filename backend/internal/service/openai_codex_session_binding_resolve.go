@@ -356,8 +356,9 @@ func newCodexTurnID() (string, error) {
 
 // resolveCodexBindingFingerprintIDs 是绑定模式下的入口，与 legacy 入口同签名。
 //
-// 只有"能寻址到某条绑定"时才走新模型；缺任务身份或下游作用域时无法寻址任何
-// 绑定，沿用既有保守 device 投影（与 legacy 行为一致），不把它当成归属问题。
+// session 模式必须先确认权威 lineage 才能分配 session/thread 身份。flat 模式
+// （off/device/full）不拥有服务端 session/thread 身份，因此缺少 parent/fork
+// lineage 时可以继续使用既有无状态 projection；这不会猜测或写入任何 lineage。
 func (s *OpenAIGatewayService) resolveCodexBindingFingerprintIDs(
 	ctx context.Context, c *gin.Context, account *Account, now time.Time,
 ) (*codexFingerprintIDs, error) {
@@ -382,6 +383,12 @@ func (s *OpenAIGatewayService) resolveCodexBindingFingerprintIDs(
 	accountScope := codexSessionIdentityUpstreamScope(account)
 	decision, err := s.resolveCodexSessionBindingDecision(ctx, c, account, input, userScope, accountScope, now)
 	if err != nil {
+		mode := account.GetCodexFingerprintMode()
+		if codexFlatFingerprintMode(mode) &&
+			(errors.Is(err, ErrCodexBindingUnresolvedAttribution) || errors.Is(err, ErrCodexBindingUnresolvedSource)) {
+			RecordCodexIdentityEvent("session_binding", "fallback")
+			return resolveCodexFingerprintIDsFromRequest(account, headers), nil
+		}
 		return nil, err
 	}
 	if decision == nil {
@@ -401,4 +408,13 @@ func (s *OpenAIGatewayService) resolveCodexBindingFingerprintIDs(
 		return resolveCodexFingerprintIDs(account, extractClientSessionID(headers), decision.Rule), nil
 	}
 	return s.projectCodexSessionFingerprintIDs(account, input, decision, now), nil
+}
+
+func codexFlatFingerprintMode(mode codexFingerprintMode) bool {
+	switch mode {
+	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintFull:
+		return true
+	default:
+		return false
+	}
 }

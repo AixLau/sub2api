@@ -288,6 +288,63 @@ func TestCodexSessionParentReferenceRetainsCacheOwnershipAcrossModes(t *testing.
 	}
 }
 
+func TestCodexFlatMissingLineageForwardReachesUpstream(t *testing.T) {
+	for _, transport := range []string{"http", "passthrough"} {
+		for _, lineage := range []string{"parent", "fork"} {
+			t.Run(transport+"/"+lineage, func(t *testing.T) {
+				cfg := &config.Config{}
+				cfg.Gateway.CodexIdentity.SessionBinding = config.CodexSessionBindingBinding
+				store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
+				upstream := &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": {"text/event-stream"}},
+					Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_flat_fallback\",\"model\":\"gpt-5.2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")),
+				}}
+				extra := map[string]any{
+					codexFingerprintModeExtraKey: string(codexFingerprintDevice),
+					"openai_passthrough":         transport == "passthrough",
+				}
+				account := newTestOAuthAccount(9541, extra)
+				account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "flat-fallback-account"}
+				svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+
+				rawSession := newCodexUUIDv7ForTest(t)
+				c := newCodexSessionIdentityTestContext(t, 95, 954)
+				c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+				c.Request.Header.Set("originator", "codex_cli_rs")
+				c.Request.Header.Set("session-id", rawSession)
+				c.Request.Header.Set("thread-id", newCodexUUIDv7ForTest(t))
+				clientMetadata := map[string]any{}
+				if lineage == "parent" {
+					clientMetadata["x-codex-parent-thread-id"] = newCodexUUIDv7ForTest(t)
+				} else {
+					metadata, err := json.Marshal(map[string]any{
+						"forked_from_thread_id":         newCodexUUIDv7ForTest(t),
+						"forked_from_ordinal_exclusive": 1,
+					})
+					require.NoError(t, err)
+					clientMetadata[openAIWSTurnMetadataHeader] = string(metadata)
+				}
+				body := map[string]any{
+					"model":           "gpt-5.2",
+					"stream":          true,
+					"instructions":    "test",
+					"input":           []any{map[string]any{"role": "user", "content": "hello"}},
+					"client_metadata": clientMetadata,
+				}
+				encoded, err := json.Marshal(body)
+				require.NoError(t, err)
+
+				_, err = svc.Forward(context.Background(), c, account, encoded)
+				require.NoError(t, err)
+				require.NotNil(t, upstream.lastReq)
+				require.Len(t, upstream.requests, 1)
+				require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"))
+			})
+		}
+	}
+}
+
 func TestCodexSessionStrategyCutoverAndRollbackAtHTTPBuilders(t *testing.T) {
 	// An old UUIDv7 is still a UUIDv7: creation time cannot prove whether it
 	// was active before upgrade. A strategy change is an explicit boundary.

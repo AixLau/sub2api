@@ -13,12 +13,14 @@ import (
 func TestCodexIdentityMetricsBoundedLabelsAndPrivateData(t *testing.T) {
 	m := newCodexIdentityMetrics()
 	m.recordEvent("thread_history", "stale_rejected")
+	m.recordEvent("session_binding", "fallback")
 	m.recordEvent("raw-session-secret", "raw-thread-secret")
 	response := httptest.NewRecorder()
 	m.handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
 	require.Equal(t, 200, response.Code)
 	body := response.Body.String()
 	require.Contains(t, body, `sub2api_codex_identity_events_total{operation="thread_history",result="stale_rejected"} 1`)
+	require.Contains(t, body, `sub2api_codex_identity_events_total{operation="session_binding",result="fallback"} 1`)
 	require.Contains(t, body, `sub2api_codex_identity_events_total{operation="other",result="other"} 1`)
 	for _, forbidden := range []string{"raw-session", "raw-thread", "session_id=", "thread_id=", "user_id=", "account_id=", "prompt="} {
 		require.NotContains(t, body, forbidden)
