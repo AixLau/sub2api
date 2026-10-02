@@ -4323,6 +4323,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_RejectsMessageID
 type openAIWSQueueDialer struct {
 	mu        sync.Mutex
 	conns     []openAIWSClientConn
+	handshake http.Header
 	dialCount int
 }
 
@@ -4346,7 +4347,7 @@ func (d *openAIWSQueueDialer) Dial(
 	if len(d.conns) > 1 {
 		d.conns = d.conns[1:]
 	}
-	return conn, 0, nil, nil
+	return conn, 0, cloneHeader(d.handshake), nil
 }
 
 func (d *openAIWSQueueDialer) DialCount() int {

@@ -17,21 +17,29 @@ import (
 func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, passthrough := range []bool{false, true} {
-		for _, bareError := range []bool{false, true} {
+		for _, terminal := range []struct {
+			name           string
+			bareError      bool
+			responseFailed bool
+		}{
+			{name: "failed", responseFailed: true},
+			{name: "error_then_failed", bareError: true, responseFailed: true},
+			{name: "error_only", bareError: true},
+		} {
 			name := "native"
 			if passthrough {
 				name = "passthrough"
 			}
-			if bareError {
-				name += "/error_then_failed"
-			}
+			name += "/" + terminal.name
 			t.Run(name, func(t *testing.T) {
 				const message = "Our servers are currently overloaded. Please try again later."
 				stream := "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
-				if bareError {
+				if terminal.bareError {
 					stream += "event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"server_error\",\"message\":\"" + message + "\"}}\n\n"
 				}
-				stream += "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_terminal\",\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"" + message + "\"}}}\n\n"
+				if terminal.responseFailed {
+					stream += "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_terminal\",\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"" + message + "\"}}}\n\n"
+				}
 				recorder := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(recorder)
 				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)

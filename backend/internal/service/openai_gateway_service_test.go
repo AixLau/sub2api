@@ -1722,10 +1722,9 @@ func TestOpenAIStreamingReadErrorAfterOutputUsesResponsesErrorSchema(t *testing.
 	for _, tc := range []struct {
 		name  string
 		cause error
-		code  string
 	}{
-		{"reset", errors.New("read tcp 192.0.2.1:1234->192.0.2.2:443: connection reset by peer"), OpenAIUpstreamStreamReadErrorCode},
-		{"http2", errors.New("stream error: stream ID 3; INTERNAL_ERROR; received from peer"), OpenAIUpstreamHTTP2StreamErrorCode},
+		{"reset", errors.New("read tcp 192.0.2.1:1234->192.0.2.2:443: connection reset by peer")},
+		{"http2", errors.New("stream error: stream ID 3; INTERNAL_ERROR; received from peer")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
@@ -1744,22 +1743,14 @@ func TestOpenAIStreamingReadErrorAfterOutputUsesResponsesErrorSchema(t *testing.
 			require.NotContains(t, body, "stream ID")
 			require.NotContains(t, body, "response.completed")
 			require.NotContains(t, body, "[DONE]")
-			require.Equal(t, 1, strings.Count(body, "event: error\n"))
+			require.Equal(t, 1, strings.Count(body, "event: response.failed\n"))
+			require.NotContains(t, body, "event: error\n")
 			require.True(t, IsResponseCommitted(c), "the handler must not append another failure")
-			var events []gjson.Result
-			for _, line := range strings.Split(body, "\n") {
-				if strings.HasPrefix(line, "data: ") {
-					event := gjson.Parse(strings.TrimPrefix(line, "data: "))
-					if event.Get("type").String() == "error" {
-						events = append(events, event)
-					}
-				}
-			}
-			require.Len(t, events, 1)
-			require.Equal(t, tc.code, events[0].Get("code").String())
-			require.NotEmpty(t, events[0].Get("message").String())
-			require.False(t, events[0].Get("error").Exists(), "Responses errors have top-level fields")
-			require.True(t, events[0].Get("param").Exists())
+			failed := gjson.Parse(extractLastSSEDataForTest(body))
+			require.Equal(t, "response.failed", failed.Get("type").String())
+			require.Equal(t, "stream_read_error", failed.Get("response.error.code").String())
+			require.NotEmpty(t, failed.Get("response.error.message").String())
+			require.NotEmpty(t, failed.Get("response.id").String())
 		})
 	}
 }
@@ -1903,7 +1894,9 @@ func TestOpenAIStreamingResponseFailedBeforeOutputReturnsFailover(t *testing.T) 
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
-	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, OpenAIProcessingFailureReason, failoverErr.Reason)
+	require.Equal(t, OpenAITransientFailureRetryLimit, failoverErr.SameAccountRetryMax)
 	require.Contains(t, string(failoverErr.ResponseBody), "An error occurred while processing your request")
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())

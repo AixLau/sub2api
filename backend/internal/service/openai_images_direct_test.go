@@ -214,10 +214,18 @@ func TestCodexDirectImagesEmptyResponseFails(t *testing.T) {
 func TestCodexDirectImagesAccountTestAndWhitelist(t *testing.T) {
 	body := []byte(`{"model":"gpt-image-2.5-sunburst","prompt":"draw"}`)
 	c, rec := newOpenAIImagesTestContext(t, body)
-	upstream := &httpUpstreamRecorder{resp: openAIImagesJSONResponse()}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"image_generation_call\",\"result\":\"aGVsbG8=\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
 	svc := &AccountTestService{httpUpstream: upstream}
 	require.NoError(t, svc.testOpenAIImageOAuth(c, context.Background(), directImagesTestAccount(), "gpt-image-2.5-sunburst", "draw"))
-	require.Equal(t, "/backend-api/codex/images/generations", upstream.lastReq.URL.Path)
+	require.Equal(t, "/backend-api/codex/responses", upstream.lastReq.URL.Path)
 	require.Contains(t, rec.Body.String(), `"success":true`)
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.6-luna"}]}`)
 	svc.openaiGatewayService = &OpenAIGatewayService{}

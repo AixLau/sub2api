@@ -600,8 +600,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	storeDisabled := false
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
 		// 会话级状态按执行作用域隔离：codex 多智能体共用 session-id，只有线程标识能把
-		// 父线程与子智能体区分开；没有声明身份时沿用原会话哈希。账号粘性仍由 handler 决定。
-		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
+		// 父线程与子智能体区分开。作用域必须从客户端原始帧计算，不能使用账号 namespace
+		// 或指纹改写后的 payload；没有显式身份时才保留旧哈希作为粘性键。
+		sessionHash, _ = resolveOpenAIWSExecutionScope(c, payload.rawForHash, getAPIKeyIDFromContext(c))
+		if sessionHash == "" {
+			sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
+		}
 		preferredConnID = ""
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(payload.payloadRaw, account)
 		if useHTTPBridge {

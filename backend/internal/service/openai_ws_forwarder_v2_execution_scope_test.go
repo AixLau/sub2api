@@ -125,11 +125,18 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	completed := func(id string) []byte {
 		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
 	}
-	captureConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_a"), completed("resp_b"), completed("resp_c")}}
+	// The plain requests share a fingerprint; an explicit child thread requires
+	// a new handshake. Each dial must return a distinct live connection.
+	sharedConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_a"), completed("resp_b")}}
+	childConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_c")}}
 	handshake := http.Header{}
 	handshake.Set(openAIWSTurnStateHeader, "turn-state-from-upstream")
 	pool := newOpenAIWSConnPool(cfg)
-	pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn, handshake: handshake})
+	dialer := &openAIWSQueueDialer{
+		conns:     []openAIWSClientConn{sharedConn, childConn},
+		handshake: handshake,
+	}
+	pool.setClientDialerForTest(dialer)
 	defer pool.Close()
 
 	stateStore := NewOpenAIWSStateStore(nil)
@@ -176,6 +183,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	plainBody := `{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`
 	cA, rawA := forward("session-a", plainBody)
 	cB, rawB := forward("session-b", plainBody)
+	require.Equal(t, 1, dialer.DialCount())
 
 	scopeA, _ := resolveOpenAIWSExecutionScope(cA, rawA, apiKeyID)
 	scopeB, _ := resolveOpenAIWSExecutionScope(cB, rawB, apiKeyID)
@@ -194,6 +202,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 
 	threadBody := `{"model":"gpt-5.1","stream":false,"client_metadata":{"thread_id":"child-thread"},"input":[{"type":"input_text","text":"hello"}]}`
 	cC, rawC := forward("session-c", threadBody)
+	require.Equal(t, 2, dialer.DialCount())
 	scopeC, threadC := resolveOpenAIWSExecutionScope(cC, rawC, apiKeyID)
 	require.Equal(t, "child-thread", threadC)
 	_, boundC := stateStore.GetSessionTurnState(groupID, scopeC)

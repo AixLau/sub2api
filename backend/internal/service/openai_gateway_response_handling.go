@@ -343,7 +343,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		errorEventSent = true
 		eventName := "error"
-		payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
+		payload := `{"type":"error","sequence_number":0,"code":` + strconv.Quote(reason) + `,"message":` + strconv.Quote(reason) + `,"param":null}`
 		if openAIStreamingRequestIsResponses(c) {
 			eventName = "response.failed"
 			payload = buildOpenAIResponsesStreamFailurePayload(responseID, originalModel, "upstream_error", reason)
@@ -367,9 +367,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			clientDisconnected = true
 			return
 		}
-		if len(semanticPayload) > 0 {
-			MarkResponseCommitted(c)
-		}
+		// The error frame is already a client-visible response. Mark it committed
+		// even when it was synthesized locally, so the outer handler cannot append
+		// a second terminal failure after the stream read error.
+		MarkResponseCommitted(c)
 		clientOutputStarted = true
 		lastDownstreamWriteAt = time.Now()
 	}
@@ -411,6 +412,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			completeGuardedEvent(true)
 		}
 		if codexFailureTerminal && sawBareError && !sawResponseFailed && bareErrorAccountSideEffectsPending {
+			if clientSemanticOutputStarted() {
+				s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_failed", bareErrorPayload, failedMessage)
+			}
 			s.handleOpenAIStreamTerminalAccountSideEffects(c, account, bareErrorPayload, failedMessage, resp.Header, mappedModel)
 			bareErrorAccountSideEffectsPending = false
 		}
@@ -598,7 +602,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				}
 				if outputStarted && !cyberHit {
 					// A terminal failure still belongs to the provider when output prevents failover.
-					if !sawFailedEvent {
+					if !(codexFailureTerminal && eventType == "error") &&
+						(!sawFailedEvent || (codexFailureTerminal && eventType == "response.failed" && bareErrorAccountSideEffectsPending)) {
 						s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_failed", dataBytes, failedMessage)
 					}
 					if codexFailureTerminal && eventType == "error" {
@@ -608,12 +613,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					} else {
 						s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header, mappedModel)
 						bareErrorAccountSideEffectsPending = false
-					}
-					if eventType == "response.failed" {
-						// Once semantic output is committed, failover replay is unsafe. Keep
-						// the terminal event on the existing stream, but retain the upstream
-						// request ID and payload for operations diagnostics.
-						s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_failed", dataBytes, failedMessage)
 					}
 				}
 				if !outputStarted {
@@ -720,7 +719,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			// Replace model in response if needed.
 			// Fast path: most events do not contain model field values.
-			if needModelReplace && mappedModel != "" && strings.Contains(line, mappedModel) {
+			if needModelReplace && mappedModel != "" && strings.Contains(line, "\"model\"") {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
@@ -867,6 +866,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		for documentScanner.Scan() {
 			processSSELine(documentScanner.Text(), true)
 			if streamEarlyErr != nil {
+				_ = resp.Body.Close()
 				return resultWithUsage(), streamEarlyErr
 			}
 			// A complete terminal event is sufficient to finish the response; do not
@@ -874,6 +874,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			// Codex bare error sequences can be followed by response.failed or a
 			// successful completed event, so they must continue to EOF.
 			if sawTerminalEvent && !eventInProgress && !(codexFailureTerminal && sawBareError) {
+				_ = resp.Body.Close()
 				return finalizeStream()
 			}
 		}
@@ -1248,26 +1249,30 @@ func (s *OpenAIGatewayService) replaceModelInSSELine(line, fromModel, toModel st
 	if data == "" || data == "[DONE]" {
 		return line
 	}
+	if strings.TrimSpace(fromModel) == "" || strings.TrimSpace(toModel) == "" || fromModel == toModel {
+		return line
+	}
+	if !gjson.Valid(data) {
+		return line
+	}
 
-	// 使用 gjson 精确检查 model 字段，避免全量 JSON 反序列化
-	if m := gjson.Get(data, "model"); m.Exists() && m.Str == fromModel {
-		newData, err := sjson.Set(data, "model", toModel)
+	// The upstream may normalize or alias the mapped model before returning it.
+	// Rewrite only protocol-owned model fields, leaving tool payloads untouched.
+	newData := data
+	for _, path := range []string{"model", "response.model"} {
+		if m := gjson.Get(newData, path); !m.Exists() || m.Type != gjson.String {
+			continue
+		}
+		updated, err := sjson.Set(newData, path, toModel)
 		if err != nil {
 			return line
 		}
-		return "data: " + newData
+		newData = updated
 	}
-
-	// 检查嵌套的 response.model 字段
-	if m := gjson.Get(data, "response.model"); m.Exists() && m.Str == fromModel {
-		newData, err := sjson.Set(data, "response.model", toModel)
-		if err != nil {
-			return line
-		}
-		return "data: " + newData
+	if newData == data {
+		return line
 	}
-
-	return line
+	return "data: " + newData
 }
 
 // correctToolCallsInResponseBody 修正响应体中的工具调用

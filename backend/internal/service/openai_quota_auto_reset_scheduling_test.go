@@ -88,6 +88,8 @@ func TestOpenAIAutoResetScheduling_CreditStates(t *testing.T) {
 					setOpenAIAutoResetNotifier(notifier)
 					t.Cleanup(notifier.Stop)
 					account := autoResetSchedulingAccount(now)
+					openAIAutoResetSchedulerNotifiedAt.Delete(account.ID)
+					t.Cleanup(func() { openAIAutoResetSchedulerNotifiedAt.Delete(account.ID) })
 					account.Extra["codex_5h_used_percent"] = 10.0
 					account.Extra["codex_"+window+"_used_percent"] = 90.0
 					account.Extra[OpenAIAutoResetCreditStateExtraKey] = tt.state
@@ -192,6 +194,8 @@ func TestOpenAIAutoResetScheduling_StateRefreshAndConcurrentNotifications(t *tes
 	now := time.Now().UTC()
 	ctx := context.Background()
 	account := autoResetSchedulingAccount(now)
+	openAIAutoResetSchedulerNotifiedAt.Delete(account.ID)
+	t.Cleanup(func() { openAIAutoResetSchedulerNotifiedAt.Delete(account.ID) })
 	account.Extra[OpenAIAutoResetCreditStateExtraKey] = OpenAIAutoResetCreditState{Status: OpenAIAutoResetStatusAvailable, AvailableCount: 1, CheckedAt: now.Format(time.RFC3339)}
 	repo := &autoResetTestAccountRepo{account: account}
 	stale, err := repo.GetByID(ctx, account.ID)
