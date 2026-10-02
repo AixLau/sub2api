@@ -2150,6 +2150,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						}
 					}
 					if shouldFailover {
+						// A structural response.created event may have started semantic
+						// TTFT accounting, but a pre-output failover attempt did not
+						// produce a usable first token.
+						firstTokenMs = nil
 						return resultWithUsage(),
 							s.newOpenAIStreamFailoverErrorWithModel(c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
 					}
