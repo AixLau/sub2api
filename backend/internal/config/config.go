@@ -2617,7 +2617,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_upstream_clients", 5000)
 	viper.SetDefault("gateway.client_idle_ttl_seconds", 900)
 	viper.SetDefault("gateway.concurrency_slot_ttl_minutes", 30) // 并发槽位过期时间（支持超长请求）
-	viper.SetDefault("gateway.stream_data_interval_timeout", 180)
+	viper.SetDefault("gateway.stream_data_interval_timeout", 480)
 	viper.SetDefault("gateway.stream_keepalive_interval", 10)
 	viper.SetDefault("gateway.image_stream_data_interval_timeout", 900)
 	viper.SetDefault("gateway.image_stream_keepalive_interval", 10)
@@ -3516,8 +3516,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("gateway.stream_data_interval_timeout must be non-negative")
 	}
 	if c.Gateway.StreamDataIntervalTimeout != 0 &&
-		(c.Gateway.StreamDataIntervalTimeout < 30 || c.Gateway.StreamDataIntervalTimeout > 300) {
-		return fmt.Errorf("gateway.stream_data_interval_timeout must be 0 or between 30-300 seconds")
+		(c.Gateway.StreamDataIntervalTimeout < 30 || c.Gateway.StreamDataIntervalTimeout > 480) {
+		return fmt.Errorf("gateway.stream_data_interval_timeout must be 0 or between 30-480 seconds")
 	}
 	if c.Gateway.StreamKeepaliveInterval < 0 {
 		return fmt.Errorf("gateway.stream_keepalive_interval must be non-negative")
