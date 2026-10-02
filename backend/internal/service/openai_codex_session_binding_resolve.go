@@ -85,6 +85,19 @@ func (s *OpenAIGatewayService) resolveCodexSessionBindingDecision(
 		return nil, err
 	}
 	if current != nil {
+		// The current pointer is durable so side and flat bindings can outlive
+		// ordinary periods, but a period binding is valid only for its fixed
+		// epoch. Advance an old main binding before materializing it; otherwise
+		// the binding model would silently keep one main upstream session forever.
+		if current.Attribution == codexAttributionPeriod && current.Generation < period.epoch {
+			// A child/reference request cannot bootstrap the new period from an
+			// old parent. The root must establish the current-period binding first,
+			// matching the legacy HTTP resolver's epoch boundary behavior.
+			if input.parentReferencePresent || input.parentThreadID != "" || codexHTTPInputHasSideRootEvidence(input) {
+				return nil, ErrCodexBindingUnresolvedAttribution
+			}
+			return s.commitCodexPeriodSessionBinding(ctx, store, scope, rawSession, input, period, observedAt)
+		}
 		return s.materializeCodexSessionBindingDecision(ctx, store, scope, rawSession, input,
 			current.Attribution, current.Generation, current.EntityRef, true, observedAt)
 	}
@@ -144,6 +157,12 @@ func (s *OpenAIGatewayService) resolveCodexSessionBindingDecision(
 			}
 			return nil, parentErr
 		}
+		// A normal parent from an expired period is historical evidence, not a
+		// valid parent for the new main session. Side parents are independent and
+		// intentionally remain valid across ordinary period rotation.
+		if parent.Attribution == codexAttributionPeriod && parent.Generation != period.epoch {
+			return nil, ErrCodexBindingUnresolvedAttribution
+		}
 		// 继承父绑定的归属、代次与实体——一条 lineage 内不换规则。
 		if err := s.commitCodexBindingFor(ctx, store, scope, rawSession,
 			parent.Attribution, parent.Generation, parent.EntityRef, observedAt); err != nil {
@@ -158,22 +177,7 @@ func (s *OpenAIGatewayService) resolveCodexSessionBindingDecision(
 	//    永不换代——把 device 账号建成 period 会让它在 epoch 推进时被换代，
 	//    而 device 会话根本没有代次可言。
 	if accountRule == codexFingerprintSession {
-		// 先尝试接管 legacy 已有的 period 会话 id：gate 切换不得让已在 session
-		// 模式下的会话静默换掉上游 session id。period.key 就是 legacy 的裸键。
-		if _, adopted, adoptErr := adoptLegacyCodexPeriodSessionEntity(ctx, store, scope, period.epoch,
-			period.key, accountRule, observedAt.UnixMilli()); adoptErr != nil {
-			return nil, adoptErr
-		} else if !adopted {
-			if _, err := getOrCreateCodexPeriodSessionEntity(ctx, store, scope, period.epoch, accountRule, observedAt.UnixMilli()); err != nil {
-				return nil, err
-			}
-		}
-		if err := s.commitCodexBindingFor(ctx, store, scope, rawSession,
-			codexAttributionPeriod, period.epoch, codexPeriodSessionEntityKey(scope, period.epoch), observedAt); err != nil {
-			return nil, err
-		}
-		return s.materializeCodexSessionBindingDecision(ctx, store, scope, rawSession, input,
-			codexAttributionPeriod, period.epoch, codexPeriodSessionEntityKey(scope, period.epoch), false, observedAt)
+		return s.commitCodexPeriodSessionBinding(ctx, store, scope, rawSession, input, period, observedAt)
 	}
 	if _, err := getOrCreateCodexFlatEntity(ctx, store, scope, accountRule, observedAt.UnixMilli()); err != nil {
 		return nil, err
@@ -208,6 +212,32 @@ func (s *OpenAIGatewayService) commitCodexBindingFor(
 		CommittedAtMs: observedAt.UnixMilli(),
 	})
 	return err
+}
+
+// commitCodexPeriodSessionBinding establishes the shared main session for one
+// user/account period. Legacy period values are adopted before a new entity is
+// allocated so enabling the binding model or advancing a period never creates
+// a second upstream session for an already-known period.
+func (s *OpenAIGatewayService) commitCodexPeriodSessionBinding(
+	ctx context.Context, store codexSessionIdentityStore, scope, rawSession string,
+	input *codexSessionIdentityInput, period codexSessionPeriod, observedAt time.Time,
+) (*codexSessionBindingDecision, error) {
+	if _, adopted, err := adoptLegacyCodexPeriodSessionEntity(ctx, store, scope, period.epoch,
+		period.key, codexFingerprintSession, observedAt.UnixMilli()); err != nil {
+		return nil, err
+	} else if !adopted {
+		if _, err := getOrCreateCodexPeriodSessionEntity(ctx, store, scope, period.epoch,
+			codexFingerprintSession, observedAt.UnixMilli()); err != nil {
+			return nil, err
+		}
+	}
+	entityRef := codexPeriodSessionEntityKey(scope, period.epoch)
+	if err := s.commitCodexBindingFor(ctx, store, scope, rawSession,
+		codexAttributionPeriod, period.epoch, entityRef, observedAt); err != nil {
+		return nil, err
+	}
+	return s.materializeCodexSessionBindingDecision(ctx, store, scope, rawSession, input,
+		codexAttributionPeriod, period.epoch, entityRef, false, observedAt)
 }
 
 // materializeCodexSessionBindingDecision 把归属解析成具体身份，并登记 thread 两级记录。
