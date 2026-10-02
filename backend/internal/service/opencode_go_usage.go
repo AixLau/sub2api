@@ -54,6 +54,18 @@ const (
 	opencodeGoUsageLeaderLockTTL          = 2 * time.Minute
 )
 
+// stripOpenCodeGoUsageManagedExtra removes usage state that is owned by the
+// dedicated OpenCode Go usage service. Account create/update paths must never
+// accept these keys from an untyped Extra payload; they are either preserved
+// from the existing account identity or written through the usage service.
+func stripOpenCodeGoUsageManagedExtra(extra map[string]any) {
+	if extra == nil {
+		return
+	}
+	delete(extra, OpenCodeGoUsageAutoRefreshExtraKey)
+	delete(extra, OpenCodeGoUsageSnapshotExtraKey)
+}
+
 var (
 	ErrOpenCodeGoUsageUnavailable = infraerrors.ServiceUnavailable(
 		"OPENCODE_GO_USAGE_UNAVAILABLE", "OpenCode Go usage is unavailable",
