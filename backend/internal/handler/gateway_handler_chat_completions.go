@@ -62,6 +62,15 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
+	if rejectSystemOneOnlyPlatform(c, apiKey, h.chatCompletionsErrorResponse) {
+		return
+	}
+	parsedStream, streamOK := parseOpenAICompatibleStream(body)
+	if !streamOK {
+		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
+		return
+	}
+	reqStream = parsedStream
 	if service.IsGPTImageGenerationModel(reqModel) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "This model is not supported on the Chat Completions endpoint")
 		return

@@ -145,6 +145,12 @@ export default {
       schedulableEnabled: '调度已开启',
       schedulableDisabled: '调度已关闭',
       failedToToggleSchedulable: '切换调度状态失败',
+      priorityQuick: {
+        raise: '提高优先级（数值 -1）',
+        lower: '降低优先级（数值 +1）',
+        editHint: '点击直接输入；数值越小越优先',
+        failed: '更新优先级失败'
+      },
       groupCountTotal: '共 {count} 个分组',
       columns: {
         name: '名称',
@@ -362,27 +368,8 @@ export default {
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
         minimax: 'MiniMax',
-      },
-      opencodeGo: {
-        accountMode: {
-          zen: 'Zen',
-          zenDesc: '按量付费网关，消耗账户余额，按 Token 计费。',
-          go: 'GO',
-          goDesc: '订阅制网关，按 5 小时 / 周 / 月滚动用量窗口限流。',
-        },
-        protocolRules: {
-          title: '模型协议分流',
-          hint: '自适应模式下按模型匹配上游协议。支持精确 ID 或末尾 * 通配（如 grok-*、qwen*）；自上而下第一条命中生效；未命中走 Chat Completions。',
-          patternPlaceholder: 'grok-* 或 deepseek-v4-flash',
-          add: '添加规则',
-          remove: '删除规则',
-          restoreDefaults: '恢复默认',
-          fallback: '未命中以上规则 → Chat Completions（/v1/chat/completions）',
-        },
-        title: 'OpenCode Go 用量', panelHint: '显示 OpenCode Go 上游账号返回的用量窗口。', notRefreshed: '尚未刷新', refreshNow: '刷新用量',
-        autoRefresh: '自动刷新用量', autoRefreshHint: '账号开关和全局开关都开启时才会运行。', rolling: '5 小时', rollingShort: '5h', weekly: '每周', weeklyShort: '7d', monthly: '每月', monthlyShort: '1m',
-        status: '状态', updatedAt: '更新时间', ok: '正常', unauthorized: '会话已过期', failed: '刷新失败', windowWithReset: '已用 {percent}，重置于 {reset}',
-        loadFailed: '加载 OpenCode Go 用量设置失败', autoRefreshFailed: '更新自动刷新设置失败', refreshSuccess: 'OpenCode Go 用量已刷新', refreshFailed: '刷新 OpenCode Go 用量失败',
+        opencode_go: 'OpenCode',
+        typesafe: 'TypeSafe / Jev',
       },
       cnProviders: {
         accountMode: {
@@ -948,7 +935,8 @@ export default {
       poolModeRetryStatusCodesHint: '仅在池模式下生效。以英文逗号分隔的 HTTP 状态码（100-599），命中时触发同账号重试。留空使用默认值（{default}）。',
       customErrorCodes: '自定义错误码',
       customErrorCodesHint: '仅对选中的错误码停止调度',
-      customErrorCodesWarning: '仅选中的错误码会停止调度，其他错误将返回 500。',
+      customErrorCodesWarning:
+        '自定义错误码仅用于筛选常规的账号错误处理（如停止调度、限流标记），不决定请求是否重试或切换账号。未选中的错误仍可能触发重试或切换账号，最终返回给客户端的状态码取决于网关路径和错误透传规则，并非统一返回 500。列表为空时不做筛选。',
       customErrorCodes429Warning:
         '429 已有内置的限流处理机制。添加到自定义错误码后，将直接停止调度而非临时限流。确定要添加吗？',
       customErrorCodes529Warning:

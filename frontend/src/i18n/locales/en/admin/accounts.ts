@@ -147,6 +147,12 @@ export default {
       schedulableEnabled: 'Scheduling enabled',
       schedulableDisabled: 'Scheduling disabled',
       failedToToggleSchedulable: 'Failed to toggle scheduling status',
+      priorityQuick: {
+        raise: 'Raise priority (value -1)',
+        lower: 'Lower priority (value +1)',
+        editHint: 'Click to type a value; lower is used first',
+        failed: 'Failed to update priority'
+      },
       groupCountTotal: '{count} groups total',
       platforms: {
         anthropic: 'Anthropic',
@@ -159,31 +165,8 @@ export default {
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
         minimax: 'MiniMax',
-      },
-      opencodeGo: {
-        accountMode: {
-          zen: 'Zen',
-          zenDesc: 'Pay-as-you-go gateway. Consumes account credits, billed per token.',
-          go: 'GO',
-          goDesc: 'Subscription gateway, rate-limited by 5-hour / weekly / monthly usage windows.',
-        },
-        protocolRules: {
-          title: 'Model protocol routing',
-          hint: 'In adaptive mode, each model is sent to a native upstream protocol. Use an exact ID or a trailing * glob (e.g. grok-*, qwen*). The first matching rule wins; unmatched models use Chat Completions.',
-          patternPlaceholder: 'grok-* or deepseek-v4-flash',
-          add: 'Add rule',
-          remove: 'Remove rule',
-          restoreDefaults: 'Restore defaults',
-          fallback: 'Unmatched models → Chat Completions (/v1/chat/completions)',
-        },
-        title: 'OpenCode Go usage',
-        panelHint: 'Usage windows reported by the upstream OpenCode Go account.',
-        notRefreshed: 'Not refreshed', refreshNow: 'Refresh usage', autoRefresh: 'Automatic usage refresh',
-        autoRefreshHint: 'Runs only when the account switch and the global switch are both enabled.',
-        rolling: '5 hour', rollingShort: '5h', weekly: 'Week', weeklyShort: '7d', monthly: 'Month', monthlyShort: '1m',
-        status: 'Status', updatedAt: 'Updated', ok: 'Current', unauthorized: 'Session expired', failed: 'Refresh failed',
-        windowWithReset: '{percent} used, resets {reset}', loadFailed: 'Failed to load OpenCode Go usage settings',
-        autoRefreshFailed: 'Failed to update automatic usage refresh', refreshSuccess: 'OpenCode Go usage refreshed', refreshFailed: 'Failed to refresh OpenCode Go usage',
+        opencode_go: 'OpenCode',
+        typesafe: 'TypeSafe / Jev',
       },
       cnProviders: {
         accountMode: {
@@ -874,7 +857,7 @@ export default {
       customErrorCodes: 'Custom Error Codes',
       customErrorCodesHint: 'Only stop scheduling for selected error codes',
       customErrorCodesWarning:
-        'Only selected error codes will stop scheduling. Other errors will return 500.',
+        'Custom error codes only filter normal account-error handling (such as stopping scheduling or marking rate limits). They do not decide whether a request is retried or switched to another account. Unselected errors may still trigger a retry or an account switch, and the status returned to the client depends on the gateway path and error-passthrough rules; it is not always 500. An empty list applies no filtering.',
       customErrorCodes429Warning:
         '429 already has built-in rate limit handling. Adding it to custom error codes will disable the account instead of temporary rate limiting. Are you sure?',
       customErrorCodes529Warning:

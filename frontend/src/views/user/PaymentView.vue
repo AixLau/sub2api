@@ -191,6 +191,7 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
+import { normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import type {
   SubscriptionPlan,
   CheckoutInfoResponse,
@@ -541,9 +542,8 @@ const oneToOneConfigurationWarning = computed(() =>
         multiplier: balanceRechargeMultiplier.value.toFixed(4),
       })
 )
-const creditedAmount = computed(() =>
-  Math.round(validAmount.value * balanceRechargeMultiplier.value * 100) / 100
-)
+const rechargeBonusTiers = computed(() => normalizeRechargeBonusTiers(checkout.value.recharge_bonus_tiers))
+const rechargeBonusMode = computed(() => normalizeRechargeBonusMode(checkout.value.recharge_bonus_mode))
 
 // 订阅 CNY 换算汇率（1 USD = X CNY）。0 = 未配置，保持套餐 price 直付。
 const subscriptionUsdToCnyRate = computed(() => {
@@ -696,6 +696,16 @@ function rechargeAmountForMethod(type: string): number {
   return standardRechargeTotalForCurrency(amount.value ?? 0, currency)
 }
 
+// 充值优惠：阈值按输入金额命中；赠金模式按到账基数（输入 × 倍率）加赠送，折扣模式按百分比减实付。
+// 与后端 quoteRechargeBonus 一致；渠道限额、手续费、实付都按折后基数（payBaseAmount）计算，提交仍发送输入金额。
+const bonusQuote = computed(() => quoteRechargeBonus(rechargeBonusTiers.value, validAmount.value, {
+  multiplier: balanceRechargeMultiplier.value,
+  mode: rechargeBonusMode.value,
+  currencyDigits: currencyFractionDigits(selectedCurrency.value),
+}))
+const payBaseAmount = computed(() => bonusQuote.value.payBase)
+const creditedAmount = computed(() => bonusQuote.value.credited)
+
 const methodOptions = computed<PaymentMethodOption[]>(() =>
   enabledMethods.value.map((type) => {
     const limit = visibleMethods.value[type]
@@ -716,14 +726,14 @@ const feeRate = computed(() =>
   isNinePlusSelected.value ? 0 : checkout.value.recharge_fee_rate ?? 0
 )
 const feeAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
-    ? ceilPaymentAmount((validAmount.value * feeRate.value) / 100, selectedCurrency.value)
+  feeRate.value > 0 && payBaseAmount.value > 0
+    ? ceilPaymentAmount((payBaseAmount.value * feeRate.value) / 100, selectedCurrency.value)
     : 0
 )
 const totalAmount = computed(() =>
-  feeRate.value > 0 && validAmount.value > 0
-    ? roundPaymentAmount(validAmount.value + feeAmount.value, selectedCurrency.value)
-    : validAmount.value
+  feeRate.value > 0 && payBaseAmount.value > 0
+    ? roundPaymentAmount(payBaseAmount.value + feeAmount.value, selectedCurrency.value)
+    : payBaseAmount.value
 )
 const formattedEstimatedCreditedAmount = computed(() =>
   formatCreditedAmount(creditedAmount.value)
