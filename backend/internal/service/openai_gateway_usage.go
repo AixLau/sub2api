@@ -335,7 +335,17 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		requestID = strings.TrimSpace(result.ResponseID)
 	}
 	if requestID == "" {
-		requestID = resolveUsageBillingRequestID(ctx, "")
+		// A WebSocket connection carries one client_request_id for its entire
+		// lifetime. Reusing it as the billing id makes later turns look like
+		// duplicates when the upstream response has no id, so they return
+		// successfully without applying balance/quota billing. Every such turn
+		// needs its own durable id; normal HTTP requests keep their existing
+		// context fallback semantics.
+		if result.OpenAIWSMode {
+			requestID = "openai-ws:" + generateRequestID()
+		} else {
+			requestID = resolveUsageBillingRequestID(ctx, "")
+		}
 	}
 	// Async Grok video: always use the stable task id for dedup (status + content polls
 	// share one bill). Context-local client/local IDs would otherwise create a new row

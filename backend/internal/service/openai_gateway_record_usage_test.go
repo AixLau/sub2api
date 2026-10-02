@@ -1156,6 +1156,38 @@ func TestOpenAIGatewayServiceRecordUsage_WSModePrefersUpstreamRequestIDOverClien
 	require.Equal(t, "resp_openai_ws_turn_456", usageRepo.lastLog.RequestID)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_WSModeGeneratesPerTurnIDWithoutUpstreamID(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "openai-ws-connection-reused")
+	input := func() *OpenAIRecordUsageInput {
+		return &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				OpenAIWSMode: true,
+				Usage:        OpenAIUsage{InputTokens: 8, OutputTokens: 4},
+				Model:        "gpt-5.1",
+				Duration:     time.Second,
+			},
+			APIKey:  &APIKey{ID: 10052},
+			User:    &User{ID: 20052},
+			Account: &Account{ID: 30052},
+		}
+	}
+
+	require.NoError(t, svc.RecordUsage(ctx, input()))
+	require.NoError(t, svc.RecordUsage(ctx, input()))
+	require.Len(t, billingRepo.cmds, 2)
+	require.NotEmpty(t, billingRepo.cmds[0].RequestID)
+	require.NotEmpty(t, billingRepo.cmds[1].RequestID)
+	require.NotEqual(t, billingRepo.cmds[0].RequestID, billingRepo.cmds[1].RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.cmds[0].RequestID, "openai-ws:"))
+	require.True(t, strings.HasPrefix(billingRepo.cmds[1].RequestID, "openai-ws:"))
+}
+
 func TestOpenAIGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}

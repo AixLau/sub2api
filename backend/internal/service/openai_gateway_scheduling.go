@@ -199,13 +199,19 @@ func grokStickyAffinitySeed(sessionID string, body []byte) string {
 	return "grok-affinity:v1:" + model + ":" + sessionID
 }
 
-// GenerateSessionHashWithFallback 先按常规信号生成会话哈希；
+// GenerateSessionHashWithFallback 只使用显式会话信号生成会话哈希；
 // 当未携带 session_id/conversation_id/prompt_cache_key 时，使用 fallbackSeed 生成稳定哈希。
-// 该方法用于 WS ingress，避免会话信号缺失时发生跨账号漂移。
+// 该方法用于 WS ingress：不能把每一轮不同的请求内容当作新会话，否则客户端
+// 删除 prompt_cache_key 后可以通过重新建连绕过账号的会话数量限制。
 func (s *OpenAIGatewayService) GenerateSessionHashWithFallback(c *gin.Context, body []byte, fallbackSeed string) string {
-	sessionHash := s.GenerateSessionHash(c, body)
-	if sessionHash != "" {
-		return sessionHash
+	sessionID := explicitOpenAIRequestSessionID(c, body)
+	if sessionID != "" {
+		if isGrokRequestContext(c) {
+			sessionID = grokStickyAffinitySeed(sessionID, body)
+		}
+		currentHash, legacyHash := deriveOpenAISessionHashes(sessionID)
+		attachOpenAILegacySessionHashToGin(c, legacyHash)
+		return currentHash
 	}
 
 	seed := strings.TrimSpace(fallbackSeed)

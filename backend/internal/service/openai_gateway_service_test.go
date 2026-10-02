@@ -610,6 +610,24 @@ func TestOpenAIGatewayService_GenerateSessionHashWithFallback(t *testing.T) {
 	require.Equal(t, "", empty)
 }
 
+func TestOpenAIGatewayService_GenerateSessionHashWithFallback_IgnoresContentWithoutExplicitSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	seed := "openai_ws_ingress:9:100:200"
+	svc := &OpenAIGatewayService{}
+
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
+		return c
+	}
+
+	first := svc.GenerateSessionHashWithFallback(newContext(), []byte(`{"model":"gpt-5.1","input":"first turn"}`), seed)
+	second := svc.GenerateSessionHashWithFallback(newContext(), []byte(`{"model":"gpt-5.1","input":"different turn"}`), seed)
+	require.Equal(t, first, second)
+	require.Equal(t, fmt.Sprintf("%016x", xxhash.Sum64String(seed)), first)
+}
+
 func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
