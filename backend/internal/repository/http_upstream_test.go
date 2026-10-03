@@ -698,6 +698,37 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestOpenAIProtocolOverrideUsesFreshHTTP1ClientPool() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled:                   true,
+			AllowProxyFallbackToHTTP1: true,
+		},
+	}
+	svc := s.newService()
+	proxyURL := "http://proxy.local:8080"
+	h2Entry, err := svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH2, h2Entry.protocolMode)
+
+	h1Entry, err := svc.getClientEntryWithProtocolOverride(
+		proxyURL,
+		1,
+		1,
+		service.HTTPUpstreamProfileOpenAI,
+		service.HTTPUpstreamProtocolOverrideHTTP1,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotSame(s.T(), h2Entry, h1Entry, "protocol override must use a distinct client pool")
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, h1Entry.protocolMode)
+	transport, ok := h1Entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.False(s.T(), transport.ForceAttemptHTTP2)
+	require.NotNil(s.T(), transport.TLSNextProto)
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIHeaderTimeoutChangeRebuildsClient() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true},
@@ -752,6 +783,26 @@ func (s *HTTPUpstreamSuite) TestOpenAIHTTP2ProxyCompatibilityErrorActivatesFallb
 	require.True(s.T(), ok, "expected *http.Transport")
 	require.False(s.T(), transport.ForceAttemptHTTP2)
 	require.NotNil(s.T(), transport.TLSNextProto)
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, entry.protocolMode)
+}
+
+func (s *HTTPUpstreamSuite) TestOpenAIHTTP2StreamFailureActivatesProxyFallback() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled:                   true,
+			AllowProxyFallbackToHTTP1: true,
+			FallbackErrorThreshold:    1,
+			FallbackWindowSeconds:     60,
+			FallbackTTLSeconds:        600,
+		},
+	}
+	svc := s.newService()
+	proxyURL := "http://proxy.local:8080"
+	svc.RecordOpenAIHTTP2StreamFailure(proxyURL, errors.New("stream error: stream ID 7; INTERNAL_ERROR; received from peer"))
+	require.True(s.T(), svc.isOpenAIHTTP2FallbackActive(proxyURL))
+
+	entry, err := svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(s.T(), err)
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, entry.protocolMode)
 }
 

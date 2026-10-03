@@ -6,6 +6,11 @@ import "context"
 // transport policy.
 type HTTPUpstreamProfile string
 
+// HTTPUpstreamProtocolOverride controls the transport protocol for one
+// request attempt. It is intentionally request-scoped so a recovery retry can
+// switch away from a failed HTTP/2 connection without changing global config.
+type HTTPUpstreamProtocolOverride string
+
 const (
 	HTTPUpstreamProfileDefault    HTTPUpstreamProfile = ""
 	HTTPUpstreamProfileOpenAI     HTTPUpstreamProfile = "openai"
@@ -13,7 +18,13 @@ const (
 	HTTPUpstreamProfileLongStream HTTPUpstreamProfile = "long_stream"
 )
 
+const (
+	HTTPUpstreamProtocolOverrideNone  HTTPUpstreamProtocolOverride = ""
+	HTTPUpstreamProtocolOverrideHTTP1 HTTPUpstreamProtocolOverride = "http1"
+)
+
 type httpUpstreamProfileContextKey struct{}
+type httpUpstreamProtocolOverrideContextKey struct{}
 type httpUpstreamDisableRedirectsContextKey struct{}
 type httpUpstreamPublicHostsOnlyContextKey struct{}
 
@@ -42,6 +53,37 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault
+	}
+}
+
+// WithHTTPUpstreamProtocolOverride forces one upstream request attempt to use
+// a specific protocol mode. The override only applies to profiles that support
+// the selected transport; other upstreams keep their normal policy.
+func WithHTTPUpstreamProtocolOverride(ctx context.Context, override HTTPUpstreamProtocolOverride) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if override == HTTPUpstreamProtocolOverrideNone {
+		return ctx
+	}
+	return context.WithValue(ctx, httpUpstreamProtocolOverrideContextKey{}, override)
+}
+
+// HTTPUpstreamProtocolOverrideFromContext resolves a request-scoped protocol
+// override without exposing arbitrary transport strings to the repository.
+func HTTPUpstreamProtocolOverrideFromContext(ctx context.Context) HTTPUpstreamProtocolOverride {
+	if ctx == nil {
+		return HTTPUpstreamProtocolOverrideNone
+	}
+	override, ok := ctx.Value(httpUpstreamProtocolOverrideContextKey{}).(HTTPUpstreamProtocolOverride)
+	if !ok {
+		return HTTPUpstreamProtocolOverrideNone
+	}
+	switch override {
+	case HTTPUpstreamProtocolOverrideHTTP1:
+		return override
+	default:
+		return HTTPUpstreamProtocolOverrideNone
 	}
 }
 

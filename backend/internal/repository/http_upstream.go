@@ -209,9 +209,13 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	if req != nil {
 		profile = service.HTTPUpstreamProfileFromContext(req.Context())
 	}
+	protocolOverride := service.HTTPUpstreamProtocolOverrideNone
+	if req != nil {
+		protocolOverride = service.HTTPUpstreamProtocolOverrideFromContext(req.Context())
+	}
 
 	// 获取或创建对应的客户端，并标记请求占用
-	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
+	entry, err := s.acquireClientWithProfileAndOverride(proxyURL, accountID, accountConcurrency, profile, protocolOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +691,11 @@ func (s *httpUpstreamService) acquireClient(proxyURL string, accountID int64, ac
 
 // acquireClientWithProfile 获取或创建客户端，并按请求 profile 选择协议策略。
 func (s *httpUpstreamService) acquireClientWithProfile(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile) (*upstreamClientEntry, error) {
-	return s.getClientEntry(proxyURL, accountID, accountConcurrency, profile, true, true)
+	return s.acquireClientWithProfileAndOverride(proxyURL, accountID, accountConcurrency, profile, service.HTTPUpstreamProtocolOverrideNone)
+}
+
+func (s *httpUpstreamService) acquireClientWithProfileAndOverride(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, protocolOverride service.HTTPUpstreamProtocolOverride) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithProtocolOverride(proxyURL, accountID, accountConcurrency, profile, protocolOverride, true, true)
 }
 
 // getOrCreateClient 获取或创建客户端
@@ -713,6 +721,10 @@ func (s *httpUpstreamService) getOrCreateClient(proxyURL string, accountID int64
 // markInFlight=true 时会标记进行中请求，用于请求路径防止被淘汰
 // enforceLimit=true 时会限制客户端数量，超限且无法淘汰时返回错误
 func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithProtocolOverride(proxyURL, accountID, accountConcurrency, profile, service.HTTPUpstreamProtocolOverrideNone, markInFlight, enforceLimit)
+}
+
+func (s *httpUpstreamService) getClientEntryWithProtocolOverride(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, protocolOverride service.HTTPUpstreamProtocolOverride, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
 	// 标准化代理 URL 并解析
@@ -721,7 +733,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		return nil, err
 	}
 	// 根据请求 profile（例如 OpenAI）选择协议模式
-	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
+	protocolMode := s.resolveProtocolModeWithOverride(profile, proxyKey, parsedProxy, protocolOverride)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
 	// 构建缓存键（根据隔离策略不同）
@@ -1060,6 +1072,10 @@ func (s *httpUpstreamService) resolveOpenAIHTTP2Settings() openAIHTTP2Settings {
 }
 
 func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL) string {
+	return s.resolveProtocolModeWithOverride(profile, proxyKey, parsedProxy, service.HTTPUpstreamProtocolOverrideNone)
+}
+
+func (s *httpUpstreamService) resolveProtocolModeWithOverride(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL, protocolOverride service.HTTPUpstreamProtocolOverride) string {
 	if profile == service.HTTPUpstreamProfileLongStream {
 		return upstreamProtocolModeLongStreamH2
 	}
@@ -1072,6 +1088,12 @@ func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamPr
 	settings := s.resolveOpenAIHTTP2Settings()
 	if !settings.enabled {
 		return upstreamProtocolModeOpenAIH1
+	}
+	if protocolOverride == service.HTTPUpstreamProtocolOverrideHTTP1 && settings.allowProxyFallbackToHTTP1 {
+		// The override is used only for a recovery attempt after a stream-level
+		// HTTP/2 reset. The distinct protocol mode also creates a distinct client
+		// cache key, so the retry cannot reuse the failed HTTP/2 connection.
+		return upstreamProtocolModeOpenAIH1Fallback
 	}
 	if parsedProxy == nil {
 		return upstreamProtocolModeOpenAIH2
@@ -1188,6 +1210,18 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Failure(profile service.HTTPUpstr
 			"proxy", proxyKey,
 			"fallback_until", until.Format(time.RFC3339))
 	}
+}
+
+// RecordOpenAIHTTP2StreamFailure feeds a response-body HTTP/2 reset into the
+// same proxy-scoped fallback window used by request-level transport failures.
+// The response headers were already received, so Do cannot observe this error
+// on its own.
+func (s *httpUpstreamService) RecordOpenAIHTTP2StreamFailure(proxyURL string, err error) {
+	proxyKey, _, normalizeErr := normalizeProxyURL(proxyURL)
+	if normalizeErr != nil {
+		return
+	}
+	s.recordOpenAIHTTP2Failure(service.HTTPUpstreamProfileOpenAI, upstreamProtocolModeOpenAIH2, proxyKey, err)
 }
 
 func (s *httpUpstreamService) recordOpenAIHTTP2Success(profile service.HTTPUpstreamProfile, protocolMode, proxyKey string) {

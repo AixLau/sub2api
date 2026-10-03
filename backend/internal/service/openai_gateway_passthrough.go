@@ -354,6 +354,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	agentTaskRecoveryTried := false
 	compactModelFallbackRetried := false
+	http2StreamRetryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
 	var resp *http.Response
 	var usage *OpenAIUsage
@@ -368,6 +369,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		SetOpsUpstreamModel(c, actualModel)
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+		if http2StreamRetryTried {
+			// Do not reuse the failed HTTP/2 stream connection for the one safe
+			// pre-output recovery attempt.
+			upstreamCtx = WithHTTPUpstreamProtocolOverride(upstreamCtx, HTTPUpstreamProtocolOverrideHTTP1)
+		}
 		upstreamReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token)
 		releaseUpstreamCtx()
 		if buildErr != nil {
@@ -441,6 +447,20 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if reqStream {
 			result, handleErr := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 			if handleErr != nil {
+				if !http2StreamRetryTried && isOpenAIHTTP2StreamReadFailover(handleErr) {
+					if resp.Body != nil {
+						_ = resp.Body.Close()
+					}
+					s.recordOpenAIHTTP2StreamFailure(proxyURL, handleErr)
+					http2StreamRetryTried = true
+					logger.LegacyPrintf(
+						"service.openai_gateway",
+						"[OpenAI passthrough] Retrying pre-output stream after HTTP/2 reset over a fresh HTTP/1.1 connection (account: %s, model: %s)",
+						account.Name,
+						reqModel,
+					)
+					continue
+				}
 				if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 					c, account, requestedModel, body, handleErr, compactModelFallbackRetried, resp,
 				); retry {
