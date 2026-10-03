@@ -151,6 +151,40 @@ func TestComputeBasicStatsGroupsAmountsByCurrency(t *testing.T) {
 	require.Equal(t, 2, stats.TodayCount)
 }
 
+func TestGetDashboardStatsPreservesCurrencyAndUserWithProjection(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().SetEmail("buyer@example.com").SetPasswordHash("x").Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName("buyer").
+		SetAmount(120).
+		SetPayAmount(105).
+		SetFeeRate(5).
+		SetRechargeCode("RC_USD").
+		SetPaymentType("stripe").
+		SetPaymentTradeNo("TRADE_USD").
+		SetProviderSnapshot(map[string]any{"currency": "USD"}).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("test").
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetStatus(OrderStatusCompleted).
+		Save(ctx)
+	require.NoError(t, err)
+
+	stats, err := (&PaymentService{entClient: client}).GetDashboardStats(ctx, 30)
+	require.NoError(t, err)
+	require.Equal(t, CurrencyAmounts{"USD": 100}, stats.TotalAmount)
+	require.Equal(t, CurrencyAmounts{"USD": 100}, stats.TodayAmount)
+	require.Equal(t, CurrencyAmounts{"USD": 100}, stats.AvgAmount)
+	require.Equal(t, CurrencyAmounts{"USD": 100}, stats.DailySeries[len(stats.DailySeries)-1].Amount)
+	require.Equal(t, []PaymentMethodStat{{Type: "stripe", Amount: CurrencyAmounts{"USD": 100}, Count: 1}}, stats.PaymentMethods)
+	require.Equal(t, TopUsersByCurrency{"USD": {{UserID: user.ID, Email: user.Email, Amount: 100}}}, stats.TopUsers)
+}
+
 func TestPaymentDashboardBreakdownsGroupAmountsAndRankingsByCurrency(t *testing.T) {
 	t.Parallel()
 

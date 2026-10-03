@@ -121,6 +121,10 @@ func bindVars(driverDialect string, count int) []string {
 	return vars
 }
 
+// Fetch only the latest matching usage row through the existing
+// (user_id, created_at) and (subscription_id, created_at) indexes. Joining all
+// historical usage rows and aggregating MAX makes dashboard latency grow with
+// the number of requests each paid user has made.
 const churnCandidatesSQL = `
 	WITH valid_orders AS (
 		SELECT user_id, order_type, paid_at
@@ -135,9 +139,15 @@ const churnCandidatesSQL = `
 		WHERE u.role = 'user' AND u.deleted_at IS NULL
 	),
 	balance_candidates AS (
-		SELECT u.id AS user_id, MAX(ul.created_at) AS exhausted_at
+		SELECT u.id AS user_id, (
+			SELECT ul.created_at
+			FROM usage_logs ul
+			WHERE ul.user_id = u.id AND ul.subscription_id IS NULL
+			  AND ul.created_at IS NOT NULL
+			ORDER BY ul.created_at DESC
+			LIMIT 1
+		) AS exhausted_at
 		FROM users u
-		LEFT JOIN usage_logs ul ON ul.user_id = u.id AND ul.subscription_id IS NULL
 		WHERE u.role = 'user'
 		  AND u.deleted_at IS NULL
 		  AND u.balance <= 0
@@ -145,8 +155,6 @@ const churnCandidatesSQL = `
 			SELECT 1 FROM valid_orders vo
 			WHERE vo.user_id = u.id AND vo.order_type = 'balance'
 		  )
-		GROUP BY u.id
-		HAVING MAX(ul.created_at) IS NOT NULL
 	),
 	subscription_expired AS (
 		SELECT us.user_id, us.expires_at AS exhausted_at
@@ -162,13 +170,17 @@ const churnCandidatesSQL = `
 		  )
 	),
 	subscription_exhausted AS (
-		SELECT us.user_id, MAX(ul.created_at) AS exhausted_at
+		SELECT us.user_id, (
+			SELECT ul.created_at
+			FROM usage_logs ul
+			WHERE ul.subscription_id = us.id
+			  AND ul.created_at >= us.monthly_window_start
+			ORDER BY ul.created_at DESC
+			LIMIT 1
+		) AS exhausted_at
 		FROM user_subscriptions us
 		JOIN users u ON u.id = us.user_id
 		JOIN groups g ON g.id = us.group_id
-		LEFT JOIN usage_logs ul
-		  ON ul.subscription_id = us.id
-		 AND ul.created_at >= us.monthly_window_start
 		WHERE u.role = 'user'
 		  AND u.deleted_at IS NULL
 		  AND us.deleted_at IS NULL
@@ -178,8 +190,6 @@ const churnCandidatesSQL = `
 			SELECT 1 FROM valid_orders vo
 			WHERE vo.user_id = us.user_id AND vo.order_type = 'subscription'
 		  )
-		GROUP BY us.user_id, us.id
-		HAVING MAX(ul.created_at) IS NOT NULL
 	),
 	candidates AS (
 		SELECT * FROM balance_candidates
@@ -191,7 +201,8 @@ const churnCandidatesSQL = `
 	no_repayment AS (
 		SELECT c.*
 		FROM candidates c
-		WHERE NOT EXISTS (
+		WHERE c.exhausted_at IS NOT NULL
+		  AND NOT EXISTS (
 			SELECT 1 FROM valid_orders vo
 			WHERE vo.user_id = c.user_id AND vo.paid_at > c.exhausted_at
 		)

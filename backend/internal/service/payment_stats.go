@@ -30,7 +30,18 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 
 	paidStatuses := []string{OrderStatusCompleted, OrderStatusPaid, OrderStatusRecharging}
 
+	// Avoid loading payment URLs, QR images, notes and other order details for
+	// every payment in the reporting period.
 	orders, err := s.entClient.PaymentOrder.Query().
+		Select(
+			paymentorder.FieldUserID,
+			paymentorder.FieldUserEmail,
+			paymentorder.FieldPayAmount,
+			paymentorder.FieldFeeRate,
+			paymentorder.FieldPaymentType,
+			paymentorder.FieldProviderSnapshot,
+			paymentorder.FieldPaidAt,
+		).
 		Where(
 			paymentorder.StatusIn(paidStatuses...),
 			paymentorder.PaidAtGTE(since),
