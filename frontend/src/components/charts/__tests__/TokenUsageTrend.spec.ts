@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
 import TokenUsageTrend from '../TokenUsageTrend.vue'
-import { tokenUsageColors } from '@/theme/designTokens'
+import { chartSeriesColors, tokenUsageColors } from '@/theme/designTokens'
 
 const messages: Record<string, string> = {
   'usage.tokenUsageTrend': 'Token 使用趋势',
@@ -39,10 +39,17 @@ const VariableWidthLineChartStub = defineComponent({
     xField: [String, Function],
     yField: [String, Function],
     colorField: [String, Function],
+    secondaryData: Array,
+    secondaryXField: [String, Function],
+    secondaryYField: [String, Function],
+    secondaryColorField: [String, Function],
     colors: Array,
+    secondaryColors: Array,
     height: Number,
     yDomain: Array,
     yTicks: Array,
+    secondaryYDomain: Array,
+    secondaryYTicks: Array,
     xTicks: Array,
     showLegend: Boolean,
     brushEffect: Boolean,
@@ -53,6 +60,7 @@ const VariableWidthLineChartStub = defineComponent({
     tooltipHtml: Function,
     formatX: Function,
     formatY: Function,
+    secondaryFormatY: Function,
   },
   template: '<div class="variable-width-line-chart" />',
 })
@@ -150,6 +158,24 @@ describe('TokenUsageTrend', () => {
       expect.objectContaining({ date: '2026-05-08', category: '缓存创建', value: 300 }),
       expect.objectContaining({ date: '2026-05-08', category: '缓存读取', value: 500 }),
     ])
+  })
+
+  it('renders actual consumption in a secondary group of the token chart', () => {
+    const wrapper = mountTrend({ showCost: true })
+    const chart = getChart(wrapper)
+
+    expect(chart.props()).toMatchObject({
+      yField: 'value',
+      colorField: 'category',
+      secondaryYField: 'value',
+      secondaryColorField: 'category',
+      secondaryColors: [chartSeriesColors.warning],
+      secondaryFormatY: expect.any(Function),
+    })
+    expect(chart.props('secondaryData')).toEqual([
+      expect.objectContaining({ date: '2026-05-08', category: '消费', value: 4.58 }),
+    ])
+    expect((chart.props('secondaryFormatY') as (value: number) => string)(4.58)).toBe('$4.58')
   })
 
   it('returns 0 hit rate in the tooltip when all prompt tokens are zero', () => {

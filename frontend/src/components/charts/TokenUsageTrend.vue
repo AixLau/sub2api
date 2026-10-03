@@ -27,10 +27,16 @@
       y-field="value"
       color-field="category"
       :colors="tokenColorRange"
+      :secondary-data="showConsumptionTrend ? consumptionSeries : undefined"
+      :secondary-x-field="xFieldGetter"
+      secondary-y-field="value"
+      secondary-color-field="category"
+      :secondary-colors="consumptionColorRange"
       :height="chartHeight"
       :empty-text="emptyText"
       :format-x="formatAxisDate"
       :format-y="formatTokenAxis"
+      :secondary-format-y="formatCostAxis"
       :tooltip-html="buildTooltipHtml"
       show-legend
       :brush-effect="false"
@@ -46,7 +52,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import VariableWidthLineChart from '@/components/charts/VariableWidthLineChart.vue'
-import { tokenUsageColors } from '@/theme/designTokens'
+import { chartSeriesColors, tokenUsageColors } from '@/theme/designTokens'
 import { calculateCacheHitRate } from '@/utils/cacheHitRate'
 import type { TrendDataPoint } from '@/types'
 
@@ -71,9 +77,13 @@ type TokenSeriesPoint = {
   source: TrendDataPoint
 }
 
+type ConsumptionSeriesPoint = TokenSeriesPoint
+
 const chartColors = computed(() => ({
   ...tokenUsageColors
 }))
+
+const consumptionColor = chartSeriesColors.warning
 
 const TAILWIND_HEIGHTS: Record<string, number> = {
   'h-40': 160,
@@ -119,12 +129,23 @@ const tokenSeries = computed<TokenSeriesPoint[]>(() =>
   ])
 )
 
+const consumptionSeries = computed<ConsumptionSeriesPoint[]>(() =>
+  props.trendData.map((data) => ({
+    date: data.date,
+    category: t('usage.trend.consumption'),
+    value: data.actual_cost,
+    source: data
+  }))
+)
+
 const tokenColorRange = computed(() => [
   chartColors.value.input,
   chartColors.value.output,
   chartColors.value.cacheCreation,
   chartColors.value.cacheRead
 ])
+
+const consumptionColorRange = computed(() => [consumptionColor])
 
 const chartHeight = computed(() => {
   const exactHeight = TAILWIND_HEIGHTS[props.chartHeightClass]
@@ -138,6 +159,8 @@ const chartHeight = computed(() => {
 
   return TAILWIND_HEIGHTS['h-48']
 })
+
+const showConsumptionTrend = computed(() => props.showCost)
 
 const isPlayfulDashboard = computed(() => props.surface === 'playfulDashboard')
 
@@ -216,6 +239,8 @@ const formatCost = (value: number): string => {
   return value.toFixed(4)
 }
 
+const formatCostAxis = (value: unknown): string => `$${formatCost(Number(value))}`
+
 const findTrendPoint = (title: unknown): TrendDataPoint | undefined => {
   const exactTitle = typeof title === 'string' ? title : ''
   const exactMatch = props.trendData.find((point) => point.date === exactTitle)
@@ -244,7 +269,10 @@ const buildTooltipHtml = (title: unknown): string => {
     { label: tokenLabels.value.output, value: formatTokens(data.output_tokens), color: chartColors.value.output },
     { label: tokenLabels.value.cacheCreation, value: formatTokens(data.cache_creation_tokens), color: chartColors.value.cacheCreation },
     { label: tokenLabels.value.cacheRead, value: formatTokens(data.cache_read_tokens), color: chartColors.value.cacheRead },
-    { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate }
+    { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate },
+    ...(props.showCost
+      ? [{ label: t('usage.trend.consumption'), value: `$${formatCost(data.actual_cost)}`, color: consumptionColor }]
+      : [])
   ]
 
   const cost = props.costMetric === 'account' ? data.account_cost : data.cost

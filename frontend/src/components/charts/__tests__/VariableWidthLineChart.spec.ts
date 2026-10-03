@@ -215,6 +215,31 @@ describe('VariableWidthLineChart', () => {
     })
   })
 
+  it('maps secondary series onto the primary plot and renders a separate value axis', async () => {
+    const wrapper = mountChart({
+      secondaryData: [
+        { date: '2026-05-08', value: 0, category: '消费' },
+        { date: '2026-05-09', value: 1.5, category: '消费' },
+      ],
+      secondaryXField: 'date',
+      secondaryYField: 'value',
+      secondaryColorField: 'category',
+      secondaryColors: ['#f59e0b'],
+      secondaryFormatY: (value: unknown) => `$${Number(value).toFixed(2)}`,
+    })
+    await nextTick()
+
+    const options = chartInstances[0].options.mock.calls[0][0]
+    const secondaryPoints = options.data.filter(
+      (point: Record<string, unknown>) => point.__vw_scale_group__ === 'secondary' && point.__vw_staccato__ === false,
+    )
+
+    expect(options.scale.y).toMatchObject({ domain: [0, 500], nice: false })
+    expect(secondaryPoints.map((point: Record<string, unknown>) => point.__vw_y__)).toEqual([0, 500])
+    expect(wrapper.findAll('.vw-line__grid-label--secondary')).toHaveLength(5)
+    expect(wrapper.text()).toContain('$0.00')
+  })
+
   it('renders isolated single-point series without enabling endpoint dots', async () => {
     mountChart({
       data: [

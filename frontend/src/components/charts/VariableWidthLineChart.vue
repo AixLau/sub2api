@@ -9,7 +9,7 @@
         <div
           v-for="item in legendItems"
           :key="item.name"
-          class="vw-line__legend-item"
+          :class="['vw-line__legend-item', { 'vw-line__legend-item--secondary': item.secondary }]"
         >
           <span
             class="vw-line__legend-marker"
@@ -37,6 +37,14 @@
           <span class="vw-line__grid-label">{{ item.label }}</span>
           <span class="vw-line__grid-line" />
         </div>
+        <span
+          v-for="item in secondaryGridTickItems"
+          :key="item.key"
+          class="vw-line__grid-label vw-line__grid-label--secondary"
+          :style="{ top: `${item.top}%` }"
+        >
+          {{ item.label }}
+        </span>
       </div>
 
       <div ref="containerRef" class="vw-line__chart" />
@@ -116,6 +124,7 @@ type InnerDatum = RawDatum & {
   __vw_visual_size__: number
   __vw_color__: string
   __vw_series__: string
+  __vw_scale_group__: 'primary' | 'secondary'
   __vw_staccato__?: boolean
   __vw_staccato_index__?: string
   __vw_tooltip_x__?: unknown
@@ -133,10 +142,17 @@ const props = withDefaults(defineProps<{
   xField: FieldGetter
   yField: FieldGetter
   colorField: FieldGetter
+  secondaryData?: RawDatum[]
+  secondaryXField?: FieldGetter
+  secondaryYField?: FieldGetter
+  secondaryColorField?: FieldGetter
   height?: number
   colors?: string[]
+  secondaryColors?: string[]
   yDomain?: [number, number]
   yTicks?: number[]
+  secondaryYDomain?: [number, number]
+  secondaryYTicks?: number[]
   xTicks?: unknown[]
   xScaleType?: ScaleType
   minLineWidth?: number
@@ -149,10 +165,12 @@ const props = withDefaults(defineProps<{
   emptyText?: string
   formatX?: (value: unknown) => string
   formatY?: (value: unknown) => string
+  secondaryFormatY?: (value: unknown) => string
   tooltipHtml?: (title: unknown, items?: unknown[]) => string
 }>(), {
   title: '',
   data: () => [],
+  secondaryData: () => [],
   height: 192,
   colors: () => [
     tokenUsageColors.input,
@@ -161,6 +179,7 @@ const props = withDefaults(defineProps<{
     tokenUsageColors.cacheRead,
     tokenUsageColors.cacheHitRate,
   ],
+  secondaryColors: () => [],
   minLineWidth: 1.2,
   maxLineWidth: 6.5,
   showLegend: true,
@@ -201,12 +220,49 @@ const toFiniteNumber = (value: unknown): number | null => {
   return Number.isFinite(numberValue) ? numberValue : null
 }
 
-const normalizedData = computed<InnerDatum[]>(() => {
+const valueExtent = (
+  data: RawDatum[],
+  yField: FieldGetter | undefined,
+  domain: [number, number] | undefined,
+): { min: number; max: number } => {
+  const values = yField
+    ? data
+      .map((datum, index) => toFiniteNumber(getFieldValue(datum, yField, index)))
+      .filter((value): value is number => value !== null)
+    : []
+  const min = domain?.[0] ?? 0
+  const max = domain?.[1] ?? Math.max(...values, 1)
+
+  return max === min ? { min, max: min + 1 } : { min, max }
+}
+
+const primaryValueExtent = computed(() => valueExtent(props.data, props.yField, props.yDomain))
+
+const secondaryValueExtent = computed(() => valueExtent(
+  props.secondaryData,
+  props.secondaryYField,
+  props.secondaryYDomain,
+))
+
+const mapSecondaryValue = (value: number): number => {
+  const secondarySpan = secondaryValueExtent.value.max - secondaryValueExtent.value.min || 1
+  const primarySpan = primaryValueExtent.value.max - primaryValueExtent.value.min || 1
+  const ratio = (value - secondaryValueExtent.value.min) / secondarySpan
+  return primaryValueExtent.value.min + ratio * primarySpan
+}
+
+const normalizeData = (
+  data: RawDatum[],
+  xField: FieldGetter,
+  yField: FieldGetter,
+  colorField: FieldGetter,
+  scaleGroup: 'primary' | 'secondary',
+): InnerDatum[] => {
   const result: InnerDatum[] = []
   const segmentMap = new Map<string, number>()
 
-  props.data.forEach((raw, index) => {
-    const colorRaw = getFieldValue(raw, props.colorField, index)
+  data.forEach((raw, index) => {
+    const colorRaw = getFieldValue(raw, colorField, index)
     const colorName = colorRaw === null || colorRaw === undefined || colorRaw === ''
       ? 'default'
       : String(colorRaw)
@@ -215,9 +271,9 @@ const normalizedData = computed<InnerDatum[]>(() => {
       segmentMap.set(colorName, 0)
     }
 
-    const x = getFieldValue(raw, props.xField, index)
-    const y = toFiniteNumber(getFieldValue(raw, props.yField, index))
-    const isBreakPoint = x === null || x === undefined || x === '' || y === null
+    const x = getFieldValue(raw, xField, index)
+    const rawY = toFiniteNumber(getFieldValue(raw, yField, index))
+    const isBreakPoint = x === null || x === undefined || x === '' || rawY === null
 
     if (isBreakPoint) {
       segmentMap.set(colorName, (segmentMap.get(colorName) ?? 0) + 1)
@@ -225,6 +281,7 @@ const normalizedData = computed<InnerDatum[]>(() => {
     }
 
     const segmentNo = segmentMap.get(colorName) ?? 0
+    const y = scaleGroup === 'secondary' ? mapSecondaryValue(rawY) : rawY
 
     result.push({
       ...raw,
@@ -232,14 +289,42 @@ const normalizedData = computed<InnerDatum[]>(() => {
       [Y_KEY]: y,
       [SIZE_KEY]: toVisualSize(y),
       [COLOR_KEY]: colorName,
-      [SERIES_KEY]: `${colorName}__${segmentNo}`,
+      [SERIES_KEY]: scaleGroup === 'primary'
+        ? `${colorName}__${segmentNo}`
+        : `${colorName}__secondary__${segmentNo}`,
+      __vw_scale_group__: scaleGroup,
       __vw_staccato__: false,
       __vw_tooltip_x__: x,
     })
   })
 
   return result
+}
+
+const primaryNormalizedData = computed(() => normalizeData(
+  props.data,
+  props.xField,
+  props.yField,
+  props.colorField,
+  'primary',
+))
+
+const secondaryNormalizedData = computed(() => {
+  if (!props.secondaryData.length || !props.secondaryYField) return []
+
+  return normalizeData(
+    props.secondaryData,
+    props.secondaryXField ?? props.xField,
+    props.secondaryYField,
+    props.secondaryColorField ?? props.colorField,
+    'secondary',
+  )
 })
+
+const normalizedData = computed<InnerDatum[]>(() => [
+  ...primaryNormalizedData.value,
+  ...secondaryNormalizedData.value,
+])
 
 const isEmpty = computed(() => normalizedData.value.length === 0)
 
@@ -284,15 +369,50 @@ const seriesNames = computed(() => {
   return names
 })
 
+const primarySeriesNames = computed(() => {
+  const seen = new Set<string>()
+  return primaryNormalizedData.value
+    .map((item) => item[COLOR_KEY])
+    .filter((name) => {
+      if (seen.has(name)) return false
+      seen.add(name)
+      return true
+    })
+})
+
+const secondarySeriesNames = computed(() => {
+  const seen = new Set<string>()
+  return secondaryNormalizedData.value
+    .map((item) => item[COLOR_KEY])
+    .filter((name) => {
+      if (seen.has(name)) return false
+      seen.add(name)
+      return true
+    })
+})
+
 const colorRange = computed(() => {
-  const colors = props.colors.length ? props.colors : Object.values(tokenUsageColors)
-  return seriesNames.value.map((_, index) => colors[index % colors.length])
+  const primaryColors = props.colors.length ? props.colors : Object.values(tokenUsageColors)
+  const secondaryColors = props.secondaryColors.length
+    ? props.secondaryColors
+    : primaryColors.slice(-1)
+  const colorsBySeries = new Map<string, string>()
+
+  primarySeriesNames.value.forEach((name, index) => {
+    colorsBySeries.set(name, primaryColors[index % primaryColors.length])
+  })
+  secondarySeriesNames.value.forEach((name, index) => {
+    colorsBySeries.set(name, secondaryColors[index % secondaryColors.length])
+  })
+
+  return seriesNames.value.map((name) => colorsBySeries.get(name) ?? primaryColors[0])
 })
 
 const legendItems = computed(() =>
   seriesNames.value.map((name, index) => ({
     name,
     color: colorRange.value[index],
+    secondary: secondarySeriesNames.value.includes(name),
   }))
 )
 
@@ -318,15 +438,23 @@ const isolatedPointData = computed(() => {
 })
 
 const yExtent = computed(() => {
-  const values = normalizedData.value.map((item) => item[Y_KEY])
-  const min = props.yDomain?.[0] ?? 0
-  const max = props.yDomain?.[1] ?? Math.max(...values, 1)
+  return primaryValueExtent.value
+})
 
-  if (max === min) {
-    return { min, max: min + 1 }
-  }
+const secondaryGridTickItems = computed(() => {
+  if (!secondaryNormalizedData.value.length) return []
 
-  return { min, max }
+  const { min, max } = secondaryValueExtent.value
+  const values = props.secondaryYTicks?.length
+    ? props.secondaryYTicks
+    : Array.from({ length: 5 }, (_, index) => min + ((max - min) * index) / 4)
+  const span = max - min || 1
+
+  return values.map((value) => ({
+    key: `secondary-${value}`,
+    label: props.secondaryFormatY ? props.secondaryFormatY(value) : String(value),
+    top: 100 - ((value - min) / span) * 100,
+  }))
 })
 
 const toVisualSize = (value: number): number =>
@@ -867,8 +995,15 @@ watch(
     normalizedData.value,
     props.height,
     props.colors,
+    props.secondaryData,
+    props.secondaryXField,
+    props.secondaryYField,
+    props.secondaryColorField,
+    props.secondaryColors,
     props.yDomain,
     props.yTicks,
+    props.secondaryYDomain,
+    props.secondaryYTicks,
     props.xTicks,
     props.xScaleType,
     props.minLineWidth,
@@ -880,6 +1015,7 @@ watch(
     props.tooltipHtml,
     props.formatX,
     props.formatY,
+    props.secondaryFormatY,
   ],
   () => {
     invalidateTooltip()
@@ -955,6 +1091,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.vw-line__legend-item--secondary {
+  margin-left: 4px;
+  padding-left: 12px;
+  border-left: 1px solid var(--vw-grid);
+}
+
 .vw-line__legend-marker {
   width: 14px;
   height: 3px;
@@ -1001,6 +1143,11 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
+}
+
+.vw-line__grid-label--secondary {
+  right: auto;
+  left: calc(100% + 8px);
 }
 
 .vw-line__grid-line {
