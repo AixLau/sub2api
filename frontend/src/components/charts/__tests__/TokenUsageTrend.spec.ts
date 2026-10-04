@@ -178,6 +178,15 @@ describe('TokenUsageTrend', () => {
     expect((chart.props('secondaryFormatY') as (value: number) => string)(4.58)).toBe('$4.58')
   })
 
+  it('can hide the consumption line while keeping the cost summary enabled', () => {
+    const wrapper = mountTrend({ showCost: true, showConsumptionTrend: false })
+    const chart = getChart(wrapper)
+
+    expect(chart.props('secondaryData')).toBeUndefined()
+    const tooltipHtml = (chart.props('tooltipHtml') as (title: string) => string)('2026-05-08')
+    expect(tooltipHtml).toContain('消费: $4.58')
+  })
+
   it('returns 0 hit rate in the tooltip when all prompt tokens are zero', () => {
     const wrapper = mountTrend({
       trendData: [

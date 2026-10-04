@@ -27,7 +27,7 @@
       y-field="value"
       color-field="category"
       :colors="tokenColorRange"
-      :secondary-data="showConsumptionTrend ? consumptionSeries : undefined"
+      :secondary-data="shouldShowConsumptionTrend ? consumptionSeries : undefined"
       :secondary-x-field="xFieldGetter"
       secondary-y-field="value"
       secondary-color-field="category"
@@ -63,10 +63,12 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   surface?: 'default' | 'tremor' | 'playfulDashboard'
   showCost?: boolean
+  showConsumptionTrend?: boolean
   costMetric?: 'standard' | 'account'
   chartHeightClass?: string
 }>(), {
   chartHeightClass: 'h-48',
+  showConsumptionTrend: true,
   costMetric: 'standard'
 })
 
@@ -160,7 +162,7 @@ const chartHeight = computed(() => {
   return TAILWIND_HEIGHTS['h-48']
 })
 
-const showConsumptionTrend = computed(() => props.showCost)
+const shouldShowConsumptionTrend = computed(() => props.showCost && props.showConsumptionTrend)
 
 const isPlayfulDashboard = computed(() => props.surface === 'playfulDashboard')
 
