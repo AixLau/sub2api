@@ -231,6 +231,7 @@ type UpdateSettingsRequest struct {
 
 	// Ops monitoring (vNext)
 	OpsMonitoringEnabled         *bool   `json:"ops_monitoring_enabled"`
+	ShowOpenAINonPlus5hUsage     *bool   `json:"show_openai_non_plus_5h_usage"`
 	OpsRealtimeMonitoringEnabled *bool   `json:"ops_realtime_monitoring_enabled"`
 	OpsQueryModeDefault          *string `json:"ops_query_mode_default"`
 	OpsMetricsIntervalSeconds    *int    `json:"ops_metrics_interval_seconds"`
@@ -1701,6 +1702,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpsMonitoringEnabled
 		}(),
+		ShowOpenAINonPlus5hUsage: func() bool {
+			if req.ShowOpenAINonPlus5hUsage != nil { return *req.ShowOpenAINonPlus5hUsage }
+			return previousSettings.ShowOpenAINonPlus5hUsage
+		}(),
 		OpsRealtimeMonitoringEnabled: func() bool {
 			if req.OpsRealtimeMonitoringEnabled != nil {
 				return *req.OpsRealtimeMonitoringEnabled
@@ -2358,6 +2363,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableIdentityPatch:                                    updatedSettings.EnableIdentityPatch,
 		IdentityPatchPrompt:                                    updatedSettings.IdentityPatchPrompt,
 		OpsMonitoringEnabled:                                   updatedSettings.OpsMonitoringEnabled,
+		ShowOpenAINonPlus5hUsage:                               updatedSettings.ShowOpenAINonPlus5hUsage,
 		OpsRealtimeMonitoringEnabled:                           updatedSettings.OpsRealtimeMonitoringEnabled,
 		OpsQueryModeDefault:                                    updatedSettings.OpsQueryModeDefault,
 		OpsMetricsIntervalSeconds:                              updatedSettings.OpsMetricsIntervalSeconds,

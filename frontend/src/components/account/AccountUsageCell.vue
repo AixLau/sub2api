@@ -126,7 +126,7 @@
     <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
-          v-if="usageInfo?.five_hour"
+          v-if="showOpenAI5hWindow && usageInfo?.five_hour"
           label="5h"
           :utilization="usageInfo.five_hour.utilization"
           :resets-at="usageInfo.five_hour.resets_at"
@@ -653,6 +653,7 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber } from '@/utils/format'
@@ -708,6 +709,13 @@ const loading = ref(false)
 const activeQueryLoading = ref(false)
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
+const adminSettings = useAdminSettingsStore()
+void adminSettings.fetch()
+const showOpenAI5hWindow = computed(() => {
+  if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return true
+  const plan = String(props.account.credentials?.plan_type ?? '').trim().toLowerCase()
+  return plan === '' || plan === 'plus' || plan === 'team' || adminSettings.showOpenAINonPlus5hUsage
+})
 watch(usageInfo, (usage) => {
   if (usage) emit('usage-loaded', usage)
 })
