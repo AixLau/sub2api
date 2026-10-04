@@ -17,6 +17,7 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+
 // ── 平台限额类型 ──────────────────────────────────────────────────
 export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok" | "typesafe"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
@@ -397,6 +398,7 @@ export function deriveWeChatConnectStoredMode(
  * System settings interface
  */
 export interface SystemSettings {
+  show_openai_non_plus_5h_usage: boolean;
   // Registration settings
   registration_enabled: boolean;
   email_verify_enabled: boolean;
@@ -760,6 +762,7 @@ export interface SystemSettings {
 }
 
 export interface UpdateSettingsRequest {
+  show_openai_non_plus_5h_usage?: boolean;
   registration_enabled?: boolean;
   email_verify_enabled?: boolean;
   registration_email_suffix_whitelist?: string[];

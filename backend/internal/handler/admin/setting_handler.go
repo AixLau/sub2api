@@ -284,6 +284,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableIdentityPatch:                                    settings.EnableIdentityPatch,
 		IdentityPatchPrompt:                                    settings.IdentityPatchPrompt,
 		OpsMonitoringEnabled:                                   opsEnabled && settings.OpsMonitoringEnabled,
+		ShowOpenAINonPlus5hUsage:                               settings.ShowOpenAINonPlus5hUsage,
 		OpsRealtimeMonitoringEnabled:                           settings.OpsRealtimeMonitoringEnabled,
 		OpsQueryModeDefault:                                    settings.OpsQueryModeDefault,
 		OpsMetricsIntervalSeconds:                              settings.OpsMetricsIntervalSeconds,

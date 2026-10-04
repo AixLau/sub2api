@@ -196,6 +196,7 @@ type SystemSettings struct {
 
 	// Ops monitoring (vNext)
 	OpsMonitoringEnabled         bool
+	ShowOpenAINonPlus5hUsage     bool
 	OpsRealtimeMonitoringEnabled bool
 	OpsQueryModeDefault          string
 	OpsMetricsIntervalSeconds    int
