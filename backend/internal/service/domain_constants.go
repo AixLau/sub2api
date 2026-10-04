@@ -465,6 +465,7 @@ const (
 
 	// SettingKeyOpsMonitoringEnabled is a DB-backed soft switch to enable/disable ops module at runtime.
 	SettingKeyOpsMonitoringEnabled = "ops_monitoring_enabled"
+	SettingKeyShowOpenAINonPlus5hUsage = "show_openai_non_plus_5h_usage"
 
 	// SettingKeyOpsRealtimeMonitoringEnabled controls realtime features (e.g. WS/QPS push).
 	SettingKeyOpsRealtimeMonitoringEnabled = "ops_realtime_monitoring_enabled"

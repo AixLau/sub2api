@@ -49,6 +49,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
   const opsRealtimeMonitoringEnabled = ref(readCachedBool('ops_realtime_monitoring_enabled_cached', true))
   const opsQueryModeDefault = ref(readCachedString('ops_query_mode_default_cached', 'auto'))
   const paymentEnabled = ref(readCachedBool('payment_enabled_cached', false))
+  const showOpenAINonPlus5hUsage = ref(readCachedBool('show_openai_non_plus_5h_usage_cached', false))
   const customMenuItems = ref<CustomMenuItem[]>([])
 
   async function fetch(force = false): Promise<void> {
@@ -74,6 +75,8 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
 
       paymentEnabled.value = paymentConfigResp.data?.enabled ?? false
       writeCachedBool('payment_enabled_cached', paymentEnabled.value)
+      showOpenAINonPlus5hUsage.value = settings.show_openai_non_plus_5h_usage ?? false
+      writeCachedBool('show_openai_non_plus_5h_usage_cached', showOpenAINonPlus5hUsage.value)
 
       loaded.value = true
     } catch (err) {
@@ -139,6 +142,7 @@ export const useAdminSettingsStore = defineStore('adminSettings', () => {
     opsRealtimeMonitoringEnabled,
     opsQueryModeDefault,
     paymentEnabled,
+    showOpenAINonPlus5hUsage,
     customMenuItems,
     fetch,
     setOpsMonitoringEnabledLocal,
