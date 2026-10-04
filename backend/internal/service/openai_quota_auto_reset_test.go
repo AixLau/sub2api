@@ -147,6 +147,12 @@ func TestSelectOpenAIAutoResetCandidate_FailsClosed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "earlier", selected.ID)
 
+	selected, err = selectOpenAIAutoResetCandidate([]openAIAutoResetCreditCandidate{
+		{ID: "confirmed", ExpiresAt: "2026-09-01T00:00:00Z"},
+	}, 2, nil, "cycle-a")
+	require.NoError(t, err, "aggregate availability may exceed returned detail rows")
+	require.Equal(t, "confirmed", selected.ID)
+
 	_, err = selectOpenAIAutoResetCandidate([]openAIAutoResetCreditCandidate{
 		{ExpiresAt: "2026-09-01T00:00:00Z"},
 	}, 1, nil, "cycle-a")

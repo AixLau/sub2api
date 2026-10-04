@@ -378,6 +378,18 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccount(ctx context.Context, accou
 
 	cycleSeed := openAIAutoResetCycleSeed(usage)
 	cycleHash := shortOpenAIAutoResetHash(cycleSeed)
+	if len(usage.autoResetCandidates) > 0 && len(usage.autoResetCandidates) < available {
+		// The upstream count includes credits whose detail record is omitted or
+		// incomplete. ResetCreditTargeted is server-side selecting and remains
+		// idempotent for this cycle, so one confirmed candidate is sufficient to
+		// proceed; keep the mismatch visible for upstream-format follow-up.
+		slog.Warn("openai_auto_reset_credit_details_incomplete",
+			"account_id", accountID,
+			"available_count", available,
+			"candidate_count", len(usage.autoResetCandidates),
+			"trigger_window", assessment.triggerWindow,
+		)
+	}
 	candidate, selectErr := selectOpenAIAutoResetCandidate(usage.autoResetCandidates, available, state, cycleHash)
 	if selectErr != nil {
 		failed := checking
@@ -608,7 +620,11 @@ func selectOpenAIAutoResetCandidate(candidates []openAIAutoResetCreditCandidate,
 	if available <= 0 {
 		return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_NO_CREDIT", "no reset credit is available")
 	}
-	if len(candidates) < available {
+	// The consume endpoint selects the next eligible credit server-side. The
+	// candidate list is used to pin retries to a stable cycle, so require at
+	// least one complete candidate but do not require one detail row per count:
+	// upstream may report aggregate availability while omitting some details.
+	if len(candidates) == 0 {
 		return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_CREDIT_DETAILS_INCOMPLETE", "reset credit details are incomplete")
 	}
 	for _, candidate := range candidates {
