@@ -378,11 +378,11 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccount(ctx context.Context, accou
 
 	cycleSeed := openAIAutoResetCycleSeed(usage)
 	cycleHash := shortOpenAIAutoResetHash(cycleSeed)
-	if len(usage.autoResetCandidates) > 0 && len(usage.autoResetCandidates) < available {
+	if len(usage.autoResetCandidates) < available {
 		// The upstream count includes credits whose detail record is omitted or
 		// incomplete. ResetCreditTargeted is server-side selecting and remains
-		// idempotent for this cycle, so one confirmed candidate is sufficient to
-		// proceed; keep the mismatch visible for upstream-format follow-up.
+		// idempotent for this cycle, so an aggregate-only response can proceed
+		// with a synthetic candidate; keep the mismatch visible for follow-up.
 		slog.Warn("openai_auto_reset_credit_details_incomplete",
 			"account_id", accountID,
 			"available_count", available,
@@ -620,12 +620,17 @@ func selectOpenAIAutoResetCandidate(candidates []openAIAutoResetCreditCandidate,
 	if available <= 0 {
 		return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_NO_CREDIT", "no reset credit is available")
 	}
-	// The consume endpoint selects the next eligible credit server-side. The
-	// candidate list is used to pin retries to a stable cycle, so require at
-	// least one complete candidate but do not require one detail row per count:
-	// upstream may report aggregate availability while omitting some details.
+	// The consume endpoint selects the next eligible credit server-side. When
+	// upstream only exposes an aggregate count, use a cycle-scoped synthetic ID
+	// for the idempotency key. A real candidate remains preferred whenever one
+	// is available, and a prior real candidate is never replaced by a synthetic
+	// one during the same cycle.
 	if len(candidates) == 0 {
-		return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_CREDIT_DETAILS_INCOMPLETE", "reset credit details are incomplete")
+		synthetic := openAIAutoResetCreditCandidate{ID: aggregateOpenAIAutoResetCandidateID(cycleHash)}
+		if previous != nil && previous.AttemptCycleHash == cycleHash && previous.AttemptCreditHash != "" && previous.AttemptCreditHash != shortOpenAIAutoResetHash(synthetic.ID) {
+			return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_ORIGINAL_CREDIT_UNAVAILABLE", "the original reset credit cannot be confirmed; refusing to switch credits")
+		}
+		return synthetic, nil
 	}
 	for _, candidate := range candidates {
 		if _, err := time.Parse(time.RFC3339, candidate.ExpiresAt); err != nil {
@@ -659,6 +664,10 @@ func selectOpenAIAutoResetCandidate(candidates []openAIAutoResetCreditCandidate,
 		return openAIAutoResetCreditCandidate{}, infraerrors.Conflict("OPENAI_AUTO_RESET_CREDIT_ID_MISSING", "the earliest reset credit has no official id")
 	}
 	return sorted[0], nil
+}
+
+func aggregateOpenAIAutoResetCandidateID(cycleHash string) string {
+	return "aggregate:" + cycleHash
 }
 
 func openAIAutoResetCycleSeed(usage *OpenAIQuotaUsage) string {

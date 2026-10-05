@@ -153,6 +153,17 @@ func TestSelectOpenAIAutoResetCandidate_FailsClosed(t *testing.T) {
 	require.NoError(t, err, "aggregate availability may exceed returned detail rows")
 	require.Equal(t, "confirmed", selected.ID)
 
+	selected, err = selectOpenAIAutoResetCandidate(nil, 1, nil, "cycle-a")
+	require.NoError(t, err, "aggregate-only availability can use the server-side selector")
+	require.Equal(t, "aggregate:cycle-a", selected.ID)
+
+	selected, err = selectOpenAIAutoResetCandidate(nil, 1, &OpenAIAutoResetCreditState{
+		AttemptCycleHash:  "cycle-a",
+		AttemptCreditHash: shortOpenAIAutoResetHash("aggregate:cycle-a"),
+	}, "cycle-a")
+	require.NoError(t, err, "aggregate-only retries must reuse the same synthetic candidate")
+	require.Equal(t, "aggregate:cycle-a", selected.ID)
+
 	_, err = selectOpenAIAutoResetCandidate([]openAIAutoResetCreditCandidate{
 		{ExpiresAt: "2026-09-01T00:00:00Z"},
 	}, 1, nil, "cycle-a")
