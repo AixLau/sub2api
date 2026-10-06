@@ -556,9 +556,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
 	seedOpenAIForwardImageIntentHint(c, channelMapping.Mapped, imageIntent)
 	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
-	c.Request = c.Request.WithContext(service.WithOpenAIForwardModel(
+	c.Request = c.Request.WithContext(service.WithOpenAIForwardModelAndResponseModel(
 		requestCtx,
 		forwardModel,
+		reqModel,
 		legacyCompact,
 	))
 
@@ -1229,6 +1230,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMappingMsg, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 	mappedBodyForMessages := newOpenAIModelMappedBodyCache(body, h.gatewayService.ReplaceModelInBody)
+	c.Request = c.Request.WithContext(service.WithOpenAIForwardModelAndResponseModel(
+		c.Request.Context(),
+		openAIChannelForwardModel(channelMappingMsg, reqModel),
+		reqModel,
+		false,
+	))
 
 	// 绑定错误透传服务，允许 service 层在非 failover 错误场景复用规则。
 	if h.errorPassthroughService != nil {

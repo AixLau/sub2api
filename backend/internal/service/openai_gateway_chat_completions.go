@@ -199,6 +199,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, fmt.Errorf("parse chat completions request: %w", err)
 	}
 	originalModel := chatReq.Model
+	responseModel := openAIResponseModelFromContext(ctx, originalModel)
 	clientStream := chatReq.Stream
 
 	// 2. Resolve model mapping early so compat prompt_cache_key injection can
@@ -453,9 +454,9 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleChatStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime, len(body))
+		result, handleErr = s.handleChatStreamingResponse(resp, c, account, responseModel, billingModel, upstreamModel, startTime, len(body))
 	} else {
-		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, responseModel, billingModel, upstreamModel, startTime)
 	}
 	stampOpenAIResponsesUpstreamEndpoint(c, result)
 

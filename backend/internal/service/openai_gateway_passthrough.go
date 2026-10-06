@@ -132,6 +132,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 ) (*OpenAIForwardResult, error) {
 	codexIdentityObservedAt := CaptureCodexIdentityObservedAt(c)
 	requestedModel := reqModel
+	responseModel := openAIResponseModelFromContext(ctx, reqModel)
 	upstreamPassthroughModel := ""
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := s.resolveOpenAICompactFallbackModel(account, reqModel)
@@ -445,7 +446,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 
 		if reqStream {
-			result, handleErr := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
+			result, handleErr := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, responseModel, upstreamPassthroughModel)
 			if handleErr != nil {
 				if !http2StreamRetryTried && isOpenAIHTTP2StreamReadFailover(handleErr) {
 					if resp.Body != nil {
@@ -486,7 +487,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			imageCount = result.imageCount
 			imageOutputSizes = result.imageOutputSizes
 		} else {
-			result, handleErr := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
+			result, handleErr := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, responseModel, upstreamPassthroughModel)
 			if handleErr != nil {
 				if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 					c, account, requestedModel, body, handleErr, compactModelFallbackRetried, resp,

@@ -93,6 +93,12 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
+	c.Request = c.Request.WithContext(service.WithOpenAIForwardModelAndResponseModel(
+		c.Request.Context(),
+		forwardModel,
+		reqModel,
+		false,
+	))
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)

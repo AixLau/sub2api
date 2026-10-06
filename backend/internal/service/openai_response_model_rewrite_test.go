@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestMappedResponseModelPreservesOtherData(t *testing.T) {
@@ -90,5 +92,49 @@ func TestMappedResponseModelForwarding(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestOpenAIGatewayService_Forward_ChannelMappedResponseUsesPublicModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, stream := range []bool{false, true} {
+		t.Run(map[bool]string{false: "json", true: "sse"}[stream], func(t *testing.T) {
+			response := `{"id":"resp_channel_map","model":"6-sol","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`
+			contentType := "application/json"
+			upstreamBody := response
+			if stream {
+				contentType = "text/event-stream"
+				upstreamBody = "data: {\"type\":\"response.completed\",\"response\":" + response + "}\n\ndata: [DONE]\n\n"
+			}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{contentType}},
+				Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+			}}
+			cfg := &config.Config{}
+			cfg.Security.URLAllowlist.Enabled = false
+			svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+			account := &Account{
+				ID: 1, Name: "openai-apikey", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Concurrency: 1, Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://example.com"},
+				Extra: map[string]any{"use_responses_api": true}, Status: StatusActive, Schedulable: true,
+			}
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			body := []byte(`{"model":"6-sol","stream":` + map[bool]string{false: "false", true: "true"}[stream] + `,"input":"hello"}`)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(body)))
+			SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+			ctx := WithOpenAIForwardModelAndResponseModel(context.Background(), "6-sol", "5.6-sol", false)
+			result, err := svc.Forward(ctx, c, account, body)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, "6-sol", gjson.GetBytes(upstream.lastBody, "model").String())
+			if stream {
+				require.Contains(t, rec.Body.String(), `"model":"5.6-sol"`)
+			} else {
+				require.Equal(t, "5.6-sol", gjson.GetBytes(rec.Body.Bytes(), "model").String())
+			}
+		})
 	}
 }

@@ -167,6 +167,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
 	clientPromptCacheKey := promptCacheKey
 	originalModel := reqModel
+	responseModel := openAIResponseModelFromContext(ctx, originalModel)
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
@@ -1275,7 +1276,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var imageOutputSizes []string
 		var responseErr error
 		if reqStream {
-			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
+			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, responseModel, upstreamModel, reasoningEffortValue)
 			responseErr = err
 			if streamResult != nil {
 				usage = streamResult.usage
@@ -1339,7 +1340,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, err
 			}
 		} else {
-			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
+			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, responseModel, upstreamModel)
 			responseErr = err
 			if nonStreamResult != nil {
 				usage = nonStreamResult.usage

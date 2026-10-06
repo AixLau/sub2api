@@ -43,6 +43,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	if account.Type != AccountTypeOAuth && account.Type != AccountTypeAPIKey {
 		return nil, fmt.Errorf("grok account type %s is not supported by Responses forwarding", account.Type)
 	}
+	responseModel := openAIResponseModelFromContext(ctx, originalModel)
 
 	upstreamModel := account.GetMappedModel(originalModel)
 	if strings.TrimSpace(upstreamModel) == "" {
@@ -222,7 +223,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if hasGrokResponsesClientToolMapping(clientToolMapping) {
 			resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
 		}
-		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
+		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, responseModel, upstreamModel)
 		if err != nil {
 			return nil, err
 		}
@@ -233,7 +234,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		imageCount = streamResult.imageCount
 		imageOutputSizes = streamResult.imageOutputSizes
 	} else {
-		nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
+		nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, responseModel, upstreamModel)
 		if err != nil {
 			return nil, err
 		}

@@ -46,6 +46,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return nil, fmt.Errorf("missing model in request")
 	}
+	responseModel := openAIResponseModelFromContext(ctx, originalModel)
 	clientStream := gjson.GetBytes(body, "stream").Bool()
 
 	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
@@ -117,9 +118,9 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 	}
 
 	if clientStream {
-		return s.handleNativeAnthropicStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, reasoningEffort, startTime)
+		return s.handleNativeAnthropicStreamingResponse(ctx, resp, c, account, responseModel, billingModel, upstreamModel, reasoningEffort, startTime)
 	}
-	return s.handleNativeAnthropicBufferedResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, reasoningEffort, startTime)
+	return s.handleNativeAnthropicBufferedResponse(ctx, resp, c, account, responseModel, billingModel, upstreamModel, reasoningEffort, startTime)
 }
 
 // nativeAnthropicTargetURL 组装国产供应商原生 Anthropic messages 端点。
