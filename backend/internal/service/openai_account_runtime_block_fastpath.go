@@ -13,8 +13,9 @@ const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
 	openAIOAuth429FallbackCooldown        = 5 * time.Second
 	openAIOAuth429RetryWindow             = 2 * time.Minute
+	openAIOAuth429MinRetryDelay           = 300 * time.Millisecond
 	openAIOAuth429RetryDelay              = 500 * time.Millisecond
-	openAIOAuth429MaxRetryDelay           = 8 * time.Second
+	openAIOAuth429MaxRetryDelay           = time.Second
 	openAIOAuth429MaxAccountAttempts      = 3
 	openAIStopSchedulingBridgeCooldown    = 2 * time.Minute
 	openAIOAuth429StormWindow             = 10 * time.Second
@@ -316,6 +317,9 @@ func openAIOAuth429SameAccountRetryDelay(headers http.Header, deadline time.Time
 	now := time.Now()
 	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
 		delay = resetAt.Sub(now)
+	}
+	if delay < openAIOAuth429MinRetryDelay {
+		delay = openAIOAuth429MinRetryDelay
 	}
 	if delay > openAIOAuth429MaxRetryDelay {
 		delay = openAIOAuth429MaxRetryDelay
