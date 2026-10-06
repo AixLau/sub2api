@@ -484,8 +484,13 @@ class JobManager:
                 await self._start_watch(job)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            job.state, job.message = "failed", "登录或导入失败；请核查账号、网络和 Sub2API 状态"
+        except Exception as exc:
+            # Keep the sanitized login-layer reason visible to the operator;
+            # local_relogin removes the submitted password and TOTP seed before
+            # raising. This is essential for distinguishing network/bootstrap
+            # failures from bad credentials.
+            reason = str(exc).strip()
+            job.state, job.message = "failed", reason[:320] or "登录或导入失败；请核查账号、网络和 Sub2API 状态"
         finally:
             job.manual_pending = False
             if job.state == "failed" and job.plugin_id is not None:

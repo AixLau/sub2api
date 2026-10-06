@@ -93,37 +93,46 @@ def relogin_payload(
         raise ValueError(f"不支持的导出格式：{export_format}")
     AuthFlow, Config, MailboxUnavailableProvider, make_cpa, make_sub2api = _load_upstream(source_dir)
 
-    flow = AuthFlow(
-        Config(proxy=proxy),
-        env_overrides={
-            "WEBUI_ALLOW_LOGIN": "1",
-            "OAUTH_REFRESH_ONLY": "1",
-            "OAUTH_CODEX_RT_EXCHANGE": "1",
-            "OAUTH_CODEX_RT_BEFORE_CALLBACK": "1",
-            "AUTH_TRACE_DUMP": "0",
-            "AUTH_TRACE_INCLUDE_COOKIE": "0",
-            "AUTH_HTTP_TRACE": "0",
-        },
-        account_callback=lambda _email: {"password": password, "totp_secret": secret},
-    )
-    flow.result.totp_secret = secret
     provider = MailboxUnavailableProvider(email, "未配置邮箱收件接口")
-    logger = logging.getLogger("platforms.chatgpt")
-    capture = _FailureCapture()
-    old_propagate = logger.propagate
-    logger.addHandler(capture)
-    logger.propagate = False
-    try:
+    result = None
+    last_reason = ""
+    # A transient Cloudflare 403 during OAuth bootstrap leaves the upstream
+    # state unusable and otherwise surfaces later as a misleading 409
+    # invalid_state. Start a fresh flow once when that exact failure occurs.
+    for attempt in range(2):
+        flow = AuthFlow(
+            Config(proxy=proxy),
+            env_overrides={
+                "WEBUI_ALLOW_LOGIN": "1",
+                "OAUTH_REFRESH_ONLY": "1",
+                "OAUTH_CODEX_RT_EXCHANGE": "1",
+                "OAUTH_CODEX_RT_BEFORE_CALLBACK": "1",
+                "AUTH_TRACE_DUMP": "0",
+                "AUTH_TRACE_INCLUDE_COOKIE": "0",
+                "AUTH_HTTP_TRACE": "0",
+            },
+            account_callback=lambda _email: {"password": password, "totp_secret": secret},
+        )
+        flow.result.totp_secret = secret
+        logger = logging.getLogger("platforms.chatgpt")
+        capture = _FailureCapture()
+        old_propagate = logger.propagate
+        logger.addHandler(capture)
+        logger.propagate = False
         try:
-            result = flow.run_protocol_login(provider, email, password)
-        except Exception as exc:
-            if capture.account_disabled:
-                raise RuntimeError("OpenAI 在 2FA 阶段返回 403，提示账号已删除或停用") from None
-            reason = str(exc).replace(password, "[REDACTED]").replace(secret, "[REDACTED]")
-            raise RuntimeError(f"OpenAI 重登失败：{reason[:280]}") from None
-    finally:
-        logger.removeHandler(capture)
-        logger.propagate = old_propagate
+            try:
+                result = flow.run_protocol_login(provider, email, password)
+                break
+            except Exception as exc:
+                if capture.account_disabled:
+                    raise RuntimeError("OpenAI 在 2FA 阶段返回 403，提示账号已删除或停用") from None
+                last_reason = str(exc).replace(password, "[REDACTED]").replace(secret, "[REDACTED]")
+                if attempt == 0 and "invalid_state" in last_reason:
+                    continue
+                raise RuntimeError(f"OpenAI 重登失败：{last_reason[:280]}") from None
+        finally:
+            logger.removeHandler(capture)
+            logger.propagate = old_propagate
     if not result.access_token or not result.refresh_token:
         raise RuntimeError("未同时取得 access_token 和 refresh_token，不生成无效文件")
 
