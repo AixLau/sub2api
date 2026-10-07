@@ -82,3 +82,14 @@ func TestBiologicalRiskUpstreamErrorAutoBlacklistsUser(t *testing.T) {
 	_, _ = svc.handleErrorResponse(ctx, resp, c, &account, nil, "gpt-5.6-sol")
 	require.Contains(t, repo.values[SettingKeyCodexCLIOnlyUserBlacklist], "99")
 }
+
+func TestCyberPolicyUpstreamErrorAutoBlacklistsUser(t *testing.T) {
+	settings, repo := newCodexBlacklistSettings()
+	svc := &OpenAIGatewayService{settingService: settings}
+	account := codexBlacklistAccount()
+	c, ctx := codexBlacklistContext(101, "codex_cli_rs/0.146.0", "")
+	body := []byte(`{"error":{"code":"cyber_policy","message":"This request was flagged for cyber policy."}}`)
+	resp := &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}}
+	_, _ = svc.handleErrorResponse(ctx, resp, c, &account, nil, "gpt-5.6-sol")
+	require.Contains(t, repo.values[SettingKeyCodexCLIOnlyUserBlacklist], "101")
+}

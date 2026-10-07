@@ -19,7 +19,8 @@ func (s *OpenAIGatewayService) maybeBlacklistCodexBiologicalRiskUser(ctx context
 	if s == nil || s.settingService == nil || account == nil || account.Platform != PlatformOpenAI {
 		return
 	}
-	if !isOpenAIBiologicalRiskMessage(message) && !isOpenAIBiologicalRiskMessage(extractUpstreamErrorMessage(body)) {
+	cyberPolicy, _, _ := detectOpenAICyberPolicy(body)
+	if !cyberPolicy && !isOpenAIBiologicalRiskMessage(message) && !isOpenAIBiologicalRiskMessage(extractUpstreamErrorMessage(body)) {
 		return
 	}
 	userID := codexSessionIdentityUserID(c)
