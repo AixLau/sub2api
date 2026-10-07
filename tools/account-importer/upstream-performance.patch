@@ -1,0 +1,216 @@
+--- a/platforms/chatgpt/protocol/openai_sentinel_quickjs.js
++++ b/platforms/chatgpt/protocol/openai_sentinel_quickjs.js
+@@ -546,6 +546,21 @@
+   if (remaining > 0) await new Promise(r => setTimeout(r, remaining));
+ }
+ 
++// Clear the losing timer on success and failure so it cannot keep Node alive.
++async function withTimeout(operation, timeoutMs, message) {
++  let timer;
++  try {
++    return await Promise.race([
++      operation,
++      new Promise((_, reject) => {
++        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
++      }),
++    ]);
++  } finally {
++    clearTimeout(timer);
++  }
++}
++
+ // ─── Main ──────────────────────────────────────────────────────
+ 
+ (async () => {
+@@ -554,10 +569,7 @@
+ 
+   if (action === 'requirements') {
+     try {
+-      await Promise.race([
+-        context.SentinelSDK.init(flow),
+-        new Promise((_, rej) => setTimeout(() => rej(new Error('init timeout')), 8000)),
+-      ]);
++      await withTimeout(context.SentinelSDK.init(flow), 8000, 'init timeout');
+       if (capturedProof) {
+         process.stdout.write(JSON.stringify({ request_p: capturedProof }));
+         return;
+@@ -572,18 +584,12 @@
+     const behaviorMs = Number(input.behavior_duration_ms || 4200);
+ 
+     try {
+-      const mainToken = await Promise.race([
+-        context.SentinelSDK.token(flow),
+-        new Promise((_, rej) => setTimeout(() => rej(new Error('SDK token timeout')), 8000)),
+-      ]);
++      const mainToken = await withTimeout(context.SentinelSDK.token(flow), 8000, 'SDK token timeout');
+       if (mainToken) {
+         await dispatchBehavior(behaviorMs);
+         let soToken = '';
+         try {
+-          soToken = await Promise.race([
+-            context.SentinelSDK.sessionObserverToken(flow),
+-            new Promise((_, rej) => setTimeout(() => rej(new Error('SO timeout')), 5000)),
+-          ]);
++          soToken = await withTimeout(context.SentinelSDK.sessionObserverToken(flow), 5000, 'SO timeout');
+         } catch (_) {
+           soToken = '';
+         }
+--- a/platforms/chatgpt/protocol/auth_flow.py
++++ b/platforms/chatgpt/protocol/auth_flow.py
+@@ -19,6 +19,7 @@
+ import subprocess
+ import time
+ import uuid
++from functools import wraps
+ from datetime import datetime
+ from typing import Optional, Any
+ from urllib.parse import urlparse, parse_qs, parse_qsl, urljoin, urlencode, urlunparse
+@@ -38,6 +39,24 @@
+ from platforms.chatgpt.protocol.totp import totp_now as _totp_now
+ 
+ logger = logging.getLogger(__name__)
++
++
++def _timed_auth_step(function):
++    @wraps(function)
++    def measured(self, *args, **kwargs):
++        started = time.perf_counter()
++        success = False
++        try:
++            result = function(self, *args, **kwargs)
++            success = True
++            return result
++        finally:
++            logging.getLogger("account_import.timing").info(
++                "auth_step_done flow=%x stage=%s elapsed_ms=%d completed=%s",
++                id(self), function.__name__,
++                round((time.perf_counter() - started) * 1000), success,
++            )
++    return measured
+ 
+ 
+ class AuthResult:
+@@ -400,6 +419,7 @@
+             for it in obj:
+                 AuthFlow._walk_collect_str_fields(it, wanted_keys, out, depth + 1, max_depth)
+ 
++    @_timed_auth_step
+     def fetch_client_auth_session_dump(self, stage: str = "") -> dict:
+         """
+         尝试读取 auth.openai 的 client_auth_session_dump：
+@@ -646,6 +666,7 @@
+             return False
+         return False
+ 
++    @_timed_auth_step
+     def _follow_authorize_for_callback(self, start_url: str, redirect_uri: str, trace_prefix: str) -> tuple[str, str]:
+         """
+         跟随 auth.openai.com 授权链路，捕获 callback（不消费 callback）。
+@@ -725,6 +746,7 @@
+         except Exception:
+             return url
+ 
++    @_timed_auth_step
+     def _exchange_codex_callback_code(
+         self,
+         callback_url: str,
+@@ -1305,6 +1327,7 @@
+ 
+         return callback_url, final_url
+ 
++    @_timed_auth_step
+     def oauth_codex_rt_exchange(self, mail_provider: Optional[MailProvider] = None) -> bool:
+         """
+         纯协议方式获取 RT（参考 any-auto-register）：
+@@ -1567,6 +1590,7 @@
+                     headers[name] = fp[key]
+         return headers
+ 
++    @_timed_auth_step
+     def warmup(self) -> bool:
+         """GET chatgpt.com 种全套 cookie（含 oai-did），成功返回 True。
+ 
+@@ -1677,6 +1701,7 @@
+         return False
+ 
+     # ── Step 1: 检查代理连通性 ──
++    @_timed_auth_step
+     def check_proxy(self) -> bool:
+         logger.info("检查网络连通性...")
+         try:
+@@ -1716,6 +1741,7 @@
+         return False
+ 
+     # ── Step 2: 获取 CSRF Token ──
++    @_timed_auth_step
+     def get_csrf_token(self) -> str:
+         logger.info("[1/10] 获取 CSRF Token...")
+         headers = self._common_headers("https://chatgpt.com/auth/login")
+@@ -1755,6 +1781,7 @@
+         return csrf
+ 
+     # ── Step 3: 获取 auth URL ──
++    @_timed_auth_step
+     def get_auth_url(self, csrf_token: str, email: str = "", login_hint: str = "") -> str:
+         logger.info("[2/10] 获取 OpenAI 授权地址...")
+         headers = self._common_headers("https://chatgpt.com/auth/login")
+@@ -1792,6 +1819,7 @@
+         return auth_url
+ 
+     # ── Step 4: OAuth 初始化 & 获取 device_id ──
++    @_timed_auth_step
+     def auth_oauth_init(self, auth_url: str) -> str:
+         """跟随 authorize 链，落 authorize 会话状态并取回 oai-did。
+ 
+@@ -1884,6 +1912,7 @@
+             "timezone": fp.get("timezone", ""),  # IP 联动时区
+         }
+ 
++    @_timed_auth_step
+     def get_sentinel_token(self, device_id: str) -> str:
+         logger.info("[4/10] 获取 Sentinel Token (PoW)...")
+         from platforms.chatgpt.protocol.sentinel import get_sentinel_token
+@@ -1900,6 +1929,7 @@
+         return token
+ 
+     # ── Step 6: 提交注册邮箱 ──
++    @_timed_auth_step
+     def authorize_continue(
+         self,
+         email: str,
+@@ -2260,6 +2290,7 @@
+         random.shuffle(pwd_list)
+         return "".join(pwd_list)
+ 
++    @_timed_auth_step
+     def login_password_verify(self, password: str) -> dict:
+         """已有账号密码登录一步（/password/verify）。"""
+         headers = self._common_headers("https://auth.openai.com/log-in/password")
+@@ -2283,6 +2314,7 @@
+             return {}
+ 
+     # ── Step 7.5: 提交 TOTP 2FA 验证码 ──
++    @_timed_auth_step
+     def submit_mfa_totp(self, totp_code: str, challenge_id: str) -> dict:
+         """提交 TOTP 2FA 验证码（已有账号登录时，密码验证后进入 mfa-challenge 状态）。
+ 
+@@ -2552,6 +2584,7 @@
+         return ""
+ 
+     # ── Step 10: 跟踪重定向链 ──
++    @_timed_auth_step
+     def follow_redirect_chain(self, start_url: str) -> tuple[str, str]:
+         """手动跟踪重定向，返回 (callback_url, final_url)"""
+         logger.info("[9/10] 跟踪重定向链...")
+@@ -3370,6 +3403,11 @@
+             continue_url = self._normalize_continue_url(continue_url)
+             if (not self.result.refresh_token) and self._env_flag("OAUTH_CODEX_RT_BEFORE_CALLBACK", "1"):
+                 self.oauth_codex_rt_exchange(mail_provider=mail_provider)
++            # The importer needs OAuth credentials only. Once both are present,
++            # the web callback and diagnostic dump add no required data.
++            if refresh_only_mode and self.result.access_token and self.result.refresh_token:
++                logger.info("纯协议登录凭据已完整，跳过 Web callback 和会话探测")
++                return self.result
+             callback_url, final_url = self.follow_redirect_chain(continue_url)
+             if (not callback_url) and final_url and ("/workspace" in final_url):
+                 normalized = self._normalize_continue_url(final_url)

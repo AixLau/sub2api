@@ -44,6 +44,12 @@ one-click reauthorization survive importer restarts. Superseded jobs stop
 monitoring and have their active stored credentials cleared.
 The login adapter uses the pinned any-auto-register revision recorded in the
 Dockerfile; upstream source is fetched at image build time, not vendored here.
+The build applies `upstream-performance.patch` to clear Sentinel deadline timers
+when operations finish and to stop refresh-only login once both OAuth tokens are
+available. It retains the behavior collection period and authentication checks.
+The patch also emits `auth_step_done` timing logs without credentials or response
+bodies. Run `test_protocol_performance` inside the importer image to verify timer
+cleanup, password/TOTP processing, and the refresh-only completion path offline.
 No third-party login service is used. Account login may still require mailbox
 verification or fail according to the upstream authentication response.
 

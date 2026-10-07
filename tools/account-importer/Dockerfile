@@ -6,6 +6,8 @@ RUN git init /opt/any-auto-register \
     && git -C /opt/any-auto-register remote add origin https://github.com/zc-zhangchen/any-auto-register.git \
     && git -C /opt/any-auto-register fetch --depth=1 origin "${AUTH_SOURCE_COMMIT}" \
     && git -C /opt/any-auto-register archive FETCH_HEAD | tar -x -C /opt/any-auto-register
+COPY upstream-performance.patch /tmp/upstream-performance.patch
+RUN git -C /opt/any-auto-register apply /tmp/upstream-performance.patch
 
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
