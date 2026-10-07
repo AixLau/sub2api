@@ -89,3 +89,47 @@ func TestOpenAIProcessingFailureRetryBeforeSemanticOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAIStreamReadErrorEventUsesBoundedOAuthRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	payload := []byte(`{"type":"response.failed","response":{"id":"resp_read_error","model":"gpt-6.1-sol","status":"failed","output":[],"error":{"code":"stream_read_error","message":"stream_read_error","type":"upstream_error"}}}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	account := &Account{ID: 297, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc := &OpenAIGatewayService{}
+
+	require.True(t, openAIStreamFailedEventShouldFailover(payload, "stream_read_error"))
+	failure := svc.newOpenAIStreamFailoverErrorWithModel(c, account, true, "rid-read-error", payload, "stream_read_error", "gpt-6.1-sol")
+	require.True(t, failure.RetryableOnSameAccount)
+	require.True(t, failure.RequestScopedTransient)
+	require.Equal(t, OpenAIStreamReadFailureReason, failure.Reason)
+	require.Equal(t, OpenAIStreamReadFailureRetryLimit, failure.SameAccountRetryMax)
+	require.Equal(t, GatewayFailureScopeRequest, failure.Scope)
+	require.False(t, failure.ShouldReportAccountScheduleFailure())
+	require.False(t, c.Writer.Written(), "pre-output semantic failures must remain available for server retry")
+}
+
+func TestOpenAIStreamReadErrorEventDoesNotEnableOAuthRetryAfterSemanticOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stream := strings.Join([]string{
+		"event: response.output_text.delta",
+		`data: {"type":"response.output_text.delta","delta":"partial"}`,
+		"",
+		"event: response.failed",
+		`data: {"type":"response.failed","response":{"id":"resp_read_error","status":"failed","output":[],"error":{"code":"stream_read_error","message":"stream_read_error","type":"upstream_error"}}}`,
+		"",
+	}, "\n")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(stream))}
+	account := &Account{ID: 298, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "model", "model")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "a stream error after visible output must not replay the request")
+	require.Contains(t, rec.Body.String(), "stream_read_error")
+}

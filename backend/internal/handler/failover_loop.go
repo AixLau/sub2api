@@ -137,6 +137,8 @@ func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, 
 		switch failoverErr.Reason {
 		case service.OpenAIResponseProtectionUnavailableReason, service.OpenAIProcessingFailureReason:
 			return service.OpenAITransientFailureRetryLimit
+		case service.OpenAIStreamReadFailureReason:
+			return service.OpenAIStreamReadFailureRetryLimit
 		}
 	}
 	if account == nil {

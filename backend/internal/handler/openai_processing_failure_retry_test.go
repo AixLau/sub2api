@@ -15,6 +15,8 @@ import (
 
 const processingFailureEvent = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"status\":\"failed\",\"error\":{\"code\":\"server_error\",\"message\":\"An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID rid-processing in your message.\"}}}\n\n"
 
+const streamReadFailureEvent = "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_read_error\",\"model\":\"gpt-6.1-sol\",\"status\":\"failed\",\"output\":[],\"error\":{\"code\":\"stream_read_error\",\"message\":\"stream_read_error\",\"type\":\"upstream_error\"}}}\n\n"
+
 func processingRetrySSE(events string) *http.Response {
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -45,6 +47,21 @@ func TestOpenAIProcessingFailureRetryRecoversOnSameOAuthAccount(t *testing.T) {
 			require.NotContains(t, rec.Body.String(), "resp_failed")
 		})
 	}
+}
+
+func TestOpenAIStreamReadErrorRetryRecoversOnSameOAuthAccount(t *testing.T) {
+	upstream := newAstraProCapturedUpstream(processingRetrySSE(streamReadFailureEvent), processingRetrySuccess())
+	h := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	h.maxAccountSwitches = 0
+	c, rec := newAstraProFailoverContext(t, `{"model":"gpt-6-astra","stream":true,"input":"hello"}`)
+	markForwardableModerationReceipt(c, "openai_responses")
+
+	h.Responses(c)
+	_, accounts, _ := upstream.snapshot()
+	require.Equal(t, []int64{1, 1}, accounts)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "recovered")
+	require.NotContains(t, rec.Body.String(), "stream_read_error")
 }
 
 func TestOpenAIProcessingFailureRetryStopsAfterFiveRetries(t *testing.T) {

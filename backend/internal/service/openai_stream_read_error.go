@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -69,6 +72,29 @@ func OpenAIUpstreamStreamReadErrorDetails(err error) (code, message string, ok b
 		return "", "", false
 	}
 	return streamErr.clientCode, streamErr.clientMessage, true
+}
+
+// isOpenAIStreamReadErrorEvent reports the semantic stream failure emitted by
+// OpenAI inside an otherwise successful SSE response. This is distinct from a
+// transport read error: the upstream has already delivered a complete
+// response.failed event, but the failure is still safe to replay when no
+// semantic output has reached the client.
+func isOpenAIStreamReadErrorEvent(payload []byte, message string) bool {
+	if len(bytes.TrimSpace(payload)) > 0 && gjson.ValidBytes(payload) {
+		for _, path := range []string{"response.error.code", "error.code", "code"} {
+			switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, path).String())) {
+			case "stream_read_error", "upstream_stream_read_error":
+				return true
+			}
+		}
+	}
+	combined := strings.ToLower(strings.TrimSpace(message))
+	if len(payload) > 0 && gjson.ValidBytes(payload) {
+		for _, path := range []string{"response.error.message", "error.message", "message"} {
+			combined += " " + strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, path).String()))
+		}
+	}
+	return strings.Contains(combined, "stream_read_error")
 }
 
 func classifyOpenAIUpstreamStreamReadError(err error) (code, message string) {

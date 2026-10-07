@@ -1583,6 +1583,9 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if isOpenAINonRetryableProtocolFailure(payload) {
 		return false
 	}
+	if isOpenAIStreamReadErrorEvent(payload, message) {
+		return true
+	}
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
 	}
@@ -1635,6 +1638,9 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
 	if isOpenAINonRetryableProtocolFailure(payload) {
 		return false
+	}
+	if isOpenAIStreamReadErrorEvent(payload, message) {
+		return true
 	}
 	if hit, _, _ := detectOpenAICyberPolicy(payload); hit {
 		return false
@@ -1827,6 +1833,13 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
 		// this budget only to pre-output stream failures, avoiding nested HTTP
 		// retries when the BPS transport has already retried a non-2xx response.
 		setOpenAITransientFailureRetry(failoverErr, OpenAIProcessingFailureReason, message)
+	} else if account != nil && account.IsOpenAIOAuthLike() && isOpenAIStreamReadErrorEvent(payload, message) {
+		// A semantic stream_read_error is recoverable only while the response is
+		// still pre-output (callers invoke this constructor from that branch).
+		// Keep the replay OAuth-local and bounded so Codex does not observe the
+		// intermediate response.failed event.
+		setOpenAITransientFailureRetry(failoverErr, OpenAIStreamReadFailureReason, message)
+		failoverErr.SameAccountRetryMax = OpenAIStreamReadFailureRetryLimit
 	}
 	failoverErr.SafeToFailoverAfterWrite = true
 	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {

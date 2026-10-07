@@ -515,9 +515,17 @@ const (
 	// OpenAIProcessingFailureReason identifies the provider's explicit
 	// "An error occurred while processing your request" stream failure.
 	OpenAIProcessingFailureReason = GatewayFailureReason("openai_processing_failure")
+	// OpenAIStreamReadFailureReason identifies a semantic stream_read_error
+	// emitted before any client-visible output. It is request-scoped because the
+	// upstream stream failed transiently, not because the OAuth credential is
+	// unhealthy.
+	OpenAIStreamReadFailureReason = GatewayFailureReason("openai_stream_read_failure")
 	// OpenAITransientFailureRetryLimit is the number of additional attempts for
-	// the two typed provider failures above, before ordinary account failover.
+	// the typed provider failures above, before ordinary account failover.
 	OpenAITransientFailureRetryLimit = 5
+	// OpenAIStreamReadFailureRetryLimit keeps replay of a request whose upstream
+	// stream failed bounded while covering the usual intermittent reset.
+	OpenAIStreamReadFailureRetryLimit = 2
 )
 
 func isOpenAIResponseProtectionUnavailable(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
