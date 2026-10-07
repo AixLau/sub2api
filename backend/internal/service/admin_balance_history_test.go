@@ -81,6 +81,38 @@ func TestSumPaidSubscriptionOrdersIncludesCompletedSubscriptionFees(t *testing.T
 		Save(ctx)
 	require.NoError(t, err)
 
+	group, err := client.Group.Create().
+		SetName("manual-subscription-group").
+		SetSubscriptionType("subscription").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.SubscriptionPlan.Create().
+		SetGroupID(group.ID).
+		SetName("Manual Pro").
+		SetPrice(19.99).
+		SetCurrency("USD").
+		SetValidityDays(30).
+		SetValidityUnit("day").
+		SetFeatures("").
+		SetProductName("").
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+	startsAt := time.Now()
+	_, err = client.UserSubscription.Create().
+		SetUserID(user.ID).
+		SetGroupID(group.ID).
+		SetStartsAt(startsAt).
+		SetExpiresAt(startsAt.AddDate(0, 0, 30)).
+		SetAssignedBy(user.ID).
+		SetStatus(SubscriptionStatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	manualTotal, err := (&adminServiceImpl{entClient: client}).sumManualSubscriptionPlanPrices(ctx, user.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 19.99, manualTotal, 0.000001)
+
 	got, err := (&adminServiceImpl{entClient: client}).sumPaidSubscriptionOrders(ctx, user.ID)
 	require.NoError(t, err)
 	require.InDelta(t, 29.99, got, 0.000001)

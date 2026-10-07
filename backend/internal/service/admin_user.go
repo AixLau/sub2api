@@ -15,6 +15,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -834,7 +837,11 @@ func (s *adminServiceImpl) totalRechargedByUser(ctx context.Context, userID int6
 	if err != nil {
 		return 0, err
 	}
-	return balanceTotal + subscriptionTotal, nil
+	manualSubscriptionTotal, err := s.sumManualSubscriptionPlanPrices(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return balanceTotal + subscriptionTotal + manualSubscriptionTotal, nil
 }
 
 func (s *adminServiceImpl) sumPaidSubscriptionOrders(ctx context.Context, userID int64) (float64, error) {
@@ -861,6 +868,46 @@ func (s *adminServiceImpl) sumPaidSubscriptionOrders(ctx context.Context, userID
 		return 0, nil
 	}
 	return result[0].Sum, nil
+}
+
+// sumManualSubscriptionPlanPrices values admin-assigned subscriptions only
+// when exactly one plan matches their group and validity period. Manual grants
+// do not carry a payment order or plan ID, so ambiguous matches are excluded
+// instead of guessing a price.
+func (s *adminServiceImpl) sumManualSubscriptionPlanPrices(ctx context.Context, userID int64) (float64, error) {
+	if s == nil || s.entClient == nil {
+		return 0, nil
+	}
+	subscriptions, err := s.entClient.UserSubscription.Query().
+		Where(
+			usersubscription.UserIDEQ(userID),
+			usersubscription.AssignedByNotNil(),
+		).
+		All(mixins.SkipSoftDelete(ctx))
+	if err != nil {
+		return 0, err
+	}
+
+	var total float64
+	for _, subscription := range subscriptions {
+		validityDays := int(math.Ceil(subscription.ExpiresAt.Sub(subscription.StartsAt).Hours() / 24))
+		if validityDays <= 0 {
+			continue
+		}
+		plans, err := s.entClient.SubscriptionPlan.Query().
+			Where(
+				subscriptionplan.GroupIDEQ(subscription.GroupID),
+				subscriptionplan.ValidityDaysEQ(validityDays),
+			).
+			All(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if len(plans) == 1 && plans[0].Price > 0 {
+			total += plans[0].Price
+		}
+	}
+	return total, nil
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
