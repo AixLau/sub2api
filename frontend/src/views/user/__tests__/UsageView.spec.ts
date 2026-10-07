@@ -497,7 +497,6 @@ describe('user UsageView', () => {
     expect(wrapper.find('.endpoint-distribution-chart').exists()).toBe(false)
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('false')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-consumption-trend')).toBe('false')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-standard-cost')).toBe('false')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cache-rate')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-height')).toBe('h-80')
 

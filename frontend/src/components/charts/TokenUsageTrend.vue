@@ -63,14 +63,12 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   surface?: 'default' | 'tremor' | 'playfulDashboard'
   showCost?: boolean
-  showStandardCost?: boolean
   showConsumptionTrend?: boolean
   costMetric?: 'standard' | 'account'
   chartHeightClass?: string
 }>(), {
   chartHeightClass: 'h-48',
   showConsumptionTrend: true,
-  showStandardCost: false,
   costMetric: 'standard'
 })
 
@@ -165,7 +163,6 @@ const chartHeight = computed(() => {
 })
 
 const shouldShowConsumptionTrend = computed(() => props.showCost && props.showConsumptionTrend)
-const shouldShowStandardCost = computed(() => props.showCost && props.showStandardCost)
 
 const isPlayfulDashboard = computed(() => props.surface === 'playfulDashboard')
 
@@ -284,7 +281,6 @@ const buildTooltipHtml = (title: unknown): string => {
   const costLabel = props.costMetric === 'account' ? 'usage.trend.accountCost' : 'usage.trend.cost'
   const summaryRows = [
     ...(props.showCost && cost !== undefined ? [`${t(costLabel)}: $${formatCost(cost)}`] : []),
-    ...(shouldShowStandardCost.value && props.costMetric === 'account' ? [`${t('usage.trend.cost')}: $${formatCost(data.cost)}`] : []),
     ...(props.showCost ? [`${t('usage.trend.consumption')}: $${formatCost(data.actual_cost)}`] : []),
     `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
   ]
