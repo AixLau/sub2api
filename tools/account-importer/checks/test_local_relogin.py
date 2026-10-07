@@ -22,6 +22,7 @@ class FakeFlow:
         assert self.result.totp_secret == "JBSWY3DPEHPK3PXP"
         assert self.account_callback(email)["password"] == password
         assert self.env_overrides["OAUTH_REFRESH_ONLY"] == "1"
+        assert self.env_overrides["OAUTH_CODEX_PROMPT"] == ""
         return SimpleNamespace(
             access_token="fake-access", refresh_token="fake-refresh", id_token="fake-id"
         )

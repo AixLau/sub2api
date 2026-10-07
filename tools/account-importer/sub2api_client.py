@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
 
 from model_restrictions import MODEL_SETTING_KEYS, model_settings
+
+
+TIMING_LOGGER = logging.getLogger("account_import.timing")
 
 
 class AdminAPIError(RuntimeError):
@@ -81,10 +86,25 @@ class Sub2APIClient:
         self, method: str, path: str, *, params: dict | None = None, payload: dict | None = None, timeout: float = 20.0
     ):
         url = f"{self.base_url}/api/v1/admin/{path.lstrip('/')}"
+        started = time.perf_counter()
         try:
             response = await self._http.request(method, url, params=params, json=payload, timeout=timeout)
         except httpx.HTTPError as exc:
+            TIMING_LOGGER.info(
+                "admin_request_failed method=%s path=%s elapsed_ms=%d error=%s",
+                method,
+                path,
+                round((time.perf_counter() - started) * 1000),
+                type(exc).__name__,
+            )
             raise AdminAPIError(f"管理员接口连接失败：{type(exc).__name__}") from None
+        TIMING_LOGGER.info(
+            "admin_request_done method=%s path=%s status=%d elapsed_ms=%d",
+            method,
+            path,
+            response.status_code,
+            round((time.perf_counter() - started) * 1000),
+        )
         try:
             body = response.json()
         except ValueError:

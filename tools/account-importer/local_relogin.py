@@ -13,11 +13,20 @@ import logging
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 DEFAULT_SOURCE_DIR = Path(os.getenv("ACCOUNT_IMPORT_AUTH_SOURCE", "/opt/any-auto-register"))
 EXPORT_FORMATS = ("sub2api", "cpa", "native")
+TIMING_LOGGER = logging.getLogger("account_import.timing")
+
+
+def _masked_email(email: str) -> str:
+    local, separator, domain = email.partition("@")
+    if not separator:
+        return "[REDACTED]"
+    return f"{local[:2]}***@{domain}"
 
 
 def parse_account_line(line: str) -> tuple[str, str, str]:
@@ -100,6 +109,13 @@ def relogin_payload(
     # state unusable and otherwise surfaces later as a misleading 409
     # invalid_state. Start a fresh flow once when that exact failure occurs.
     for attempt in range(2):
+        started = time.perf_counter()
+        TIMING_LOGGER.info(
+            "oauth_login_start email=%s attempt=%d proxy_configured=%s",
+            _masked_email(email),
+            attempt + 1,
+            bool(proxy),
+        )
         flow = AuthFlow(
             Config(proxy=proxy),
             env_overrides={
@@ -107,6 +123,10 @@ def relogin_payload(
                 "OAUTH_REFRESH_ONLY": "1",
                 "OAUTH_CODEX_RT_EXCHANGE": "1",
                 "OAUTH_CODEX_RT_BEFORE_CALLBACK": "1",
+                # Reuse the session authenticated by the password + TOTP flow
+                # when the Codex PKCE exchange starts. The default prompt=login
+                # can send the same account through a second login challenge.
+                "OAUTH_CODEX_PROMPT": "",
                 "AUTH_TRACE_DUMP": "0",
                 "AUTH_TRACE_INCLUDE_COOKIE": "0",
                 "AUTH_HTTP_TRACE": "0",
@@ -122,8 +142,21 @@ def relogin_payload(
         try:
             try:
                 result = flow.run_protocol_login(provider, email, password)
+                TIMING_LOGGER.info(
+                    "oauth_login_done email=%s attempt=%d elapsed_ms=%d",
+                    _masked_email(email),
+                    attempt + 1,
+                    round((time.perf_counter() - started) * 1000),
+                )
                 break
             except Exception as exc:
+                TIMING_LOGGER.info(
+                    "oauth_login_failed email=%s attempt=%d elapsed_ms=%d reason=%s",
+                    _masked_email(email),
+                    attempt + 1,
+                    round((time.perf_counter() - started) * 1000),
+                    type(exc).__name__,
+                )
                 if capture.account_disabled:
                     raise RuntimeError("OpenAI 在 2FA 阶段返回 403，提示账号已删除或停用") from None
                 last_reason = str(exc).replace(password, "[REDACTED]").replace(secret, "[REDACTED]")
