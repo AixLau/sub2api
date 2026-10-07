@@ -14,6 +14,8 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -757,7 +759,7 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		totalRecharged, err := s.totalRechargedByUser(ctx, userID)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -769,7 +771,7 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		totalRecharged, err := s.totalRechargedByUser(ctx, userID)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -786,7 +788,7 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 	}
 	total := result.Total
 	// Aggregate total recharged amount (only once, regardless of type filter)
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	totalRecharged, err := s.totalRechargedByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -813,11 +815,52 @@ func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID 
 	}
 	codes := mergeUserHistoryCodes(params, redeemCodes, affiliateCodes, subscriptionCodes)
 
-	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	totalRecharged, err := s.totalRechargedByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 	return codes, redeemTotal + affiliateTotal + subscriptionTotal, totalRecharged, nil
+}
+
+// totalRechargedByUser combines balance credits with successfully paid
+// subscription orders. Subscription purchases do not create balance redeem
+// codes, so summing redeem codes alone under-reports the user's total spend.
+func (s *adminServiceImpl) totalRechargedByUser(ctx context.Context, userID int64) (float64, error) {
+	balanceTotal, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	subscriptionTotal, err := s.sumPaidSubscriptionOrders(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return balanceTotal + subscriptionTotal, nil
+}
+
+func (s *adminServiceImpl) sumPaidSubscriptionOrders(ctx context.Context, userID int64) (float64, error) {
+	if s == nil || s.entClient == nil {
+		return 0, nil
+	}
+	var result []struct {
+		Sum float64 `json:"sum"`
+	}
+	err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.UserIDEQ(userID),
+			paymentorder.OrderTypeEQ(payment.OrderTypeSubscription),
+			paymentorder.StatusEQ(payment.OrderStatusCompleted),
+			paymentorder.PlanIDNotNil(),
+			paymentorder.AmountGT(0),
+		).
+		Aggregate(dbent.Sum(paymentorder.FieldAmount)).
+		Scan(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	if len(result) == 0 {
+		return 0, nil
+	}
+	return result[0].Sum, nil
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {

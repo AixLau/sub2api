@@ -1,12 +1,90 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSumPaidSubscriptionOrdersIncludesCompletedSubscriptionFees(t *testing.T) {
+	client := newPaymentConfigServiceTestClient(t)
+	ctx := context.Background()
+	user, err := client.User.Create().
+		SetEmail("subscription-total@example.com").
+		SetPasswordHash("hash").
+		SetUsername("subscription-total").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(29.99).
+		SetPayAmount(29.99).
+		SetFeeRate(0).
+		SetBonusAmount(0).
+		SetRechargeCode("").
+		SetOutTradeNo("subscription-total-completed").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-1").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(1).
+		SetStatus(payment.OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(80).
+		SetPayAmount(80).
+		SetFeeRate(0).
+		SetBonusAmount(0).
+		SetRechargeCode("").
+		SetOutTradeNo("subscription-total-external").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("trade-external").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(payment.OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(50).
+		SetPayAmount(50).
+		SetFeeRate(0).
+		SetBonusAmount(0).
+		SetRechargeCode("").
+		SetOutTradeNo("subscription-total-pending").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(payment.OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	got, err := (&adminServiceImpl{entClient: client}).sumPaidSubscriptionOrders(ctx, user.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 29.99, got, 0.000001)
+}
 
 func TestMergeBalanceHistoryCodesIncludesAffiliateTransfersByDefault(t *testing.T) {
 	t.Parallel()
