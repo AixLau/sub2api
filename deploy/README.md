@@ -105,11 +105,13 @@ curl -fsS http://127.0.0.1:8080/health
 {"status":"ok"}
 ```
 
-如果未在 `.env` 中设置 `ADMIN_PASSWORD`，首次启动会生成管理员密码：
+如果未在 `.env` 中设置 `ADMIN_EMAIL` 或 `ADMIN_PASSWORD`，首次启动会生成随机管理员邮箱和密码；请从日志中获取登录信息：
 
 ```bash
-docker compose -f docker-compose.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.yml logs sub2api | grep "Generated admin"
 ```
+
+新设置的 `ADMIN_PASSWORD` 必须为 8-72 字节，已有实例升级不会因此阻断启动。
 
 ### 仓库内手动启动
 

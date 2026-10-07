@@ -17,6 +17,10 @@ type RedeemCode struct {
 	Notes     string
 	CreatedAt time.Time
 	ExpiresAt *time.Time
+	// StartsAt is populated for subscription history entries. It is kept
+	// separate from UsedAt because a subscription may be assigned before its
+	// entitlement period starts.
+	StartsAt *time.Time
 
 	GroupID      *int64
 	ValidityDays int

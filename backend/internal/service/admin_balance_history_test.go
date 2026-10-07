@@ -115,6 +115,7 @@ func TestUserSubscriptionHistoryCodeIncludesSubscriptionDetails(t *testing.T) {
 	require.Equal(t, float64(30), got.Value)
 	require.Equal(t, "manual assignment", got.Notes)
 	require.Equal(t, assignedAt, *got.UsedAt)
+	require.Equal(t, startsAt, *got.StartsAt)
 	require.Equal(t, expiresAt, *got.ExpiresAt)
 	require.Equal(t, "Pro", got.Group.Name)
 }

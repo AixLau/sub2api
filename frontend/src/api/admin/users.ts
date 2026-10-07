@@ -270,6 +270,8 @@ export interface BalanceHistoryItem {
   used_by: number | null
   used_at: string | null
   created_at: string
+  /** Subscription start time. Older history responses may omit this field. */
+  starts_at?: string | null
   expires_at?: string | null
   group_id: number | null
   validity_days: number

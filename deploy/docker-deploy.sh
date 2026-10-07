@@ -45,6 +45,14 @@ generate_secret() {
     openssl rand -hex 32
 }
 
+# Generate a random admin login email so new installs never use a guessable default
+generate_admin_email() {
+    local suffix
+    suffix=$(openssl rand -hex 6) || return 1
+    [ -n "$suffix" ] || return 1
+    echo "admin-${suffix}@sub2api.local"
+}
+
 # Check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -65,7 +73,7 @@ main() {
     fi
 
     # Check if deployment already exists
-    if [ -e "docker-compose.yml" ] || [ -e ".env" ] || [ -e ".env.example" ]; then
+    if [ -f "docker-compose.yml" ] && [ -f ".env" ]; then
         print_warning "Deployment files already exist in current directory."
         read -p "Overwrite existing files? (y/N): " -r
         echo
@@ -104,6 +112,7 @@ main() {
     JWT_SECRET=$(generate_secret)
     TOTP_ENCRYPTION_KEY=$(generate_secret)
     POSTGRES_PASSWORD=$(generate_secret)
+    ADMIN_EMAIL=$(generate_admin_email)
 
     # Create .env from .env.example
     cp .env.example .env
@@ -114,11 +123,13 @@ main() {
         sed -i "s/^JWT_SECRET=.*/JWT_SECRET=${JWT_SECRET}/" .env
         sed -i "s/^TOTP_ENCRYPTION_KEY=.*/TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}/" .env
         sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/" .env
+        sed -i "s/^ADMIN_EMAIL=.*/ADMIN_EMAIL=${ADMIN_EMAIL}/" .env
     else
         # BSD sed (macOS)
         sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=${JWT_SECRET}/" .env
         sed -i '' "s/^TOTP_ENCRYPTION_KEY=.*/TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY}/" .env
         sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/" .env
+        sed -i '' "s/^ADMIN_EMAIL=.*/ADMIN_EMAIL=${ADMIN_EMAIL}/" .env
     fi
 
     # Create data directories

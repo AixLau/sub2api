@@ -911,6 +911,11 @@ func userSubscriptionHistoryCode(sub *UserSubscription) RedeemCode {
 	groupID := sub.GroupID
 	userID := sub.UserID
 	expiresAt := sub.ExpiresAt
+	var startsAtPtr *time.Time
+	if !sub.StartsAt.IsZero() {
+		startsAt := sub.StartsAt
+		startsAtPtr = &startsAt
+	}
 	status := sub.Status
 	if sub.DeletedAt != nil {
 		status = SubscriptionStatusRevoked
@@ -929,6 +934,7 @@ func userSubscriptionHistoryCode(sub *UserSubscription) RedeemCode {
 		Notes:        sub.Notes,
 		CreatedAt:    sub.CreatedAt,
 		ExpiresAt:    &expiresAt,
+		StartsAt:     startsAtPtr,
 		GroupID:      &groupID,
 		ValidityDays: validityDays,
 		Group:        sub.Group,
