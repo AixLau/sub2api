@@ -103,10 +103,14 @@ describe('SubscriptionProgressMini monthly bonus quota', () => {
     })
 
     expect(wrapper.text()).toContain('subscriptionProgress.title')
+    expect(wrapper.text()).toContain('subscriptionProgress.titleWithRemaining')
+    expect(wrapper.get('button').text()).toContain('$2157.00')
     await wrapper.get('[data-testid="subscription-control"]').trigger('mouseenter')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
 
-    expect(wrapper.text()).toContain('$243.00/$2400.00')
+    expect(wrapper.text()).toContain('$2157.00')
+    expect(wrapper.text()).toContain('subscriptionProgress.remaining')
+    expect(wrapper.text()).not.toContain('$243.00/$2400.00')
     expect(wrapper.text()).not.toContain('$243.00/$1.00')
 
     const control = wrapper.get('[data-testid="subscription-control"]')

@@ -19,7 +19,7 @@
         <span class="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-violet-50 bg-emerald-500 dark:border-dark-800"></span>
       </span>
       <span class="hidden text-sm font-semibold text-violet-900 dark:text-violet-100 md:inline">
-        {{ t('subscriptionProgress.title') }}
+        {{ t('subscriptionProgress.titleWithRemaining', { remaining: subscriptionRemainingLabel }) }}
       </span>
     </button>
 
@@ -208,6 +208,15 @@ const tooltipPinned = ref(false)
 // Use store data instead of local state
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
 const hasActiveSubscriptions = computed(() => subscriptionStore.hasActiveSubscriptions)
+const subscriptionRemainingLabel = computed(() => {
+  const remainingValues = activeSubscriptions.value.map(getPrimaryRemainingQuota)
+  if (remainingValues.some((value) => value === null)) {
+    return t('subscriptionProgress.unlimited')
+  }
+  if (remainingValues.length === 0) return '$0.00'
+  const total = remainingValues.reduce<number>((sum, value) => sum + (value || 0), 0)
+  return `$${total.toFixed(2)}`
+})
 // 订阅功能关闭后，即使用户仍持有后台分配的订阅，顶栏也不再露出订阅进度与「查看全部订阅」入口。
 const subscriptionFeatureEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.subscription))
 
@@ -238,6 +247,22 @@ function getEffectiveMonthlyLimit(sub: UserSubscription): number {
   return (sub.group?.monthly_limit_usd || 0) + (sub.monthly_bonus_usd || 0)
 }
 
+function getPrimaryRemainingQuota(sub: UserSubscription): number | null {
+  const monthlyLimit = getEffectiveMonthlyLimit(sub)
+  if (monthlyLimit > 0) {
+    return Math.max(monthlyLimit - (sub.monthly_usage_usd || 0), 0)
+  }
+  const weeklyLimit = sub.group?.weekly_limit_usd || 0
+  if (weeklyLimit > 0) {
+    return Math.max(weeklyLimit - (sub.weekly_usage_usd || 0), 0)
+  }
+  const dailyLimit = sub.group?.daily_limit_usd || 0
+  if (dailyLimit > 0) {
+    return Math.max(dailyLimit - (sub.daily_usage_usd || 0), 0)
+  }
+  return null
+}
+
 function isUnlimited(sub: UserSubscription): boolean {
   return (
     !sub.group?.daily_limit_usd &&
@@ -261,9 +286,9 @@ function getProgressWidth(used: number | undefined, limit: number | null | undef
 }
 
 function formatUsage(used: number | undefined, limit: number | null | undefined): string {
-  const usedValue = (used || 0).toFixed(2)
-  const limitValue = limit?.toFixed(2) || '∞'
-  return `$${usedValue}/$${limitValue}`
+  if (!limit || limit <= 0) return t('subscriptionProgress.unlimited')
+  const remainingValue = Math.max(limit - (used || 0), 0).toFixed(2)
+  return `${t('subscriptionProgress.remaining')} $${remainingValue}`
 }
 
 function formatDaysRemaining(expiresAt: string): string {

@@ -3,11 +3,13 @@ export default {
   // Subscription Progress (Header component)
   subscriptionProgress: {
     title: '订阅',
+    titleWithRemaining: '订阅 {remaining}',
     viewDetails: '查看订阅详情',
     activeCount: '{count} 个有效订阅',
     daily: '每日',
     weekly: '每周',
     monthly: '每月',
+    remaining: '剩余',
     daysRemaining: '剩余 {days} 天',
     expired: '已过期',
     expiresToday: '今天到期',

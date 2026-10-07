@@ -3,11 +3,13 @@ export default {
   // Subscription Progress (Header component)
   subscriptionProgress: {
     title: 'My Subscriptions',
+    titleWithRemaining: 'Subscriptions {remaining}',
     viewDetails: 'View subscription details',
     activeCount: '{count} active subscription(s)',
     daily: 'Daily',
     weekly: 'Weekly',
     monthly: 'Monthly',
+    remaining: 'Remaining',
     daysRemaining: '{days} days left',
     expired: 'Expired',
     expiresToday: 'Expires today',
