@@ -31,7 +31,6 @@
           <div data-testid="balance-source-summary" class="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
             <p class="text-xs font-medium text-emerald-700 dark:text-emerald-300">{{ t('admin.users.balanceSourceTitle') }}</p>
             <p class="mt-1 text-xl font-bold text-emerald-800 dark:text-emerald-200">${{ user.balance?.toFixed(2) || '0.00' }}</p>
-            <p class="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/80">{{ t('admin.users.balanceSourceHint') }}</p>
           </div>
           <div data-testid="concurrency-source-summary" class="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/60 dark:bg-blue-950/20">
             <p class="text-xs font-medium text-blue-700 dark:text-blue-300">{{ t('admin.users.concurrencySourceTitle') }}</p>
@@ -40,7 +39,6 @@
                 ? t('admin.users.concurrencyCurrentOfLimit', { current: user.current_concurrency, limit: user.concurrency || 0 })
                 : t('admin.users.concurrencyLimitOnly', { limit: user.concurrency || 0 }) }}
             </p>
-            <p class="mt-1 text-xs text-blue-700/80 dark:text-blue-300/80">{{ t('admin.users.concurrencySourceHint') }}</p>
           </div>
           <div data-testid="subscription-entitlement-summary" class="rounded-lg border border-purple-200 bg-purple-50/70 p-3 dark:border-purple-900/60 dark:bg-purple-950/20">
             <p class="text-xs font-medium text-purple-700 dark:text-purple-300">{{ t('admin.users.subscriptionEntitlementTitle') }}</p>
@@ -51,7 +49,6 @@
                   ? '—'
                   : t('admin.users.activeSubscriptionCount', { count: activeSubscriptions.length }) }}
             </p>
-            <p class="mt-1 text-xs text-purple-700/80 dark:text-purple-300/80">{{ t('admin.users.subscriptionEntitlementHint') }}</p>
           </div>
         </div>
         <div class="mt-3 flex items-center justify-between border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60">
@@ -70,7 +67,6 @@
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h3 class="text-sm font-semibold text-purple-900 dark:text-purple-200">{{ t('admin.users.subscriptionEntitlementSectionTitle') }}</h3>
-            <p class="mt-1 text-xs text-purple-800/80 dark:text-purple-300/80">{{ t('admin.users.subscriptionEntitlementSectionHint') }}</p>
           </div>
           <span v-if="subscriptionLoading" class="text-xs text-purple-700 dark:text-purple-300">{{ t('common.loading') }}</span>
         </div>
@@ -363,13 +359,7 @@ const loadSubscriptionEntitlements = async () => {
   if (!props.user) return
   subscriptionLoading.value = true
   try {
-    const response = await subscriptionsAPI.listByUser(props.user.id, 1, 100)
-    const subscriptions = [...(response.items || [])]
-    const pages = Math.max(response.pages || 1, 1)
-    for (let page = 2; page <= pages; page += 1) {
-      const nextPage = await subscriptionsAPI.listByUser(props.user.id, page, 100)
-      subscriptions.push(...(nextPage.items || []))
-    }
+    const subscriptions = await subscriptionsAPI.listByUser(props.user.id)
     const now = Date.now()
     activeSubscriptions.value = subscriptions.filter((subscription) => {
       if (subscription.status !== 'active') return false

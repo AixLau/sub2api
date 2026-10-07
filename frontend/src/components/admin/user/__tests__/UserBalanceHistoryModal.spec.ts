@@ -28,16 +28,12 @@ const messages: Record<string, string> = {
   'admin.users.currentBalance': 'Current Balance',
   'admin.users.totalRecharged': 'Total Recharged',
   'admin.users.balanceSourceTitle': 'Recharge balance',
-  'admin.users.balanceSourceHint': 'Used for balance billing; subscription quota is separate',
   'admin.users.concurrencySourceTitle': 'Concurrency limit',
-  'admin.users.concurrencySourceHint': 'Maximum requests processed at the same time',
   'admin.users.concurrencyCurrentOfLimit': '{current} in use / {limit} max',
   'admin.users.concurrencyLimitOnly': '{limit} max',
   'admin.users.activeSubscriptionCount': '{count} active subscription(s)',
   'admin.users.subscriptionEntitlementTitle': 'Subscription benefits',
-  'admin.users.subscriptionEntitlementHint': 'Used within the plan period; it does not use the recharge balance',
   'admin.users.subscriptionEntitlementSectionTitle': 'Remaining subscription benefits',
-  'admin.users.subscriptionEntitlementSectionHint': 'Subscription quota and recharge balance are tracked separately. This shows what each plan has left.',
   'admin.users.noActiveSubscriptionEntitlements': 'No active subscription benefits',
   'admin.users.subscriptionEntitlementsLoadFailed': 'Subscription benefits could not be loaded. Please try again later.',
   'admin.users.subscriptionPeriod': 'Subscription period',
@@ -153,7 +149,7 @@ describe('UserBalanceHistoryModal', () => {
       total_actual_cost: period === 'today' ? 0.5 : period === '7d' ? 2.75 : 9.25,
       average_duration_ms: 250,
     }))
-    apiMocks.listByUser.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 1 })
+    apiMocks.listByUser.mockResolvedValue([])
   })
 
   it('loads and renders today, 7-day, and 30-day usage summaries when opened', async () => {
@@ -228,8 +224,7 @@ describe('UserBalanceHistoryModal', () => {
   })
 
   it('shows remaining subscription benefits separately from the recharge balance', async () => {
-    apiMocks.listByUser.mockResolvedValue({
-      items: [{
+    apiMocks.listByUser.mockResolvedValue([{
         id: 15,
         user_id: 99,
         group_id: 3,
@@ -254,12 +249,7 @@ describe('UserBalanceHistoryModal', () => {
           weekly_limit_usd: 20,
           monthly_limit_usd: 100,
         },
-      }],
-      total: 1,
-      page: 1,
-      page_size: 100,
-      pages: 1,
-    })
+      }])
 
     const wrapper = mount(UserBalanceHistoryModal, {
       props: { show: false, user: user as any },
@@ -269,12 +259,14 @@ describe('UserBalanceHistoryModal', () => {
     await flushPromises()
 
     const text = wrapper.text()
+    expect(apiMocks.listByUser).toHaveBeenCalledWith(99)
     expect(text).toContain('Recharge balance')
     expect(text).toContain('Subscription benefits')
     expect(text).toContain('8.00 remaining')
     expect(text).toContain('12.00 remaining')
     expect(text).toContain('80.00 remaining')
     expect(text).toContain('Subscription period')
+    expect(text).not.toContain('Subscription quota and recharge balance')
   })
 
   it('renders the scratch-card source type and credited amount', async () => {

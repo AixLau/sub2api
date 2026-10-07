@@ -228,21 +228,10 @@ export async function listByGroup(
 /**
  * List subscriptions by user
  * @param userId - User ID
- * @param page - Page number
- * @param pageSize - Items per page
- * @returns Paginated list of user's subscriptions
+ * @returns All subscriptions assigned to the user
  */
-export async function listByUser(
-  userId: number,
-  page: number = 1,
-  pageSize: number = 20
-): Promise<PaginatedResponse<UserSubscription>> {
-  const { data } = await apiClient.get<PaginatedResponse<UserSubscription>>(
-    `/admin/users/${userId}/subscriptions`,
-    {
-      params: { page, page_size: pageSize }
-    }
-  )
+export async function listByUser(userId: number): Promise<UserSubscription[]> {
+  const { data } = await apiClient.get<UserSubscription[]>(`/admin/users/${userId}/subscriptions`)
   return data
 }
 
