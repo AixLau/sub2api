@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -199,6 +200,12 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
 
 
 def main() -> None:
+    timing_logger = logging.getLogger("account_import.timing")
+    timing_handler = logging.StreamHandler()
+    timing_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    timing_logger.addHandler(timing_handler)
+    timing_logger.setLevel(logging.INFO)
+    timing_logger.propagate = False
     parser = argparse.ArgumentParser(description="本机 Sub2API OAuth 导入与持续监控服务")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
