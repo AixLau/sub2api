@@ -123,6 +123,7 @@ def relogin_payload(
                 "OAUTH_REFRESH_ONLY": "1",
                 "OAUTH_CODEX_RT_EXCHANGE": "1",
                 "OAUTH_CODEX_RT_BEFORE_CALLBACK": "1",
+                "OAUTH_CODEX_AFTER_CALLBACK": "1",
                 # Reuse the session authenticated by the password + TOTP flow
                 # when the Codex PKCE exchange starts. The default prompt=login
                 # can send the same account through a second login challenge.

@@ -38,7 +38,11 @@ class ProtocolPerformanceTests(unittest.TestCase):
         from platforms.chatgpt.protocol.auth_flow import AuthResult
         flow.result = AuthResult()
         flow.result.totp_secret = 'JBSWY3DPEHPK3PXP'
-        flow._env_overrides = {'OAUTH_REFRESH_ONLY': str(int(refresh_only)), 'OAUTH_CODEX_RT_BEFORE_CALLBACK': '1'}
+        flow._env_overrides = {
+            'OAUTH_REFRESH_ONLY': str(int(refresh_only)),
+            'OAUTH_CODEX_RT_BEFORE_CALLBACK': '1',
+            'OAUTH_CODEX_AFTER_CALLBACK': str(int(refresh_only)),
+        }
         flow._account_callback = None
         for name, value in {
             'check_proxy': True, 'warmup': True, 'get_csrf_token': 'csrf',
@@ -52,6 +56,7 @@ class ProtocolPerformanceTests(unittest.TestCase):
         }.items():
             setattr(flow, name, Mock(return_value=value))
         flow._normalize_continue_url = Mock(side_effect=lambda url: url)
+        flow._consume_callback_for_session = Mock(return_value=True)
 
         def exchange(**kwargs):
             flow.result.access_token = access
@@ -70,9 +75,10 @@ class ProtocolPerformanceTests(unittest.TestCase):
         flow.login_password_verify.assert_called_once_with('password')
         flow.submit_mfa_totp.assert_called_once()
         flow.oauth_codex_rt_exchange.assert_called_once()
-        flow.follow_redirect_chain.assert_not_called()
+        flow.follow_redirect_chain.assert_called_once()
+        flow._consume_callback_for_session.assert_called_once_with('https://web.example/callback')
         flow.fetch_client_auth_session_dump.assert_not_called()
-        flow.get_auth_session.assert_not_called()
+        flow.get_auth_session.assert_called_once()
 
     def test_incomplete_credentials_continue_existing_flow(self):
         for access, refresh in [('access', ''), ('', 'refresh')]:

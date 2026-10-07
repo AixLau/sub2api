@@ -47,6 +47,10 @@ Dockerfile; upstream source is fetched at image build time, not vendored here.
 The build applies `upstream-performance.patch` to clear Sentinel deadline timers
 when operations finish and to stop refresh-only login once both OAuth tokens are
 available. It retains the behavior collection period and authentication checks.
+Refresh-only credential imports also use a callback-first sequence: the primary
+password/TOTP callback establishes the ChatGPT session before the independent
+Codex PKCE exchange. If the session cannot be consumed or the exchange does not
+return both tokens, the existing fallback sequence remains available.
 The patch also emits `auth_step_done` timing logs without credentials or response
 bodies. Run `test_protocol_performance` inside the importer image to verify timer
 cleanup, password/TOTP processing, and the refresh-only completion path offline.
