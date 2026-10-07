@@ -68,7 +68,7 @@
             :end-date="endDate"
             :filters="breakdownFilters"
           />
-          <TokenUsageTrend cost-metric="account" :trend-data="trendData" :loading="chartsLoading" show-cost />
+          <TokenUsageTrend cost-metric="account" :trend-data="trendData" :loading="chartsLoading" show-cost show-standard-cost />
         </div>
       </div>
       <!-- 明细区：tab 栏 + 筛选 + 内容收进同一张卡片，消除割裂感 -->

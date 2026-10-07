@@ -326,7 +326,7 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch, excludeUserIDs) {
 		aggregated, aggregatedErr := r.getUsageTrendFromAggregates(ctx, startTime, endTime, granularity)
 		if aggregatedErr == nil && len(aggregated) > 0 {
-			return aggregated, nil
+			return fillTrendGaps(aggregated, startTime, endTime, granularity), nil
 		}
 	}
 
@@ -395,7 +395,42 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	if err != nil {
 		return nil, err
 	}
-	return results, nil
+	return fillTrendGaps(results, startTime, endTime, granularity), nil
+}
+
+// fillTrendGaps makes every bucket in the requested range explicit. A missing
+// bucket means zero usage; leaving it out makes a line chart connect unrelated
+// points and visually imply usage between them.
+func fillTrendGaps(results []TrendDataPoint, startTime, endTime time.Time, granularity string) []TrendDataPoint {
+	var step time.Duration
+	var format string
+	switch granularity {
+	case "hour":
+		step = time.Hour
+		format = "2006-01-02 15:00"
+		startTime = startTime.Truncate(time.Hour)
+	case "day":
+		step = 24 * time.Hour
+		format = "2006-01-02"
+		startTime = time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, startTime.Location())
+	default:
+		return results
+	}
+
+	byDate := make(map[string]TrendDataPoint, len(results))
+	for _, result := range results {
+		byDate[result.Date] = result
+	}
+	filled := make([]TrendDataPoint, 0, int(endTime.Sub(startTime)/step)+1)
+	for bucket := startTime; bucket.Before(endTime); bucket = bucket.Add(step) {
+		date := bucket.Format(format)
+		if result, ok := byDate[date]; ok {
+			filled = append(filled, result)
+			continue
+		}
+		filled = append(filled, TrendDataPoint{Date: date})
+	}
+	return filled
 }
 
 func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, excludeUserIDs []int64) bool {

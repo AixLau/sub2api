@@ -50,7 +50,7 @@
         </div>
 
         <div class="grid grid-cols-1 gap-6">
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" :show-consumption-trend="false" :show-standard-cost="true" :show-cache-rate="true" chart-height-class="h-80" />
+          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="false" :show-consumption-trend="false" :show-standard-cost="false" :show-cache-rate="true" chart-height-class="h-80" />
         </div>
       </div>
 

@@ -65,6 +65,23 @@ func TestSafeDateFormat(t *testing.T) {
 	}
 }
 
+func TestFillTrendGaps(t *testing.T) {
+	start := time.Date(2026, 5, 8, 1, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 5, 8, 11, 0, 0, 0, time.UTC)
+	trend := fillTrendGaps([]TrendDataPoint{
+		{Date: "2026-05-08 01:00", InputTokens: 10, TotalTokens: 10},
+		{Date: "2026-05-08 10:00", InputTokens: 20, TotalTokens: 20},
+	}, start, end, "hour")
+
+	require.Len(t, trend, 10)
+	require.Equal(t, int64(10), trend[0].InputTokens)
+	for _, point := range trend[1:9] {
+		require.Equal(t, int64(0), point.TotalTokens)
+		require.Equal(t, int64(0), point.Requests)
+	}
+	require.Equal(t, int64(20), trend[9].InputTokens)
+}
+
 func TestAppendUsageLogSourceWhereCondition(t *testing.T) {
 	conditions, args := appendUsageLogSourceWhereCondition(nil, nil, "content_moderation")
 	require.Equal(t, []string{"source = $1"}, conditions)
