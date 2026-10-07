@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 const apiMocks = vi.hoisted(() => ({
   getUserBalanceHistory: vi.fn(),
   getUserUsageStats: vi.fn(),
+  listByUser: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -15,11 +16,42 @@ vi.mock('@/api/admin', () => ({
   },
 }))
 
+vi.mock('@/api/admin/subscriptions', () => ({
+  default: {
+    listByUser: apiMocks.listByUser,
+  },
+}))
+
 const messages: Record<string, string> = {
   'admin.users.balanceHistoryTitle': 'User Recharge & Concurrency History',
   'admin.users.createdAt': 'Created',
   'admin.users.currentBalance': 'Current Balance',
   'admin.users.totalRecharged': 'Total Recharged',
+  'admin.users.balanceSourceTitle': 'Recharge balance',
+  'admin.users.balanceSourceHint': 'Used for balance billing; subscription quota is separate',
+  'admin.users.concurrencySourceTitle': 'Concurrency limit',
+  'admin.users.concurrencySourceHint': 'Maximum requests processed at the same time',
+  'admin.users.concurrencyCurrentOfLimit': '{current} in use / {limit} max',
+  'admin.users.concurrencyLimitOnly': '{limit} max',
+  'admin.users.activeSubscriptionCount': '{count} active subscription(s)',
+  'admin.users.subscriptionEntitlementTitle': 'Subscription benefits',
+  'admin.users.subscriptionEntitlementHint': 'Used within the plan period; it does not use the recharge balance',
+  'admin.users.subscriptionEntitlementSectionTitle': 'Remaining subscription benefits',
+  'admin.users.subscriptionEntitlementSectionHint': 'Subscription quota and recharge balance are tracked separately. This shows what each plan has left.',
+  'admin.users.noActiveSubscriptionEntitlements': 'No active subscription benefits',
+  'admin.users.subscriptionEntitlementsLoadFailed': 'Subscription benefits could not be loaded. Please try again later.',
+  'admin.users.subscriptionPeriod': 'Subscription period',
+  'admin.users.subscriptionStartedAt': 'Started',
+  'admin.users.subscriptionPlan': 'Subscription plan',
+  'admin.users.subscriptionDailyQuota': 'Daily quota',
+  'admin.users.subscriptionWeeklyQuota': 'Weekly quota',
+  'admin.users.subscriptionMonthlyQuota': 'Monthly quota',
+  'admin.users.subscriptionUnlimited': 'Unlimited',
+  'admin.users.subscriptionUsedAmount': '{amount} used',
+  'admin.users.subscriptionRemainingAmount': '{amount} remaining',
+  'admin.users.subscriptionUsedOfAmount': '{used} used / {limit}',
+  'common.loading': 'Loading',
+  'userSubscriptions.noExpiration': 'No expiration',
   'admin.users.todayUsage': 'Today',
   'admin.users.sevenDayUsage': '7 Days',
   'admin.users.thirtyDayUsage': '30 Days',
@@ -95,6 +127,7 @@ const user = {
   email: 'person@example.com',
   username: '',
   balance: 12.34,
+  concurrency: 5,
   notes: '',
   created_at: '2026-06-21T15:19:17Z',
 }
@@ -120,6 +153,7 @@ describe('UserBalanceHistoryModal', () => {
       total_actual_cost: period === 'today' ? 0.5 : period === '7d' ? 2.75 : 9.25,
       average_duration_ms: 250,
     }))
+    apiMocks.listByUser.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 1 })
   })
 
   it('loads and renders today, 7-day, and 30-day usage summaries when opened', async () => {
@@ -139,6 +173,7 @@ describe('UserBalanceHistoryModal', () => {
 
     const text = wrapper.text()
     expect(text).toContain('Today')
+    expect(text).toContain('5 max')
     expect(text).toContain('7 Days')
     expect(text).toContain('30 Days')
     expect(text).toContain('$0.50')
@@ -161,6 +196,7 @@ describe('UserBalanceHistoryModal', () => {
         used_at: '2026-07-01T08:00:00Z',
         created_at: '2026-07-01T08:00:00Z',
         expires_at: '2026-07-31T08:00:00Z',
+        starts_at: '2026-07-01T08:00:00Z',
         group_id: 3,
         validity_days: 30,
         notes: 'Paid plan',
@@ -183,11 +219,62 @@ describe('UserBalanceHistoryModal', () => {
     const text = wrapper.text()
     expect(text).toContain('Subscription Assigned')
     expect(text).toContain('30 days')
-    expect(text).toContain('Group: Pro')
+    expect(text).toContain('Subscription plan: Pro')
     expect(text).toContain('Notes: Paid plan')
     expect(text).toContain('Active')
     expect(text).toContain('Expires:')
+    expect(text).toContain('Started')
     expect(text).not.toContain('SUB-7')
+  })
+
+  it('shows remaining subscription benefits separately from the recharge balance', async () => {
+    apiMocks.listByUser.mockResolvedValue({
+      items: [{
+        id: 15,
+        user_id: 99,
+        group_id: 3,
+        status: 'active',
+        starts_at: '2026-07-01T08:00:00Z',
+        expires_at: '2099-07-31T08:00:00Z',
+        daily_usage_usd: 2,
+        weekly_usage_usd: 8,
+        monthly_usage_usd: 25,
+        monthly_bonus_usd: 5,
+        pending_renewal_count: 0,
+        pending_renewals: [],
+        daily_window_start: null,
+        weekly_window_start: null,
+        monthly_window_start: null,
+        created_at: '2026-07-01T08:00:00Z',
+        updated_at: '2026-07-01T08:00:00Z',
+        group: {
+          id: 3,
+          name: 'Pro',
+          daily_limit_usd: 10,
+          weekly_limit_usd: 20,
+          monthly_limit_usd: 100,
+        },
+      }],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      pages: 1,
+    })
+
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: { show: false, user: user as any },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Recharge balance')
+    expect(text).toContain('Subscription benefits')
+    expect(text).toContain('8.00 remaining')
+    expect(text).toContain('12.00 remaining')
+    expect(text).toContain('80.00 remaining')
+    expect(text).toContain('Subscription period')
   })
 
   it('renders the scratch-card source type and credited amount', async () => {
@@ -301,7 +388,7 @@ describe('UserBalanceHistoryModal', () => {
     expect(text).not.toContain('common.unknown')
   })
 
-  it('keeps subscription group and notes visible when optional details are missing', async () => {
+  it('keeps subscription plan and notes visible when optional details are missing', async () => {
     apiMocks.getUserBalanceHistory.mockResolvedValue({
       items: [{
         id: 8,
@@ -333,7 +420,7 @@ describe('UserBalanceHistoryModal', () => {
     await flushPromises()
 
     const text = wrapper.text()
-    expect(text).toContain('Group: #4')
+    expect(text).toContain('Subscription plan: #4')
     expect(text).toContain('Notes: -')
     expect(text).toContain('14 days')
   })

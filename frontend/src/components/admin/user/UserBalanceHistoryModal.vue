@@ -1,9 +1,8 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.balanceHistoryTitle')" width="wide" :close-on-click-outside="true" :z-index="40" @close="$emit('close')">
     <div v-if="user" class="space-y-4">
-      <!-- User header: two-row layout with full user info -->
+      <!-- User header and billing source summary -->
       <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
-        <!-- Row 1: avatar + email/username/created_at (left) + current balance (right) -->
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30">
             <span class="text-lg font-medium text-primary-700 dark:text-primary-300">
@@ -27,16 +26,35 @@
               {{ t('admin.users.createdAt') }}: {{ formatDateTime(user.created_at) }}
             </p>
           </div>
-          <!-- Current balance: prominent display on the right -->
-          <div class="flex-shrink-0 text-right">
-            <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ user.balance?.toFixed(2) || '0.00' }}
+        </div>
+        <div class="mt-4 grid gap-3 border-t border-gray-200/60 pt-4 dark:border-dark-600/60 sm:grid-cols-3">
+          <div data-testid="balance-source-summary" class="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+            <p class="text-xs font-medium text-emerald-700 dark:text-emerald-300">{{ t('admin.users.balanceSourceTitle') }}</p>
+            <p class="mt-1 text-xl font-bold text-emerald-800 dark:text-emerald-200">${{ user.balance?.toFixed(2) || '0.00' }}</p>
+            <p class="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/80">{{ t('admin.users.balanceSourceHint') }}</p>
+          </div>
+          <div data-testid="concurrency-source-summary" class="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/60 dark:bg-blue-950/20">
+            <p class="text-xs font-medium text-blue-700 dark:text-blue-300">{{ t('admin.users.concurrencySourceTitle') }}</p>
+            <p class="mt-1 text-xl font-bold text-blue-800 dark:text-blue-200">
+              {{ user.current_concurrency != null
+                ? t('admin.users.concurrencyCurrentOfLimit', { current: user.current_concurrency, limit: user.concurrency || 0 })
+                : t('admin.users.concurrencyLimitOnly', { limit: user.concurrency || 0 }) }}
             </p>
+            <p class="mt-1 text-xs text-blue-700/80 dark:text-blue-300/80">{{ t('admin.users.concurrencySourceHint') }}</p>
+          </div>
+          <div data-testid="subscription-entitlement-summary" class="rounded-lg border border-purple-200 bg-purple-50/70 p-3 dark:border-purple-900/60 dark:bg-purple-950/20">
+            <p class="text-xs font-medium text-purple-700 dark:text-purple-300">{{ t('admin.users.subscriptionEntitlementTitle') }}</p>
+            <p class="mt-1 text-xl font-bold text-purple-800 dark:text-purple-200">
+              {{ subscriptionLoading
+                ? '…'
+                : subscriptionLoadError
+                  ? '—'
+                  : t('admin.users.activeSubscriptionCount', { count: activeSubscriptions.length }) }}
+            </p>
+            <p class="mt-1 text-xs text-purple-700/80 dark:text-purple-300/80">{{ t('admin.users.subscriptionEntitlementHint') }}</p>
           </div>
         </div>
-        <!-- Row 2: notes + total recharged -->
-        <div class="mt-2.5 flex items-center justify-between border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60">
+        <div class="mt-3 flex items-center justify-between border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60">
           <p class="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-dark-400" :title="user.notes || ''">
             <template v-if="user.notes">{{ t('admin.users.notes') }}: {{ user.notes }}</template>
             <template v-else>&nbsp;</template>
@@ -46,6 +64,49 @@
           </p>
         </div>
       </div>
+
+      <!-- Subscription entitlements are separate from the rechargeable balance. -->
+      <section data-testid="subscription-entitlements" class="rounded-xl border border-purple-200 bg-purple-50/50 p-4 dark:border-purple-900/60 dark:bg-purple-950/10">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-purple-900 dark:text-purple-200">{{ t('admin.users.subscriptionEntitlementSectionTitle') }}</h3>
+            <p class="mt-1 text-xs text-purple-800/80 dark:text-purple-300/80">{{ t('admin.users.subscriptionEntitlementSectionHint') }}</p>
+          </div>
+          <span v-if="subscriptionLoading" class="text-xs text-purple-700 dark:text-purple-300">{{ t('common.loading') }}</span>
+        </div>
+        <div v-if="subscriptionLoadError" class="mt-3 rounded-lg border border-dashed border-rose-300 bg-white/60 px-3 py-3 text-xs text-rose-700 dark:border-rose-800 dark:bg-dark-800/60 dark:text-rose-300">
+          {{ t('admin.users.subscriptionEntitlementsLoadFailed') }}
+        </div>
+        <div v-else-if="!subscriptionLoading && activeSubscriptions.length === 0" class="mt-3 rounded-lg border border-dashed border-purple-300 bg-white/60 px-3 py-3 text-xs text-purple-800/80 dark:border-purple-800 dark:bg-dark-800/60 dark:text-purple-300/80">
+          {{ t('admin.users.noActiveSubscriptionEntitlements') }}
+        </div>
+        <div v-else-if="!subscriptionLoading" class="mt-3 grid gap-3 lg:grid-cols-2">
+          <article
+            v-for="subscription in activeSubscriptions"
+            :key="subscription.id"
+            class="rounded-lg border border-purple-200 bg-white p-3 dark:border-purple-900/60 dark:bg-dark-800"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ subscription.group?.name || `#${subscription.group_id}` }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('admin.users.subscriptionPeriod') }}: {{ formatDateTime(subscription.starts_at) }} → {{ subscription.expires_at ? formatDateTime(subscription.expires_at) : t('userSubscriptions.noExpiration') }}
+                </p>
+              </div>
+              <span :class="['shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', subscriptionStatusClass(subscription.status)]">
+                {{ subscriptionStatusLabel(subscription.status) }}
+              </span>
+            </div>
+            <div class="mt-3 grid gap-2 sm:grid-cols-3">
+              <div v-for="window in subscriptionWindows(subscription)" :key="window.key" class="rounded-md bg-purple-50 px-2.5 py-2 dark:bg-purple-950/25">
+                <p class="text-[11px] font-medium text-purple-700 dark:text-purple-300">{{ window.label }}</p>
+                <p class="mt-1 text-xs font-semibold text-gray-800 dark:text-gray-100">{{ window.remaining }}</p>
+                <p class="mt-0.5 text-[11px] text-gray-500 dark:text-dark-400">{{ window.detail }}</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
 
       <!-- Usage summary -->
       <div class="grid gap-3 sm:grid-cols-3">
@@ -141,7 +202,7 @@
                 </p>
                 <template v-if="isSubscriptionType(item.type)">
                   <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-                    {{ t('admin.users.subscriptionGroup') }}:
+                    {{ t('admin.users.subscriptionPlan') }}:
                     <span class="font-medium text-gray-700 dark:text-gray-200">
                       {{ getSubscriptionGroupLabel(item) }}
                     </span>
@@ -164,7 +225,12 @@
                 >
                   {{ item.notes.length > 60 ? item.notes.substring(0, 55) + '...' : item.notes }}
                 </p>
-                <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
+                <template v-if="isSubscriptionType(item.type)">
+                  <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
+                    {{ t('admin.users.subscriptionStartedAt') }}: {{ formatDateTime(item.starts_at || item.used_at || item.created_at) }}
+                  </p>
+                </template>
+                <p v-else class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
                   {{ formatDateTime(item.used_at || item.created_at) }}
                 </p>
               </div>
@@ -233,8 +299,9 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type AdminUserUsageStats, type BalanceHistoryItem } from '@/api/admin'
+import subscriptionsAPI from '@/api/admin/subscriptions'
 import { formatCompactNumber, formatDateTime } from '@/utils/format'
-import type { AdminUser } from '@/types'
+import type { AdminUser, UserSubscription } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -248,6 +315,9 @@ const loading = ref(false)
 const currentPage = ref(1)
 const total = ref(0)
 const totalRecharged = ref(0)
+const activeSubscriptions = ref<UserSubscription[]>([])
+const subscriptionLoading = ref(false)
+const subscriptionLoadError = ref(false)
 const pageSize = 15
 const typeFilter = ref('')
 type UsagePeriod = 'today' | '7d' | '30d'
@@ -281,10 +351,37 @@ watch(() => props.show, (v) => {
   if (v && props.user) {
     typeFilter.value = ''
     usageStats.value = { today: null, '7d': null, '30d': null }
+    activeSubscriptions.value = []
+    subscriptionLoadError.value = false
     loadHistory(1)
     loadUsageStats()
+    loadSubscriptionEntitlements()
   }
 })
+
+const loadSubscriptionEntitlements = async () => {
+  if (!props.user) return
+  subscriptionLoading.value = true
+  try {
+    const response = await subscriptionsAPI.listByUser(props.user.id, 1, 100)
+    const subscriptions = [...(response.items || [])]
+    const pages = Math.max(response.pages || 1, 1)
+    for (let page = 2; page <= pages; page += 1) {
+      const nextPage = await subscriptionsAPI.listByUser(props.user.id, page, 100)
+      subscriptions.push(...(nextPage.items || []))
+    }
+    const now = Date.now()
+    activeSubscriptions.value = subscriptions.filter((subscription) => {
+      if (subscription.status !== 'active') return false
+      return !subscription.expires_at || new Date(subscription.expires_at).getTime() > now || subscription.pending_renewal_count > 0
+    })
+  } catch (error) {
+    subscriptionLoadError.value = true
+    console.error('Failed to load subscription entitlements:', error)
+  } finally {
+    subscriptionLoading.value = false
+  }
+}
 
 const loadUsageStats = async () => {
   if (!props.user) return
@@ -432,6 +529,65 @@ const formatValue = (item: BalanceHistoryItem) => {
   // concurrency types
   const sign = item.value >= 0 ? '+' : ''
   return `${sign}${item.value}`
+}
+
+type SubscriptionWindowKey = 'daily' | 'weekly' | 'monthly'
+type SubscriptionWindowDisplay = {
+  key: SubscriptionWindowKey
+  label: string
+  remaining: string
+  detail: string
+}
+
+const subscriptionWindows = (subscription: UserSubscription): SubscriptionWindowDisplay[] => {
+  const group = subscription.group
+  if (!group) return []
+  const windows: Array<{ key: SubscriptionWindowKey; label: string; limit: number | null; used: number }> = [
+    { key: 'daily', label: t('admin.users.subscriptionDailyQuota'), limit: group.daily_limit_usd, used: subscription.daily_usage_usd },
+    { key: 'weekly', label: t('admin.users.subscriptionWeeklyQuota'), limit: group.weekly_limit_usd, used: subscription.weekly_usage_usd },
+    { key: 'monthly', label: t('admin.users.subscriptionMonthlyQuota'), limit: group.monthly_limit_usd == null ? null : group.monthly_limit_usd + subscription.monthly_bonus_usd, used: subscription.monthly_usage_usd },
+  ]
+  const configured = windows.filter((window) => window.limit != null || window.used > 0)
+  if (configured.length === 0) {
+    return [{
+      key: 'monthly',
+      label: t('admin.users.subscriptionMonthlyQuota'),
+      remaining: t('admin.users.subscriptionUnlimited'),
+      detail: t('admin.users.subscriptionUnlimited'),
+    }]
+  }
+  return configured.map((window) => {
+    if (window.limit == null) {
+      return {
+        ...window,
+        remaining: t('admin.users.subscriptionUnlimited'),
+        detail: t('admin.users.subscriptionUsedAmount', { amount: formatUsd(window.used) }),
+      }
+    }
+    const remaining = Math.max(window.limit - window.used, 0)
+    return {
+      ...window,
+      remaining: t('admin.users.subscriptionRemainingAmount', { amount: formatUsd(remaining) }),
+      detail: t('admin.users.subscriptionUsedOfAmount', {
+        used: formatUsd(window.used),
+        limit: formatUsd(window.limit),
+      }),
+    }
+  })
+}
+
+const formatUsd = (value: number) => `$${value.toFixed(2)}`
+
+const subscriptionStatusLabel = (status: string) => {
+  const key = `admin.subscriptions.status.${status}`
+  const translated = t(key)
+  return translated === key ? status : translated
+}
+
+const subscriptionStatusClass = (status: string) => {
+  if (status === 'active') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+  if (status === 'expired') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400'
+  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
 }
 
 const getSubscriptionGroupLabel = (item: BalanceHistoryItem) => {
