@@ -757,6 +757,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	s.maybeBlacklistCodexBiologicalRiskUser(ctx, c, account, upstreamMsg, body)
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -1018,6 +1019,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		upstreamMsg = fmt.Sprintf("Upstream error: %d", resp.StatusCode)
 	}
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	s.maybeBlacklistCodexBiologicalRiskUser(context.Background(), c, account, upstreamMsg, body)
 
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
