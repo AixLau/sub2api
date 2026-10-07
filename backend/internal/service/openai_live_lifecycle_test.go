@@ -315,6 +315,7 @@ func TestGetLiveCallForIdentityRejectsMismatchedCaller(t *testing.T) {
 	record := &LiveCallRecord{
 		CallID:     "call_identity",
 		CallHash:   hashLiveCallID("call_identity"),
+		AccountID:  11,
 		APIKeyID:   22,
 		UserID:     33,
 		GroupID:    groupID,
@@ -322,7 +323,9 @@ func TestGetLiveCallForIdentityRejectsMismatchedCaller(t *testing.T) {
 	}
 	store := &liveTestStore{}
 	require.NoError(t, store.SaveLiveCall(context.Background(), record, time.Hour))
-	service := &OpenAIGatewayService{cache: store}
+	service := &OpenAIGatewayService{cache: store, accountRepo: stubOpenAIAccountRepo{
+		accounts: []Account{{ID: record.AccountID, Platform: PlatformOpenAI, Type: AccountTypeOAuth}},
+	}}
 
 	_, err := service.GetLiveCallForIdentity(context.Background(), record.CallID, LiveCallIdentity{
 		APIKeyID: 99,

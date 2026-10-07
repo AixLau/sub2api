@@ -13,15 +13,17 @@ import (
 
 func TestGetCodexRestrictionPolicy(t *testing.T) {
 	svc := NewSettingService(&codexPolicyMigrationRepoStub{values: map[string]string{
-		SettingKeyMinCodexVersion:       "0.141.0",
-		SettingKeyMaxCodexVersion:       "0.200.0",
-		SettingKeyCodexCLIOnlyWhitelist: `[{"originator":"opencode","ua_contains":["opencode/"]}]`,
-		SettingKeyCodexCLIOnlyBlacklist: `[{"originator":"evil"}]`,
+		SettingKeyMinCodexVersion:           "0.141.0",
+		SettingKeyMaxCodexVersion:           "0.200.0",
+		SettingKeyCodexCLIOnlyUserBlacklist: "12, 34",
+		SettingKeyCodexCLIOnlyWhitelist:     `[{"originator":"opencode","ua_contains":["opencode/"]}]`,
+		SettingKeyCodexCLIOnlyBlacklist:     `[{"originator":"evil"}]`,
 	}}, &config.Config{})
 
 	pol := svc.GetCodexRestrictionPolicy(context.Background())
 	require.Equal(t, "0.141.0", pol.MinCodexVersion)
 	require.Equal(t, "0.200.0", pol.MaxCodexVersion)
+	require.Equal(t, map[int64]struct{}{12: {}, 34: {}}, pol.DeniedUserIDs)
 	require.Len(t, pol.Whitelist, 1)
 	require.Equal(t, "opencode", pol.Whitelist[0].Originator)
 	require.Equal(t, []string{"opencode/"}, pol.Whitelist[0].UAContains)

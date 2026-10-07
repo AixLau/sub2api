@@ -109,4 +109,18 @@ describe('OpenAIFastPolicyUserSelector', () => {
     await wrapper.get('button[aria-label="Remove user"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([[[]]])
   })
+
+  it('distinguishes a failed search from an empty result', async () => {
+    mockSearchUsers.mockRejectedValue(new Error('server unavailable'))
+    const wrapper = mount(OpenAIFastPolicyUserSelector, {
+      props: { modelValue: [] },
+      global: { stubs: { Icon: true } },
+    })
+    await wrapper.get('input').setValue('blocked')
+    await vi.advanceTimersByTimeAsync(300)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('admin.settings.openaiFastPolicy.userSearchFailed')
+    expect(wrapper.text()).not.toContain('No users found')
+    wrapper.unmount()
+  })
 })

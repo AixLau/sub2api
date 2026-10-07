@@ -147,7 +147,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 
 	// 分组利润控制：embeddings 文本入口请求级装门并固定 pricingAt。
 	embPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
-	c.Request = c.Request.WithContext(embPricingCtx)
+	c.Request = c.Request.WithContext(service.WithCodexRestrictionRequest(embPricingCtx, c, body))
 
 	for {
 		var account *service.Account

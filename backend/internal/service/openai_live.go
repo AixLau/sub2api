@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -127,6 +128,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	identity LiveCallIdentity,
 	userMaxConcurrency int,
 ) (*LiveCallCreated, error) {
+	ctx = context.WithValue(ctx, ctxkey.UserID, identity.UserID)
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
 	}
@@ -248,6 +250,9 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 }
 
 func (s *OpenAIGatewayService) shouldFailoverLiveCreateError(account *Account, err error) bool {
+	if errors.Is(err, ErrNoAllowedCodexAccounts) {
+		return false
+	}
 	var upstreamErr *UpstreamFailoverError
 	if !errors.As(err, &upstreamErr) {
 		// 凭证读取和网络传输错误都可能只影响当前账号或代理。
@@ -266,6 +271,9 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	request *LiveCallRequest,
 	attestation string,
 ) (*LiveCallCreated, error) {
+	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return nil, ErrNoAllowedCodexAccounts
+	}
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "access_token", err)
@@ -488,6 +496,17 @@ func (s *OpenAIGatewayService) GetLiveCallForIdentity(
 	}
 	if record.Controller == LiveControllerClosed {
 		return nil, ErrLiveCallNotFound
+	}
+	if s.accountRepo == nil || record.AccountID <= 0 {
+		return record, nil
+	}
+	ctx = context.WithValue(ctx, ctxkey.UserID, identity.UserID)
+	account, err := s.accountRepo.GetByID(ctx, record.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return nil, ErrNoAllowedCodexAccounts
 	}
 	return record, nil
 }

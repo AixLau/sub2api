@@ -86,6 +86,9 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 // it omitted, so in that case the caches are rebuilt from storage rather than
 // from the request struct.
 func (s *SettingService) refreshCachedSettingsAfterWrite(ctx context.Context, settings *SystemSettings, omitted OmittedSettingKeys) {
+	// Invalidate even if the subsequent whole-settings read fails. An omitted
+	// field must not prevent a successfully saved access policy taking effect.
+	s.invalidateCodexRestrictionPolicy()
 	if len(omitted) == 0 {
 		s.refreshCachedSettings(settings)
 		return
@@ -505,6 +508,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyMinCodexVersion] = strings.TrimSpace(settings.MinCodexVersion)
 	updates[SettingKeyMaxCodexVersion] = strings.TrimSpace(settings.MaxCodexVersion)
 	updates[SettingKeyCodexCLIOnlyBlacklist] = strings.TrimSpace(settings.CodexCLIOnlyBlacklist)
+	if _, err := ParseCodexCLIOnlyUserBlacklist(settings.CodexCLIOnlyUserBlacklist); err != nil {
+		return nil, err
+	}
+	updates[SettingKeyCodexCLIOnlyUserBlacklist] = strings.TrimSpace(settings.CodexCLIOnlyUserBlacklist)
 	updates[SettingKeyCodexCLIOnlyWhitelist] = strings.TrimSpace(settings.CodexCLIOnlyWhitelist)
 	updates[SettingKeyCodexCLIOnlyAllowAppServerClients] = strconv.FormatBool(settings.CodexCLIOnlyAllowAppServerClients)
 	updates[SettingKeyCodexCLIOnlyEngineFingerprintSignals] = strings.TrimSpace(settings.CodexCLIOnlyEngineFingerprintSignals)
@@ -808,9 +815,6 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if s.cfg != nil {
 		s.cfg.SetForwardedClientIPSettings(settings.APIKeyACLTrustForwardedIP, settings.ForwardedClientIPHeaders)
 	}
-	// codex_cli_only 加固策略缓存：设置更新后强制下次重载（涉及 4 个键 + JSON 解析，直接置过期）。
-	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
-	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{expiresAt: 0})
 	// Retain the successfully saved allowlist if the next DB refresh fails.
 	s.cyberSessionBlockRuntimeMu.Lock()
 	allowlistedUsers, _ := ParseCyberPolicyUserAllowlist(settings.CyberPolicyUserAllowlist)

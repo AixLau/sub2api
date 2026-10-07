@@ -584,8 +584,7 @@ func (s *SettingService) MigrateOpenAIAllowClaudeCodeCodexPluginSetting(ctx cont
 	if err := s.settingRepo.Set(dbCtx, SettingKeyCodexCLIOnlyWhitelist, string(encoded)); err != nil {
 		return fmt.Errorf("set %s setting: %w", SettingKeyCodexCLIOnlyWhitelist, err)
 	}
-	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
-	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{expiresAt: 0})
+	s.invalidateCodexRestrictionPolicy()
 	return nil
 }
 
@@ -662,8 +661,7 @@ func (s *SettingService) MigrateCodexBodyFingerprintToSignals(ctx context.Contex
 	if err := s.settingRepo.Set(dbCtx, SettingKeyCodexCLIOnlyEngineFingerprintSignals, string(encoded)); err != nil {
 		return fmt.Errorf("set %s setting: %w", SettingKeyCodexCLIOnlyEngineFingerprintSignals, err)
 	}
-	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
-	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{expiresAt: 0})
+	s.invalidateCodexRestrictionPolicy()
 	return nil
 }
 
@@ -712,7 +710,7 @@ func normalizedCodexClientMarkers(markers []string) map[string]struct{} {
 
 // GetCodexRestrictionPolicy 读取 codex_cli_only 全局加固策略（黑/白名单、最低版本、引擎指纹门）。
 // 仅在调用方已确认账号 codex_cli_only 开启时读取；进程内 atomic.Value 缓存（60s TTL）避免热路径访问 DB。
-// 任意键缺失/解析失败 → 安全默认：空名单、空版本、默认种子指纹信号。
+// 用户黑名单读取或解析失败时拒绝受限账号；缺失表示尚未配置。
 func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRestrictionPolicy {
 	if cached, ok := s.codexRestrictionPolicyCache.Load().(*cachedCodexRestrictionPolicy); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
@@ -720,6 +718,8 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 		}
 	}
 	result, _, _ := s.codexRestrictionPolicySF.Do("codex_restriction_policy", func() (any, error) {
+		s.codexRestrictionPolicyMu.Lock()
+		defer s.codexRestrictionPolicyMu.Unlock()
 		if cached, ok := s.codexRestrictionPolicyCache.Load().(*cachedCodexRestrictionPolicy); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
 				return cached.value, nil
@@ -739,6 +739,12 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 			pol.AllowAppServerClients = strings.TrimSpace(v) == "true" // 仅显式 "true" 开启
 		}
 		pol.EngineFingerprintSignals = s.loadEngineFingerprintSignals(dbCtx)
+		var blacklistErr error
+		pol.DeniedUserIDs, blacklistErr = s.loadCodexUserIDs(dbCtx)
+		pol.UserBlacklistUnavailable = blacklistErr != nil
+		if blacklistErr != nil {
+			slog.Error("load Codex user blacklist failed", "error", blacklistErr)
+		}
 		pol.Whitelist = s.loadCodexClientEntries(dbCtx, SettingKeyCodexCLIOnlyWhitelist)
 		pol.Blacklist = s.loadCodexClientEntries(dbCtx, SettingKeyCodexCLIOnlyBlacklist)
 
@@ -751,7 +757,31 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 	if pol, ok := result.(CodexRestrictionPolicy); ok {
 		return pol
 	}
-	return CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
+	return CodexRestrictionPolicy{
+		EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals,
+		UserBlacklistUnavailable: true,
+	}
+}
+
+func (s *SettingService) loadCodexUserIDs(ctx context.Context) (map[int64]struct{}, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, errors.New("setting repository unavailable")
+	}
+	v, err := s.settingRepo.GetValue(ctx, SettingKeyCodexCLIOnlyUserBlacklist)
+	if errors.Is(err, ErrSettingNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ParseCodexCLIOnlyUserBlacklist(v)
+}
+
+func (s *SettingService) invalidateCodexRestrictionPolicy() {
+	s.codexRestrictionPolicyMu.Lock()
+	defer s.codexRestrictionPolicyMu.Unlock()
+	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
+	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{})
 }
 
 // loadCodexClientEntries 读取并解析 []openai.AllowedClientEntry JSON 设置；缺失/空/非法 → nil（安全忽略）。

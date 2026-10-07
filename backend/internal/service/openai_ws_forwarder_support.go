@@ -629,6 +629,9 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		account = latest
 	}
+	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return 0, nil, "", nil
+	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil

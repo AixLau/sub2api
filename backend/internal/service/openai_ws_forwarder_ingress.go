@@ -83,6 +83,26 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account == nil {
 		return errors.New("account is nil")
 	}
+	if err := s.codexWebSocketRestrictionError(ctx, c, account, firstClientMessage); err != nil {
+		return err
+	}
+	// Both native and passthrough ingress call BeforeRequest before forwarding
+	// subsequent turns. Recheck the current policy even on an existing socket.
+	guardedHooks := OpenAIWSIngressHooks{}
+	if hooks != nil {
+		guardedHooks = *hooks
+	}
+	beforeRequest := guardedHooks.BeforeRequest
+	guardedHooks.BeforeRequest = func(turn int, payload []byte, model string) error {
+		if err := s.codexWebSocketRestrictionError(ctx, c, account, payload); err != nil {
+			return err
+		}
+		if beforeRequest != nil {
+			return beforeRequest(turn, payload, model)
+		}
+		return nil
+	}
+	hooks = &guardedHooks
 	// A handler may reuse the same gin context across account failover attempts.
 	// Never let an OAuth attempt's response aliases leak into the next account.
 	setCodexToolNameReverse(c, nil)
@@ -2092,4 +2112,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		turn++
 	}
+}
+
+func (s *OpenAIGatewayService) codexWebSocketRestrictionError(ctx context.Context, c *gin.Context, account *Account, body []byte) error {
+	result := s.detectCodexClientRestriction(c, account, body)
+	if !result.Enabled || result.Matched {
+		return nil
+	}
+	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), result, body)
+	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, CodexClientRestrictionMessage(result), nil)
 }

@@ -633,6 +633,8 @@ const (
 	SettingKeyMaxCodexVersion = "max_codex_version"
 	// SettingKeyCodexCLIOnlyBlacklist codex_cli_only 全局黑名单（[]AllowedClientEntry JSON，OR deny）。
 	SettingKeyCodexCLIOnlyBlacklist = "codex_cli_only_blacklist"
+	// SettingKeyCodexCLIOnlyUserBlacklist codex_cli_only 用户黑名单（正整数用户 ID，逗号/空白分隔）。
+	SettingKeyCodexCLIOnlyUserBlacklist = "codex_cli_only_user_blacklist"
 	// SettingKeyCodexCLIOnlyWhitelist codex_cli_only 全局白名单（[]AllowedClientEntry JSON，双因子 AND allow）。
 	SettingKeyCodexCLIOnlyWhitelist = "codex_cli_only_whitelist"
 	// SettingKeyCodexCLIOnlyAllowAppServerClients App Server 开关：对未列名客户端开闸（默认 false；仅显式 "true" 开）。

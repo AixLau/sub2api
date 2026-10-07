@@ -53,6 +53,13 @@
         {{ t("common.loading") }}
       </div>
       <div
+        v-else-if="searchFailed"
+        role="alert"
+        class="px-4 py-3 text-sm text-red-600 dark:text-red-400"
+      >
+        {{ t("admin.settings.openaiFastPolicy.userSearchFailed") }}
+      </div>
+      <div
         v-else-if="availableResults.length === 0"
         class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400"
       >
@@ -99,6 +106,7 @@ const containerRef = ref<HTMLElement | null>(null);
 const searchQuery = ref("");
 const searchResults = ref<SimpleUser[]>([]);
 const searchLoading = ref(false);
+const searchFailed = ref(false);
 const showDropdown = ref(false);
 const selectedUsers = ref<Record<number, SimpleUser>>({});
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,6 +138,7 @@ function clearPendingSearch(): void {
 
 function debounceSearch(): void {
   clearPendingSearch();
+  searchFailed.value = false;
   const query = searchQuery.value.trim();
   showDropdown.value = true;
   if (!query) {
@@ -149,6 +158,7 @@ function debounceSearch(): void {
     } catch {
       if (sequence === searchSequence) {
         searchResults.value = [];
+        searchFailed.value = true;
       }
     } finally {
       if (sequence === searchSequence) {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 )
@@ -44,40 +45,47 @@ func codexRestrictionRequestFromContext(ctx context.Context) (CodexRestrictionRe
 }
 
 func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Context, account *Account) (bool, string) {
+	return codexAccountAllowedForScheduling(ctx, account, s.accountRepo, s.settingService, s.getCodexClientRestrictionDetector())
+}
+
+func codexAccountAllowedForScheduling(ctx context.Context, account *Account, accountRepo AccountRepository, settings *SettingService, detector CodexClientRestrictionDetector) (bool, string) {
 	req, ok := codexRestrictionRequestFromContext(ctx)
-	if !ok || account == nil || !account.IsCodexCLIOnlyEnabled() {
-		if !ok || account == nil {
-			return true, ""
-		}
+	if account == nil || !account.IsOpenAIOAuth() || !account.IsCodexCLIOnlyEnabled() || (!ok && codexRestrictionContextUserID(ctx) <= 0) {
+		return true, ""
 	}
 	// Scheduler snapshots may intentionally omit account Extra fields. Refresh
 	// the account before deciding so a newly enabled codex_cli_only flag cannot
 	// be missed and deferred to the forwarding-stage defensive check.
 	checkedAccount := account
-	if s != nil && s.accountRepo != nil {
-		if fresh, err := s.accountRepo.GetByID(ctx, account.ID); err == nil && fresh != nil {
-			checkedAccount = fresh
+	if accountRepo != nil {
+		fresh, err := accountRepo.GetByID(ctx, account.ID)
+		if err != nil || fresh == nil {
+			return false, "account_unavailable"
 		}
+		checkedAccount = fresh
 	}
 	if !checkedAccount.IsCodexCLIOnlyEnabled() {
 		return true, ""
 	}
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
-	if s != nil && s.settingService != nil {
-		policy = s.settingService.GetCodexRestrictionPolicy(ctx)
+	if settings != nil {
+		policy = settings.GetCodexRestrictionPolicy(ctx)
 	}
-	detector := s.getCodexClientRestrictionDetector()
-	if detector == nil {
-		return false, CodexClientRestrictionReasonNotMatchedUA
+	if reason := policy.userDenialReason(codexRestrictionContextUserID(ctx)); reason != "" {
+		return false, reason
+	}
+	if !ok {
+		return true, ""
 	}
 	result := detector.Detect(req.Context, checkedAccount, policy, req.Body)
 	return result.Matched, result.Reason
 }
 
 // CodexOfficialClientsOnlyMessage 是 codex_cli_only 拒绝时面向客户端的通用兜底文案。
-// 仅当拒绝原因不是「可解析版本但越界」（VersionTooLow/VersionTooHigh）时使用：
+// 用户权限与版本越界使用各自文案，其余客户端身份拒绝使用通用文案：
 // 未命中官方/黑名单/缺指纹/版本无法识别都沿用这句（避免向伪装客户端泄露门控细节）。
 const CodexOfficialClientsOnlyMessage = "This account only allows Codex official clients"
+const CodexUserBlockedMessage = "You are not allowed to use accounts restricted to Codex official clients"
 
 const (
 	// CodexClientRestrictionReasonDisabled 表示账号未开启 codex_cli_only。
@@ -92,6 +100,9 @@ const (
 	CodexClientRestrictionReasonForceCodexCLI = "force_codex_cli_enabled"
 	// CodexClientRestrictionReasonBlacklisted 表示请求命中全局黑名单（门内 deny 最先，OR 语义）。
 	CodexClientRestrictionReasonBlacklisted = "blacklist_matched"
+	// CodexClientRestrictionReasonUserBlacklisted 表示当前系统用户被禁止使用 codex_cli_only 账号。
+	CodexClientRestrictionReasonUserBlacklisted   = "user_blacklisted"
+	CodexClientRestrictionReasonPolicyUnavailable = "user_blacklist_unavailable"
 	// CodexClientRestrictionReasonMatchedWhitelistClient 表示请求命中全局自由白名单条目（双因子 AND）。
 	CodexClientRestrictionReasonMatchedWhitelistClient = "whitelist_client_matched"
 	// CodexClientRestrictionReasonVersionTooLow 表示 UA 解析出的 Codex 引擎版本低于最低要求。
@@ -107,8 +118,10 @@ const (
 )
 
 // CodexRestrictionPolicy 是 codex_cli_only 判定所需的全局策略快照，由调用方从全局设置解析注入（global-only）。
-// 账号侧只有 codex_cli_only 开关本身；黑/白名单、最低版本、指纹门均为全局设置。
+// 账号侧只有 codex_cli_only 开关本身；用户黑名单、黑/白名单、最低版本、指纹门均为全局设置。
 type CodexRestrictionPolicy struct {
+	DeniedUserIDs            map[int64]struct{} // 全局用户黑名单，优先于所有客户端身份规则
+	UserBlacklistUnavailable bool
 	Whitelist                []openai.AllowedClientEntry      // 全局自由白名单（双因子 AND，放行官方集未覆盖的 app-server client）
 	Blacklist                []openai.AllowedClientEntry      // 全局自由黑名单（OR，宽 deny）
 	MinCodexVersion          string                           // 最低 Codex 引擎版本 semver；""=不校验
@@ -147,14 +160,19 @@ func NewOpenAICodexClientRestrictionDetector(cfg *config.Config) *OpenAICodexCli
 
 // Detect 门控顺序（每步可短路）：
 //  1. 账号未开 codex_cli_only → 不限制（Disabled）。
-//  2. gateway.force_codex_cli → 全局旁路放行（ForceCodexCLI）。
-//  3. 黑名单命中 → 立即拒（门内 deny 最先，OR 语义）。
-//  4. 身份候选：官方 UA / 官方 originator / 全局白名单 / App Server 开闸（全局开关 OR 账号开关）；都不命中 → 拒（NotMatchedUA）。
-//  5. Codex 版本（仅官方候选）：版本必须可解析（否则 VersionUndetectable）；< Min → 拒（TooLow）；> Max → 拒（TooHigh）。
-//  6. 引擎指纹 AND 硬门：按 EngineFingerprintSignals 列表勾选 AND 判定（无任何 Required 信号→放行，即「关闭指纹门」=取消所有勾选）；白名单条目可显式 skip。
+//  2. 用户黑名单命中 → 立即拒（优先于所有客户端身份规则）。
+//  3. gateway.force_codex_cli → 全局旁路放行（ForceCodexCLI）。
+//  4. 黑名单命中 → 立即拒（门内 deny 最先，OR 语义）。
+//  5. 身份候选：官方 UA / 官方 originator / 全局白名单 / App Server 开闸（全局开关 OR 账号开关）；都不命中 → 拒（NotMatchedUA）。
+//  6. Codex 版本（仅官方候选）：版本必须可解析（否则 VersionUndetectable）；< Min → 拒（TooLow）；> Max → 拒（TooHigh）。
+//  7. 引擎指纹 AND 硬门：按 EngineFingerprintSignals 列表勾选 AND 判定（无任何 Required 信号→放行，即「关闭指纹门」=取消所有勾选）；白名单条目可显式 skip。
 func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *Account, policy CodexRestrictionPolicy, body []byte) CodexClientRestrictionDetectionResult {
 	if account == nil || !account.IsCodexCLIOnlyEnabled() {
 		return CodexClientRestrictionDetectionResult{Enabled: false, Matched: false, Reason: CodexClientRestrictionReasonDisabled}
+	}
+
+	if reason := policy.userDenialReason(codexSessionIdentityUserID(c)); reason != "" {
+		return CodexClientRestrictionDetectionResult{Enabled: true, Reason: reason}
 	}
 
 	if d != nil && d.cfg != nil && d.cfg.Gateway.ForceCodexCLI {
@@ -172,12 +190,12 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 		}
 	}
 
-	// 3. 黑名单优先（门内 deny 最先，OR：任一已声明字段命中即拒）。
+	// 4. 黑名单优先（门内 deny 最先，OR：任一已声明字段命中即拒）。
 	if openai.MatchDenyEntries(userAgent, originator, policy.Blacklist) {
 		return CodexClientRestrictionDetectionResult{Enabled: true, Matched: false, Reason: CodexClientRestrictionReasonBlacklisted}
 	}
 
-	// 4. 身份候选（优先级：官方 > 全局白名单 > App Server 开闸：全局开关 OR 账号开关）。
+	// 5. 身份候选（优先级：官方 > 全局白名单 > App Server 开闸：全局开关 OR 账号开关）。
 	reason := ""
 	skipFingerprint := false
 	switch {
@@ -197,7 +215,7 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 		return CodexClientRestrictionDetectionResult{Enabled: true, Matched: false, Reason: CodexClientRestrictionReasonNotMatchedUA}
 	}
 
-	// 5. Codex 版本：仅对官方候选（官方 UA / 官方 originator）。版本必须可识别（需求②），再校验 [min,max]。
+	// 6. Codex 版本：仅对官方候选（官方 UA / 官方 originator）。版本必须可识别（需求②），再校验 [min,max]。
 	//    白名单/账号预设/App Server 候选可能不带可解析引擎版本，整块跳过。
 	if reason == CodexClientRestrictionReasonMatchedUA || reason == CodexClientRestrictionReasonMatchedOriginator {
 		ver, ok := openai.ParseCodexEngineVersion(userAgent)
@@ -224,7 +242,7 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 		}
 	}
 
-	// 6. 引擎指纹 AND 硬门。对所有候选生效;唯一例外:命中的白名单条目显式 SkipEngineFingerprint。
+	// 7. 引擎指纹 AND 硬门。对所有候选生效;唯一例外:命中的白名单条目显式 SkipEngineFingerprint。
 	//    按全局信号列表判定:所有勾选(Required)信号都命中即放行,每条命中任一变体即满足(行内 OR);
 	//    无任何勾选信号 → 视为无要求放行(即「关闭指纹门」=取消所有勾选)。ForceCodexCLI 与黑名单不经此门。
 	if !skipFingerprint {
@@ -236,12 +254,56 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 	return CodexClientRestrictionDetectionResult{Enabled: true, Matched: true, Reason: reason}
 }
 
+func codexRestrictionContextUserID(ctx context.Context) int64 {
+	if ctx == nil {
+		return 0
+	}
+	userID, _ := ctx.Value(ctxkey.UserID).(int64)
+	return userID
+}
+
+func (p CodexRestrictionPolicy) userDenialReason(userID int64) string {
+	if p.UserBlacklistUnavailable {
+		return CodexClientRestrictionReasonPolicyUnavailable
+	}
+	if _, denied := p.DeniedUserIDs[userID]; userID > 0 && denied {
+		return CodexClientRestrictionReasonUserBlacklisted
+	}
+	return ""
+}
+
+// enforceCodexClientRestriction is the HTTP forwarding boundary shared by the
+// Responses, compatibility, image, search and token-count entry points.
+func (s *OpenAIGatewayService) enforceCodexClientRestriction(ctx context.Context, c *gin.Context, account *Account, body []byte) error {
+	result := s.detectCodexClientRestriction(c, account, body)
+	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), result, body)
+	if !result.Enabled || result.Matched {
+		return nil
+	}
+	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	status := http.StatusForbidden
+	errType := "forbidden_error"
+	if result.Reason == CodexClientRestrictionReasonPolicyUnavailable {
+		status = http.StatusServiceUnavailable
+		errType = "api_error"
+	}
+	c.JSON(status, gin.H{"error": gin.H{
+		"type": errType, "message": CodexClientRestrictionMessage(result),
+	}})
+	return fmt.Errorf("codex_cli_only restriction: %s", result.Reason)
+}
+
 // CodexClientRestrictionMessage 把检测结果映射为面向客户端的 403 文案。
-// 仅版本越界（VersionTooLow/VersionTooHigh）给出带实际版本号与边界的差异化提示——
+// 用户权限与策略读取失败有独立文案；版本越界给出实际版本号与边界。
+// 对已经识别为官方 Codex 的版本越界请求，
 // 这类请求其实已被识别为官方 Codex（命中官方 UA/originator），再回「只允许官方客户端」会误导；
 // 其余拒绝原因统一沿用通用兜底句，不暴露门控细节。
 func CodexClientRestrictionMessage(r CodexClientRestrictionDetectionResult) string {
 	switch r.Reason {
+	case CodexClientRestrictionReasonUserBlacklisted:
+		return CodexUserBlockedMessage
+	case CodexClientRestrictionReasonPolicyUnavailable:
+		return "Account access policy is temporarily unavailable"
 	case CodexClientRestrictionReasonVersionTooLow:
 		return fmt.Sprintf(
 			"Your Codex version (%s) is below the minimum required version (%s). Please update Codex.",

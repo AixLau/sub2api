@@ -575,6 +575,9 @@ export default {
         codexBlacklist: 'User-Agent/Originator 黑名单',
         codexBlacklistDesc:
           '命中任一字段即拒，优先于一切放行。originator 精确匹配，User-Agent 为包含匹配（多个用逗号分隔）。',
+        codexUserBlacklist: '禁止使用此类账号的用户',
+        codexUserBlacklistDesc:
+          '命中的用户即使使用 Codex 官方客户端或 UA 白名单，也不能分配、调用或使用开启「仅允许 Codex 官方客户端」的账号。按邮箱模糊搜索并选择用户。',
         codexWhitelist: 'User-Agent/Originator 白名单',
         codexWhitelistDesc:
           '放行官方集之外的客户端：需 originator 精确，且每个 User-Agent 标记都命中。默认仍需过引擎指纹门，勾「跳过引擎指纹」可免。',
@@ -1170,6 +1173,7 @@ export default {
         userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Sub2API 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
         userSearchPlaceholder: '输入用户邮箱搜索',
         userSearchEmpty: '未找到匹配用户',
+        userSearchFailed: '用户搜索失败，请重新输入后重试',
         userDeleted: '（已删除）',
         userIdFallback: '用户 #{id}',
         removeUser: '移除用户',

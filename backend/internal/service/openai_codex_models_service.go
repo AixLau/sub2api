@@ -1666,6 +1666,9 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if account == nil {
 		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_ACCOUNT_REQUIRED", "account is required")
 	}
+	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return nil, infraerrors.New(http.StatusForbidden, "CODEX_ACCOUNT_ACCESS_DENIED", CodexUserBlockedMessage)
+	}
 	credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_CREDENTIALS_FAILED", "resolve credential account: %v", err)

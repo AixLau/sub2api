@@ -267,6 +267,7 @@ type UpdateSettingsRequest struct {
 	MinCodexVersion                      string `json:"min_codex_version"`
 	MaxCodexVersion                      string `json:"max_codex_version"`
 	CodexCLIOnlyBlacklist                string `json:"codex_cli_only_blacklist"`
+	CodexCLIOnlyUserBlacklist            string `json:"codex_cli_only_user_blacklist"`
 	CodexCLIOnlyWhitelist                string `json:"codex_cli_only_whitelist"`
 	CodexCLIOnlyAllowAppServerClients    *bool  `json:"codex_cli_only_allow_app_server_clients"`
 	CodexCLIOnlyEngineFingerprintSignals string `json:"codex_cli_only_engine_fingerprint_signals"`
@@ -1498,6 +1499,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "codex_cli_only_blacklist "+err.Error())
 		return
 	}
+	if _, err := service.ParseCodexCLIOnlyUserBlacklist(req.CodexCLIOnlyUserBlacklist); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := service.ValidateCodexWhitelistEntriesJSON(req.CodexCLIOnlyWhitelist); err != nil {
 		response.Error(c, http.StatusBadRequest, "codex_cli_only_whitelist "+err.Error())
 		return
@@ -1824,10 +1829,11 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ClaudeCodeVersionAutoSyncEnabled
 		}(),
-		MinCodexVersion:       strings.TrimSpace(req.MinCodexVersion),
-		MaxCodexVersion:       strings.TrimSpace(req.MaxCodexVersion),
-		CodexCLIOnlyBlacklist: strings.TrimSpace(req.CodexCLIOnlyBlacklist),
-		CodexCLIOnlyWhitelist: strings.TrimSpace(req.CodexCLIOnlyWhitelist),
+		MinCodexVersion:           strings.TrimSpace(req.MinCodexVersion),
+		MaxCodexVersion:           strings.TrimSpace(req.MaxCodexVersion),
+		CodexCLIOnlyBlacklist:     strings.TrimSpace(req.CodexCLIOnlyBlacklist),
+		CodexCLIOnlyUserBlacklist: strings.TrimSpace(req.CodexCLIOnlyUserBlacklist),
+		CodexCLIOnlyWhitelist:     strings.TrimSpace(req.CodexCLIOnlyWhitelist),
 		CodexCLIOnlyAllowAppServerClients: func() bool {
 			if req.CodexCLIOnlyAllowAppServerClients != nil {
 				return *req.CodexCLIOnlyAllowAppServerClients
@@ -2391,6 +2397,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MinCodexVersion:                                        updatedSettings.MinCodexVersion,
 		MaxCodexVersion:                                        updatedSettings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                                  updatedSettings.CodexCLIOnlyBlacklist,
+		CodexCLIOnlyUserBlacklist:                              updatedSettings.CodexCLIOnlyUserBlacklist,
 		CodexCLIOnlyWhitelist:                                  updatedSettings.CodexCLIOnlyWhitelist,
 		CodexCLIOnlyAllowAppServerClients:                      updatedSettings.CodexCLIOnlyAllowAppServerClients,
 		CodexCLIOnlyEngineFingerprintSignals:                   updatedSettings.CodexCLIOnlyEngineFingerprintSignals,

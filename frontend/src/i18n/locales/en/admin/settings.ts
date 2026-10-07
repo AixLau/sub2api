@@ -582,6 +582,9 @@ export default {
         codexBlacklist: "User-Agent/Originator Blacklist",
         codexBlacklistDesc:
           "Deny if any field matches; takes precedence over any allow. originator is exact; User-Agent is a 'contains' match (comma-separated).",
+        codexUserBlacklist: "Users blocked from these accounts",
+        codexUserBlacklistDesc:
+          "Blocked users cannot be assigned or use accounts with 'Codex official clients only', even with an official Codex client or a matching UA whitelist. Search by email and select users.",
         codexWhitelist: "User-Agent/Originator Whitelist",
         codexWhitelistDesc:
           "Allow clients outside the official set: requires exact originator and every User-Agent marker present. Still subject to the fingerprint gate unless 'Skip engine fingerprint' is checked.",
@@ -1176,6 +1179,7 @@ export default {
         userIdsHint: 'Type any part of a user email to search. Leave empty to apply to all Sub2API users. Selected users match requests from their API keys and take precedence over global rules.',
         userSearchPlaceholder: 'Search by user email',
         userSearchEmpty: 'No matching users found',
+        userSearchFailed: 'User search failed. Please enter your search again to retry.',
         userDeleted: '(deleted)',
         userIdFallback: 'User #{id}',
         removeUser: 'Remove user',

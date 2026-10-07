@@ -177,6 +177,9 @@ func (s *OpenAIGatewayService) fetchPinnedOpenAIModels(ctx context.Context, grou
 		if !isPinnedCodexModelsAccountUsable(&member) {
 			continue
 		}
+		if allowed, _ := s.codexAccountAllowedForScheduling(ctx, &member); !allowed {
+			continue
+		}
 		usable = append(usable, member)
 	}
 	if len(usable) == 0 {

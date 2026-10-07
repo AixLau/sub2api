@@ -56,6 +56,9 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		}
 		request.Session = rewrittenSession
 	}
+	// Live creates its account lease inside the service rather than through the
+	// HTTP Responses pipeline, so carry the same client identity into scheduling.
+	c.Request = c.Request.WithContext(service.WithCodexRestrictionRequest(c.Request.Context(), c, request.Session))
 	reqLog := requestLogger(
 		c,
 		"handler.openai_gateway.live",
@@ -179,6 +182,8 @@ func liveCallIdentity(
 
 func (h *OpenAIGatewayHandler) writeLiveCreateError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, service.ErrNoAllowedCodexAccounts):
+		h.errorResponse(c, http.StatusForbidden, "forbidden_error", service.CodexUserBlockedMessage)
 	case errors.Is(err, service.ErrLiveConcurrencyFull):
 		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Live concurrency limit reached")
 	case errors.Is(err, service.ErrLiveUnavailable):
@@ -220,6 +225,10 @@ func (h *OpenAIGatewayHandler) LiveSideband(c *gin.Context) {
 	}
 	record, err := h.gatewayService.GetLiveCallForIdentity(c.Request.Context(), c.Param("call_id"), identity)
 	if err != nil {
+		if errors.Is(err, service.ErrNoAllowedCodexAccounts) {
+			h.errorResponse(c, http.StatusForbidden, "forbidden_error", service.CodexUserBlockedMessage)
+			return
+		}
 		if errors.Is(err, service.ErrLiveIdentityMismatch) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", "Live call belongs to another identity")
 			return

@@ -1297,7 +1297,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
-	c.Request = c.Request.WithContext(msgPricingCtx)
+	c.Request = c.Request.WithContext(service.WithCodexRestrictionRequest(msgPricingCtx, c, body))
 
 	for {
 		if failoverClientGone(c) {

@@ -15,22 +15,35 @@ const ContentModerationModeRiskControlLogOnly = "risk_control_log_only"
 
 // The historical cyber_policy_user_allowlist storage/API key also governs ordinary moderation.
 
-// ParseCyberPolicyUserAllowlist accepts positive platform user IDs separated by
+// parsePositiveUserIDList accepts positive platform user IDs separated by
 // commas or whitespace. Reject the whole list on invalid input; never accept a
 // partially parsed privilege configuration.
-func ParseCyberPolicyUserAllowlist(raw string) (map[int64]struct{}, error) {
+func parsePositiveUserIDList(raw, fieldName string) (map[int64]struct{}, error) {
 	if len(raw) > 16384 {
-		return nil, fmt.Errorf("cyber_policy_user_allowlist must not exceed 16384 bytes")
+		return nil, fmt.Errorf("%s must not exceed 16384 bytes", fieldName)
 	}
 	ids := make(map[int64]struct{})
 	for _, field := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
 		id, err := strconv.ParseInt(field, 10, 64)
 		if err != nil || id <= 0 {
-			return nil, fmt.Errorf("cyber_policy_user_allowlist must contain positive user IDs separated by commas or whitespace")
+			return nil, fmt.Errorf("%s must contain positive user IDs separated by commas or whitespace", fieldName)
 		}
 		ids[id] = struct{}{}
 	}
 	return ids, nil
+}
+
+// ParseCyberPolicyUserAllowlist accepts positive platform user IDs separated by
+// commas or whitespace. Reject the whole list on invalid input; never accept a
+// partially parsed privilege configuration.
+func ParseCyberPolicyUserAllowlist(raw string) (map[int64]struct{}, error) {
+	return parsePositiveUserIDList(raw, SettingKeyCyberPolicyUserAllowlist)
+}
+
+// ParseCodexCLIOnlyUserBlacklist parses the user IDs that cannot use accounts
+// protected by the codex_cli_only policy.
+func ParseCodexCLIOnlyUserBlacklist(raw string) (map[int64]struct{}, error) {
+	return parsePositiveUserIDList(raw, SettingKeyCodexCLIOnlyUserBlacklist)
 }
 
 func (s *SettingService) IsCyberPolicyUserAllowlisted(ctx context.Context, userID int64) bool {

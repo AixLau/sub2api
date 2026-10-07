@@ -563,6 +563,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.CodexCLIOnlyBlacklist != after.CodexCLIOnlyBlacklist {
 		changed = append(changed, "codex_cli_only_blacklist")
 	}
+	if before.CodexCLIOnlyUserBlacklist != after.CodexCLIOnlyUserBlacklist {
+		changed = append(changed, "codex_cli_only_user_blacklist")
+	}
 	if before.CodexCLIOnlyWhitelist != after.CodexCLIOnlyWhitelist {
 		changed = append(changed, "codex_cli_only_whitelist")
 	}

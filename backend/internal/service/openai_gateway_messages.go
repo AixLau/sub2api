@@ -43,6 +43,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	} else if changed {
 		body = sanitized
 	}
+	if err := s.enforceCodexClientRestriction(ctx, c, account, body); err != nil {
+		return nil, err
+	}
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)

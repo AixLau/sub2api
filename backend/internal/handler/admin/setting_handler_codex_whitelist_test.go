@@ -4,6 +4,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -55,4 +56,52 @@ func TestUpdateSettings_CodexBlacklistAllowsOriginatorOnly(t *testing.T) {
 		"codex_cli_only_blacklist": `[{"originator":"evil"}]`,
 	})
 	require.Equal(t, http.StatusOK, code, "黑名单 originator-only 应允许(非对称)")
+}
+
+func TestUpdateSettings_CodexUserBlacklistValidatesUserIDs(t *testing.T) {
+	require.Equal(t, http.StatusOK, updateSettingsCodexStatus(t, map[string]any{
+		"codex_cli_only_user_blacklist": "12, 34",
+	}))
+	require.Equal(t, http.StatusBadRequest, updateSettingsCodexStatus(t, map[string]any{
+		"codex_cli_only_user_blacklist": "12, invalid",
+	}))
+}
+
+func TestUpdateSettings_CodexUserBlacklistRoundTrip(t *testing.T) {
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, &config.Config{})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+	request := func(method, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(method, "/api/v1/admin/settings", bytes.NewBufferString(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		if method == http.MethodPut {
+			handler.UpdateSettings(c)
+		} else {
+			handler.GetSettings(c)
+		}
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		return rec
+	}
+	require.Empty(t, svc.GetCodexRestrictionPolicy(context.Background()).DeniedUserIDs)
+	for _, tc := range []struct{ body, want string }{
+		{`{"codex_cli_only_user_blacklist":"42,99"}`, "42,99"},
+		{`{"min_codex_version":"0.146.0"}`, "42,99"},
+		{`{"codex_cli_only_user_blacklist":""}`, ""},
+	} {
+		for _, rec := range []*httptest.ResponseRecorder{request(http.MethodPut, tc.body), request(http.MethodGet, "")} {
+			var payload struct {
+				Data struct {
+					Blacklist string `json:"codex_cli_only_user_blacklist"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+			require.Equal(t, tc.want, payload.Data.Blacklist)
+		}
+		require.Equal(t, tc.want, repo.values[service.SettingKeyCodexCLIOnlyUserBlacklist])
+		policy := svc.GetCodexRestrictionPolicy(context.Background())
+		require.Equal(t, tc.want != "", len(policy.DeniedUserIDs) > 0)
+	}
 }

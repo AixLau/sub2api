@@ -4524,6 +4524,18 @@
                     {{ t("admin.settings.gatewayForwarding.codexHardeningDesc") }}
                   </p>
                 </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.gatewayForwarding.codexUserBlacklist") }}
+                  </label>
+                  <p class="mb-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.gatewayForwarding.codexUserBlacklistDesc") }}
+                  </p>
+                  <OpenAIFastPolicyUserSelector
+                    v-model="codexCLIOnlyDeniedUserIds"
+                    data-testid="codex-user-blacklist"
+                  />
+                </div>
                 <div class="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label
@@ -10205,6 +10217,7 @@ const form = reactive<SettingsForm>({
   min_codex_version: "",
   max_codex_version: "",
   codex_cli_only_blacklist: "",
+  codex_cli_only_user_blacklist: "",
   codex_cli_only_whitelist: "",
   codex_cli_only_allow_app_server_clients: false,
   codex_cli_only_engine_fingerprint_signals: "",
@@ -10261,6 +10274,18 @@ const riskControlAllowlistedUserIds = computed<number[]>({
   )),
   set: (ids) => {
     form.cyber_policy_user_allowlist = ids.join(",");
+  },
+});
+
+const codexCLIOnlyDeniedUserIds = computed<number[]>({
+  get: () => Array.from(new Set(
+    form.codex_cli_only_user_blacklist
+      .split(/[,\s]+/)
+      .map(Number)
+      .filter((id) => Number.isSafeInteger(id) && id > 0),
+  )),
+  set: (ids) => {
+    form.codex_cli_only_user_blacklist = ids.join(",");
   },
 });
 
@@ -11867,6 +11892,7 @@ async function saveSettings() {
       codex_cli_only_blacklist: serializeCodexRowsToJSON(
         codexBlacklistRows.value,
       ),
+      codex_cli_only_user_blacklist: form.codex_cli_only_user_blacklist,
       codex_cli_only_whitelist: serializeCodexRowsToJSON(
         codexWhitelistRows.value,
       ),

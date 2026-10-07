@@ -44,6 +44,8 @@ const {
   adminSettingsFetch,
   showError,
   showSuccess,
+  searchUsers,
+  getUserById,
 } = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -85,6 +87,15 @@ const {
   adminSettingsFetch: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
+  searchUsers: vi.fn(),
+  getUserById: vi.fn(),
+}));
+
+vi.mock("@/api/admin", () => ({
+  adminAPI: {
+    usage: { searchUsers },
+    users: { getById: getUserById },
+  },
 }));
 
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
@@ -1349,6 +1360,49 @@ describe("admin SettingsView payment visible method controls", () => {
         affiliate_admin_recharge_enabled: true,
       }),
     );
+  });
+
+  it("loads, searches, adds, removes and saves the Codex user blacklist", async () => {
+    getSettings.mockResolvedValue({
+      ...baseSettingsResponse,
+      codex_cli_only_user_blacklist: "42",
+    });
+    getUserById.mockImplementation(async (id: number) => ({ id, email: id === 42 ? "blocked@example.com" : "second@example.com" }));
+    searchUsers.mockResolvedValue([
+      { id: 99, email: "second@example.com", deleted: false },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const selector = wrapper.getComponent('[data-testid="codex-user-blacklist"]');
+    expect(selector.props("modelValue")).toEqual([42]);
+    expect(selector.text()).toContain("blocked@example.com");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await selector.get("input").setValue("second");
+      await vi.advanceTimersByTimeAsync(300);
+      await flushPromises();
+      expect(searchUsers).toHaveBeenCalledWith("second");
+      const result = selector.findAll("button").find(button => button.text().includes("second@example.com"));
+      await result!.trigger("click");
+      expect(selector.props("modelValue")).toEqual([42, 99]);
+    } finally {
+      vi.useRealTimers();
+    }
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ codex_cli_only_user_blacklist: "42,99" }));
+    const removeButtons = selector.findAll('button[aria-label="admin.settings.openaiFastPolicy.removeUser"]');
+    await removeButtons[0]!.trigger("click");
+    await flushPromises();
+    expect(selector.props("modelValue")).toEqual([99]);
+    await selector.get('button[aria-label="admin.settings.openaiFastPolicy.removeUser"]').trigger("click");
+    await flushPromises();
+    expect(selector.props("modelValue")).toEqual([]);
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenLastCalledWith(expect.objectContaining({ codex_cli_only_user_blacklist: "" }));
+    wrapper.unmount();
   });
 
   it("submits Anthropic cache TTL injection gateway setting", async () => {

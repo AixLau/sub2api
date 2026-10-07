@@ -56,6 +56,10 @@ func (s *OpenAIGatewayService) ForwardResponsesInputTokens(
 		return fmt.Errorf("responses input_tokens: missing account")
 	}
 
+	if err := s.enforceCodexClientRestriction(ctx, c, account, body); err != nil {
+		return err
+	}
+
 	prepared, err := prepareNativeOpenAIInputTokensCountRequest(body, account)
 	if err != nil {
 		writeOpenAIResponsesInputTokensError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
@@ -263,6 +267,10 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	if account == nil {
 		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "api_error", "No available OpenAI accounts")
 		return fmt.Errorf("count_tokens: missing account")
+	}
+
+	if err := s.enforceCodexClientRestriction(ctx, c, account, body); err != nil {
+		return err
 	}
 
 	// 国产供应商与 OpenCode（全部协议，含 anthropic）：一律本地估算，不发上游请求。

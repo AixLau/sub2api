@@ -313,6 +313,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		MinCodexVersion:                                        settings.MinCodexVersion,
 		MaxCodexVersion:                                        settings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                                  settings.CodexCLIOnlyBlacklist,
+		CodexCLIOnlyUserBlacklist:                              settings.CodexCLIOnlyUserBlacklist,
 		CodexCLIOnlyWhitelist:                                  settings.CodexCLIOnlyWhitelist,
 		CodexCLIOnlyAllowAppServerClients:                      settings.CodexCLIOnlyAllowAppServerClients,
 		CodexCLIOnlyEngineFingerprintSignals:                   settings.CodexCLIOnlyEngineFingerprintSignals,
