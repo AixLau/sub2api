@@ -50,7 +50,7 @@ func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Cont
 
 func codexAccountAllowedForScheduling(ctx context.Context, account *Account, accountRepo AccountRepository, settings *SettingService, detector CodexClientRestrictionDetector) (bool, string) {
 	req, ok := codexRestrictionRequestFromContext(ctx)
-	if account == nil || !account.IsOpenAIOAuth() || !account.IsCodexCLIOnlyEnabled() || (!ok && codexRestrictionContextUserID(ctx) <= 0) {
+	if account == nil || !account.IsOpenAIOAuth() || (!ok && codexRestrictionContextUserID(ctx) <= 0) {
 		return true, ""
 	}
 	// Scheduler snapshots may intentionally omit account Extra fields. Refresh

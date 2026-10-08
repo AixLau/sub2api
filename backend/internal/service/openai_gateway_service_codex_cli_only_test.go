@@ -78,6 +78,35 @@ func TestOpenAIGatewayService_SelectBestAccountFiltersCodexOnlyAccounts(t *testi
 	require.Equal(t, 1, stats.reasons["codex_official_client_user_agent_not_matched"])
 }
 
+type codexSchedulingAccountRepo struct {
+	AccountRepository
+	account *Account
+}
+
+func (r codexSchedulingAccountRepo) GetByID(context.Context, int64) (*Account, error) {
+	return r.account, nil
+}
+
+func TestCodexAccountAllowedForSchedulingRefreshesSnapshotBeforeRestrictionCheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "curl/8.0")
+	ctx := WithCodexRestrictionRequest(context.Background(), c, []byte(`{"model":"gpt-5.6-sol"}`))
+
+	// Scheduler snapshots can omit Extra. The repository refresh must happen
+	// before checking codex_cli_only, otherwise this restricted account leaks
+	// into selection and only fails after the upstream request starts.
+	selectedSnapshot := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	freshRestricted := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Extra: map[string]any{"codex_cli_only": true}}
+	repo := codexSchedulingAccountRepo{account: freshRestricted}
+
+	allowed, reason := codexAccountAllowedForScheduling(ctx, selectedSnapshot, repo, nil, NewOpenAICodexClientRestrictionDetector(nil))
+	require.False(t, allowed)
+	require.Equal(t, CodexClientRestrictionReasonNotMatchedUA, reason)
+}
+
 func TestOpenAIGatewayService_Forward_VersionGateMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
