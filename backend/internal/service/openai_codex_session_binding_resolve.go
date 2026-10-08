@@ -21,7 +21,8 @@ import (
 //  1. 已提交绑定优先（current 缺失时由探测修复，绝不判为新会话）；
 //  2. 未提交时按证据判定：原生 side 证据 → side（须解析出**真实** fork 源）；
 //     带 parent 引用 → 继承父绑定；两者都不成立 → root。
-//  3. 证据不足一律明确失败，绝不默认当普通会话——那正是漂移的成因。
+//  3. 证据不足时不建立绑定，绝不默认当普通会话。入口仅对允许的缺证据场景
+//     使用无状态投影，不将回退结果写为权威 lineage。
 
 func (s *OpenAIGatewayService) codexSessionBindingEnabled() bool {
 	if s == nil || s.cfg == nil {
@@ -358,7 +359,8 @@ func newCodexTurnID() (string, error) {
 //
 // session 模式必须先确认权威 lineage 才能分配 session/thread 身份。flat 模式
 // （off/device/full）不拥有服务端 session/thread 身份，因此缺少 parent/fork
-// lineage 时可以继续使用既有无状态 projection；这不会猜测或写入任何 lineage。
+// lineage 时可以继续使用既有无状态 projection。session 的 fork 源缺失时也允许
+// 使用 device 投影，以便换号后的 fork 请求继续出网；不猜测或写入任何 lineage。
 func (s *OpenAIGatewayService) resolveCodexBindingFingerprintIDs(
 	ctx context.Context, c *gin.Context, account *Account, now time.Time,
 ) (*codexFingerprintIDs, error) {
@@ -384,6 +386,10 @@ func (s *OpenAIGatewayService) resolveCodexBindingFingerprintIDs(
 	decision, err := s.resolveCodexSessionBindingDecision(ctx, c, account, input, userScope, accountScope, now)
 	if err != nil {
 		mode := account.GetCodexFingerprintMode()
+		if mode == codexFingerprintSession && errors.Is(err, ErrCodexBindingUnresolvedSource) {
+			RecordCodexIdentityEvent("session_binding", "fallback")
+			return resolveCodexFingerprintIDs(account, "", codexFingerprintDevice), nil
+		}
 		if codexFlatFingerprintMode(mode) &&
 			(errors.Is(err, ErrCodexBindingUnresolvedAttribution) || errors.Is(err, ErrCodexBindingUnresolvedSource)) {
 			RecordCodexIdentityEvent("session_binding", "fallback")

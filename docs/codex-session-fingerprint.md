@@ -143,13 +143,27 @@ Root 和 side 首次请求的 `turn_id == root_turn_id` 保持成立；child 的
 2. 未提交时按证据判定：原生 side 证据 → side（必须解析出**真实** fork 源）；
    带 parent 引用 → 继承父绑定的归属/代次/实体；两者都不成立 → root。
 3. root 的归属类别由当前模式决定：`session` → period；`off`/`device`/`full` → flat。
-4. **证据不足一律明确失败**（不分配身份、不写 key），绝不默认当普通会话。
+4. **证据不足时不建立绑定**，绝不默认当普通会话。`off`/`device`/`full` 缺少
+   parent/fork 来源时沿用各自的无状态投影；`session` 仅在原生 fork 源未解析
+   （`ErrCodexBindingUnresolvedSource`，包括缺少 latest 或对应 exact）时，对本次
+   请求使用 `device` 投影。`session` 缺少 parent 归属仍明确失败。
+
+这条 fork 回退允许账号轮换后、目标账号 scope 内没有父线程记录的请求继续出网。
+回退保留账号设备指纹和既有账号/用户隔离，不创建 period、side、flat 绑定，不把
+推导出的引用写成真实 fork 来源；最终 normalization 仍可建立既有 v2 session 隔离
+映射。已有权威绑定及可解析的 fork 源仍优先使用正常的 session 投影。
+
+取舍是：回退请求不享有 session 模型的会话收敛和 lineage 连续性保证；源线程随后
+在同一 scope 内登记后，后续 fork 请求可建立真实 side 绑定，出站身份可能随之变化。
+此行为随 `binding` 模式启用，无新增配置项，回退计入现有
+`sub2api_codex_identity_events_total{operation="session_binding",result="fallback"}`。
 
 ### 不变量
 
 - 随机身份首次分配后固定；同代次归属不漂移；跨代次建立新身份、旧绑定不被改写。
 - 旧 side 的投影（session id、fork 源、`preserve_v3_threads`）**原值接管**，不重算。
-- **不合成 fork 来源**：缺证据时明确失败，绝不写入一个没有历史依据的目标。
+- **不合成权威 fork 来源**：缺证据时不建立绑定，允许的请求使用无状态投影，
+  绝不写入一个没有历史依据的 fork 目标。
 - 存储故障、owner 已退休、记录版本不支持一律**明确失败**，不回退账号当前模式。
 - 归属冲突（同一 raw session 出现不同 attribution）明确失败，绝不静默选边。
 
@@ -175,15 +189,17 @@ Root 和 side 首次请求的 `turn_id == root_turn_id` 保持成立；child 的
 ### 上线前置条件与覆盖范围
 
 1. **先开 gate，后改账号模式，中间要留出真实流量。** 在途会话必须在切换前已经
-   提交过绑定，否则引用型请求会明确失败。**同时**开 gate 与改模式（没有任何已提交
-   绑定）仍会失败——此时失败是 `ErrCodexBindingUnresolvedAttribution`，不写任何 key、
-   不偷偷分配其它 lineage 的身份，但**客户端仍会看到一次失败**。
+   提交过绑定，才能保持原有绑定规则。**同时**开 gate 与改为 `session`（没有任何
+   已提交绑定）时，缺少 parent 归属的请求仍以 `ErrCodexBindingUnresolvedAttribution`
+   失败；缺少 fork 源的请求使用上述 device 回退，不保证 session 身份连续。
 2. **覆盖范围**：只有普通 HTTP `/responses`（含 passthrough，非 compact）经过本模型。
    以下形态**不经过**：legacy `/responses/compact`、兼容消息桥接形态、`/v1/chat/completions`、
    `/v1/messages`、WS。它们用既有的无状态投影或自愈的 v2 mapper——**不会**产生
    `ErrCodexSessionIdentityNotFound`，但身份/缓存亲和可能与绑定模型的会话不一致。
-3. **证据不足不再一律硬失败**：请求完全没有会话标识（无 raw session）时保守回退
-   device 投影，与 legacy 一致；只有"声称有 parent 引用但给不出 parent 线程标识"或
-   "引用的线程无任何已提交证据"才明确失败。
+3. **缺证据回退边界**：请求完全没有会话标识（无 raw session）时保守回退 device
+   投影，与 legacy 一致；flat 模式缺少 parent/fork 来源时沿用各自投影，`session`
+   原生 fork 源未解析时使用 device 投影。`session` 中"声称有 parent 引用但给不出
+   parent 线程标识"或"parent 无有效的已提交归属"仍明确失败。存储故障、owner
+   已退休、无效记录、版本不支持及绑定冲突均不触发这条回退。
 4. 回滚：`force_account_rule=true`（需重启）或把 gate 改回 `legacy`；后者对在
    binding 模式下新建的会话同样是一次会话边界（新模型只写新键族，legacy 不读它们）。

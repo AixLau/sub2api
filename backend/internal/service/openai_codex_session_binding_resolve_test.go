@@ -313,30 +313,149 @@ func TestCodexBindingFlatModesFallbackOnMissingLineage(t *testing.T) {
 	}
 }
 
-func TestCodexBindingSessionMissingForkSourceRemainsStrict(t *testing.T) {
+func TestCodexBindingSessionMissingForkSourceFallsBackWithoutBinding(t *testing.T) {
+	for _, sourceState := range []string{"missing", "latest_without_exact"} {
+		t.Run(sourceState, func(t *testing.T) {
+			server := miniredis.RunT(t)
+			svc := newCodexBindingService(t, server)
+			account := newTestOAuthAccount(9202, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintSession)})
+			now := time.Now()
+			rawSource, rawSession := newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)
+			scope := codexBindingScope("user:9202", codexSessionIdentityUpstreamScope(account))
+			resolveSource := func() *codexFingerprintIDs {
+				t.Helper()
+				ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+					codexBindingRequest(t, 9202, 92021, rawSource, rawSource, ""), account, now)
+				require.NoError(t, err)
+				require.NotNil(t, ids)
+				return ids
+			}
+			resolveFork := func() *codexFingerprintIDs {
+				t.Helper()
+				ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+					codexBindingForkRequest(t, 9202, 92021, rawSession, rawSession, rawSource), account, now)
+				require.NoError(t, err)
+				require.NotNil(t, ids)
+				return ids
+			}
+			if sourceState == "latest_without_exact" {
+				resolveSource()
+				latest, err := decodeCodexThreadLatest(codexBindingRedisValue(t, server, codexThreadLatestKey(scope, rawSource)))
+				require.NoError(t, err)
+				server.Del(codexBindingRedisKeyPrefix + codexThreadExactKey(scope, rawSource, latest.EntityRef))
+			}
+			beforeKeys := codexBindingFamilyKeys(server)
+			beforeValues := codexBindingRawValues(server, codexBindingRedisKeyPrefix)
+			for attempt := 0; attempt < 2; attempt++ {
+				ids := resolveFork()
+				require.Equal(t, codexFingerprintDevice, ids.mode)
+				require.False(t, ids.httpSessionIdentity)
+				require.Equal(t, resolveCodexFingerprintIDs(account, "", codexFingerprintDevice).installationID, ids.installationID)
+				require.NotEmpty(t, ids.installationID)
+				require.Empty(t, ids.sessionID)
+				require.Empty(t, ids.threadID)
+				require.Empty(t, ids.forkedFromThreadID)
+				require.Equal(t, beforeKeys, codexBindingFamilyKeys(server), "fallback must not create any binding or side entity")
+				require.Equal(t, beforeValues, codexBindingRawValues(server, codexBindingRedisKeyPrefix), "fallback must not alter committed lineage")
+			}
+
+			// A later source observation can establish a real side binding; the
+			// earlier fallback must not pin the request to a fabricated lineage.
+			source := resolveSource()
+			side := resolveFork()
+			require.True(t, side.httpSessionIdentity)
+			require.Equal(t, codexFingerprintSession, side.mode)
+			require.NotEqual(t, source.sessionID, side.sessionID)
+			entity, err := decodeCodexSideEntity(codexBindingRedisValue(t, server, codexSideEntityKey(scope, rawSession)))
+			require.NoError(t, err)
+			require.Equal(t, source.threadID, entity.ForkSource)
+			require.Equal(t, side.sessionID, resolveFork().sessionID)
+		})
+	}
+}
+
+func TestCodexBindingSessionForkFallsBackAfterAccountRotation(t *testing.T) {
 	server := miniredis.RunT(t)
 	svc := newCodexBindingService(t, server)
 	account := newTestOAuthAccount(9202, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintSession)})
-
-	ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
-		codexBindingForkRequest(t, 9202, 92021, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)), account, time.Now())
-
-	require.ErrorIs(t, err, ErrCodexBindingUnresolvedSource)
-	require.Nil(t, ids)
+	account.Credentials = map[string]any{"chatgpt_account_id": "original-account"}
+	nextAccount := newTestOAuthAccount(9204, map[string]any{
+		codexFingerprintModeExtraKey: string(codexFingerprintSession),
+		codexFingerprintSeedExtraKey: "22222222-2222-4222-8222-222222222222",
+	})
+	nextAccount.Credentials = map[string]any{"chatgpt_account_id": "rotated-account"}
+	now := time.Now()
+	rawSource, rawSession := newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)
+	_, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+		codexBindingRequest(t, 9202, 92021, rawSource, rawSource, ""), account, now)
+	require.NoError(t, err)
+	resolveFork := func(selected *Account) *codexFingerprintIDs {
+		t.Helper()
+		ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+			codexBindingForkRequest(t, 9202, 92021, rawSession, rawSession, rawSource), selected, now)
+		require.NoError(t, err)
+		require.NotNil(t, ids)
+		return ids
+	}
+	first := resolveFork(account)
+	require.True(t, first.httpSessionIdentity)
+	before := codexBindingRawValues(server, codexBindingRedisKeyPrefix)
+	rotated := resolveFork(nextAccount)
+	require.Equal(t, codexFingerprintDevice, rotated.mode)
+	require.False(t, rotated.httpSessionIdentity)
+	require.NotEqual(t, first.installationID, rotated.installationID)
+	require.Equal(t, before, codexBindingRawValues(server, codexBindingRedisKeyPrefix))
+	back := resolveFork(account)
+	require.True(t, back.httpSessionIdentity)
+	require.Equal(t, first.sessionID, back.sessionID)
+	require.Equal(t, first.threadID, back.threadID)
 }
 
-func TestCodexBindingFlatMissingLineageDoesNotHideStoreFailure(t *testing.T) {
+func TestCodexBindingSessionForkInvalidSourceRecordFails(t *testing.T) {
+	for _, tc := range []struct {
+		name, record string
+		wantErr      error
+	}{
+		{"invalid", `{`, ErrCodexBindingInvalidValue},
+		{"unsupported_version", `{"v":999}`, ErrCodexBindingUnsupportedVersion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := miniredis.RunT(t)
+			svc := newCodexBindingService(t, server)
+			account := newTestOAuthAccount(9202, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintSession)})
+			rawFork := newCodexUUIDv7ForTest(t)
+			scope := codexBindingScope("user:9202", codexSessionIdentityUpstreamScope(account))
+			require.NoError(t, server.Set(codexBindingRedisKeyPrefix+codexThreadLatestKey(scope, rawFork), tc.record))
+			before := codexBindingFamilyKeys(server)
+			ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+				codexBindingForkRequest(t, 9202, 92021, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), rawFork), account, time.Now())
+			require.ErrorIs(t, err, tc.wantErr)
+			require.Nil(t, ids)
+			require.Equal(t, before, codexBindingFamilyKeys(server))
+		})
+	}
+}
+
+func TestCodexBindingMissingLineageDoesNotHideStoreFailure(t *testing.T) {
 	svc := &OpenAIGatewayService{
 		cache: codexBindingFailingStore{},
 		cfg: &config.Config{Gateway: config.GatewayConfig{
 			CodexIdentity: config.CodexIdentityConfig{SessionBinding: config.CodexSessionBindingBinding},
 		}},
 	}
-	account := newTestOAuthAccount(9203, map[string]any{codexFingerprintModeExtraKey: string(codexFingerprintDevice)})
-
-	ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
-		codexBindingRequest(t, 9203, 92031, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)), account, time.Now())
-
-	require.Error(t, err)
-	require.Nil(t, ids)
+	for _, mode := range []codexFingerprintMode{codexFingerprintDevice, codexFingerprintSession} {
+		for _, lineage := range []string{"parent", "fork"} {
+			t.Run(string(mode)+"/"+lineage, func(t *testing.T) {
+				account := newTestOAuthAccount(9203, map[string]any{codexFingerprintModeExtraKey: string(mode)})
+				request := codexBindingRequest
+				if lineage == "fork" {
+					request = codexBindingForkRequest
+				}
+				ids, err := svc.resolveCodexHTTPFingerprintIDs(context.Background(),
+					request(t, 9203, 92031, newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)), account, time.Now())
+				require.ErrorContains(t, err, "identity store unavailable")
+				require.Nil(t, ids)
+			})
+		}
+	}
 }

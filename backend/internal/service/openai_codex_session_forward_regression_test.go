@@ -345,6 +345,98 @@ func TestCodexFlatMissingLineageForwardReachesUpstream(t *testing.T) {
 	}
 }
 
+func TestCodexSessionMissingForkSourceForwardReachesUpstream(t *testing.T) {
+	for _, transport := range []string{"http", "passthrough"} {
+		for _, carrier := range []string{"header", "flat", "nested"} {
+			t.Run(transport+"/"+carrier, func(t *testing.T) {
+				cfg := &config.Config{}
+				cfg.Gateway.CodexIdentity.SessionBinding = config.CodexSessionBindingBinding
+				store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
+				upstream := &httpUpstreamRecorder{}
+				account := newTestOAuthAccount(9542, map[string]any{
+					codexFingerprintModeExtraKey: string(codexFingerprintSession),
+					"openai_passthrough":         transport == "passthrough",
+				})
+				account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "session-fork-fallback"}
+				svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+				rawSession, rawFork := newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)
+				metadata, err := json.Marshal(map[string]any{
+					"forked_from_thread_id":         rawFork,
+					"forked_from_ordinal_exclusive": 1,
+				})
+				require.NoError(t, err)
+				var firstSession string
+				for attempt := 0; attempt < 2; attempt++ {
+					upstream.resp = &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": {"text/event-stream"}},
+						Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_session_fallback\",\"model\":\"gpt-5.2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")),
+					}
+					c := newCodexSessionIdentityTestContext(t, 95, 954)
+					c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+					c.Request.Header.Set("originator", "codex_cli_rs")
+					c.Request.Header.Set("session-id", rawSession)
+					c.Request.Header.Set("thread-id", rawSession)
+					clientMetadata := map[string]any{"session_id": rawSession, "thread_id": rawSession}
+					switch carrier {
+					case "header":
+						c.Request.Header.Set(openAIWSTurnMetadataHeader, string(metadata))
+					case "flat":
+						clientMetadata["forked_from_thread_id"] = rawFork
+						clientMetadata["forked_from_ordinal_exclusive"] = 1
+					case "nested":
+						clientMetadata[openAIWSTurnMetadataHeader] = string(metadata)
+					}
+					encoded, err := json.Marshal(map[string]any{
+						"model": "gpt-5.2", "stream": true, "instructions": "test",
+						"input":            []any{map[string]any{"role": "user", "content": "hello"}},
+						"prompt_cache_key": rawSession,
+						"client_metadata":  clientMetadata,
+					})
+					require.NoError(t, err)
+					_, err = svc.Forward(context.Background(), c, account, encoded)
+					require.NoError(t, err)
+					require.NotNil(t, upstream.lastReq)
+					require.Len(t, upstream.requests, attempt+1)
+					require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"))
+					ids := stagedCodexFingerprintIDs(c, account)
+					require.NotNil(t, ids)
+					require.Equal(t, codexFingerprintDevice, ids.mode)
+					require.False(t, ids.httpSessionIdentity)
+					headers, output := upstream.lastReq.Header, upstream.lastBody
+					require.Equal(t, ids.installationID, headers.Get("x-codex-installation-id"))
+					require.Equal(t, ids.installationID, gjson.GetBytes(output, "client_metadata.installation_id").String())
+					mapped := headers.Get("session-id")
+					require.True(t, isCodexUUIDv7(mapped))
+					require.NotEqual(t, rawSession, mapped)
+					if attempt == 0 {
+						firstSession = mapped
+					}
+					require.Equal(t, firstSession, mapped, "retries must retain the same scoped session")
+					require.Equal(t, mapped, headers.Get("session_id"))
+					require.Equal(t, mapped, gjson.GetBytes(output, "client_metadata.session_id").String())
+					require.Equal(t, mapped, gjson.GetBytes(output, "prompt_cache_key").String())
+					for _, nested := range []string{headers.Get(openAIWSTurnMetadataHeader), gjson.GetBytes(output, "client_metadata."+openAIWSTurnMetadataHeader).String()} {
+						require.Equal(t, mapped, gjson.Get(nested, "session_id").String())
+						if carrier != "flat" {
+							require.Equal(t, rawFork, gjson.Get(nested, "forked_from_thread_id").String())
+							require.Equal(t, int64(1), gjson.Get(nested, "forked_from_ordinal_exclusive").Int())
+						}
+					}
+					if carrier == "flat" {
+						require.Equal(t, rawFork, gjson.GetBytes(output, "client_metadata.forked_from_thread_id").String())
+						require.Equal(t, int64(1), gjson.GetBytes(output, "client_metadata.forked_from_ordinal_exclusive").Int())
+					}
+					// Device normalization may persist a v2 session mapping, but
+					// must not invent a binding or an authoritative fork source.
+					require.Len(t, store.values, 1)
+					require.Contains(t, store.values, codexSessionIdentityMappingKey(c, account, 954, rawSession))
+				}
+			})
+		}
+	}
+}
+
 func TestCodexSessionStrategyCutoverAndRollbackAtHTTPBuilders(t *testing.T) {
 	// An old UUIDv7 is still a UUIDv7: creation time cannot prove whether it
 	// was active before upgrade. A strategy change is an explicit boundary.
