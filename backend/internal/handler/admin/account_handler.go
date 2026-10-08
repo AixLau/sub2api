@@ -203,10 +203,10 @@ type AccountWithConcurrency struct {
 	CurrentConcurrency int                          `json:"current_concurrency"`
 	SchedulerScore     *AccountSchedulerScore       `json:"scheduler_score,omitempty"`
 	SchedulerScores    []AccountSchedulerGroupScore `json:"scheduler_scores,omitempty"`
-	// 以下字段仅对 Anthropic OAuth/SetupToken 账号有效，且仅在启用相应功能时返回
+	// 窗口费用和会话数仅在对应限制启用时返回；RPM 适用于所有账号。
 	CurrentWindowCost *float64 `json:"current_window_cost,omitempty"` // 当前窗口费用
 	ActiveSessions    *int     `json:"active_sessions,omitempty"`     // 当前活跃会话数
-	CurrentRPM        *int     `json:"current_rpm,omitempty"`         // 当前分钟 RPM 计数
+	CurrentRPM        *int     `json:"current_rpm,omitempty"`         // 最近 60 秒成功请求数
 }
 
 // AccountListItemWithConcurrency is the compact account-list envelope used
@@ -399,11 +399,11 @@ func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, ac
 				}
 			}
 		}
-
-		if h.rpmCache != nil && account.GetBaseRPM() > 0 {
-			if rpm, err := h.rpmCache.GetRPM(ctx, account.ID); err == nil {
-				item.CurrentRPM = &rpm
-			}
+	}
+	if h.rpmCache != nil {
+		if counts, err := h.rpmCache.GetRecentRPMBatch(ctx, []int64{account.ID}); err == nil {
+			rpm := counts[account.ID]
+			item.CurrentRPM = &rpm
 		}
 	}
 
@@ -732,10 +732,9 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 
-	// 识别需要查询窗口费用、会话数和 RPM 的账号（Anthropic OAuth/SetupToken 且启用了相应功能）
+	// 识别启用了窗口费用和会话限制的 Anthropic OAuth/SetupToken 账号。
 	windowCostAccountIDs := make([]int64, 0)
 	sessionLimitAccountIDs := make([]int64, 0)
-	rpmAccountIDs := make([]int64, 0)
 	sessionIdleTimeouts := make(map[int64]time.Duration) // 各账号的会话空闲超时配置
 	for i := range accounts {
 		acc := &accounts[i]
@@ -747,17 +746,13 @@ func (h *AccountHandler) List(c *gin.Context) {
 				sessionLimitAccountIDs = append(sessionLimitAccountIDs, acc.ID)
 				sessionIdleTimeouts[acc.ID] = time.Duration(acc.GetSessionIdleTimeoutMinutes()) * time.Minute
 			}
-			if acc.GetBaseRPM() > 0 {
-				rpmAccountIDs = append(rpmAccountIDs, acc.ID)
-			}
 		}
 	}
 
-	// 始终获取 RPM 计数（Redis GET，极低开销）
-	if len(rpmAccountIDs) > 0 && h.rpmCache != nil {
-		rpmCounts, _ = h.rpmCache.GetRPMBatch(c.Request.Context(), rpmAccountIDs)
-		if rpmCounts == nil {
-			rpmCounts = make(map[int64]int)
+	// 批量获取当前页所有账号最近 60 秒的成功请求数。
+	if len(accountIDs) > 0 && h.rpmCache != nil {
+		if counts, err := h.rpmCache.GetRecentRPMBatch(c.Request.Context(), accountIDs); err == nil {
+			rpmCounts = counts
 		}
 	}
 
@@ -830,7 +825,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 			}
 		}
 
-		// 添加 RPM 计数（仅当启用时）
+		// 添加所有账号的 RPM 计数；读取失败时不返回伪造的零值。
 		if rpmCounts != nil {
 			if rpm, ok := rpmCounts[acc.ID]; ok {
 				item.CurrentRPM = &rpm

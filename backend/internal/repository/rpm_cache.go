@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -133,9 +134,63 @@ func (c *RPMCacheImpl) GetRPMBatch(ctx context.Context, accountIDs []int64) (map
 	for id, cmd := range cmds {
 		if val, err := cmd.Int(); err == nil {
 			result[id] = val
-		} else {
+		} else if errors.Is(err, redis.Nil) {
 			result[id] = 0
+		} else {
+			return nil, fmt.Errorf("rpm batch get account %d: %w", id, err)
 		}
+	}
+	return result, nil
+}
+
+// A distinct key keeps monitoring's rolling window independent of the existing
+// calendar-minute scheduling limit. Unique members preserve simultaneous completions.
+var incrementRecentRPMScript = redis.NewScript(`
+ redis.replicate_commands()
+ local t = redis.call('TIME')
+ local now = tonumber(t[1]) * 1000000 + tonumber(t[2])
+ redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - 60000000)
+ redis.call('ZADD', KEYS[1], now, ARGV[1])
+ redis.call('EXPIRE', KEYS[1], 60)
+ return redis.call('ZCARD', KEYS[1])
+`)
+var getRecentRPMScript = redis.NewScript(`
+ redis.replicate_commands()
+ local t = redis.call('TIME')
+ local now = tonumber(t[1]) * 1000000 + tonumber(t[2])
+ redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - 60000000)
+ return redis.call('ZCOUNT', KEYS[1], '-inf', now)
+`)
+
+func recentRPMKey(accountID int64) string { return "rpm:recent:" + strconv.FormatInt(accountID, 10) }
+
+func (c *RPMCacheImpl) IncrementRecentRPM(ctx context.Context, accountID int64) (int, error) {
+	count, err := incrementRecentRPMScript.Run(ctx, c.rdb, []string{recentRPMKey(accountID)}, uuid.NewString()).Int()
+	if err != nil {
+		return 0, fmt.Errorf("recent rpm increment: %w", err)
+	}
+	return count, nil
+}
+
+func (c *RPMCacheImpl) GetRecentRPMBatch(ctx context.Context, accountIDs []int64) (map[int64]int, error) {
+	result := make(map[int64]int, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return result, nil
+	}
+	pipe := c.rdb.Pipeline()
+	cmds := make(map[int64]*redis.Cmd, len(accountIDs))
+	for _, id := range accountIDs {
+		cmds[id] = getRecentRPMScript.Eval(ctx, pipe, []string{recentRPMKey(id)})
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("recent rpm batch get: %w", err)
+	}
+	for id, cmd := range cmds {
+		value, err := cmd.Int()
+		if err != nil {
+			return nil, fmt.Errorf("recent rpm batch get account %d: %w", id, err)
+		}
+		result[id] = value
 	}
 	return result, nil
 }

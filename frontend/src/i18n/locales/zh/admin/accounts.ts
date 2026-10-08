@@ -152,7 +152,14 @@ export default {
         failed: '更新优先级失败'
       },
       groupCountTotal: '共 {count} 个分组',
+      rpm: {
+        hint: '最近 60 秒内成功完成的请求数，每 5 秒刷新。',
+        loading: '正在加载 RPM',
+        limitHint: '最近 60 秒成功请求数 / 配置的 RPM 上限；现有限流仍按自然分钟计算，颜色仅表示参考使用量。',
+        unavailable: 'RPM 暂不可用'
+      },
       columns: {
+        rpm: 'RPM',
         name: '名称',
         id: '账号ID',
         platformType: '平台/类型',

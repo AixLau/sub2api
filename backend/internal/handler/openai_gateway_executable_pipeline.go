@@ -1452,6 +1452,9 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		return ExecutableStageResult{}
 	}
 	failedUpstreamUsage := s.Source.Normalize() == service.UsageSourceFailedUpstream
+	if s.Result != nil && !s.Result.ClientDisconnect && !failedUpstreamUsage && !s.ForwardErrored && s.Result.SucceededForScheduling() {
+		recordAccountRPM(ctx, h.rpmCache, s.Account)
+	}
 	if failedUpstreamUsage {
 		// Cyber failures have their own usage recorder. Recording both paths would
 		// charge the same upstream failure twice with different token breakdowns.
@@ -2042,6 +2045,9 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover, service.GetOpsCyberPolicy(c) != nil && !h.cyberPolicyLogOnly(c, s.APIKey), s.TurnErr)
 	} else if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil && !h.cyberPolicyLogOnly(c, s.APIKey) {
 		*s.CyberBlockedThisConn = true
+	}
+	if s.TurnErr == nil && s.Result != nil && !s.Result.ClientDisconnect && s.Result.SucceededForScheduling() {
+		recordAccountRPM(ctx, h.rpmCache, s.Account)
 	}
 	if s.TurnErr != nil {
 		if s.Result == nil || !s.Result.HasBillableUsage() {

@@ -40,6 +40,7 @@ var gatewayCompatibilityMetricsLogCounter atomic.Uint64
 
 // GatewayHandler handles API gateway requests
 type GatewayHandler struct {
+	rpmCache                  service.RPMCache
 	gatewayService            *service.GatewayService
 	openAIGatewayService      *service.OpenAIGatewayService
 	geminiCompatService       *service.GeminiMessagesCompatService
@@ -1049,6 +1050,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					Handler:            h,
 					RequestContext:     c.Request.Context(),
 					Result:             result,
+					ForwardErrored:     err != nil,
 					QuotaPlatform:      quotaPlatform,
 					APIKey:             currentAPIKey,
 					Account:            account,
@@ -2365,6 +2367,9 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		// 上游未服务该会话，立即释放选号时注册的会话槽（客户端可能已断开，用独立 ctx）
 		h.gatewayService.ReleaseAccountSession(context.Background(), account, sessionHash)
 		return
+	}
+	if !stageResult.Stop && c.Writer.Status() < 400 {
+		recordAccountRPM(c.Request.Context(), h.rpmCache, account)
 	}
 }
 

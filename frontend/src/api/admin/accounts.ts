@@ -110,6 +110,12 @@ export async function getUpstreamBillingRatesWithEtag(
   return { notModified: false, etag: etagHeader, data: response.data }
 }
 
+export async function getRPM(accountIDs: number[], options?: { signal?: AbortSignal }): Promise<{ rpm: Record<string, number> }> {
+  const { data } = await apiClient.post<{ rpm: Record<string, number> }>('/admin/accounts/rpm',
+    { account_ids: accountIDs }, { signal: options?.signal })
+  return data
+}
+
 export interface AccountListWithEtagResult {
   notModified: boolean
   etag: string | null

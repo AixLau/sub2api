@@ -244,6 +244,7 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 		}
 
 		c.Data(result.StatusCode, result.ContentType, result.Body)
+		recordAccountRPM(c.Request.Context(), h.rpmCache, account)
 		h.recordSystemOneUsage(c, apiKey, account, subscription, channelMapping, model, body, result, subject.UserID, pricingAt)
 		return
 	}

@@ -822,6 +822,7 @@ func (h *GatewayHandler) gatewayUsageStageFromRouteDescriptor(c *gin.Context, fa
 }
 
 type GatewayUsageStage struct {
+	ForwardErrored        bool
 	Handler               *GatewayHandler
 	RequestContext        context.Context
 	Result                *service.ForwardResult
@@ -859,6 +860,9 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	ctx := s.RequestContext
 	if ctx == nil {
 		ctx = c.Request.Context()
+	}
+	if s.Result != nil && !s.ForwardErrored && !s.Result.ClientDisconnect {
+		recordAccountRPM(ctx, h.rpmCache, s.Account)
 	}
 	stampForwardRequestedReasoningEffort(s.Result, service.RequestedReasoningEffortFromContext(ctx))
 	phaseLatency := service.UsagePhaseLatencySnapshot(c)

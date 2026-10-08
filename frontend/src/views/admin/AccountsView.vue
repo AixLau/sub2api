@@ -310,6 +310,15 @@
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
           </template>
+          <template #header-rpm="{ column }">
+            <div class="flex items-center">
+              <span>{{ column.label }}</span>
+              <HelpTooltip :content="t('admin.accounts.rpm.hint')" width-class="w-72" />
+            </div>
+          </template>
+          <template #cell-rpm="{ row }">
+            <AccountRPMCell :account="row" :current="rpmValues[String(row.id)] ?? null" :loading="rpmLoading" />
+          </template>
           <template #cell-status="{ row }">
             <div class="flex items-center gap-1.5">
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
@@ -517,6 +526,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
+import { useAccountRPM } from '@/composables/useAccountRPM'
+import AccountRPMCell from '@/components/account/AccountRPMCell.vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -1186,6 +1197,11 @@ const {
   getId: (account) => account.id
 })
 
+const { values: rpmValues, loading: rpmLoading, refresh: refreshRPM } = useAccountRPM(
+  computed(() => accounts.value.map(account => account.id)),
+  computed(() => !hiddenColumns.has('rpm'))
+)
+
 const selectingAllResults = ref(false)
 const selectedAllResultIDs = ref<Set<number> | null>(null)
 const selectionRequestVersion = ref(0)
@@ -1568,6 +1584,7 @@ const refreshAccountsIncrementally = async () => {
 
 const handleManualRefresh = async () => {
   await Promise.all([load(), loadUpstreamBillingProbeGlobalState()])
+  await refreshRPM()
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
 }
@@ -1875,6 +1892,7 @@ const allColumns = computed(() => {
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
+    { key: 'rpm', label: t('admin.accounts.columns.rpm'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }

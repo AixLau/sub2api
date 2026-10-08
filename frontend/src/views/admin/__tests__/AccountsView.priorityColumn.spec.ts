@@ -149,4 +149,17 @@ describe('admin AccountsView priority column preferences', () => {
     )
     expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).not.toContain('priority')
   })
+  it('shows RPM by default and preserves the explicit hidden preference', async () => {
+    const first = mountView()
+    await flushPromises()
+    expect(first.get('[data-column="rpm"]').text()).toBe('fixed')
+    first.unmount()
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['rpm']))
+    const hidden = mountView()
+    await flushPromises()
+    expect(hidden.find('[data-column="rpm"]').exists()).toBe(false)
+    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toContain('rpm')
+    hidden.unmount()
+  })
+
 })

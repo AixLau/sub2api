@@ -284,7 +284,14 @@ export default {
         viewTempUnschedDetails: 'View temp unschedulable details',
         tempUnschedulableUntil: 'Resumes {time}'
       },
+      rpm: {
+        hint: 'Successful requests completed in the last 60 seconds. Refreshes every 5 seconds.',
+        loading: 'Loading RPM',
+        limitHint: 'Successful requests in the last 60 seconds / configured RPM limit. The existing limiter uses calendar minutes; colors indicate reference usage only.',
+        unavailable: 'RPM unavailable'
+      },
       columns: {
+        rpm: 'RPM',
         name: 'Name',
         id: 'Account ID',
         platformType: 'Platform/Type',

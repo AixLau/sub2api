@@ -122,6 +122,7 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		return
 	}
 	c.Header("Location", liveSidebandLocation(c.FullPath(), created.CallID))
+	recordAccountRPM(c.Request.Context(), h.rpmCache, created.Account)
 	c.Data(http.StatusOK, "application/sdp", created.SDP)
 }
 

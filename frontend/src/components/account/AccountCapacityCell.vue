@@ -21,13 +21,6 @@
       </svg>
     </CapacityBadge>
 
-    <!-- RPM 限制 -->
-    <CapacityBadge v-if="showRpmLimit" :color-class="rpmClass" :tooltip="rpmTooltip" :current="currentRPM" :max="account.base_rpm!" :suffix="rpmStrategyTag">
-      <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-      </svg>
-    </CapacityBadge>
-
     <!-- API Key 账号配额限制 -->
     <QuotaBadge v-if="showDailyQuota" :used="account.quota_daily_used ?? 0" :limit="account.quota_daily_limit!" label="D" />
     <QuotaBadge v-if="showWeeklyQuota" :used="account.quota_weekly_used ?? 0" :limit="account.quota_weekly_limit!" label="W" />
@@ -119,54 +112,6 @@ const sessionLimitTooltip = computed(() => {
   const idle = props.account.session_idle_timeout_minutes || 5
   if (current >= max) return t('admin.accounts.capacity.sessions.full', { idle })
   return t('admin.accounts.capacity.sessions.normal', { idle })
-})
-
-// ====== RPM ======
-const showRpmLimit = computed(() =>
-  isAnthropicOAuthOrSetupToken.value &&
-  props.account.base_rpm != null &&
-  props.account.base_rpm > 0
-)
-
-const currentRPM = computed(() => props.account.current_rpm ?? 0)
-const rpmStrategy = computed(() => props.account.rpm_strategy || 'tiered')
-const rpmStrategyTag = computed(() => rpmStrategy.value === 'sticky_exempt' ? '[S]' : '[T]')
-
-const rpmBuffer = computed(() => {
-  const base = props.account.base_rpm || 0
-  return props.account.rpm_sticky_buffer ?? (base > 0 ? Math.max(1, Math.floor(base / 5)) : 0)
-})
-
-const rpmClass = computed(() => {
-  if (!showRpmLimit.value) return ''
-  const current = currentRPM.value
-  const base = props.account.base_rpm ?? 0
-  const buffer = rpmBuffer.value
-  if (rpmStrategy.value === 'tiered') {
-    if (current >= base + buffer) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-    if (current >= base) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-  } else {
-    if (current >= base) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-  }
-  if (current >= base * 0.8) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-})
-
-const rpmTooltip = computed(() => {
-  if (!showRpmLimit.value) return ''
-  const current = currentRPM.value
-  const base = props.account.base_rpm ?? 0
-  const buffer = rpmBuffer.value
-  if (rpmStrategy.value === 'tiered') {
-    if (current >= base + buffer) return t('admin.accounts.capacity.rpm.tieredBlocked', { buffer })
-    if (current >= base) return t('admin.accounts.capacity.rpm.tieredStickyOnly', { buffer })
-    if (current >= base * 0.8) return t('admin.accounts.capacity.rpm.tieredWarning')
-    return t('admin.accounts.capacity.rpm.tieredNormal')
-  } else {
-    if (current >= base) return t('admin.accounts.capacity.rpm.stickyExemptOver')
-    if (current >= base * 0.8) return t('admin.accounts.capacity.rpm.stickyExemptWarning')
-    return t('admin.accounts.capacity.rpm.stickyExemptNormal')
-  }
 })
 
 // 格式化费用显示
