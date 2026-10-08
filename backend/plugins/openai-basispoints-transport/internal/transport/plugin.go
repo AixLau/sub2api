@@ -762,6 +762,16 @@ func (p *Plugin) forwardNative(stream grpc.BidiStreamingServer[pluginv1.ForwardR
 	request.ContentLength = int64(len(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
+	// Native Responses endpoints enforce the official-client identity tuple.
+	// Alpha/search has its own header contract, so preserve that protocol's
+	// caller-provided headers.
+	incomingPath := ""
+	if incoming, parseErr := url.Parse(start.Url); parseErr == nil {
+		incomingPath = incoming.Path
+	}
+	if !isAlphaSearchPath(incomingPath) {
+		ensureCodexIdentity(request.Header)
+	}
 	requestCtx, cancel := context.WithTimeout(request.Context(), time.Duration(state.cfg.RequestTimeoutSeconds)*time.Second)
 	defer cancel()
 	request = request.WithContext(requestCtx)
