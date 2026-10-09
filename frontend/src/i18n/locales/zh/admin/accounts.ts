@@ -394,6 +394,8 @@ export default {
           add: '添加规则',
           remove: '删除规则',
           restoreDefaults: '恢复默认',
+          alsoSupports: '同时支持：',
+          alsoSupportsHint: '选择命中此模型规则时同时支持的其他原生协议。',
           fallback: '未命中以上规则 → Chat Completions（/v1/chat/completions）',
         },
         title: 'OpenCode Go 用量', panelHint: '显示 OpenCode Go 上游账号返回的用量窗口。', notRefreshed: '尚未刷新', refreshNow: '刷新用量',

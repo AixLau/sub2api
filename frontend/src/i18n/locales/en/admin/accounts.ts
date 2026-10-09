@@ -184,6 +184,8 @@ export default {
           add: 'Add rule',
           remove: 'Remove rule',
           restoreDefaults: 'Restore defaults',
+          alsoSupports: 'Also supports:',
+          alsoSupportsHint: 'Select additional native protocols that should match this model rule.',
           fallback: 'Unmatched models → Chat Completions (/v1/chat/completions)',
         },
         title: 'OpenCode Go usage',
