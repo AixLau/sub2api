@@ -28,6 +28,7 @@ type OpenAIOAuthHandler struct {
 type openAIQuotaService interface {
 	QueryUsage(ctx context.Context, accountID int64) (*service.OpenAIQuotaUsage, error)
 	CacheResetCreditsSnapshot(ctx context.Context, accountID int64, credits *service.OpenAIRateLimitResetCredits) error
+	SyncAutoResetCreditState(ctx context.Context, accountID int64, credits *service.OpenAIRateLimitResetCredits) error
 	CacheCreditsSnapshot(ctx context.Context, accountID int64, usage *service.OpenAIQuotaUsage) error
 	CachePostResetSnapshot(ctx context.Context, accountID int64, usage *service.OpenAIQuotaUsage) error
 	ResetCredit(ctx context.Context, accountID int64) (*service.OpenAIQuotaResetResult, error)
@@ -540,6 +541,9 @@ func (h *OpenAIOAuthHandler) RefreshQuota(c *gin.Context) {
 		return
 	}
 	refreshResponse.CachePersisted = true
+	if err := h.quotaService.SyncAutoResetCreditState(c.Request.Context(), accountID, usage.RateLimitResetCredits); err != nil {
+		slog.Warn("openai_auto_reset_credit_state_sync_failed", "account_id", accountID, "error", err)
+	}
 	response.Success(c, refreshResponse)
 }
 

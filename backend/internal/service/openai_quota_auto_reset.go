@@ -97,14 +97,15 @@ type OpenAIQuotaAutoResetService struct {
 	settings    *SettingService
 	leaderLock  LeaderLockCache
 
-	ctx     context.Context
-	cancel  context.CancelFunc
-	queue   chan int64
-	pending sync.Map
-	owner   string
-	start   sync.Once
-	stop    sync.Once
-	wg      sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	queue        chan int64
+	pending      sync.Map
+	forceRefresh sync.Map
+	owner        string
+	start        sync.Once
+	stop         sync.Once
+	wg           sync.WaitGroup
 }
 
 func NewOpenAIQuotaAutoResetService(
@@ -161,8 +162,23 @@ func (s *OpenAIQuotaAutoResetService) Stop() {
 // Notify 是请求热路径的非阻塞入口。同一账号尚在队列时只保留一个任务；队列
 // 满时丢弃本次信号，分钟扫描仍会补偿，因此不会反向拖慢网关请求。
 func (s *OpenAIQuotaAutoResetService) Notify(accountID int64) {
+	s.enqueue(accountID, false)
+}
+
+// NotifyForce queues an account for an immediate upstream credit check. It is
+// used when an administrator enables automatic reset credits; that transition
+// must not be hidden by a fresh usage snapshot that would otherwise make
+// evaluateAccount skip the query.
+func (s *OpenAIQuotaAutoResetService) NotifyForce(accountID int64) {
+	s.enqueue(accountID, true)
+}
+
+func (s *OpenAIQuotaAutoResetService) enqueue(accountID int64, forceRefresh bool) {
 	if s == nil || accountID <= 0 {
 		return
+	}
+	if forceRefresh {
+		s.forceRefresh.Store(accountID, struct{}{})
 	}
 	if _, loaded := s.pending.LoadOrStore(accountID, struct{}{}); loaded {
 		return
@@ -170,9 +186,11 @@ func (s *OpenAIQuotaAutoResetService) Notify(accountID int64) {
 	select {
 	case <-s.ctx.Done():
 		s.pending.Delete(accountID)
+		s.forceRefresh.Delete(accountID)
 	case s.queue <- accountID:
 	default:
 		s.pending.Delete(accountID)
+		s.forceRefresh.Delete(accountID)
 		slog.Warn("openai_auto_reset_queue_full", "account_id", accountID)
 	}
 }
@@ -185,11 +203,18 @@ func (s *OpenAIQuotaAutoResetService) runWorker() {
 			return
 		case accountID := <-s.queue:
 			ctx, cancel := context.WithTimeout(s.ctx, 50*time.Second)
-			if err := s.evaluateAccount(ctx, accountID); err != nil && !errors.Is(err, context.Canceled) {
+			_, forceRefresh := s.forceRefresh.LoadAndDelete(accountID)
+			if err := s.evaluateAccountWithForce(ctx, accountID, forceRefresh); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Warn("openai_auto_reset_evaluate_failed", "account_id", accountID, "error_code", infraerrors.Reason(err))
 			}
 			cancel()
 			s.pending.Delete(accountID)
+			// A force notification may arrive after the worker consumed the
+			// current marker but before it released pending. Requeue it so the
+			// forced check cannot be lost in that race.
+			if _, pendingForce := s.forceRefresh.Load(accountID); pendingForce {
+				s.enqueue(accountID, true)
+			}
 		}
 	}
 }
@@ -276,6 +301,10 @@ type openAIAutoResetAssessment struct {
 }
 
 func (s *OpenAIQuotaAutoResetService) evaluateAccount(ctx context.Context, accountID int64) error {
+	return s.evaluateAccountWithForce(ctx, accountID, false)
+}
+
+func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Context, accountID int64, forceRefresh bool) error {
 	ctx = withOpenAIAutoResetContext(ctx)
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil || account == nil {
@@ -297,7 +326,7 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccount(ctx context.Context, accou
 	state := openAIAutoResetStateFromExtra(account.Extra)
 	// 达到用卡阈值本应立即查询以便用卡；但 10 分钟内已确认无卡时，重查不会改变结论，
 	// 只会让调度热路径的通知把同一账号的上游额度接口打到十几秒一次。
-	needsQuery := openAIAutoResetSnapshotStale(account.Extra, now) ||
+	needsQuery := forceRefresh || openAIAutoResetSnapshotStale(account.Extra, now) ||
 		(assessment.resetReached && !openAIAutoResetNoCreditConfirmed(state, now))
 	if assessment.pauseReached && !assessment.resetReached {
 		needsQuery = needsQuery || state == nil || state.Status == OpenAIAutoResetStatusChecking || state.Status == OpenAIAutoResetStatusFailed || openAIAutoResetStateStale(state, now)
@@ -869,6 +898,17 @@ func notifyOpenAIAutoReset(accountID int64) {
 // NotifyOpenAIAutoResetCredit 供额度查询入口发送轻量信号；不执行同步上游请求。
 func NotifyOpenAIAutoResetCredit(accountID int64) {
 	notifyOpenAIAutoReset(accountID)
+}
+
+// NotifyOpenAIAutoResetCreditForce forces the next queued evaluation to query
+// the upstream credit list even when the usage snapshot is still fresh.
+func NotifyOpenAIAutoResetCreditForce(accountID int64) {
+	openAIAutoResetNotifierRegistry.RLock()
+	service := openAIAutoResetNotifierRegistry.service
+	openAIAutoResetNotifierRegistry.RUnlock()
+	if service != nil {
+		service.NotifyForce(accountID)
+	}
 }
 
 // openAIAutoResetSchedulerNotifiedAt 记录调度热路径最近一次为某账号发出通知的时间。

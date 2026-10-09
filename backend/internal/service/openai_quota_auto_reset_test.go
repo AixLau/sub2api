@@ -227,6 +227,14 @@ func (r *autoResetTestAccountRepo) UpdateExtra(_ context.Context, id int64, upda
 	return nil
 }
 
+func (r *autoResetTestAccountRepo) Update(_ context.Context, account *Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.account = account
+	r.account.Extra = cloneOpenAIAutoResetExtra(account.Extra)
+	return nil
+}
+
 type autoResetTestQuota struct {
 	usage        *OpenAIQuotaUsage
 	resetCalls   atomic.Int32
@@ -468,6 +476,61 @@ func TestOpenAIQuotaAutoResetService_ResetThresholdStillQueriesWhenCreditAvailab
 
 	require.NoError(t, service.evaluateAccount(context.Background(), 501))
 	require.Equal(t, int32(1), quota.queryCalls.Load(), "有卡时到达用卡阈值必须立即查询并进入用卡流程")
+}
+
+func TestOpenAIQuotaAutoResetService_ForceRefreshQueriesBelowResetThreshold(t *testing.T) {
+	now := time.Now().UTC()
+	account := &Account{ID: 502, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Extra: map[string]any{
+		OpenAIAutoResetCreditEnabledExtraKey:     true,
+		OpenAIAutoResetCredit5hThresholdExtraKey: 1.0,
+		OpenAIAutoResetCredit7dThresholdExtraKey: 1.0,
+		"codex_7d_used_percent":                  80.0,
+		"codex_usage_updated_at":                 now.Format(time.RFC3339),
+		OpenAIAutoResetCreditStateExtraKey: OpenAIAutoResetCreditState{
+			Status: OpenAIAutoResetStatusNoCredit, CheckedAt: now.Format(time.RFC3339),
+		},
+	}}
+	repo := &autoResetTestAccountRepo{account: account}
+	quota := &autoResetTestQuota{usage: &OpenAIQuotaUsage{
+		FetchedAt: now.Unix(),
+		RateLimit: &OpenAIRateLimit{SecondaryWindow: &OpenAIRateLimitWindow{
+			UsedPercent: 80, LimitWindowSeconds: 7 * 24 * 60 * 60, ResetAfterSeconds: 48 * 3600,
+		}},
+		RateLimitResetCredits: &OpenAIRateLimitResetCredits{AvailableCount: 1},
+	}}
+	service := NewOpenAIQuotaAutoResetService(repo, quota, autoResetTestRecoverer{},
+		NewIdempotencyCoordinator(newInMemoryIdempotencyRepo(), DefaultIdempotencyConfig()), nil, nil, nil)
+
+	require.NoError(t, service.evaluateAccountWithForce(context.Background(), account.ID, true))
+	require.Equal(t, int32(1), quota.queryCalls.Load())
+	require.Equal(t, OpenAIAutoResetStatusAvailable, repo.stateForTest().Status)
+	require.Equal(t, 1, repo.stateForTest().AvailableCount)
+}
+
+func TestUpdateAccount_EnablingAutoResetForcesRefresh(t *testing.T) {
+	now := time.Now().UTC()
+	account := &Account{ID: 503, Name: "force-refresh", Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Status: StatusActive, Schedulable: true, Extra: map[string]any{
+			OpenAIAutoResetCreditEnabledExtraKey: false,
+			OpenAIAutoResetCreditStateExtraKey: OpenAIAutoResetCreditState{
+				Status: OpenAIAutoResetStatusNoCredit, CheckedAt: now.Format(time.RFC3339),
+			},
+		}}
+	repo := &autoResetTestAccountRepo{account: account}
+	notifier := NewOpenAIQuotaAutoResetService(repo, nil, nil, nil, nil, nil, nil)
+	setOpenAIAutoResetNotifier(notifier)
+	t.Cleanup(func() {
+		clearOpenAIAutoResetNotifier(notifier)
+		notifier.forceRefresh.Delete(account.ID)
+	})
+
+	_, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), account.ID, &UpdateAccountInput{
+		Extra: map[string]any{OpenAIAutoResetCreditEnabledExtraKey: true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{account.ID}, []int64{<-notifier.queue})
+	_, forced := notifier.forceRefresh.Load(account.ID)
+	require.True(t, forced)
 }
 
 func TestOpenAIQuotaAutoResetService_QueryFailureBacksOffBeforeRetry(t *testing.T) {

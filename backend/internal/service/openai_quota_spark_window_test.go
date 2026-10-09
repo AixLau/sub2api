@@ -799,6 +799,29 @@ func TestCacheResetCreditsSnapshot(t *testing.T) {
 	})
 }
 
+func TestSyncAutoResetCreditStateReflectsRefreshedCredits(t *testing.T) {
+	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{
+		100: {
+			ID: 100, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+			Extra: map[string]any{OpenAIAutoResetCreditEnabledExtraKey: true},
+		},
+	}}
+	svc := &OpenAIQuotaService{accountRepo: repo}
+
+	require.NoError(t, svc.SyncAutoResetCreditState(context.Background(), 100, &OpenAIRateLimitResetCredits{AvailableCount: 1}))
+	state, ok := repo.extraUpdates[100][OpenAIAutoResetCreditStateExtraKey].(OpenAIAutoResetCreditState)
+	require.True(t, ok)
+	require.Equal(t, OpenAIAutoResetStatusAvailable, state.Status)
+	require.Equal(t, 1, state.AvailableCount)
+	require.NotEmpty(t, state.CheckedAt)
+
+	require.NoError(t, svc.SyncAutoResetCreditState(context.Background(), 100, &OpenAIRateLimitResetCredits{AvailableCount: 0}))
+	state, ok = repo.extraUpdates[100][OpenAIAutoResetCreditStateExtraKey].(OpenAIAutoResetCreditState)
+	require.True(t, ok)
+	require.Equal(t, OpenAIAutoResetStatusNoCredit, state.Status)
+	require.Zero(t, state.AvailableCount)
+}
+
 func TestCachePostResetSnapshot(t *testing.T) {
 	repo := &stubQuotaAccountRepo{}
 	svc := &OpenAIQuotaService{accountRepo: repo}

@@ -254,6 +254,38 @@ func (s *OpenAIQuotaService) CacheResetCreditsSnapshot(ctx context.Context, acco
 	return s.cacheResetCreditsSnapshot(ctx, accountID, credits, nil)
 }
 
+// SyncAutoResetCreditState updates the account-level automatic reset status
+// from an explicit quota refresh. The display snapshot and the worker state
+// are separate fields, so keeping them in sync here prevents an old no_credit
+// result from masking a newly observed available credit.
+func (s *OpenAIQuotaService) SyncAutoResetCreditState(ctx context.Context, accountID int64, credits *OpenAIRateLimitResetCredits) error {
+	if s == nil || s.accountRepo == nil {
+		return infraerrors.New(http.StatusInternalServerError, "OPENAI_QUOTA_NOT_CONFIGURED", "openai quota service is not configured")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if !ResolveOpenAIAutoResetCreditConfig(account).Enabled {
+		return nil
+	}
+	available := 0
+	if credits != nil {
+		available = max(0, credits.AvailableCount)
+	}
+	status := OpenAIAutoResetStatusNoCredit
+	if available > 0 {
+		status = OpenAIAutoResetStatusAvailable
+	}
+	return s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+		OpenAIAutoResetCreditStateExtraKey: OpenAIAutoResetCreditState{
+			Status:         status,
+			AvailableCount: available,
+			CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+		},
+	})
+}
+
 // CachePostResetSnapshot persists the credits and usage windows observed after a reset.
 func (s *OpenAIQuotaService) CachePostResetSnapshot(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage) error {
 	if usage == nil {

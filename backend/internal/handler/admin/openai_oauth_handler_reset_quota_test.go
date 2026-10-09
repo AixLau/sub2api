@@ -22,13 +22,16 @@ type openAIQuotaWorkflowStub struct {
 	queryResult        *service.OpenAIQuotaUsage
 	queryErr           error
 	cacheErr           error
+	stateSyncErr       error
 	creditsCacheErr    error
 	creditsCacheCalls  int
 	cachedCreditsUsage *service.OpenAIQuotaUsage
 
-	resetCalls int
-	queryCalls int
-	cacheCalls int
+	resetCalls     int
+	queryCalls     int
+	cacheCalls     int
+	stateSyncCalls int
+	syncedCredits  *service.OpenAIRateLimitResetCredits
 
 	queryCtxErr error
 	cacheCtxErr error
@@ -49,6 +52,12 @@ func (s *openAIQuotaWorkflowStub) CacheResetCreditsSnapshot(ctx context.Context,
 	s.cacheCalls++
 	s.cacheCtxErr = ctx.Err()
 	return s.cacheErr
+}
+
+func (s *openAIQuotaWorkflowStub) SyncAutoResetCreditState(_ context.Context, _ int64, credits *service.OpenAIRateLimitResetCredits) error {
+	s.stateSyncCalls++
+	s.syncedCredits = credits
+	return s.stateSyncErr
 }
 
 func (s *openAIQuotaWorkflowStub) CacheCreditsSnapshot(_ context.Context, _ int64, usage *service.OpenAIQuotaUsage) error {
@@ -390,6 +399,8 @@ func TestOpenAIRefreshQuota_PersistsSnapshot(t *testing.T) {
 	require.Equal(t, int64(123), envelope.Data.FetchedAt)
 	require.Equal(t, 1, quota.queryCalls)
 	require.Equal(t, 1, quota.cacheCalls)
+	require.Equal(t, 1, quota.stateSyncCalls)
+	require.Equal(t, quota.queryResult.RateLimitResetCredits, quota.syncedCredits)
 	require.Zero(t, quota.resetCalls)
 }
 
@@ -417,6 +428,7 @@ func TestOpenAIRefreshQuota_PersistFailureStillReturnsUsage(t *testing.T) {
 	require.NotNil(t, envelope.Data.RateLimitResetCredits)
 	require.Equal(t, 2, envelope.Data.RateLimitResetCredits.AvailableCount)
 	require.Equal(t, 1, quota.cacheCalls)
+	require.Zero(t, quota.stateSyncCalls)
 }
 
 func TestOpenAIRefreshQuota_CreditsPersistIndependently(t *testing.T) {

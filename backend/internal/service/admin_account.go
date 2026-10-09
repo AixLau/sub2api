@@ -641,6 +641,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 	}
 	wasOveragesEnabled := account.IsOveragesEnabled()
+	wasAutoResetEnabled := ResolveOpenAIAutoResetCreditConfig(account).Enabled
 
 	if input.Name != "" {
 		account.Name = input.Name
@@ -929,6 +930,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	updated, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if !wasAutoResetEnabled && ResolveOpenAIAutoResetCreditConfig(updated).Enabled {
+		NotifyOpenAIAutoResetCreditForce(updated.ID)
 	}
 	return updated, nil
 }
