@@ -75,8 +75,8 @@ type DashboardStats struct {
 	AverageDurationMs float64 `json:"average_duration_ms"` // 平均响应时间
 
 	// 性能指标
-	Rpm                 int64 `json:"rpm"`                    // 近5分钟平均每分钟请求数
-	Tpm                 int64 `json:"tpm"`                    // 近5分钟平均每分钟Token数
+	Rpm                 int64 `json:"rpm"`                    // 近1分钟请求数
+	Tpm                 int64 `json:"tpm"`                    // 近1分钟Token数
 	Recent1mActiveUsers int64 `json:"recent_1m_active_users"` // 近1分钟调用网关 API 的用户数
 }
 
@@ -292,8 +292,8 @@ type UserDashboardStats struct {
 	AverageDurationMs float64 `json:"average_duration_ms"`
 
 	// 性能指标
-	Rpm int64 `json:"rpm"` // 近5分钟平均每分钟请求数
-	Tpm int64 `json:"tpm"` // 近5分钟平均每分钟Token数
+	Rpm int64 `json:"rpm"` // 近1分钟请求数
+	Tpm int64 `json:"tpm"` // 近1分钟Token数
 
 	// 按"有效平台"维度拆分（与 ops 路径口径一致：group.platform 优先，否则 account.platform）
 	ByPlatform []PlatformDashboardStats `json:"by_platform,omitempty"`

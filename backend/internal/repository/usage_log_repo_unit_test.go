@@ -112,15 +112,15 @@ func TestUsageLogRepositoryGetPerformanceStatsCountsGatewayAPIUsers(t *testing.T
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
 
-	mock.ExpectQuery(regexp.QuoteMeta("COUNT(DISTINCT CASE WHEN created_at >= $2 AND source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL THEN user_id END) as active_users")).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
+	mock.ExpectQuery(regexp.QuoteMeta("COUNT(DISTINCT CASE WHEN source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL THEN user_id END) as active_users")).
+		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"request_count", "token_count", "active_users"}).
 			AddRow(int64(15), int64(300), int64(2)))
 
 	rpm, tpm, activeUsers, err := repo.getPerformanceStats(context.Background(), 0)
 	require.NoError(t, err)
-	require.Equal(t, int64(3), rpm)
-	require.Equal(t, int64(60), tpm)
+	require.Equal(t, int64(15), rpm)
+	require.Equal(t, int64(300), tpm)
 	require.Equal(t, int64(2), activeUsers)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

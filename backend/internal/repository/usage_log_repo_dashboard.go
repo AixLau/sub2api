@@ -13,20 +13,19 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// getPerformanceStats 获取近5分钟的 RPM、TPM，以及近1分钟的网关 API 活跃用户数（可选按用户过滤）。
+// getPerformanceStats 获取近1分钟的请求数、Token 数和网关 API 活跃用户数（可选按用户过滤）。
 func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int64) (rpm, tpm, activeUsers int64, err error) {
-	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
 	oneMinuteAgo := time.Now().Add(-1 * time.Minute)
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) as request_count,
 			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count,
-			COUNT(DISTINCT CASE WHEN created_at >= $2 AND %s THEN user_id END) as active_users
+			COUNT(DISTINCT CASE WHEN %s THEN user_id END) as active_users
 		FROM usage_logs
 		WHERE created_at >= $1`, activeAPIUserWhereClause)
-	args := []any{fiveMinutesAgo, oneMinuteAgo}
+	args := []any{oneMinuteAgo}
 	if userID > 0 {
-		query += " AND user_id = $3"
+		query += " AND user_id = $2"
 		args = append(args, userID)
 	}
 
@@ -35,7 +34,7 @@ func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int
 	if err := scanSingleRow(ctx, r.sql, query, args, &requestCount, &tokenCount, &activeUsers); err != nil {
 		return 0, 0, 0, err
 	}
-	return requestCount / 5, tokenCount / 5, activeUsers, nil
+	return requestCount, tokenCount, activeUsers, nil
 }
 
 // UserStats 用户使用统计
@@ -540,7 +539,7 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	}
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
 
-	// 性能指标：RPM 和 TPM（近5分钟平均值，仅统计该用户的请求）
+	// 性能指标：近1分钟请求数和 Token 数，仅统计该用户的请求。
 	rpm, tpm, _, err := r.getPerformanceStats(ctx, userID)
 	if err != nil {
 		return nil, err
