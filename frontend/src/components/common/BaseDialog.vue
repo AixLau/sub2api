@@ -126,7 +126,7 @@ const getFocusableElements = () => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if (!props.show) return
+  if (!props.show || [...openDialogs].pop() !== dialogId) return
 
   if (props.closeOnEscape && event.key === 'Escape') {
     emit('close')

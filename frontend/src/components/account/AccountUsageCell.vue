@@ -441,9 +441,33 @@
       </div>
     </template>
 
-    <!-- CN providers (Kimi / Zhipu / DeepSeek / MiniMax): coding-plan quota or payg balance -->
-    <template v-else-if="account.platform === 'kimi' || account.platform === 'zhipu' || account.platform === 'deepseek' || account.platform === 'minimax'">
-      <div class="space-y-1">
+    <!-- Multi-protocol API-key providers (CN vendors, OpenCode, Command Code):
+         coding-plan / subscription quota windows or balance -->
+    <template v-else-if="isMultiProtocolApiKeyPlatform(account.platform)">
+      <!-- 挂在 CN 平台下的 Ollama Cloud 账号（资格由后端下发 eligible）：用量由
+           Ollama 用量窗口负责。这类账号不是国产厂商订阅，CN 的额度/余额探测端点由
+           base_url 衍生，对 ollama.com 会被后端出站 URL 白名单拒绝，渲染出来只会
+           给用户一行探测报错，因此不再渲染 CN 子单元格与占位符。 -->
+      <OllamaCloudUsageCell
+        v-if="account.ollama_cloud_usage?.eligible"
+        :account="account"
+        @updated="handleOllamaCloudUsageUpdated"
+      />
+      <!-- 挂在 CN 平台下的 OpenCode Go 账号（资格由后端下发 eligible）：用量展示与
+           刷新由本分支的 OpenCode 用量窗口独占。对 platform=opencode_go：上游 CN
+           配额链路原生支持该平台（cnQuotaCellVisible 对它返回 true），但其探测
+           端点（base_url + "/usage"，默认 base 即官方 Go 基址）与本 cell 刷新的
+           是同一端点、同一份数据，抑制 CN 子单元格是为了避免同源双份探测与重复
+           展示。对挂载在 kimi/zhipu/deepseek/minimax 下的账号：CN 的额度/余额
+           探测端点由 base_url 衍生，对 opencode.ai 会被后端出站 URL 白名单拒绝，
+           渲染出来只会给用户一行探测报错。两种情况都不再渲染 CN 子单元格与
+           占位符（调度停调仍由上游 CN 触发各自驱动）。 -->
+      <OpenCodeGoUsageCell
+        v-else-if="account.opencode_go_usage?.eligible"
+        :account="account"
+        @updated="handleOpenCodeGoUsageUpdated"
+      />
+      <div v-else class="space-y-1">
         <!-- 子单元格各自按 模式×平台 判定可见；两者都不可见时（智谱 payg 无公开
              余额端点、coding 探测也不适用）才回落到占位符。 -->
         <div
@@ -583,6 +607,11 @@
         :account="account"
         @updated="handleOllamaCloudUsageUpdated"
       />
+      <OpenCodeGoUsageCell
+        v-else-if="account.opencode_go_usage?.eligible"
+        :account="account"
+        @updated="handleOpenCodeGoUsageUpdated"
+      />
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
         v-if="todayStats"
@@ -641,7 +670,7 @@
 
       <!-- No data at all -->
       <div
-        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible"
+        v-if="!todayStats && !todayStatsLoading && !hasApiKeyQuota && !account.ollama_cloud_usage?.eligible && !account.opencode_go_usage?.eligible"
         class="text-xs text-gray-400"
       >-</div>
     </div>
@@ -665,7 +694,12 @@ import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
-import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
+import {
+  cnQuotaCellVisible as cnQuotaCellVisibleFn,
+  cnBalanceCellVisible as cnBalanceCellVisibleFn,
+  isMultiProtocolApiKeyPlatform
+} from './credentialsBuilder'
+import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -736,14 +770,9 @@ const showUsageWindows = computed(() => {
   // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
   if (props.account.type === 'apikey' && props.account.ollama_cloud_usage?.eligible) return false
   if (props.account.platform === 'gemini') return true
-  // CN providers: apikey 账号也有滚动用量窗口（coding plan）或余额（payg），
+  // 多协议 API Key 供应商：apikey 账号也有滚动用量窗口（coding plan / 订阅）或余额，
   // 由 CNProviderQuotaCell / CNProviderBalanceCell 自行探测与展示。
-  if (
-    props.account.platform === 'kimi' ||
-    props.account.platform === 'zhipu' ||
-    props.account.platform === 'deepseek'
-    || props.account.platform === 'minimax'
-  ) {
+  if (isMultiProtocolApiKeyPlatform(props.account.platform)) {
     return true
   }
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
@@ -770,12 +799,8 @@ const shouldFetchUsage = computed(() => {
 
 // CN 供应商子单元格可见性（与 CNProviderQuotaCell / CNProviderBalanceCell 共用
 // credentialsBuilder 的单一实现）：都不可见时显示 `-` 占位符。
-const cnAccountMode = computed(() => {
-  const mode = props.account.credentials?.account_mode
-  return typeof mode === 'string' ? mode : ''
-})
-const cnQuotaCellVisible = computed(() => cnQuotaCellVisibleFn(props.account.platform, cnAccountMode.value))
-const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account.platform, cnAccountMode.value))
+const cnQuotaCellVisible = computed(() => cnQuotaCellVisibleFn(props.account))
+const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account))
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
@@ -1574,6 +1599,10 @@ const handleQuotaResetAccountUpdated = (account: Account) => {
 
 const handleOllamaCloudUsageUpdated = (state: NonNullable<Account['ollama_cloud_usage']>) => {
   emit('account-updated', { ...props.account, ollama_cloud_usage: state })
+}
+
+const handleOpenCodeGoUsageUpdated = (state: NonNullable<Account['opencode_go_usage']>) => {
+  emit('account-updated', { ...props.account, opencode_go_usage: state })
 }
 
 // ===== Key account today stats formatters =====

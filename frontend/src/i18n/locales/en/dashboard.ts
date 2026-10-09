@@ -435,6 +435,8 @@ export default {
     phaseDetails: 'View phase timings',
     phaseDetailsTitle: 'Phase timings',
     phaseTimingHint: 'Independent observations; do not add directly',
+    outputTps: 'Output TPS',
+    outputTpsHint: 'Output tokens divided by total duration, including first-token wait, in tok/s. Output tokens may include reasoning tokens.',
     time: 'Time',
     ws: 'WS',
     stream: 'Stream',

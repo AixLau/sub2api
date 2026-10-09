@@ -556,6 +556,8 @@ export default {
       sourceAnalyticsHint: 'Source filtering applies to usage details and summary cards. Trend and distribution charts are hidden to avoid mixing other sources. Platform audit is excluded by default; select "Platform Audit" to query audit records.',
       inputCost: 'Input Cost',
       outputCost: 'Output Cost',
+      longContext: 'Long context',
+      longContextPricingTooltip: 'Long-context pricing was applied. Input and output rates depend on the pricing tier, not a uniform multiplier.',
       cacheCreationCost: 'Cache Creation Cost',
       cacheReadCost: 'Cache Read Cost',
       inputTokens: 'Input Tokens',

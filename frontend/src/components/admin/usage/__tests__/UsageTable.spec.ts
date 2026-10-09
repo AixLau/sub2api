@@ -16,9 +16,24 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+import en from '@/i18n/locales/en/admin/resources'
+import zh from '@/i18n/locales/zh/admin/resources'
 import UsageTable from '../UsageTable.vue'
 
+let locale: 'en' | 'zh' = 'en'
+const localizedMessages: Record<'en' | 'zh', Record<string, string>> = {
+  en: {
+    'admin.usage.longContext': en.usage.longContext,
+    'admin.usage.longContextPricingTooltip': en.usage.longContextPricingTooltip,
+  },
+  zh: {
+    'admin.usage.longContext': zh.usage.longContext,
+    'admin.usage.longContextPricingTooltip': zh.usage.longContextPricingTooltip,
+  },
+}
+
 const messages: Record<string, string> = {
+  'usage.outputTps': 'Output TPS',
   'admin.usage.userDeletedBadge': 'Deleted',
   'usage.costDetails': 'Cost Breakdown',
   'admin.usage.inputCost': 'Input Cost',
@@ -86,7 +101,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string) => localizedMessages[locale][key] ?? messages[key] ?? key,
     }),
   }
 })
@@ -95,15 +110,15 @@ const DataTableStub = {
   props: ['data'],
   template: `
     <div>
-      <div v-for="row in data" :key="row.request_id">
+      <div v-for="row in data" :key="row.request_id" :data-request-id="row.request_id">
         <slot name="cell-user" :row="row" />
         <slot name="cell-api_key" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
-        <slot name="cell-cost" :row="row" />
         <slot name="cell-latency" :row="row" />
+        <slot name="cell-cost" :row="row" />
         <slot name="cell-request_id" :row="row" />
         <slot name="cell-upstream_request_id" :row="row" />
       </div>
@@ -140,7 +155,22 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it('shows output TPS in the latency cell using total duration', () => {
+    const row = { ...baseImageRow, image_count: 0, billing_mode: 'token', output_tokens: 1000, duration_ms: 20_000, first_token_ms: 10_000 }
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row, { ...row, request_id: 'no-duration', duration_ms: null }, { ...row, request_id: 'image', image_count: 1 }],
+        loading: false,
+        columns: [{ key: 'latency', label: 'Latency' }],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.findAll('[data-testid="output-tps"]').map(cell => cell.text())).toEqual(['50.0 tok/s', '—', '—'])
+    expect(wrapper.text()).toContain('Output TPS')
+  })
+
   beforeEach(() => {
+    locale = 'en'
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       x: 0,
       y: 0,
@@ -232,6 +262,10 @@ describe('admin UsageTable tooltip', () => {
             long_context_billing_applied: false,
             service_tier: 'standard',
           },
+          {
+            ...baseImageRow,
+            request_id: 'req-long-context-absent',
+          },
         ],
         loading: false,
         columns: [],
@@ -256,7 +290,7 @@ describe('admin UsageTable tooltip', () => {
       props: ['data'],
       template: `
         <div>
-          <div v-for="row in data" :key="row.request_id">
+          <div v-for="row in data" :key="row.request_id" :data-request-id="row.request_id">
             <slot name="cell-stream" :row="row" />
           </div>
         </div>
@@ -299,6 +333,22 @@ describe('admin UsageTable tooltip', () => {
     expect(requestBadges[1].text()).toBe('Sync')
     expect(wrapper.findAll('[data-testid="native-compaction-badge"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="native-compaction-badge"]').text()).toBe('Compaction')
+  })
+
+  it.each([
+    [0, '0.0x'],
+    [0.5, '0.50x'],
+    [undefined, '1.00x'],
+  ])('shows the stored user rate %s in cost details', async (rate, expected) => {
+    const wrapper = mount(UsageTable, {
+      props: { data: [{ ...baseImageRow, rate_multiplier: rate }], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    const rateLabel = wrapper.get('.fixed').findAll('span').find(span => span.text() === 'Rate')!
+    expect(rateLabel.element.parentElement?.textContent).toContain(expected)
+    wrapper.unmount()
   })
 
   it('shows service tier and billing breakdown in cost tooltip', async () => {
@@ -775,7 +825,7 @@ describe('admin UsageTable IP geolocation batch toolbar', () => {
     props: ['data'],
     template: `
       <div>
-        <div v-for="row in data" :key="row.request_id">
+        <div v-for="row in data" :key="row.request_id" :data-request-id="row.request_id">
           <slot name="cell-ip_address" :row="row" />
         </div>
       </div>
@@ -873,7 +923,7 @@ const DataTableStubWithUser = {
   props: ['data'],
   template: `
     <div>
-      <div v-for="row in data" :key="row.request_id">
+      <div v-for="row in data" :key="row.request_id" :data-request-id="row.request_id">
         <slot name="cell-user" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
