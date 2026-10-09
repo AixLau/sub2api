@@ -77,7 +77,7 @@ type DashboardStats struct {
 	// 性能指标
 	Rpm                 int64 `json:"rpm"`                    // 近5分钟平均每分钟请求数
 	Tpm                 int64 `json:"tpm"`                    // 近5分钟平均每分钟Token数
-	Recent5mActiveUsers int64 `json:"recent_5m_active_users"` // 近5分钟调用网关 API 的用户数
+	Recent1mActiveUsers int64 `json:"recent_1m_active_users"` // 近1分钟调用网关 API 的用户数
 }
 
 // TrendDataPoint represents a single point in trend data

@@ -88,7 +88,7 @@ const createDashboardStats = (): DashboardStats => ({
   uptime: 0,
   rpm: 0,
   tpm: 0,
-  recent_5m_active_users: 3
+  recent_1m_active_users: 3
 })
 
 describe('admin DashboardView', () => {
@@ -253,9 +253,9 @@ describe('admin DashboardView', () => {
     expect(getUserUsageTrend).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
     expect(wrapper.find('[data-testid="token-usage-trend"]').attributes('data-height')).toBe('h-80')
-    const recentActiveUsers = wrapper.find('[data-testid="recent-5m-active-users"]')
+    const recentActiveUsers = wrapper.find('[data-testid="recent-1m-active-users"]')
     expect(recentActiveUsers.text()).toContain('3')
-    expect(recentActiveUsers.text()).toContain('admin.dashboard.recent5mActiveUsersUnit')
+    expect(recentActiveUsers.text()).toContain('admin.dashboard.recent1mActiveUsersUnit')
     expect(recentActiveUsers.find('.text-xl.font-bold').text()).toBe('3')
     expect(recentActiveUsers.element.parentElement?.textContent).toContain('RPM')
   })

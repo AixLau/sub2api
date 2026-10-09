@@ -164,7 +164,7 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		// 性能指标
 		"rpm":                    stats.Rpm,
 		"tpm":                    stats.Tpm,
-		"recent_5m_active_users": stats.Recent5mActiveUsers,
+		"recent_1m_active_users": stats.Recent1mActiveUsers,
 
 		// 预聚合新鲜度
 		"hourly_active_users": stats.HourlyActiveUsers,

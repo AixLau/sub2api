@@ -13,19 +13,20 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// getPerformanceStats 获取近5分钟的 RPM、TPM 和网关 API 活跃用户数（可选按用户过滤）。
+// getPerformanceStats 获取近5分钟的 RPM、TPM，以及近1分钟的网关 API 活跃用户数（可选按用户过滤）。
 func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int64) (rpm, tpm, activeUsers int64, err error) {
 	fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
+	oneMinuteAgo := time.Now().Add(-1 * time.Minute)
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) as request_count,
 			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count,
-			COUNT(DISTINCT CASE WHEN %s THEN user_id END) as active_users
+			COUNT(DISTINCT CASE WHEN created_at >= $2 AND %s THEN user_id END) as active_users
 		FROM usage_logs
 		WHERE created_at >= $1`, activeAPIUserWhereClause)
-	args := []any{fiveMinutesAgo}
+	args := []any{fiveMinutesAgo, oneMinuteAgo}
 	if userID > 0 {
-		query += " AND user_id = $2"
+		query += " AND user_id = $3"
 		args = append(args, userID)
 	}
 
@@ -99,7 +100,7 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	}
 	stats.Rpm = rpm
 	stats.Tpm = tpm
-	stats.Recent5mActiveUsers = activeUsers
+	stats.Recent1mActiveUsers = activeUsers
 
 	return stats, nil
 }
@@ -128,7 +129,7 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 	}
 	stats.Rpm = rpm
 	stats.Tpm = tpm
-	stats.Recent5mActiveUsers = activeUsers
+	stats.Recent1mActiveUsers = activeUsers
 
 	return stats, nil
 }

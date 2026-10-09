@@ -163,14 +163,14 @@
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
                   <span
-                    data-testid="recent-5m-active-users"
+                    data-testid="recent-1m-active-users"
                     class="ml-1 inline-flex min-w-0 items-baseline gap-1 border-l border-gray-200 pl-2 text-cyan-600 dark:border-dark-600 dark:text-cyan-400"
-                    :title="t('admin.dashboard.recent5mActiveUsers')"
+                    :title="t('admin.dashboard.recent1mActiveUsers')"
                   >
                     <span class="text-xl font-bold">
-                      <NumberTicker :value="stats.recent_5m_active_users" :format-fn="formatNumber" />
+                      <NumberTicker :value="stats.recent_1m_active_users" :format-fn="formatNumber" />
                     </span>
-                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.recent5mActiveUsersUnit') }}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.recent1mActiveUsersUnit') }}</span>
                   </span>
                 </div>
                 <div class="flex items-baseline gap-2">
