@@ -1137,8 +1137,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Handle error response
 		if resp.StatusCode >= 400 {
-			respBody := s.readUpstreamErrorBody(resp)
+			var respBody []byte
+			if resp.StatusCode == http.StatusTooManyRequests {
+				respBody, _ = s.readOpenAI429ErrorBody(ctx, resp)
+			} else {
+				respBody = s.readUpstreamErrorBody(resp)
+			}
+			MarkOpsAttemptErrorBodyReadFinished(c)
 			_ = resp.Body.Close()
+			MarkOpsAttemptCleanupFinished(c)
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
@@ -1406,6 +1413,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if responseErr != nil {
 			return forwardResult, responseErr
 		}
+		AppendOpsUpstreamSuccess(c, account)
 		return forwardResult, nil
 	}
 }

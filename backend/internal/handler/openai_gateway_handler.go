@@ -878,11 +878,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
 								zap.Duration("retry_delay", retryDelay),
 							)
+							service.MarkOpsRetryWaitStarted(c)
 							select {
 							case <-c.Request.Context().Done():
 								return
 							case <-time.After(retryDelay):
 							}
+							service.MarkOpsRetryWaitFinished(c)
 							continue
 						}
 					}

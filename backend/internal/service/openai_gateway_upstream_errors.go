@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -16,6 +17,60 @@ import (
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
+
+const (
+	// OpenAIRequestScopedRetryWindow bounds provider-capacity retries while
+	// keeping them independent from account pool retry counts.
+	OpenAIRequestScopedRetryWindow               = 2 * time.Minute
+	openAI429ErrorBodyReadLimit    int64         = 64 << 10
+	openAI429ErrorBodyReadTimeout  time.Duration = 250 * time.Millisecond
+)
+
+type upstreamReadCanceler interface {
+	CancelRead()
+}
+
+// readOpenAI429ErrorBody bounds only the error path after a 429 response has
+// already arrived. The production HTTP body is cancelable through the request
+// context, so the timer cancels the active read in place instead of starting a
+// goroutine that could outlive the request.
+func (s *OpenAIGatewayService) readOpenAI429ErrorBody(ctx context.Context, resp *http.Response) ([]byte, bool) {
+	if resp == nil || resp.Body == nil {
+		return nil, true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	canceler, cancelable := resp.Body.(upstreamReadCanceler)
+	if !cancelable {
+		// Custom transports without a cancelable body retain the safe size bound;
+		// silently spawning a reader goroutine would leak work on timeout.
+		select {
+		case <-ctx.Done():
+			return nil, false
+		default:
+		}
+		limited := &io.LimitedReader{R: resp.Body, N: openAI429ErrorBodyReadLimit + 1}
+		body, _ := io.ReadAll(limited)
+		complete := int64(len(body)) <= openAI429ErrorBodyReadLimit && limited.N > 0
+		if len(body) > int(openAI429ErrorBodyReadLimit) {
+			body = body[:openAI429ErrorBodyReadLimit]
+		}
+		return body, complete
+	}
+	stopContextCancel := context.AfterFunc(ctx, canceler.CancelRead)
+	defer stopContextCancel()
+	timer := time.AfterFunc(openAI429ErrorBodyReadTimeout, canceler.CancelRead)
+	defer timer.Stop()
+	limited := &io.LimitedReader{R: resp.Body, N: openAI429ErrorBodyReadLimit + 1}
+	body, err := io.ReadAll(limited)
+	complete := err == nil && int64(len(body)) <= openAI429ErrorBodyReadLimit && limited.N > 0
+	if len(body) > int(openAI429ErrorBodyReadLimit) {
+		body = body[:openAI429ErrorBodyReadLimit]
+		complete = false
+	}
+	return body, complete
+}
 
 func logOpenAIInstructionsRequiredDebug(
 	ctx context.Context,
@@ -463,6 +518,9 @@ func newOpenAIUpstreamFailoverError(
 		ResponseHeaders:        responseHeaders.Clone(),
 		RetryableOnSameAccount: retryableOnSameAccount || requestScopedCapacity,
 		RequestScopedTransient: requestScopedCapacity,
+	}
+	if requestScopedCapacity {
+		failoverErr.SameAccountRetryDeadline = time.Now().Add(OpenAIRequestScopedRetryWindow)
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false

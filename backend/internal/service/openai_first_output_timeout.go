@@ -333,6 +333,15 @@ type openAIRequestContextReadCloser struct {
 	err     error
 }
 
+func (r *openAIRequestContextReadCloser) CancelRead() {
+	if r == nil {
+		return
+	}
+	if canceler, ok := r.ReadCloser.(interface{ CancelRead() }); ok {
+		canceler.CancelRead()
+	}
+}
+
 func (r *openAIRequestContextReadCloser) Close() error {
 	r.once.Do(func() {
 		r.cleanup()

@@ -7,6 +7,7 @@ import (
 	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -38,6 +39,7 @@ const (
 	OpsUpstreamResponseHeadersMsKey = "ops_upstream_response_headers_ms"
 	OpsUpstreamFirstEventMsKey      = "ops_upstream_first_event_ms"
 	OpsUpstreamStartAtKey           = "ops_upstream_start_at"
+	OpsAttemptTimelineKey           = "ops_attempt_timeline"
 	// OpenAI WS 关键观测字段
 	OpsOpenAIWSQueueWaitMsKey = "ops_openai_ws_queue_wait_ms"
 	OpsOpenAIWSConnPickMsKey  = "ops_openai_ws_conn_pick_ms"
@@ -71,6 +73,179 @@ const (
 	OpsClientBusinessLimitedReasonLocalPolicyDenied       = "local_policy_denied"
 	OpsClientBusinessLimitedReasonLocalModelConfiguration = "local_model_configuration"
 )
+
+type opsAttemptRecord struct {
+	number                    int64
+	accountID                 int64
+	startedAt                 time.Time
+	responseHeadersAt         time.Time
+	errorBodyReadFinishedAt   time.Time
+	cleanupFinishedAt         time.Time
+	retryWaitStartedAt        time.Time
+	retryWaitFinishedAt       time.Time
+	nextAttemptStartedAt      time.Time
+	upstreamFirstContentAt    time.Time
+	clientFirstContentWriteAt time.Time
+	requestFinishedAt         time.Time
+	lastEvent                 *OpsUpstreamErrorEvent
+}
+
+type opsAttemptTimeline struct {
+	mu                  sync.Mutex
+	nextNumber          int64
+	current             *opsAttemptRecord
+	lastEvent           *OpsUpstreamErrorEvent
+	clientFirstRecorded bool
+}
+
+func opsAttemptTimelineFor(c *gin.Context) *opsAttemptTimeline {
+	if c == nil {
+		return nil
+	}
+	if value, ok := c.Get(OpsAttemptTimelineKey); ok {
+		if timeline, ok := value.(*opsAttemptTimeline); ok {
+			return timeline
+		}
+	}
+	timeline := &opsAttemptTimeline{}
+	c.Set(OpsAttemptTimelineKey, timeline)
+	return timeline
+}
+
+func unixMilliOrZero(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UnixMilli()
+}
+
+// BeginOpsUpstreamAttempt starts one attempt. time.Time retains its monotonic
+// component for in-process duration calculations; events persist Unix millis.
+func BeginOpsUpstreamAttempt(c *gin.Context, accountID int64) {
+	timeline := opsAttemptTimelineFor(c)
+	if timeline == nil {
+		return
+	}
+	now := time.Now()
+	timeline.mu.Lock()
+	defer timeline.mu.Unlock()
+	if timeline.current != nil && timeline.current.nextAttemptStartedAt.IsZero() {
+		timeline.current.nextAttemptStartedAt = now
+		if timeline.current.lastEvent != nil {
+			timeline.current.lastEvent.NextAttemptStartedAtUnixMs = now.UnixMilli()
+		}
+	}
+	if timeline.current != nil && timeline.current.lastEvent != nil {
+		timeline.lastEvent = timeline.current.lastEvent
+	}
+	timeline.nextNumber++
+	timeline.current = &opsAttemptRecord{number: timeline.nextNumber, accountID: accountID, startedAt: now}
+}
+
+func mutateCurrentOpsAttempt(c *gin.Context, mutate func(*opsAttemptRecord, time.Time)) {
+	timeline := opsAttemptTimelineFor(c)
+	if timeline == nil || mutate == nil {
+		return
+	}
+	now := time.Now()
+	timeline.mu.Lock()
+	if timeline.current != nil {
+		mutate(timeline.current, now)
+		if timeline.current.lastEvent != nil {
+			event := timeline.current.lastEvent
+			event.RetryWaitStartedAtUnixMs = unixMilliOrZero(timeline.current.retryWaitStartedAt)
+			event.RetryWaitFinishedAtUnixMs = unixMilliOrZero(timeline.current.retryWaitFinishedAt)
+			event.RequestFinishedAtUnixMs = unixMilliOrZero(timeline.current.requestFinishedAt)
+		}
+	}
+	timeline.mu.Unlock()
+}
+
+func MarkOpsAttemptErrorBodyReadFinished(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.errorBodyReadFinishedAt = now })
+}
+
+func MarkOpsAttemptCleanupFinished(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.cleanupFinishedAt = now })
+}
+
+func MarkOpsRetryWaitStarted(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.retryWaitStartedAt = now })
+}
+
+func MarkOpsRetryWaitFinished(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.retryWaitFinishedAt = now })
+}
+
+func MarkOpsRequestFinished(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.requestFinishedAt = now })
+}
+
+func MarkOpsClientFirstContentWrite(c *gin.Context) {
+	timeline := opsAttemptTimelineFor(c)
+	if timeline == nil {
+		return
+	}
+	now := time.Now()
+	timeline.mu.Lock()
+	if !timeline.clientFirstRecorded && timeline.current != nil {
+		timeline.clientFirstRecorded = true
+		timeline.current.clientFirstContentWriteAt = now
+	}
+	timeline.mu.Unlock()
+}
+
+func MarkOpsUpstreamFirstContent(c *gin.Context) {
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) {
+		if record.upstreamFirstContentAt.IsZero() {
+			record.upstreamFirstContentAt = now
+		}
+	})
+}
+
+func snapshotCurrentOpsAttempt(c *gin.Context) (opsAttemptRecord, bool) {
+	timeline := opsAttemptTimelineFor(c)
+	if timeline == nil {
+		return opsAttemptRecord{}, false
+	}
+	timeline.mu.Lock()
+	defer timeline.mu.Unlock()
+	if timeline.current == nil {
+		return opsAttemptRecord{}, false
+	}
+	return *timeline.current, true
+}
+
+func mergeOpsAttemptEvent(c *gin.Context, event *OpsUpstreamErrorEvent) {
+	record, ok := snapshotCurrentOpsAttempt(c)
+	if !ok || event == nil {
+		return
+	}
+	event.AttemptNumber = record.number
+	event.AttemptStartedAtUnixMs = unixMilliOrZero(record.startedAt)
+	event.ResponseHeadersAtUnixMs = unixMilliOrZero(record.responseHeadersAt)
+	event.ErrorBodyReadFinishedAtUnixMs = unixMilliOrZero(record.errorBodyReadFinishedAt)
+	event.AttemptCleanupFinishedAtUnixMs = unixMilliOrZero(record.cleanupFinishedAt)
+	event.RetryWaitStartedAtUnixMs = unixMilliOrZero(record.retryWaitStartedAt)
+	event.RetryWaitFinishedAtUnixMs = unixMilliOrZero(record.retryWaitFinishedAt)
+	event.NextAttemptStartedAtUnixMs = unixMilliOrZero(record.nextAttemptStartedAt)
+	if event.Kind == "success" {
+		event.SuccessfulAttemptAccountID = record.accountID
+		event.SuccessfulAttemptStartedAtUnixMs = unixMilliOrZero(record.startedAt)
+	}
+	event.UpstreamFirstContentAtUnixMs = unixMilliOrZero(record.upstreamFirstContentAt)
+	event.ClientFirstContentWriteAtUnixMs = unixMilliOrZero(record.clientFirstContentWriteAt)
+	event.RequestFinishedAtUnixMs = unixMilliOrZero(record.requestFinishedAt)
+	timeline := opsAttemptTimelineFor(c)
+	if timeline != nil {
+		timeline.mu.Lock()
+		if timeline.current != nil {
+			timeline.current.lastEvent = event
+		}
+		timeline.lastEvent = event
+		timeline.mu.Unlock()
+	}
+}
 
 func MarkResponseCommitted(c *gin.Context) { c.Set(ResponseCommittedKey, true) }
 
@@ -151,6 +326,13 @@ func AttachOpsUpstreamTrace(req *http.Request, c *gin.Context, startedAt time.Ti
 // legacy attempt latency for Ops error diagnostics in that case.
 func DoOpsUpstream(c *gin.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 	startedAt := time.Now()
+	accountID := int64(0)
+	if c != nil {
+		if value, ok := c.Get("ops_account_id"); ok {
+			accountID, _ = value.(int64)
+		}
+	}
+	BeginOpsUpstreamAttempt(c, accountID)
 	tracedReq := AttachOpsUpstreamTrace(req, c, startedAt)
 	resp, err := do(tracedReq)
 	if resp != nil {
@@ -168,6 +350,7 @@ func MarkOpsUpstreamResponseHeaders(c *gin.Context, startedAt time.Time) {
 	latency := time.Since(startedAt).Milliseconds()
 	SetOpsLatencyMs(c, OpsUpstreamResponseHeadersMsKey, latency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, latency)
+	mutateCurrentOpsAttempt(c, func(record *opsAttemptRecord, now time.Time) { record.responseHeadersAt = now })
 }
 
 // MarkOpsUpstreamFirstEvent records the first semantic event relative to the
@@ -503,6 +686,22 @@ func setOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage
 type OpsUpstreamErrorEvent struct {
 	AtUnixMs int64 `json:"at_unix_ms,omitempty"`
 
+	// Attempt timeline fields are request-local, credential-free diagnostics.
+	AttemptNumber                    int64 `json:"attempt_number,omitempty"`
+	AttemptStartedAtUnixMs           int64 `json:"attempt_started_at_unix_ms,omitempty"`
+	ResponseHeadersAtUnixMs          int64 `json:"response_headers_at_unix_ms,omitempty"`
+	ErrorBodyReadFinishedAtUnixMs    int64 `json:"error_body_read_finished_at_unix_ms,omitempty"`
+	AttemptCleanupFinishedAtUnixMs   int64 `json:"attempt_cleanup_finished_at_unix_ms,omitempty"`
+	RetryWaitStartedAtUnixMs         int64 `json:"retry_wait_started_at_unix_ms,omitempty"`
+	RetryWaitFinishedAtUnixMs        int64 `json:"retry_wait_finished_at_unix_ms,omitempty"`
+	NextAttemptStartedAtUnixMs       int64 `json:"next_attempt_started_at_unix_ms,omitempty"`
+	SuccessfulAttemptNumber          int64 `json:"successful_attempt_number,omitempty"`
+	SuccessfulAttemptAccountID       int64 `json:"successful_attempt_account_id,omitempty"`
+	SuccessfulAttemptStartedAtUnixMs int64 `json:"successful_attempt_started_at_unix_ms,omitempty"`
+	UpstreamFirstContentAtUnixMs     int64 `json:"upstream_first_content_at_unix_ms,omitempty"`
+	ClientFirstContentWriteAtUnixMs  int64 `json:"client_first_content_write_at_unix_ms,omitempty"`
+	RequestFinishedAtUnixMs          int64 `json:"request_finished_at_unix_ms,omitempty"`
+
 	// Passthrough 表示本次请求是否命中“原样透传（仅替换认证）”分支。
 	// 该字段用于排障与灰度评估；存入 JSON，不涉及 DB schema 变更。
 	Passthrough bool `json:"passthrough,omitempty"`
@@ -590,10 +789,47 @@ func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	}
 
 	evCopy := ev
+	mergeOpsAttemptEvent(c, &evCopy)
 	existing = append(existing, &evCopy)
 	c.Set(OpsUpstreamErrorsKey, existing)
 
 	checkSkipMonitoringForUpstreamEvent(c, &evCopy)
+}
+
+// AppendOpsUpstreamSuccess attaches successful-attempt timing to the last
+// upstream error event. Clean one-shot successes keep the existing zero-overhead
+// path and do not create an ops error row or add a synthetic event.
+func AppendOpsUpstreamSuccess(c *gin.Context, account *Account) {
+	if c == nil {
+		return
+	}
+	value, ok := c.Get(OpsUpstreamErrorsKey)
+	if !ok {
+		MarkOpsRequestFinished(c)
+		return
+	}
+	existing, ok := value.([]*OpsUpstreamErrorEvent)
+	if !ok || len(existing) == 0 {
+		MarkOpsRequestFinished(c)
+		return
+	}
+	_ = account
+	MarkOpsRequestFinished(c)
+	timeline := opsAttemptTimelineFor(c)
+	if timeline == nil {
+		return
+	}
+	timeline.mu.Lock()
+	defer timeline.mu.Unlock()
+	if timeline.current == nil || timeline.lastEvent == nil {
+		return
+	}
+	timeline.lastEvent.SuccessfulAttemptNumber = timeline.current.number
+	timeline.lastEvent.SuccessfulAttemptAccountID = timeline.current.accountID
+	timeline.lastEvent.SuccessfulAttemptStartedAtUnixMs = unixMilliOrZero(timeline.current.startedAt)
+	timeline.lastEvent.UpstreamFirstContentAtUnixMs = unixMilliOrZero(timeline.current.upstreamFirstContentAt)
+	timeline.lastEvent.ClientFirstContentWriteAtUnixMs = unixMilliOrZero(timeline.current.clientFirstContentWriteAt)
+	timeline.lastEvent.RequestFinishedAtUnixMs = unixMilliOrZero(timeline.current.requestFinishedAt)
 }
 
 // opsUpstreamProxyAttribution derives both attribution fields from one

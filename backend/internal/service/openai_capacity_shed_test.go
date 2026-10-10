@@ -89,6 +89,7 @@ func TestOpenAIHTTPCapacityShedIsRequestScopedForOAuthAccounts(t *testing.T) {
 
 	require.True(t, failoverErr.RetryableOnSameAccount)
 	require.True(t, failoverErr.RequestScopedTransient)
+	require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failoverErr.SameAccountRetryDeadline, time.Second)
 
 	repo := &capacityShedAccountRepoStub{}
 	(&GatewayService{accountRepo: repo}).TempUnscheduleRetryableError(context.Background(), 1, failoverErr)

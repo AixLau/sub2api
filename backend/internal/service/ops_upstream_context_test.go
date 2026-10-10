@@ -348,3 +348,40 @@ func TestOpsServiceGetErrorLogByIDNormalizesLegacyProxyAttribution(t *testing.T)
 	require.NotContains(t, detail.UpstreamErrors, `"proxy_source"`)
 	require.NotContains(t, detail.UpstreamErrors, `"proxy_fallback"`)
 }
+
+func TestOpsAttemptTimelineKeepsPerAttemptAndSuccessTiming(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	BeginOpsUpstreamAttempt(c, 7)
+	MarkOpsUpstreamResponseHeaders(c, time.Now().Add(-2*time.Millisecond))
+	MarkOpsAttemptErrorBodyReadFinished(c)
+	MarkOpsAttemptCleanupFinished(c)
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		AccountID:          7,
+		UpstreamStatusCode: 429,
+		Kind:               "failover",
+	})
+	MarkOpsRetryWaitStarted(c)
+	MarkOpsRetryWaitFinished(c)
+	BeginOpsUpstreamAttempt(c, 7)
+	MarkOpsUpstreamFirstContent(c)
+	MarkOpsUpstreamFirstEvent(c)
+	MarkOpsClientFirstContentWrite(c)
+	AppendOpsUpstreamSuccess(c, &Account{ID: 7, Platform: PlatformOpenAI})
+
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events := raw.([]*OpsUpstreamErrorEvent)
+	require.Len(t, events, 1)
+	require.Equal(t, int64(1), events[0].AttemptNumber)
+	require.Equal(t, int64(2), events[0].SuccessfulAttemptNumber)
+	require.Equal(t, int64(7), events[0].SuccessfulAttemptAccountID)
+	require.NotZero(t, events[0].AttemptStartedAtUnixMs)
+	require.NotZero(t, events[0].NextAttemptStartedAtUnixMs)
+	require.NotZero(t, events[0].RetryWaitStartedAtUnixMs)
+	require.NotZero(t, events[0].RetryWaitFinishedAtUnixMs)
+	require.NotZero(t, events[0].SuccessfulAttemptStartedAtUnixMs)
+	require.NotZero(t, events[0].UpstreamFirstContentAtUnixMs)
+	require.NotZero(t, events[0].ClientFirstContentWriteAtUnixMs)
+	require.NotZero(t, events[0].RequestFinishedAtUnixMs)
+}

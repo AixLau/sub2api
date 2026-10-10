@@ -98,6 +98,12 @@ func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCo
 	if !sameAccountRetryDeadlineAllows(failoverErr) {
 		return false
 	}
+	// Provider-capacity failures are request-scoped. The historical retry max is
+	// a checkpoint for this class, not permission to switch credentials: a global
+	// overload normally affects every OAuth account in the pool.
+	if failoverErr.RequestScopedTransient && !failoverErr.SameAccountRetryDeadline.IsZero() {
+		return true
+	}
 	// Error-specific caps (Grok capacity/stream-idle) remain hard limits even
 	// when the error also carries a freshly reconstructed deadline.
 	if failoverErr.SameAccountRetryMax > 0 {

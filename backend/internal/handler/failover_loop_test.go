@@ -120,6 +120,37 @@ func TestSameAccountRetryAllowedUsesDeadlineInsteadOfPoolCount(t *testing.T) {
 	require.False(t, sameAccountRetryAllowed(err, 0, 100))
 }
 
+func TestRequestScopedCapacityShedKeepsSameAccountPastHistoricalBudget(t *testing.T) {
+	err := &service.UpstreamFailoverError{
+		RetryableOnSameAccount:   true,
+		RequestScopedTransient:   true,
+		SameAccountRetryMax:      10,
+		SameAccountRetryDeadline: time.Now().Add(time.Minute),
+	}
+	for retryCount := 0; retryCount < 15; retryCount++ {
+		require.True(t, sameAccountRetryAllowed(err, retryCount, 10), "retry %d should remain request-scoped", retryCount)
+	}
+}
+
+func TestRequestScopedCapacityShedHandlerKeepsAccountAfterFifteenRetries(t *testing.T) {
+	state := NewFailoverState(1, false)
+	serviceStub := &mockFailoverCooldownService{}
+	err := &service.UpstreamFailoverError{
+		RetryableOnSameAccount:   true,
+		RequestScopedTransient:    true,
+		SameAccountRetryMax:      10,
+		SameAccountRetryDelay:    time.Nanosecond,
+		SameAccountRetryDeadline: time.Now().Add(time.Minute),
+	}
+	for i := 0; i < 15; i++ {
+		require.Equal(t, FailoverContinue, state.HandleFailoverError(context.Background(), serviceStub, 7, "openai", 10, err))
+	}
+	require.Equal(t, 15, state.SameAccountRetryCount[7])
+	require.Zero(t, state.SwitchCount)
+	require.Empty(t, serviceStub.calls)
+	require.Empty(t, serviceStub.cooldownCalls)
+}
+
 func TestSameAccountRetryAllowedRequiresOptInAndDefaultsToCountLimit(t *testing.T) {
 	err := &service.UpstreamFailoverError{SameAccountRetryDeadline: time.Now().Add(time.Minute)}
 	require.False(t, sameAccountRetryAllowed(err, 0, maxSameAccountRetries))

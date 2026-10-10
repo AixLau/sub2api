@@ -323,6 +323,16 @@ type cancelOnCloseBody struct {
 	closed bool
 }
 
+// CancelRead aborts an in-flight response read without waiting on the reader
+// mutex. The normal Close path still waits for an active reader; bounded error
+// body reads use this method so their timer can cancel the request context and
+// let the reader return in the same goroutine.
+func (b *cancelOnCloseBody) CancelRead() {
+	if b != nil && b.cancel != nil {
+		b.cancel()
+	}
+}
+
 func (b *cancelOnCloseBody) Read(p []byte) (int, error) {
 	b.readMu.Lock()
 	defer b.readMu.Unlock()

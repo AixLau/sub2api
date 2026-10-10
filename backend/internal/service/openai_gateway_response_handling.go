@@ -278,6 +278,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	eventStartsClientOutput := false
 	eventShowsStructuralProgress := false
 	eventStartsFirstResponse := false
+	eventStartsVisibleOutput := false
 	eventShouldFlush := false
 	handlePendingWriteError := func(err error) {
 		if firstOutputStage != nil && !firstOutputProgressObserved && !firstOutputStage.closed {
@@ -299,6 +300,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		completedProgressEvent := eventStartsClientOutput
 		completedStructuralProgress := eventShowsStructuralProgress
 		completedFirstResponse := eventStartsFirstResponse
+		completedVisibleOutput := eventStartsVisibleOutput
 		shouldFlush := eventShouldFlush || (queueDrained && clientOutputStarted)
 		eventInProgress = false
 		if !clientDisconnected {
@@ -311,6 +313,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
 				} else {
 					clientOutputStarted = true
+					if completedVisibleOutput {
+						MarkOpsClientFirstContentWrite(c)
+					}
 					lastDownstreamWriteAt = time.Now()
 				}
 			}
@@ -336,6 +341,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		eventStartsClientOutput = false
 		eventShowsStructuralProgress = false
 		eventStartsFirstResponse = false
+		eventStartsVisibleOutput = false
 		eventShouldFlush = false
 	}
 	sendErrorEvent := func(reason string, semanticPayload ...[]byte) {
@@ -755,6 +761,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			showsStructuralProgress := openAIStreamDataShowsStructuralProgress(data, eventType)
 			startsFirstResponse := s.openAIStreamDataStartsConfiguredTTFT(ctx, data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
+			if startsVisibleOutput {
+				MarkOpsUpstreamFirstContent(c)
+				eventStartsVisibleOutput = true
+			}
 			if guardFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
 				eventShowsStructuralProgress = eventShowsStructuralProgress || showsStructuralProgress
@@ -825,6 +835,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				eventStartsClientOutput = false
 				eventShowsStructuralProgress = false
 				eventStartsFirstResponse = false
+				eventStartsVisibleOutput = false
 				eventShouldFlush = false
 				return
 			}
@@ -834,6 +845,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				eventStartsClientOutput = false
 				eventShowsStructuralProgress = false
 				eventStartsFirstResponse = false
+				eventStartsVisibleOutput = false
 				eventShouldFlush = false
 				return
 			}
@@ -882,6 +894,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
 					} else {
 						clientOutputStarted = true
+						if eventStartsVisibleOutput {
+							MarkOpsClientFirstContentWrite(c)
+						}
 						lastDownstreamWriteAt = time.Now()
 					}
 				}
@@ -889,6 +904,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if line == "" && terminalFailurePending && streamEarlyErr == nil {
 				terminalFailurePending = false
 				failureDelivered = true
+			}
+			if line == "" {
+				eventStartsVisibleOutput = false
 			}
 		}
 	}
