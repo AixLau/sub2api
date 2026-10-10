@@ -580,12 +580,16 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account          *Account
-	Acquired         bool
-	ReleaseFunc      func()
-	WaitPlan         *AccountWaitPlan // nil means no wait allowed
-	CandidateCount   int              // Total number of candidate accounts (for wait timeout tuning)
-	stickySessionHit bool
+	Account        *Account
+	Acquired       bool
+	ReleaseFunc    func()
+	WaitPlan       *AccountWaitPlan // nil means no wait allowed
+	CandidateCount int              // Total number of candidate accounts (for wait timeout tuning)
+	// RetryFastPathValidated means the service rechecked the account and
+	// acquired its slot as part of a same-account overload retry. The handler
+	// can therefore avoid repeating the full refresh immediately before use.
+	RetryFastPathValidated bool
+	stickySessionHit       bool
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
@@ -790,8 +794,8 @@ func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 	if e == nil {
 		return false
 	}
-	if e.RequestScopedTransient && (e.Reason == OpenAIProcessingFailureReason || e.Reason == OpenAIStreamReadFailureReason) {
-		// Keep the selected account eligible throughout these bounded request
+	if e.RequestScopedTransient {
+		// Keep the selected account eligible throughout bounded request-scoped
 		// retries instead of degrading its scheduler score on every attempt.
 		return false
 	}

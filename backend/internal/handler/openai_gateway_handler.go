@@ -55,6 +55,7 @@ type OpenAIGatewayHandler struct {
 	imageLimiter               *imageConcurrencyLimiter
 	imageUserLimiterMu         sync.Mutex
 	imageUserLimiters          map[int64]*imageConcurrencyLimiter
+	overloadRetryScheduler     *service.OpenAIOverloadRetryScheduler
 	maxAccountSwitches         int
 	cfg                        *config.Config
 }
@@ -366,6 +367,7 @@ func NewOpenAIGatewayHandler(
 		concurrencyHelper:        NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		imageLimiter:             &imageConcurrencyLimiter{},
 		imageUserLimiters:        map[int64]*imageConcurrencyLimiter{},
+		overloadRetryScheduler:   service.NewDefaultOpenAIOverloadRetryScheduler(),
 		maxAccountSwitches:       maxAccountSwitches,
 		cfg:                      cfg,
 	}
@@ -632,6 +634,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	var sameAccountRetryAccount *service.Account
+	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	firstOutputTimeoutSwitchCount := 0
@@ -663,6 +667,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
+		retryAccount := sameAccountRetryAccount
+		sameAccountRetryAccount = nil
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Handler:                    h,
 			RequestContext:             requestCtx,
@@ -691,12 +697,27 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			LogPrefix:                  "openai",
 			Account:                    &account,
 			AccountReleaseFunc:         &accountReleaseFunc,
+			RetryAccount:               retryAccount,
 			Retry:                      &routingRetry,
 		}); routingStage.Stop {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			return
 		}
 		if routingRetry {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			continue
+		}
+		// Release the scheduling lease once the fast path has completed routing;
+		// no account slot is held while the retry delay is queued.
+		if overloadRetryLease != nil {
+			overloadRetryLease.Release()
+			overloadRetryLease = nil
 		}
 		if accountBound && account.ID != stateBinding.AccountID {
 			if accountReleaseFunc != nil {
@@ -878,13 +899,22 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
 								zap.Duration("retry_delay", retryDelay),
 							)
-							service.MarkOpsRetryWaitStarted(c)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
+							if failoverErr.IsOpenAICapacityShed() {
+								var waitErr error
+								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, forwardModel), retryDelay)
+								if waitErr != nil {
+									return
+								}
+							} else {
+								service.MarkOpsRetryWaitStarted(c)
+								select {
+								case <-c.Request.Context().Done():
+									return
+								case <-time.After(retryDelay):
+								}
+								service.MarkOpsRetryWaitFinished(c)
 							}
-							service.MarkOpsRetryWaitFinished(c)
+							sameAccountRetryAccount = account
 							continue
 						}
 					}
@@ -1295,6 +1325,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	var sameAccountRetryAccount *service.Account
+	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
@@ -1315,6 +1347,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
+		retryAccount := sameAccountRetryAccount
+		sameAccountRetryAccount = nil
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Handler:              h,
 			ReqLog:               reqLog,
@@ -1338,11 +1372,20 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			LogPrefix:            "openai_messages",
 			Account:              &account,
 			AccountReleaseFunc:   &accountReleaseFunc,
+			RetryAccount:         retryAccount,
 			Retry:                &routingRetry,
 		}); routingStage.Stop {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			return
 		}
 		if routingRetry {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			continue
 		}
 
@@ -1452,11 +1495,20 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
 								zap.Duration("retry_delay", retryDelay),
 							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
+							if failoverErr.IsOpenAICapacityShed() {
+								var waitErr error
+								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, currentRoutingModel), retryDelay)
+								if waitErr != nil {
+									return
+								}
+							} else {
+								select {
+								case <-c.Request.Context().Done():
+									return
+								case <-time.After(retryDelay):
+								}
 							}
+							sameAccountRetryAccount = account
 							continue
 						}
 					}
@@ -2252,7 +2304,11 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	ctx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
 	account := selection.Account
 	if selection.Acquired {
-		refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(ctx, account, requestedModel, requireCompact, requiredCapability, requiredImageCapability)
+		refreshed := account
+		var refreshErr error
+		if !selection.RetryFastPathValidated {
+			refreshed, refreshErr = h.gatewayService.RefreshSelectedAccountBeforeUse(ctx, account, requestedModel, requireCompact, requiredCapability, requiredImageCapability)
+		}
 		if refreshErr != nil {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()

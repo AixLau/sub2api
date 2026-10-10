@@ -184,6 +184,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	var sameAccountRetryAccount *service.Account
+	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 
@@ -196,6 +198,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
+		retryAccount := sameAccountRetryAccount
+		sameAccountRetryAccount = nil
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Handler:              h,
 			ReqLog:               reqLog,
@@ -218,11 +222,20 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			LogPrefix:            "openai_chat_completions",
 			Account:              &account,
 			AccountReleaseFunc:   &accountReleaseFunc,
+			RetryAccount:         retryAccount,
 			Retry:                &routingRetry,
 		}); routingStage.Stop {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			return
 		}
 		if routingRetry {
+			if overloadRetryLease != nil {
+				overloadRetryLease.Release()
+				overloadRetryLease = nil
+			}
 			continue
 		}
 
@@ -246,6 +259,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			WriterSizeBeforeForward: &writerSizeBeforeForward,
 			Result:                  &result,
 		})
+		if overloadRetryLease != nil {
+			overloadRetryLease.Release()
+			overloadRetryLease = nil
+		}
 		err = stageResult.Err
 		cyberBlockKeyChat := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -335,11 +352,20 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
 								zap.Duration("retry_delay", retryDelay),
 							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
+							if failoverErr.IsOpenAICapacityShed() {
+								var waitErr error
+								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, forwardModel), retryDelay)
+								if waitErr != nil {
+									return
+								}
+							} else {
+								select {
+								case <-c.Request.Context().Done():
+									return
+								case <-time.After(retryDelay):
+								}
 							}
+							sameAccountRetryAccount = account
 							continue
 						}
 					}

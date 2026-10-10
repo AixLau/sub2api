@@ -1711,6 +1711,76 @@ func (s *OpenAIGatewayService) RefreshSelectedAccountBeforeUse(ctx context.Conte
 	return latest, nil
 }
 
+// SelectOpenAIRetryAccount validates and acquires a slot for a previously
+// selected account without rebuilding the provider-wide account candidate
+// list. It is intentionally limited to same-account retry paths: account
+// eligibility, runtime blocks, group/privacy checks, capability checks and
+// parent health are still rechecked before the slot is acquired.
+func (s *OpenAIGatewayService) SelectOpenAIRetryAccount(
+	ctx context.Context,
+	groupID *int64,
+	account *Account,
+	requestedModel string,
+	requireCompact bool,
+	requiredCapability OpenAIEndpointCapability,
+	requiredImageCapability OpenAIImagesCapability,
+) (*AccountSelectionResult, error) {
+	if account == nil {
+		return nil, ErrNoAvailableAccounts
+	}
+	platform := NormalizeOpenAICompatiblePlatform(account.Platform)
+	latest := account
+	if s.accountRepo != nil {
+		current, err := s.accountRepo.GetByID(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	} else if s.schedulerSnapshot != nil {
+		current, err := s.schedulerSnapshot.GetAccount(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	}
+	if !s.openAIAccountMatchesSchedulingGroup(latest, groupID) ||
+		(s.openAIGroupRequiresPrivacySet(ctx, groupID) && !latest.IsPrivacySet()) ||
+		!isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, latest, platform, requestedModel, requireCompact, requiredCapability) ||
+		!parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) ||
+		s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) ||
+		s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) ||
+		s.isOpenAIProxyStreamQuarantined(ctx, latest) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if latest == nil || !latest.SupportsOpenAIImageCapability(requiredImageCapability) {
+		return nil, ErrNoAvailableAccounts
+	}
+
+	result, err := s.tryAcquireAccountSlot(ctx, latest.ID, latest.Concurrency)
+	if err != nil {
+		return nil, err
+	}
+	if result != nil && result.Acquired {
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
+			Account:                latest,
+			Acquired:               true,
+			ReleaseFunc:            result.ReleaseFunc,
+			RetryFastPathValidated: true,
+		}), nil
+	}
+
+	cfg := s.schedulingConfig()
+	return attachSelectionProfitGate(ctx, &AccountSelectionResult{
+		Account: latest,
+		WaitPlan: &AccountWaitPlan{
+			AccountID:      latest.ID,
+			MaxConcurrency: latest.Concurrency,
+			Timeout:        cfg.FallbackWaitTimeout,
+			MaxWaiting:     cfg.FallbackMaxWaiting,
+		},
+	}), nil
+}
+
 func (s *OpenAIGatewayService) openAIAccountMatchesSchedulingGroup(account *Account, groupID *int64) bool {
 	if s != nil && s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		return account != nil

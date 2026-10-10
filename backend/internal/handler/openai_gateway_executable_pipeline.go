@@ -788,7 +788,12 @@ type OpenAIHTTPRoutingStage struct {
 	LogPrefix                  string
 	Account                    **service.Account
 	AccountReleaseFunc         *func()
-	Retry                      *bool
+	// RetryAccount is set only for a request-scoped provider overload retry.
+	// The routing stage validates and reacquires this account without rebuilding
+	// the full account candidate list; a failed validation falls back to normal
+	// scheduling in the same pass.
+	RetryAccount *service.Account
+	Retry        *bool
 }
 
 func (OpenAIHTTPRoutingStage) StageName() string {
@@ -828,7 +833,25 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	var selection *service.AccountSelectionResult
 	var scheduleDecision service.OpenAIAccountScheduleDecision
 	var err error
-	if s.AccountBoundState {
+	if s.RetryAccount != nil {
+		selection, err = h.gatewayService.SelectOpenAIRetryAccount(
+			ctx,
+			s.APIKey.GroupID,
+			s.RetryAccount,
+			s.RequestedModel,
+			s.RequireCompact,
+			s.RequiredCapability,
+			s.RequiredImageCapability,
+		)
+		if err != nil {
+			reqLog.Debug(logPrefix+".same_account_retry_fast_path_unavailable",
+				zap.Int64("account_id", s.RetryAccount.ID),
+				zap.Error(err),
+			)
+			selection = nil
+		}
+	}
+	if selection == nil && s.AccountBoundState {
 		selection, scheduleDecision, err = h.gatewayService.SelectHTTPAccountStateOwner(
 			ctx,
 			service.OpenAIAccountScheduleRequest{
@@ -838,7 +861,7 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 				RequireCompact: s.RequireCompact, ExcludedIDs: failedAccountIDs,
 			}, s.SubjectUserID,
 		)
-	} else if s.RequiredImageCapability != "" && s.RequiredCapability == "" {
+	} else if selection == nil && s.RequiredImageCapability != "" && s.RequiredCapability == "" {
 		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
 			ctx,
 			s.APIKey.GroupID,
@@ -848,7 +871,7 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 			s.RequiredImageCapability,
 			s.SubjectUserID,
 		)
-	} else {
+	} else if selection == nil {
 		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapabilityAndImage(
 			ctx,
 			s.APIKey.GroupID,

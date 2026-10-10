@@ -835,6 +835,44 @@ func TestOpenAIGatewayService_RefreshSelectedAccountBeforeUseRejectsDisabledLate
 	require.Nil(t, refreshed)
 }
 
+func TestOpenAIGatewayService_SelectOpenAIRetryAccountUsesValidatedFastPath(t *testing.T) {
+	selected := &Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	svc := &OpenAIGatewayService{}
+
+	selection, err := svc.SelectOpenAIRetryAccount(context.Background(), nil, selected, "gpt-5.2", false, "", "")
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.True(t, selection.Acquired)
+	require.True(t, selection.RetryFastPathValidated)
+	require.NotNil(t, selection.ReleaseFunc)
+	selection.ReleaseFunc()
+}
+
+func TestOpenAIGatewayService_SelectOpenAIRetryAccountRejectsDisabledAccount(t *testing.T) {
+	selected := &Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusDisabled,
+		Schedulable: false,
+		Concurrency: 1,
+	}
+	svc := &OpenAIGatewayService{}
+
+	selection, err := svc.SelectOpenAIRetryAccount(context.Background(), nil, selected, "gpt-5.2", false, "", "")
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+}
+
 func (c *stubGatewayCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil
 }

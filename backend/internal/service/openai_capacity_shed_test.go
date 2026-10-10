@@ -61,6 +61,16 @@ func TestTempUnscheduleRetryableErrorSkipsRequestScopedTransient(t *testing.T) {
 	})
 }
 
+func TestRequestScopedTransientDoesNotReportAccountScheduleFailure(t *testing.T) {
+	failure := &UpstreamFailoverError{
+		StatusCode:             http.StatusTooManyRequests,
+		RequestScopedTransient: true,
+		RetryableOnSameAccount: true,
+	}
+
+	require.False(t, failure.ShouldReportAccountScheduleFailure())
+}
+
 // 非池模式账号同样要先在同账号重试：换号不改变降载因素。
 func TestStreamFailedEventCapacityShedRetriesOnSameAccount(t *testing.T) {
 	nonPool := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
