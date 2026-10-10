@@ -97,15 +97,16 @@ type OpenAIQuotaAutoResetService struct {
 	settings    *SettingService
 	leaderLock  LeaderLockCache
 
-	ctx          context.Context
-	cancel       context.CancelFunc
-	queue        chan int64
-	pending      sync.Map
-	forceRefresh sync.Map
-	owner        string
-	start        sync.Once
-	stop         sync.Once
-	wg           sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
+	queue            chan int64
+	pending          sync.Map
+	forceRefresh     sync.Map
+	quotaExhausted7d sync.Map
+	owner            string
+	start            sync.Once
+	stop             sync.Once
+	wg               sync.WaitGroup
 }
 
 func NewOpenAIQuotaAutoResetService(
@@ -173,6 +174,16 @@ func (s *OpenAIQuotaAutoResetService) NotifyForce(accountID int64) {
 	s.enqueue(accountID, true)
 }
 
+// Notify7dQuotaExhausted authorizes the 100% 7d path only after the gateway
+// has classified an upstream 429 as a confirmed weekly quota exhaustion.
+func (s *OpenAIQuotaAutoResetService) Notify7dQuotaExhausted(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.quotaExhausted7d.Store(accountID, struct{}{})
+	s.enqueue(accountID, false)
+}
+
 func (s *OpenAIQuotaAutoResetService) enqueue(accountID int64, forceRefresh bool) {
 	if s == nil || accountID <= 0 {
 		return
@@ -187,10 +198,12 @@ func (s *OpenAIQuotaAutoResetService) enqueue(accountID int64, forceRefresh bool
 	case <-s.ctx.Done():
 		s.pending.Delete(accountID)
 		s.forceRefresh.Delete(accountID)
+		s.quotaExhausted7d.Delete(accountID)
 	case s.queue <- accountID:
 	default:
 		s.pending.Delete(accountID)
 		s.forceRefresh.Delete(accountID)
+		s.quotaExhausted7d.Delete(accountID)
 		slog.Warn("openai_auto_reset_queue_full", "account_id", accountID)
 	}
 }
@@ -204,7 +217,8 @@ func (s *OpenAIQuotaAutoResetService) runWorker() {
 		case accountID := <-s.queue:
 			ctx, cancel := context.WithTimeout(s.ctx, 50*time.Second)
 			_, forceRefresh := s.forceRefresh.LoadAndDelete(accountID)
-			if err := s.evaluateAccountWithForce(ctx, accountID, forceRefresh); err != nil && !errors.Is(err, context.Canceled) {
+			_, quotaExhausted7d := s.quotaExhausted7d.LoadAndDelete(accountID)
+			if err := s.evaluateAccountWithForce(ctx, accountID, forceRefresh, quotaExhausted7d); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Warn("openai_auto_reset_evaluate_failed", "account_id", accountID, "error_code", infraerrors.Reason(err))
 			}
 			cancel()
@@ -214,6 +228,9 @@ func (s *OpenAIQuotaAutoResetService) runWorker() {
 			// forced check cannot be lost in that race.
 			if _, pendingForce := s.forceRefresh.Load(accountID); pendingForce {
 				s.enqueue(accountID, true)
+			}
+			if _, pendingExhausted := s.quotaExhausted7d.Load(accountID); pendingExhausted {
+				s.enqueue(accountID, false)
 			}
 		}
 	}
@@ -294,17 +311,15 @@ type openAIAutoResetAssessment struct {
 	triggerWindow string
 	resetReached  bool
 	pauseReached  bool
-	utilization5h float64
 	utilization7d float64
-	threshold5h   float64
 	threshold7d   float64
 }
 
 func (s *OpenAIQuotaAutoResetService) evaluateAccount(ctx context.Context, accountID int64) error {
-	return s.evaluateAccountWithForce(ctx, accountID, false)
+	return s.evaluateAccountWithForce(ctx, accountID, false, false)
 }
 
-func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Context, accountID int64, forceRefresh bool) error {
+func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Context, accountID int64, forceRefresh, quotaExhausted7d bool) error {
 	ctx = withOpenAIAutoResetContext(ctx)
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil || account == nil {
@@ -322,11 +337,11 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Conte
 	}
 
 	now := time.Now()
-	assessment := s.assessExtra(account, config, now)
+	assessment := s.assessExtra(account, config, now, quotaExhausted7d)
 	state := openAIAutoResetStateFromExtra(account.Extra)
 	// 达到用卡阈值本应立即查询以便用卡；但 10 分钟内已确认无卡时，重查不会改变结论，
 	// 只会让调度热路径的通知把同一账号的上游额度接口打到十几秒一次。
-	needsQuery := forceRefresh || openAIAutoResetSnapshotStale(account.Extra, now) ||
+	needsQuery := forceRefresh || quotaExhausted7d || openAIAutoResetSnapshotStale(account.Extra, now) ||
 		(assessment.resetReached && !openAIAutoResetNoCreditConfirmed(state, now))
 	if assessment.pauseReached && !assessment.resetReached {
 		needsQuery = needsQuery || state == nil || state.Status == OpenAIAutoResetStatusChecking || state.Status == OpenAIAutoResetStatusFailed || openAIAutoResetStateStale(state, now)
@@ -380,7 +395,7 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Conte
 	if !config.Enabled {
 		return nil
 	}
-	assessment = s.assessUsage(usage, account, config, now)
+	assessment = s.assessUsage(usage, account, config, now, quotaExhausted7d)
 	available := usage.RateLimitResetCredits.AvailableCount
 	if !assessment.resetReached {
 		status := OpenAIAutoResetStatusNoCredit
@@ -529,9 +544,7 @@ func (s *OpenAIQuotaAutoResetService) evaluateAccountWithForce(ctx context.Conte
 	slog.Info("openai_auto_reset_credit_success",
 		"account_id", accountID,
 		"trigger_window", assessment.triggerWindow,
-		"threshold_5h", assessment.threshold5h,
 		"threshold_7d", assessment.threshold7d,
-		"utilization_5h", assessment.utilization5h,
 		"utilization_7d", assessment.utilization7d,
 		"windows_reset", consumeResult.WindowsReset,
 	)
@@ -553,43 +566,37 @@ func decodeOpenAIAutoResetConsumeResult(value any) openAIAutoResetConsumeResult 
 	return decoded
 }
 
-func (s *OpenAIQuotaAutoResetService) assessExtra(account *Account, config OpenAIAutoResetCreditConfig, now time.Time) openAIAutoResetAssessment {
-	utilization5h, _ := resolveOpenAIQuotaUtilization(account.Extra, "5h", now)
+func (s *OpenAIQuotaAutoResetService) assessExtra(account *Account, config OpenAIAutoResetCreditConfig, now time.Time, quotaExhausted7d bool) openAIAutoResetAssessment {
 	utilization7d, _ := resolveOpenAIQuotaUtilization(account.Extra, "7d", now)
-	return s.buildAssessment(account, config, utilization5h, utilization7d)
+	return s.buildAssessment(account, config, utilization7d, quotaExhausted7d)
 }
 
-func (s *OpenAIQuotaAutoResetService) assessUsage(usage *OpenAIQuotaUsage, account *Account, config OpenAIAutoResetCreditConfig, now time.Time) openAIAutoResetAssessment {
+func (s *OpenAIQuotaAutoResetService) assessUsage(usage *OpenAIQuotaUsage, account *Account, config OpenAIAutoResetCreditConfig, now time.Time, quotaExhausted7d bool) openAIAutoResetAssessment {
 	updates := buildOpenAIAutoResetUsageUpdates(usage, now)
-	utilization5h := readOpenAIQuotaUsedPercent(updates, "5h") / 100
 	utilization7d := readOpenAIQuotaUsedPercent(updates, "7d") / 100
-	return s.buildAssessment(account, config, utilization5h, utilization7d)
+	return s.buildAssessment(account, config, utilization7d, quotaExhausted7d)
 }
 
-func (s *OpenAIQuotaAutoResetService) buildAssessment(account *Account, config OpenAIAutoResetCreditConfig, utilization5h, utilization7d float64) openAIAutoResetAssessment {
+func (s *OpenAIQuotaAutoResetService) buildAssessment(account *Account, config OpenAIAutoResetCreditConfig, utilization7d float64, quotaExhausted7d bool) openAIAutoResetAssessment {
 	assessment := openAIAutoResetAssessment{
-		utilization5h: utilization5h,
 		utilization7d: utilization7d,
-		threshold5h:   config.Threshold5h,
 		threshold7d:   config.Threshold7d,
 	}
-	reset5h := utilization5h >= config.Threshold5h
-	reset7d := utilization7d >= config.Threshold7d
-	assessment.resetReached = reset5h || reset7d
-	assessment.triggerWindow = joinOpenAIAutoResetWindows(reset5h, reset7d)
+	reset7d := utilization7d >= config.Threshold7d && (config.Threshold7d < 1 || quotaExhausted7d)
+	assessment.resetReached = reset7d
+	assessment.triggerWindow = joinOpenAIAutoResetWindows(false, reset7d)
 
-	pause5h, pause7d := resolveOpenAIQuotaAutoPauseThresholds(context.Background(), account)
+	_, pause7d := resolveOpenAIQuotaAutoPauseThresholds(context.Background(), account)
 	if s.settings != nil {
-		pause5h, pause7d = resolveOpenAIQuotaAutoPauseThresholds(
+		_, pause7d = resolveOpenAIQuotaAutoPauseThresholds(
 			withOpenAIQuotaAutoPauseSettings(context.Background(), s.settings.GetOpenAIQuotaAutoPauseSettings(context.Background())),
 			account,
 		)
 	}
-	pauseReached5h := !resolveAccountExtraBool(account.Extra, "auto_pause_5h_disabled") && pause5h > 0 && utilization5h >= pause5h
 	pauseReached7d := !resolveAccountExtraBool(account.Extra, "auto_pause_7d_disabled") && pause7d > 0 && utilization7d >= pause7d
-	assessment.pauseReached = pauseReached5h || pauseReached7d || assessment.resetReached
+	assessment.pauseReached = pauseReached7d || assessment.resetReached
 	if assessment.triggerWindow == "" {
-		assessment.triggerWindow = joinOpenAIAutoResetWindows(pauseReached5h, pauseReached7d)
+		assessment.triggerWindow = joinOpenAIAutoResetWindows(false, pauseReached7d)
 	}
 	return assessment
 }
@@ -855,9 +862,7 @@ func (s *OpenAIQuotaAutoResetService) recordAudit(accountID int64, assessment op
 		Extra: map[string]any{
 			"account_id":      accountID,
 			"trigger_window":  assessment.triggerWindow,
-			"threshold_5h":    assessment.threshold5h,
 			"threshold_7d":    assessment.threshold7d,
-			"utilization_5h":  assessment.utilization5h,
 			"utilization_7d":  assessment.utilization7d,
 			"available_count": available,
 			"result_code":     resultCode,
@@ -908,6 +913,18 @@ func NotifyOpenAIAutoResetCreditForce(accountID int64) {
 	openAIAutoResetNotifierRegistry.RUnlock()
 	if service != nil {
 		service.NotifyForce(accountID)
+	}
+}
+
+// notifyOpenAIAutoResetCreditQuotaExhausted7d forwards only a classified
+// weekly quota exhaustion event to the worker. Ordinary 429s never enter this
+// path.
+func notifyOpenAIAutoResetCreditQuotaExhausted7d(accountID int64) {
+	openAIAutoResetNotifierRegistry.RLock()
+	service := openAIAutoResetNotifierRegistry.service
+	openAIAutoResetNotifierRegistry.RUnlock()
+	if service != nil {
+		service.Notify7dQuotaExhausted(accountID)
 	}
 }
 

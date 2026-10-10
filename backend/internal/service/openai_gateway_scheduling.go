@@ -535,31 +535,21 @@ func shouldAutoPauseOpenAIAccountByQuota(ctx context.Context, account *Account) 
 	// 只有新鲜状态明确存在可用卡才继续放行到消费阈值。
 	if config := ResolveOpenAIAutoResetCreditConfig(account); config.Enabled {
 		now := time.Now()
-		utilization5h, has5h := resolveOpenAIQuotaUtilization(account.Extra, "5h", now)
 		utilization7d, has7d := resolveOpenAIQuotaUtilization(account.Extra, "7d", now)
-		if has5h && utilization5h >= config.Threshold5h {
-			notifyOpenAIAutoResetFromScheduler(account.ID)
-			return true, openAIQuotaAutoPauseDecision{window: "5h", threshold: config.Threshold5h, utilization: utilization5h, reason: "quota_auto_reset_pending_5h"}
-		}
-		if has7d && utilization7d >= config.Threshold7d {
+		if has7d && utilization7d >= config.Threshold7d && config.Threshold7d < 1 {
 			notifyOpenAIAutoResetFromScheduler(account.ID)
 			return true, openAIQuotaAutoPauseDecision{window: "7d", threshold: config.Threshold7d, utilization: utilization7d, reason: "quota_auto_reset_pending_7d"}
 		}
 
-		disabled5h := resolveAccountExtraBool(account.Extra, "auto_pause_5h_disabled")
 		disabled7d := resolveAccountExtraBool(account.Extra, "auto_pause_7d_disabled")
-		pause5h, pause7d := resolveOpenAIQuotaAutoPauseThresholds(ctx, account)
-		pauseReached5h := !disabled5h && pause5h > 0 && has5h && utilization5h >= pause5h
+		_, pause7d := resolveOpenAIQuotaAutoPauseThresholds(ctx, account)
 		pauseReached7d := !disabled7d && pause7d > 0 && has7d && utilization7d >= pause7d
-		if pauseReached5h || pauseReached7d {
+		if pauseReached7d {
 			state := openAIAutoResetStateFromExtra(account.Extra)
 			if state != nil && state.Status == OpenAIAutoResetStatusAvailable && state.AvailableCount > 0 && !openAIAutoResetStateStale(state, now) {
 				return false, openAIQuotaAutoPauseDecision{}
 			}
 			notifyOpenAIAutoResetFromScheduler(account.ID)
-			if pauseReached5h {
-				return true, openAIQuotaAutoPauseDecision{window: "5h", threshold: pause5h, utilization: utilization5h, reason: "quota_auto_reset_credit_check_5h"}
-			}
 			return true, openAIQuotaAutoPauseDecision{window: "7d", threshold: pause7d, utilization: utilization7d, reason: "quota_auto_reset_credit_check_7d"}
 		}
 	}
@@ -569,10 +559,14 @@ func shouldAutoPauseOpenAIAccountByQuota(ctx context.Context, account *Account) 
 	// default exists. The disable flag is per-window so an account can opt out of
 	// only 5h or only 7d auto-pause.
 	disabled5h := resolveAccountExtraBool(account.Extra, "auto_pause_5h_disabled")
+	// Automatic reset-credit handling no longer uses the 5h window. Keep the
+	// normal 5h quota pause for accounts without this feature, but do not let a
+	// 5h signal gate an account that has the 7d-only automatic reset enabled.
+	skip5hAutoPause := ResolveOpenAIAutoResetCreditConfig(account).Enabled
 	disabled7d := resolveAccountExtraBool(account.Extra, "auto_pause_7d_disabled")
 	threshold5h, threshold7d := resolveOpenAIQuotaAutoPauseThresholds(ctx, account)
 	now := time.Now()
-	if !disabled5h && threshold5h > 0 {
+	if !skip5hAutoPause && !disabled5h && threshold5h > 0 {
 		if utilization, ok := resolveOpenAIQuotaUtilization(account.Extra, "5h", now); ok && utilization >= threshold5h {
 			return true, openAIQuotaAutoPauseDecision{window: "5h", threshold: threshold5h, utilization: utilization}
 		}

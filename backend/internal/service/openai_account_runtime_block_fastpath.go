@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -69,6 +71,60 @@ func classifyOpenAIOAuth429(headers http.Header, responseBody []byte) (openAIOAu
 		return openAIOAuth429QuotaReset, &resetAt
 	}
 	return openAIOAuth429Transient, nil
+}
+
+// isOpenAI7dQuotaExhausted429 is deliberately stricter than the generic 429
+// classifier. A reset card may be consumed only when the response identifies
+// quota exhaustion and the evidence points to the weekly window; a bare 429,
+// rate_limit_exceeded, or a reset-after hint is insufficient.
+func isOpenAI7dQuotaExhausted429(headers http.Header, responseBody []byte) bool {
+	weeklyHeaderAtLimit := false
+	if snapshot := ParseCodexRateLimitHeaders(headers); snapshot != nil {
+		if normalized := snapshot.Normalize(); normalized != nil && normalized.Used7dPercent != nil {
+			weeklyHeaderAtLimit = *normalized.Used7dPercent >= 100
+		}
+	}
+
+	values := make([]string, 0, 8)
+	appendJSONValues := func(payload []byte) {
+		if !gjson.ValidBytes(payload) {
+			return
+		}
+		for _, path := range []string{
+			"error.type", "response.error.type", "error.code", "response.error.code", "detail.code", "code",
+			"error.message", "response.error.message", "detail.message", "message",
+		} {
+			if value := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, path).String())); value != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	appendJSONValues(responseBody)
+	for _, line := range strings.Split(string(responseBody), "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+		if line != "" && line != "[DONE]" {
+			appendJSONValues([]byte(line))
+		}
+	}
+	if len(values) == 0 {
+		return false
+	}
+	structuredExhaustion := false
+	weeklyBodyEvidence := false
+	for _, value := range values {
+		switch value {
+		case "usage_limit_reached", "quota_exceeded", "weekly_quota_exceeded":
+			structuredExhaustion = true
+		}
+		if strings.Contains(value, "weekly") || strings.Contains(value, "7d") || strings.Contains(value, "seven day") {
+			weeklyBodyEvidence = true
+		}
+		if (strings.Contains(value, "usage limit") || strings.Contains(value, "quota")) &&
+			(strings.Contains(value, "exhaust") || strings.Contains(value, "reached") || strings.Contains(value, "exceeded")) {
+			structuredExhaustion = true
+		}
+	}
+	return structuredExhaustion && (weeklyHeaderAtLimit || weeklyBodyEvidence)
 }
 
 func openAIAccountStateContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -230,6 +286,9 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.recordOpenAIOAuth429()
 	disposition, resetAt := classifyOpenAIOAuth429(headers, responseBody)
+	if isOpenAI7dQuotaExhausted429(headers, responseBody) {
+		notifyOpenAIAutoResetCreditQuotaExhausted7d(account.ID)
+	}
 	if disposition == openAIOAuth429Transient && s.openAIOAuth429RetryWindowActive(account) {
 		return
 	}

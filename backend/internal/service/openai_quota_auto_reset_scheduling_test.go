@@ -17,7 +17,6 @@ func autoResetSchedulingAccount(now time.Time) *Account {
 		Status: StatusActive, Schedulable: true, Concurrency: 1,
 		Extra: map[string]any{
 			OpenAIAutoResetCreditEnabledExtraKey:     true,
-			OpenAIAutoResetCredit5hThresholdExtraKey: 1.0,
 			OpenAIAutoResetCredit7dThresholdExtraKey: 1.0,
 			"auto_pause_5h_threshold":                0.8, "auto_pause_7d_threshold": 0.8,
 			"codex_5h_used_percent": 90.0, "codex_7d_used_percent": 10.0,
@@ -59,7 +58,7 @@ func assertAutoResetSchedulingEligibility(t *testing.T, account *Account, model 
 
 func TestOpenAIAutoResetScheduling_CreditStates(t *testing.T) {
 	now := time.Now().UTC()
-	for _, window := range []string{"5h", "7d"} {
+	for _, window := range []string{"7d"} {
 		t.Run(window, func(t *testing.T) {
 			states := []struct {
 				name     string
@@ -115,7 +114,7 @@ func TestOpenAIAutoResetScheduling_CreditStates(t *testing.T) {
 
 func TestOpenAIAutoResetScheduling_IndependentResetThresholds(t *testing.T) {
 	now := time.Now().UTC()
-	for _, window := range []string{"5h", "7d"} {
+	for _, window := range []string{"7d"} {
 		for _, pauseDisabled := range []bool{false, true} {
 			t.Run(window+"/pause_disabled="+strconv.FormatBool(pauseDisabled), func(t *testing.T) {
 				account := autoResetSchedulingAccount(now)
@@ -194,6 +193,8 @@ func TestOpenAIAutoResetScheduling_StateRefreshAndConcurrentNotifications(t *tes
 	now := time.Now().UTC()
 	ctx := context.Background()
 	account := autoResetSchedulingAccount(now)
+	account.Extra["codex_5h_used_percent"] = 10.0
+	account.Extra["codex_7d_used_percent"] = 90.0
 	openAIAutoResetSchedulerNotifiedAt.Delete(account.ID)
 	t.Cleanup(func() { openAIAutoResetSchedulerNotifiedAt.Delete(account.ID) })
 	account.Extra[OpenAIAutoResetCreditStateExtraKey] = OpenAIAutoResetCreditState{Status: OpenAIAutoResetStatusAvailable, AvailableCount: 1, CheckedAt: now.Format(time.RFC3339)}
@@ -241,7 +242,7 @@ func TestOpenAIAutoResetScheduling_StateRefreshAndConcurrentNotifications(t *tes
 	// A successful reset only releases the quota gate after the usage snapshot
 	// reflects recovery (or the existing natural-window reset rule applies).
 	require.NoError(t, notifier.persistState(ctx, account.ID, &OpenAIAutoResetCreditState{Status: OpenAIAutoResetStatusSuccess, CheckedAt: now.Format(time.RFC3339)}))
-	require.NoError(t, repo.UpdateExtra(ctx, account.ID, map[string]any{"codex_5h_used_percent": 0.0}))
+	require.NoError(t, repo.UpdateExtra(ctx, account.ID, map[string]any{"codex_7d_used_percent": 0.0}))
 	fresh, err := svc.RefreshSelectedAccountBeforeUse(ctx, stale, "gpt-5.1", false, "", "")
 	require.NoError(t, err)
 	require.NotNil(t, fresh)

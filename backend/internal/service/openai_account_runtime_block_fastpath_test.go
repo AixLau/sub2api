@@ -22,6 +22,52 @@ type oauth429RateLimitRepo struct {
 	lastModelRateLimitedUntil time.Time
 }
 
+func TestOpenAI7dQuotaExhausted429RequiresExplicitWeeklyExhaustion(t *testing.T) {
+	weeklyHeaders := http.Header{
+		"x-codex-secondary-used-percent":   []string{"100"},
+		"x-codex-secondary-window-minutes": []string{"10080"},
+	}
+	tests := []struct {
+		name    string
+		headers http.Header
+		body    string
+		want    bool
+	}{
+		{name: "structured usage limit with weekly header", headers: weeklyHeaders, body: `{"error":{"type":"usage_limit_reached","message":"weekly usage limit reached"}}`, want: true},
+		{name: "generic 429 with weekly header", headers: weeklyHeaders, body: `{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"try again later"}}`, want: false},
+		{name: "100 percent without explicit exhaustion", headers: weeklyHeaders, body: `{"error":{"message":"rate limited"}}`, want: false},
+		{name: "weekly body evidence", headers: http.Header{}, body: `{"error":{"code":"weekly_quota_exceeded","message":"weekly quota exhausted"}}`, want: true},
+		{name: "SSE structured exhaustion", headers: weeklyHeaders, body: "data: {\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"weekly usage limit reached\"}}\n\n", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isOpenAI7dQuotaExhausted429(tt.headers, []byte(tt.body)))
+		})
+	}
+}
+
+func TestOpenAI429FastPath_OnlyConfirmed7dExhaustionQueuesAutoReset(t *testing.T) {
+	notifier := NewOpenAIQuotaAutoResetService(nil, nil, nil, nil, nil, nil, nil)
+	setOpenAIAutoResetNotifier(notifier)
+	t.Cleanup(func() { clearOpenAIAutoResetNotifier(notifier) })
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 4242, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{
+		"x-codex-secondary-used-percent":   []string{"100"},
+		"x-codex-secondary-window-minutes": []string{"10080"},
+	}
+	svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"usage_limit_reached","message":"weekly usage limit reached"}}`))
+	require.Equal(t, int64(1), int64(len(notifier.queue)))
+
+	select {
+	case <-notifier.queue:
+	default:
+		t.Fatal("confirmed 7d quota exhaustion should queue an auto-reset check")
+	}
+	svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error","message":"try again later"}}`))
+	require.Empty(t, notifier.queue, "ordinary 429 must not queue auto-reset")
+}
+
 func (r *oauth429RateLimitRepo) SetRateLimited(_ context.Context, _ int64, until time.Time) error {
 	r.setRateLimitedCalls++
 	r.lastRateLimitedUntil = until

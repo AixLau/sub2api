@@ -459,7 +459,6 @@ func TestSchedulerMetadataPayload_KeepsOpenAIAutoResetCreditFields(t *testing.T)
 		Extra: map[string]any{
 			"codex_7d_used_percent":                          90.0,
 			service.OpenAIAutoResetCreditEnabledExtraKey:     true,
-			service.OpenAIAutoResetCredit5hThresholdExtraKey: 0.95,
 			service.OpenAIAutoResetCredit7dThresholdExtraKey: 0.98,
 			service.OpenAIAutoResetCreditStateExtraKey: map[string]any{
 				"status":          service.OpenAIAutoResetStatusAvailable,
@@ -477,7 +476,6 @@ func TestSchedulerMetadataPayload_KeepsOpenAIAutoResetCreditFields(t *testing.T)
 
 	config := service.ResolveOpenAIAutoResetCreditConfig(&cached)
 	require.True(t, config.Enabled)
-	require.Equal(t, 0.95, config.Threshold5h)
 	require.Equal(t, 0.98, config.Threshold7d)
 
 	state, ok := cached.Extra[service.OpenAIAutoResetCreditStateExtraKey].(map[string]any)
