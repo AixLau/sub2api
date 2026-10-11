@@ -417,18 +417,32 @@
         </div>
 
         <!-- Model Distribution -->
-        <ModelDistributionChart :model-stats="stats.models" :loading="false" />
+        <ModelDistributionChart
+          :model-stats="stats.models"
+          :loading="false"
+          :start-date="statsStartDate"
+          :end-date="statsEndDate"
+          :filters="accountStatsFilters"
+        />
 
         <EndpointDistributionChart
           :endpoint-stats="stats.endpoints || []"
           :loading="false"
           :title="t('usage.inboundEndpoint')"
+          :start-date="statsStartDate"
+          :end-date="statsEndDate"
+          :filters="accountStatsFilters"
         />
 
         <EndpointDistributionChart
           :endpoint-stats="stats.upstream_endpoints || []"
+          :upstream-endpoint-stats="stats.upstream_endpoints || []"
           :loading="false"
           :title="t('usage.upstreamEndpoint')"
+          source="upstream"
+          :start-date="statsStartDate"
+          :end-date="statsEndDate"
+          :filters="accountStatsFilters"
         />
       </template>
 
@@ -508,6 +522,17 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
+
+// The account stats response is already scoped to the selected account and
+// its 30-day range. Reuse the dates represented by that response when a chart
+// row is expanded so the drill-down cannot fall back to the dashboard's
+// default range or omit the account filter.
+const statsHistory = computed(() => stats.value?.history ?? [])
+const statsStartDate = computed(() => statsHistory.value[0]?.date)
+const statsEndDate = computed(() => statsHistory.value[statsHistory.value.length - 1]?.date)
+const accountStatsFilters = computed(() => (
+  props.account ? { account_id: props.account.id } : {}
+))
 
 // Dark mode detection
 const isDarkMode = computed(() => {
