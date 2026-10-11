@@ -92,6 +92,12 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	if err := r.fillDashboardUsageStatsAggregated(ctx, stats, todayStart, now); err != nil {
 		return nil, err
 	}
+	// The rollup tables do not retain the user role, so refresh the current
+	// day's values from usage_logs to keep the dashboard's default scope limited
+	// to regular users even before the next aggregate rebuild runs.
+	if err := r.fillDashboardTodayUsageStatsExcludingAdmins(ctx, stats, todayStart, now); err != nil {
+		return nil, err
+	}
 
 	rpm, tpm, activeUsers, err := r.getPerformanceStats(ctx, 0)
 	if err != nil {
@@ -102,6 +108,54 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	stats.Recent1mActiveUsers = activeUsers
 
 	return stats, nil
+}
+
+// fillDashboardTodayUsageStatsExcludingAdmins refreshes the values shown by
+// the "today" dashboard cards from the source logs.  The daily/hourly rollups
+// intentionally omit user identity, so they cannot safely filter administrator
+// rows at read time.
+func (r *usageLogRepository) fillDashboardTodayUsageStatsExcludingAdmins(ctx context.Context, stats *DashboardStats, todayStart, now time.Time) error {
+	todayEnd := todayStart.Add(24 * time.Hour)
+	hourStart := timezone.StartOfHour(now)
+	hourEnd := hourStart.Add(time.Hour)
+
+	const query = `
+		SELECT
+			COUNT(*) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2) AS today_requests,
+			COALESCE(SUM(ul.input_tokens) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_input_tokens,
+			COALESCE(SUM(ul.output_tokens) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_output_tokens,
+			COALESCE(SUM(ul.cache_creation_tokens) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_cache_creation_tokens,
+			COALESCE(SUM(ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_cache_read_tokens,
+			COALESCE(SUM(ul.total_cost) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_cost,
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_actual_cost,
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)) FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0) AS today_account_cost,
+			COUNT(DISTINCT CASE WHEN ul.source = 'gateway' AND ul.user_id IS NOT NULL AND ul.api_key_id IS NOT NULL AND ul.created_at >= $1 AND ul.created_at < $2 THEN ul.user_id END) AS active_users,
+			COUNT(DISTINCT CASE WHEN ul.source = 'gateway' AND ul.user_id IS NOT NULL AND ul.api_key_id IS NOT NULL AND ul.created_at >= $3 AND ul.created_at < $4 THEN ul.user_id END) AS hourly_active_users
+		FROM usage_logs ul
+		LEFT JOIN users u ON ul.user_id = u.id
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+		  AND (u.role IS NULL OR u.role <> 'admin')
+	`
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		query,
+		[]any{todayStart, todayEnd, hourStart, hourEnd},
+		&stats.TodayRequests,
+		&stats.TodayInputTokens,
+		&stats.TodayOutputTokens,
+		&stats.TodayCacheCreationTokens,
+		&stats.TodayCacheReadTokens,
+		&stats.TodayCost,
+		&stats.TodayActualCost,
+		&stats.TodayAccountCost,
+		&stats.ActiveUsers,
+		&stats.HourlyActiveUsers,
+	); err != nil {
+		return err
+	}
+	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
+	return nil
 }
 
 func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*DashboardStats, error) {

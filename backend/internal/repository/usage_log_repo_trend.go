@@ -91,11 +91,13 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 
 	query := fmt.Sprintf(`
 		WITH top_users AS (
-			SELECT user_id
+			SELECT usage_logs.user_id
 			FROM usage_logs
-			WHERE created_at >= $1 AND created_at < $2
-			GROUP BY user_id
-			ORDER BY %s DESC, user_id ASC
+			LEFT JOIN users us ON usage_logs.user_id = us.id
+			WHERE usage_logs.created_at >= $1 AND usage_logs.created_at < $2
+			  AND (us.role IS NULL OR us.role <> 'admin')
+			GROUP BY usage_logs.user_id
+			ORDER BY %s DESC, usage_logs.user_id ASC
 			LIMIT $3
 		)
 		SELECT
@@ -110,6 +112,7 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 		FROM usage_logs u
 		LEFT JOIN users us ON u.user_id = us.id
 		WHERE u.user_id IN (SELECT user_id FROM top_users)
+		  AND (us.role IS NULL OR us.role <> 'admin')
 		  AND u.created_at >= $4 AND u.created_at < $5
 		GROUP BY date, u.user_id, us.email, us.username
 		ORDER BY date ASC, tokens DESC
@@ -355,6 +358,10 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	if userID > 0 {
 		query += fmt.Sprintf(" AND user_id = $%d", len(args)+1)
 		args = append(args, userID)
+	} else {
+		// Dashboard-wide trends default to regular-user activity. Keep an
+		// explicit user drill-down (including an admin) available to callers.
+		query += " AND (user_id IS NULL OR NOT EXISTS (SELECT 1 FROM users admin_user WHERE admin_user.id = usage_logs.user_id AND admin_user.role = 'admin'))"
 	}
 	query, args = appendUsageLogExcludeUserIDsQueryFilter(query, args, "user_id", excludeUserIDs)
 	if apiKeyID > 0 {
