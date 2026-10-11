@@ -894,6 +894,26 @@ type AccountUsageStatsResponse = usagestats.AccountUsageStatsResponse
 // EndpointStat represents endpoint usage statistics row.
 type EndpointStat = usagestats.EndpointStat
 
+// accountUsageDaysCount returns the number of calendar days covered by a
+// left-closed, right-open usage range. The calculation uses civil dates rather
+// than elapsed hours so daylight-saving transitions do not turn a one-day
+// range into 0 or 2 days.
+func accountUsageDaysCount(startTime, endTime time.Time) int {
+	if !endTime.After(startTime) {
+		return 0
+	}
+	loc := timezone.Location()
+	start := startTime.In(loc)
+	end := endTime.In(loc)
+	startDate := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+	days := int(endDate.Sub(startDate).Hours() / 24)
+	if days <= 0 {
+		return 1
+	}
+	return days
+}
+
 func (r *usageLogRepository) getEndpointStatsByColumnWithFilters(ctx context.Context, endpointColumn string, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, modelSource string, requestType *int16, stream *bool, billingType *int8, billingMode string, excludeUserIDs ...int64) (results []EndpointStat, err error) {
 	actualCostExpr := "COALESCE(SUM(actual_cost), 0) as actual_cost"
 
@@ -1042,14 +1062,19 @@ func (r *usageLogRepository) GetUpstreamEndpointStatsWithFilters(ctx context.Con
 
 // GetAccountUsageStats returns comprehensive usage statistics for an account over a time range
 func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (resp *AccountUsageStatsResponse, err error) {
-	daysCount := int(endTime.Sub(startTime).Hours()/24) + 1
+	// The handler supplies a left-closed, right-open range whose endpoints are
+	// local midnights (for example, [30 days ago, tomorrow) for a 30-day view).
+	// Count the covered calendar days directly; adding one here made that range
+	// report 31 days and distorted the "days active" denominator in the UI.
+	daysCount := accountUsageDaysCount(startTime, endTime)
 	if daysCount <= 0 {
 		daysCount = 30
 	}
+	tzName := resolveUsageStatsTimezone()
 
 	query := `
 		SELECT
-			TO_CHAR(created_at, 'YYYY-MM-DD') as date,
+			TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD') as date,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
@@ -1064,7 +1089,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		ORDER BY date ASC
 	`
 
-	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime)
+	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime, tzName)
 	if err != nil {
 		return nil, err
 	}
