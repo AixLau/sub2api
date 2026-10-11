@@ -65,6 +65,15 @@ func TestSafeDateFormat(t *testing.T) {
 	}
 }
 
+func TestAccountUsageDaysCount(t *testing.T) {
+	loc := timezone.Location()
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, loc)
+
+	require.Equal(t, 30, accountUsageDaysCount(start, start.AddDate(0, 0, 30)))
+	require.Equal(t, 1, accountUsageDaysCount(start, start.Add(time.Hour)))
+	require.Equal(t, 0, accountUsageDaysCount(start.AddDate(0, 0, 1), start))
+}
+
 func TestFillTrendGaps(t *testing.T) {
 	start := time.Date(2026, 5, 8, 1, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 5, 8, 11, 0, 0, 0, time.UTC)

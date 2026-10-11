@@ -1698,6 +1698,7 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats() {
 	s.Require().NoError(err, "GetAccountUsageStats")
 
 	s.Require().Len(resp.History, 2, "expected 2 days of history")
+	s.Require().Equal(3, resp.Summary.Days, "the right-open 72-hour range covers three calendar days")
 	s.Require().Equal(int64(2), resp.Summary.TotalRequests)
 	s.Require().Equal(int64(550), resp.Summary.TotalTokens)
 	s.Require().Equal(int64(150), resp.Summary.TotalInputTokens)
