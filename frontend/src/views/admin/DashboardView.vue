@@ -336,6 +336,12 @@ const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
 const rankingTotalTokens = ref(0)
+const defaultExcludedAdminUserIDs = ref<number[]>([])
+const defaultExcludedAdminUserIDsQuery = computed(() => (
+  defaultExcludedAdminUserIDs.value.length > 0
+    ? defaultExcludedAdminUserIDs.value.join(',')
+    : undefined
+))
 let chartLoadSeq = 0
 let activeUsersTrendLoadSeq = 0
 let rankingLoadSeq = 0
@@ -378,6 +384,16 @@ const getDashboardRangeParams = (): DashboardRangeParams => {
   return {
     start_date: startDate.value,
     end_date: endDate.value
+  }
+}
+
+const loadDefaultExcludedAdminUsers = async () => {
+  try {
+    const admins = await adminAPI.users.listAdmins()
+    defaultExcludedAdminUserIDs.value = admins.map((user) => user.id)
+  } catch (error) {
+    // Reporting should remain available if the optional role lookup fails.
+    console.error('Failed to load default excluded admin users:', error)
   }
 }
 
@@ -473,6 +489,7 @@ const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRang
   try {
     const response = await adminAPI.dashboard.getSnapshotV2({
       ...range,
+      exclude_user_ids: defaultExcludedAdminUserIDsQuery.value,
       granularity: granularity.value,
       include_stats: includeStats,
       include_trend: true,
@@ -595,8 +612,9 @@ const refreshDashboard = async () => {
   ])
 }
 
-onMounted(() => {
+onMounted(async () => {
   void refreshBatchImageAccess()
+  await loadDefaultExcludedAdminUsers()
   void Promise.all([loadDashboardStats(), loadUserGrowthRetention()])
 })
 </script>

@@ -467,7 +467,7 @@ export default {
   },
   usage: {
     excludeUsers: '排除用户',
-    excludeUsersPlaceholder: '用户ID，逗号或空格分隔',
+    excludeUsersPlaceholder: '搜索用户邮箱，可多选',
   },
   users: {
     passwordCopied: '密码已复制',

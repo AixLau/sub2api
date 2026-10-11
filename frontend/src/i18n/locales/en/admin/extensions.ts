@@ -452,7 +452,7 @@ export default {
   },
   usage: {
     excludeUsers: 'Exclude Users',
-    excludeUsersPlaceholder: 'User IDs, comma or space separated',
+    excludeUsersPlaceholder: 'Search user emails; select multiple',
   },
   users: {
     passwordCopied: 'Password copied',

@@ -140,6 +140,7 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 			COUNT(CASE WHEN created_at >= $1 THEN 1 END) as today_new_users
 		FROM users
 		WHERE deleted_at IS NULL
+		  AND role <> 'admin'
 	`
 	if err := scanSingleRow(
 		ctx,

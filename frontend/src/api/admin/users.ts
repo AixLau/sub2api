@@ -114,6 +114,18 @@ export async function list(
 }
 
 /**
+ * List administrator users for admin-only reporting defaults.
+ * Keeping this helper here avoids duplicating the role filter on dashboard
+ * and usage pages while retaining the regular paginated users endpoint.
+ */
+export async function listAdmins(options?: {
+  signal?: AbortSignal
+}): Promise<AdminUser[]> {
+  const response = await list(1, 1000, { role: 'admin' }, options)
+  return response.items
+}
+
+/**
  * Get user by ID
  * @param id - User ID
  * @param includeDeleted - Whether to include soft-deleted users
@@ -417,6 +429,7 @@ export async function resetPlatformQuotaWindow(
 
 export const usersAPI = {
   list,
+  listAdmins,
   getById,
   create,
   update,

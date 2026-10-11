@@ -21,6 +21,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			SELECT id, created_at, (created_at AT TIME ZONE $3)::date AS cohort_date
 			FROM users
 			WHERE deleted_at IS NULL
+			  AND role <> 'admin'
 			  AND created_at >= $1 AND created_at < $2
 		), cohort_activity AS (
 			SELECT

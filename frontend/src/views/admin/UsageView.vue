@@ -90,7 +90,7 @@
           </button>
         </div>
 
-        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
+        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" :default-excluded-users="defaultExcludedAdminUsers" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
           <template #after-reset>
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
@@ -212,7 +212,7 @@ import type { OpsErrorLog } from '@/api/admin/ops'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
-import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
+import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams, SimpleUser } from '@/api/admin/usage'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -221,6 +221,7 @@ type EndpointSource = 'inbound' | 'upstream' | 'path'
 type ModelDistributionSource = 'requested' | 'upstream' | 'mapping'
 const route = useRoute()
 const usageStats = ref<AdminUsageStatsResponse | null>(null); const usageLogs = ref<AdminUsageLog[]>([]); const loading = ref(false); const exporting = ref(false)
+const defaultExcludedAdminUsers = ref<SimpleUser[]>([])
 const trendData = ref<TrendDataPoint[]>([]); const requestedModelStats = ref<ModelStat[]>([]); const upstreamModelStats = ref<ModelStat[]>([]); const mappingModelStats = ref<ModelStat[]>([]); const groupStats = ref<GroupStat[]>([]); const chartsLoading = ref(false); const modelStatsLoading = ref(false); const granularity = ref<'day' | 'hour'>('hour')
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const modelDistributionSource = ref<ModelDistributionSource>('requested')
@@ -279,7 +280,11 @@ const handleUserClick = async (userId: number) => {
 // Drill down from the per-user token ranking: scope the whole usage view to
 // that user and jump to the usage-detail tab so the drill-down is visible.
 const handleRankingSelectUser = (userId: number, email: string) => {
-  filters.value = { ...filters.value, user_id: userId }
+  filters.value = {
+    ...filters.value,
+    user_id: userId,
+    exclude_user_ids: normalizeExcludeUserIDs(filters.value.exclude_user_ids).filter((id) => id !== userId),
+  }
   usageFiltersRef.value?.setUserKeyword?.(email || '')
   activeTab.value = 'usage'
   applyFilters()
@@ -319,6 +324,7 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 const defaultRange = getLast24HoursRange()
 const startDate = ref(defaultRange.start_date); const endDate = ref(defaultRange.end_date)
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, ...defaultRange })
+const defaultExcludedAdminUserIDs = computed(() => defaultExcludedAdminUsers.value.map((user) => user.id))
 const hasSourceFilter = computed(() => Boolean(filters.value.source))
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
@@ -385,6 +391,12 @@ const applyRouteQueryFilters = () => {
     end_date: endDate.value,
     start_time: hasRouteDateRange ? undefined : filters.value.start_time,
     end_time: hasRouteDateRange ? undefined : filters.value.end_time
+  }
+  // A direct user drill-down explicitly opts into that user's records, even
+  // when the selected user is one of the default excluded administrators.
+  if (queryUserId && normalizeExcludeUserIDs(filters.value.exclude_user_ids).includes(queryUserId)) {
+    filters.value.exclude_user_ids = normalizeExcludeUserIDs(filters.value.exclude_user_ids)
+      .filter((id) => id !== queryUserId)
   }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
 }
@@ -630,7 +642,7 @@ const resetFilters = () => {
   const range = getLast24HoursRange()
   startDate.value = range.start_date
   endDate.value = range.end_date
-  filters.value = { ...range, request_type: undefined, billing_type: null, billing_mode: undefined, source: null }
+  filters.value = { ...range, request_type: undefined, billing_type: null, billing_mode: undefined, source: null, exclude_user_ids: defaultExcludedAdminUserIDs.value }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -950,7 +962,24 @@ const handleColumnClickOutside = (event: MouseEvent) => {
   }
 }
 
-onMounted(() => {
+const loadDefaultExcludedAdminUsers = async () => {
+  try {
+    const admins = await adminAPI.users.listAdmins()
+    defaultExcludedAdminUsers.value = admins.map((user) => ({
+      id: user.id,
+      email: user.email,
+      deleted: Boolean(user.deleted_at),
+    }))
+    if (defaultExcludedAdminUsers.value.length > 0 && !filters.value.exclude_user_ids) {
+      filters.value.exclude_user_ids = defaultExcludedAdminUserIDs.value
+    }
+  } catch (error) {
+    console.error('Failed to load default excluded admin users:', error)
+  }
+}
+
+onMounted(async () => {
+  await loadDefaultExcludedAdminUsers()
   applyRouteQueryFilters()
   void loadRouteUserFilterLabel()
   loadLogs()

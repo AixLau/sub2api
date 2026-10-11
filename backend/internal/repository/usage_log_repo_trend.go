@@ -161,6 +161,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			FROM usage_logs u
 			LEFT JOIN users us ON u.user_id = us.id
 			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND (us.role IS NULL OR us.role <> 'admin')
 			GROUP BY u.user_id, us.email, us.username
 		),
 		ranked AS (
@@ -274,11 +275,13 @@ func (r *usageLogRepository) GetActiveUsersTrend(ctx context.Context, startTime,
 
 	query := fmt.Sprintf(`
 		SELECT
-			TO_CHAR(created_at, '%s') as date,
-			COUNT(DISTINCT user_id) as active_users
+			TO_CHAR(usage_logs.created_at, '%s') as date,
+			COUNT(DISTINCT usage_logs.user_id) as active_users
 		FROM usage_logs
+		LEFT JOIN users ON usage_logs.user_id = users.id
 		WHERE %s
-		  AND created_at >= $1 AND created_at < $2
+		  AND (users.role IS NULL OR users.role <> 'admin')
+		  AND usage_logs.created_at >= $1 AND usage_logs.created_at < $2
 		GROUP BY date
 		ORDER BY date ASC
 	`, dateFormat, activeAPIUserWhereClause)

@@ -252,6 +252,8 @@ interface Props {
   showActions?: boolean
   showExcludeUsers?: boolean
   modelOptions?: string[]
+  /** Users that are excluded by default (typically administrator accounts). */
+  defaultExcludedUsers?: SimpleUser[]
   /**
    * errors 模式:隐藏用量专属字段/按钮,显示错误类型+状态码(错误请求 tab 用)
    * ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户排行 tab 用)
@@ -299,6 +301,7 @@ const excludeUserIDsInput = ref('')
 const excludeUserResults = ref<SimpleUser[]>([])
 const showExcludeUserDropdown = ref(false)
 let excludeUserSearchTimeout: ReturnType<typeof setTimeout> | null = null
+const excludeUserLabels = ref<Record<number, string>>({})
 
 interface SimpleAccount {
   id: number
@@ -404,7 +407,9 @@ const normalizeExcludeUserIDs = (value: unknown): number[] => {
 }
 
 const formatExcludeUserIDs = (value: unknown): string => {
-  return normalizeExcludeUserIDs(value).join(', ')
+  return normalizeExcludeUserIDs(value)
+    .map((id) => excludeUserLabels.value[id] || String(id))
+    .join(', ')
 }
 
 const applyExcludeUserIDs = () => {
@@ -412,7 +417,7 @@ const applyExcludeUserIDs = () => {
   const userIDs = parseExcludeUserIDs(excludeUserIDsInput.value)
   if (rawValue && userIDs.length === 0) return
   filters.value.exclude_user_ids = userIDs.length > 0 ? userIDs : undefined
-  excludeUserIDsInput.value = userIDs.join(', ')
+  excludeUserIDsInput.value = formatExcludeUserIDs(userIDs)
   emitChange()
 }
 
@@ -439,8 +444,9 @@ const selectExcludeUser = (u: SimpleUser) => {
   const seen = new Set(userIDs)
   seen.add(u.id)
   const nextUserIDs = [...seen]
+  excludeUserLabels.value[u.id] = u.email
   filters.value.exclude_user_ids = nextUserIDs
-  excludeUserIDsInput.value = nextUserIDs.join(', ')
+  excludeUserIDsInput.value = formatExcludeUserIDs(nextUserIDs)
   excludeUserResults.value = []
   showExcludeUserDropdown.value = false
   emitChange()
@@ -504,6 +510,12 @@ const selectUser = async (u: SimpleUser) => {
   userKeyword.value = u.email
   showUserDropdown.value = false
   filters.value.user_id = u.id
+  // Selecting a user is an explicit drill-down, so remove it from the
+  // default excluded-user set (including administrator defaults).
+  const excludedUserIDs = normalizeExcludeUserIDs(filters.value.exclude_user_ids)
+  if (excludedUserIDs.includes(u.id)) {
+    filters.value.exclude_user_ids = excludedUserIDs.filter((id) => id !== u.id)
+  }
   clearApiKey()
 
   // Auto-load API keys for this user
@@ -640,6 +652,17 @@ watch(
   () => filters.value.exclude_user_ids,
   (excludeUserIDs) => {
     excludeUserIDsInput.value = formatExcludeUserIDs(excludeUserIDs)
+  },
+  { immediate: true, deep: true }
+)
+
+watch(
+  () => props.defaultExcludedUsers,
+  (users) => {
+    for (const user of users ?? []) {
+      if (user.email) excludeUserLabels.value[user.id] = user.email
+    }
+    excludeUserIDsInput.value = formatExcludeUserIDs(filters.value.exclude_user_ids)
   },
   { immediate: true, deep: true }
 )
