@@ -59,7 +59,7 @@ func (h *RedeemHandler) Redeem(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, dto.RedeemCodeFromService(result))
+	response.Success(c, dto.RedeemCodeFromService(result).Localized(c.GetHeader("Accept-Language")))
 }
 
 // GetHistory returns the user's redemption history
@@ -81,12 +81,23 @@ func (h *RedeemHandler) GetHistory(c *gin.Context) {
 			}
 			*target = value
 		}
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	if page-1 > int(^uint(0)>>1)/pageSize {
-		response.BadRequest(c, "Invalid page")
+		if pageSize > 100 {
+			pageSize = 100
+		}
+		if page-1 > int(^uint(0)>>1)/pageSize {
+			response.BadRequest(c, "Invalid page")
+			return
+		}
+		codes, result, err := h.redeemService.GetUserHistoryPaginated(c.Request.Context(), subject.UserID, pagination.PaginationParams{Page: page, PageSize: pageSize})
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		out := make([]dto.RedeemCode, 0, len(codes))
+		for i := range codes {
+			out = append(out, *dto.RedeemCodeFromService(&codes[i]).Localized(c.GetHeader("Accept-Language")))
+		}
+		response.Paginated(c, out, result.Total, page, pageSize)
 		return
 	}
 	codes, result, err := h.redeemService.GetUserHistoryPaginated(c.Request.Context(), subject.UserID, pagination.PaginationParams{Page: page, PageSize: pageSize})
@@ -96,7 +107,7 @@ func (h *RedeemHandler) GetHistory(c *gin.Context) {
 	}
 	out := make([]dto.RedeemCode, 0, len(codes))
 	for i := range codes {
-		out = append(out, *dto.RedeemCodeFromService(&codes[i]))
+		out = append(out, *dto.RedeemCodeFromService(&codes[i]).Localized(c.GetHeader("Accept-Language")))
 	}
 	response.Paginated(c, out, result.Total, page, pageSize)
 }

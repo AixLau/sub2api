@@ -446,6 +446,7 @@ export default {
           kind: '类型',
           platform: '平台',
           model: '模型',
+          account: '账号',
           duration: '耗时',
           phases: '阶段耗时',
           status: '状态码',

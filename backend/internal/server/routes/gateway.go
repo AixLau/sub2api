@@ -224,7 +224,12 @@ func RegisterGatewayRoutes(
 			h.Gateway.Messages(c)
 		})
 		// System One carries only JSON text, so it uses the text body limit.
-		gateway.POST("/systemone", textBodyLimit, h.Gateway.SystemOne)
+		moderatedGateway.POST("/systemone", coveredModeratedRoute(
+			"/v1/systemone",
+			"GatewayHandler.SystemOne",
+			service.ContentModerationProtocolAnthropicMessages,
+			"System One requests are moderated before upstream forwarding.",
+		), textBodyLimit, h.Gateway.SystemOne)
 		// /v1/messages/count_tokens: OpenAI bridges upstream, Grok estimates
 		// locally, and Anthropic-compatible platforms retain their existing path.
 		moderatedGateway.POST("/messages/count_tokens", coveredModeratedRoute(
@@ -616,6 +621,17 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolGemini,
 			"Gemini model action requests are moderated before account selection and upstream forwarding.",
 		), h.Gateway.GeminiV1BetaModels)
+		// Explicit context cache management remains local and uses account-bound IDs.
+		moderatedGemini.POST("/cachedContents", coveredModeratedRoute(
+			"/v1beta/cachedContents",
+			"GatewayHandler.GeminiCachedContentsCreate",
+			service.ContentModerationProtocolGemini,
+			"Gemini cached content creation forwards model-visible content and is moderated before upstream forwarding.",
+		), h.Gateway.GeminiCachedContentsCreate)
+		moderatedGemini.GETNoAudit("/cachedContents", intentionalNoAuditRoute("/v1beta/cachedContents", "GatewayHandler.GeminiCachedContentsList", "Cached content listing reads local account-bound state."), h.Gateway.GeminiCachedContentsList)
+		moderatedGemini.GETNoAudit("/cachedContents/:cacheID", intentionalNoAuditRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsGet", "Cached content lookup reads local account-bound state."), h.Gateway.GeminiCachedContentsGet)
+		moderatedGemini.PATCH("/cachedContents/:cacheID", coveredModeratedRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsPatch", service.ContentModerationProtocolGemini, "Gemini cached content updates forward model-visible content and are moderated before upstream forwarding."), h.Gateway.GeminiCachedContentsPatch)
+		moderatedGemini.DELETENoAudit("/cachedContents/:cacheID", intentionalNoAuditRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsDelete", "Cached content deletion submits no model-visible content."), h.Gateway.GeminiCachedContentsDelete)
 	}
 
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform

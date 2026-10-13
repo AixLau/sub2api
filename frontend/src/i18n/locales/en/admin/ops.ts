@@ -446,6 +446,7 @@ export default {
           kind: 'Kind',
           platform: 'Platform',
           model: 'Model',
+          account: 'Account',
           duration: 'Duration',
           phases: 'Phase timings',
           status: 'Status',
