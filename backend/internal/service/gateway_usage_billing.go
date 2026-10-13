@@ -1019,14 +1019,8 @@ func (s *GatewayService) recordUsageMultipliers(ctx context.Context, apiKey *API
 
 // recordUsageBillingModel 按计费模型来源、composite 规则与无价兜底确定计费模型。
 func (s *GatewayService) recordUsageBillingModel(ctx context.Context, apiKey *APIKey, result *ForwardResult, fields ChannelUsageFields) string {
-	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
-	billingModel := concreteBillingModel
-	if fields.BillingModelSource == BillingModelSourceChannelMapped && fields.ChannelMappedModel != "" {
-		billingModel = fields.ChannelMappedModel
-	}
-	if fields.BillingModelSource == BillingModelSourceRequested && fields.OriginalModel != "" {
-		billingModel = fields.OriginalModel
-	}
+	concreteBillingModel := firstNonEmptyUsageModel(result.UpstreamModel, result.Model)
+	billingModel := usageBillingModelForSource(fields.BillingModelSource, fields.OriginalModel, fields.ChannelMappedModel, result.Model, result.UpstreamModel, "")
 	if apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
 		billingModel = s.compositeBillableModel(ctx, apiKey, billingModel, concreteBillingModel)
 	}

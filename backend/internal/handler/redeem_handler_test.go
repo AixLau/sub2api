@@ -17,10 +17,12 @@ type historyRepo struct {
 	service.RedeemCodeRepository
 	userID int64
 	params pagination.PaginationParams
+	calls  int
 }
 
 func (r *historyRepo) ListByUserPaginated(_ context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	r.userID, r.params = userID, params
+	r.calls++
 	return []service.RedeemCode{}, &pagination.PaginationResult{Total: 101}, nil
 }
 func TestRedeemHistory(t *testing.T) {
@@ -57,6 +59,7 @@ func TestRedeemHistory(t *testing.T) {
 				return
 			}
 			require.Equal(t, tt.userID, repo.userID)
+			require.Equal(t, 1, repo.calls, "redemption history should issue one paginated query")
 			var body struct {
 				Data json.RawMessage `json:"data"`
 			}

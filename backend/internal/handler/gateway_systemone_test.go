@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -106,4 +107,15 @@ func TestTypeSafeGroupsRejectNonSystemOneProtocolsBeforeScheduling(t *testing.T)
 			require.Contains(t, recorder.Body.String(), systemOneOnlyPlatformMessage)
 		})
 	}
+}
+
+func TestSystemOneAuditBlocksBeforeBillingAndForwarding(t *testing.T) {
+	c, rec := newTypeSafeGroupContext(t, "/v1/systemone", validSystemOneHandlerBody, service.PlatformTypeSafe)
+	engine := &turnCountingEngine{mode: securityaudit.ModeBlocking, decisions: []*securityaudit.PromptDecision{
+		{Kind: securityaudit.DecisionBlock, AllowNextStage: false},
+	}}
+	h := &GatewayHandler{securityAuditCoordinator: securityaudit.NewCoordinator(nil, engine)}
+	h.SystemOne(c)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, int64(1), engine.evaluates.Load())
 }

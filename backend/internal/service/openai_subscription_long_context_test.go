@@ -85,7 +85,7 @@ func TestOpenAIGatewayServiceRecordUsage_GPT61SolSubscriptionLongContext(t *test
 								inputFactor, outputFactor = 2, 1.5
 							}
 							if tier == "priority" {
-								tierFactor = 2
+								tierFactor = 2.5
 							}
 							log := usageRepo.lastLog
 							require.NotNil(t, log)
@@ -100,9 +100,14 @@ func TestOpenAIGatewayServiceRecordUsage_GPT61SolSubscriptionLongContext(t *test
 							require.Equal(t, 1, userRepo.deductCalls)
 							require.InDelta(t, wantTotal*1.1, userRepo.lastAmount, 1e-12)
 							if groupMode != "无分组" {
-								wantStats := 0.478 * tierFactor
+								// Account cost follows official Priority pricing (2x), independent of the local customer Fast price (2.5x).
+								statsTierFactor := 1.0
+								if tier == "priority" {
+									statsTierFactor = 2
+								}
+								wantStats := 0.478 * statsTierFactor
 								if accountType == AccountTypeAPIKey && accountEnabled {
-									wantStats = (0.458*2 + 0.02*1.5) * tierFactor
+									wantStats = (0.458*2 + 0.02*1.5) * statsTierFactor
 								}
 								require.NotNil(t, log.AccountStatsCost)
 								require.InDelta(t, wantStats, *log.AccountStatsCost, 1e-12)
@@ -229,7 +234,7 @@ func TestOpenAIGatewayServiceRecordUsage_GPT61SolExemptionSurvivesRepricing(t *t
 	require.NoError(t, err)
 	// 响应模型改用较低的缓存价；免费 Fast 再按标准档扣款，两次重算均须保留豁免。
 	const standardCost = 220000*2e-6 + 80000*0.1e-6 + 2000*10e-6
-	require.InDelta(t, standardCost*2, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, standardCost*2.5, usageRepo.lastLog.TotalCost, 1e-12)
 	require.InDelta(t, standardCost*1.1, usageRepo.lastLog.ActualCost, 1e-12)
 	require.InDelta(t, standardCost*1.1, userRepo.lastAmount, 1e-12)
 	require.False(t, usageRepo.lastLog.LongContextBillingApplied)

@@ -1300,12 +1300,6 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 	return ok && pricing != nil
 }
 
-// GetModelPricing 获取模型价格配置
-func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
-	// 无显式计费时点，DeepSeek pro→Flash 切换按当前时刻判定。
-	return s.getModelPricingAt(model, timezone.Now())
-}
-
 // CacheStoragePricePerTokenHour 返回模型的显式上下文缓存存储单价（每 token 每小时，USD）。
 // 优先级：价格表（override_file 等）按确定性识别配置的值 > 内置型号价 > 内置 Pro/Flash 系列兜底价；
 // 均未命中返回 0。
@@ -1318,10 +1312,8 @@ func (s *BillingService) CacheStoragePricePerTokenHour(model string) float64 {
 	return builtinGeminiCacheStoragePrice(model)
 }
 
-// getModelPricingAt 是 GetModelPricing 的带计费时点内部变体：pricingAt 显式
-// 驱动 DeepSeek pro→Flash 切换判定（切换点前 Pro 价、之后 Flash 价），使
-// 展示/估算路径可与历史补账同刻复算，测试也能用固定时点钉住断言。
-func (s *BillingService) getModelPricingAt(model string, pricingAt time.Time) (*ModelPricing, error) {
+// GetModelPricing 获取模型价格配置
+func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 	// 标准化模型名称（转小写）
 	model = strings.ToLower(model)
 
@@ -1461,18 +1453,18 @@ type CostInput struct {
 	GroupID                    *int64 // 用于渠道定价查找
 	Group                      *Group
 	Tokens                     UsageTokens
-	RequestCount               int
-	UsageUnits                 float64
-	SizeTier                   string
+	RequestCount               int     // 按次计费时使用
+	UsageUnits                 float64 // 音频等连续计量单位（分钟/小时/百万字符）
+	SizeTier                   string  // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
 	RateMultiplier             float64
-	PricingAt                  time.Time
+	PricingAt                  time.Time // 渠道分时定价使用的计费时刻
 	ReasoningEffort            string
-	ServiceTier                string
-	PriorityMultiplierOverride float64
-	Resolver                   *ModelPricingResolver
-	Resolved                   *ResolvedPricing
+	ServiceTier                string                // "priority","flex","" 等
+	PriorityMultiplierOverride float64               // Optional local Fast/Priority multiplier override.
+	Resolver                   *ModelPricingResolver // 定价解析器
+	Resolved                   *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
 	LongContextBillingEnabled  *bool
-	// DisableModelLongContextPricing 豁免模型价卡的长上下文附加费，不改变自定义区间价格。
+	// DisableModelLongContextPricing exempts model long-context surcharges while preserving custom intervals.
 	DisableModelLongContextPricing bool
 }
 
@@ -1491,15 +1483,11 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			input.RateMultiplier,
 			input.ServiceTier,
 			nil,
-			applyLongContextBilling,
+			applyLongContextBilling && !input.DisableModelLongContextPricing,
 			input.PriorityMultiplierOverride,
 		)
 		if err == nil {
 			applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(input.Model, input.ReasoningEffort, nil))
-		}
-		if err == nil {
-			applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(input.Model, input.ReasoningEffort, nil))
-			applyCostBreakdownMultiplier(breakdown, reasoningEffortBillingMultiplier(input.ReasoningEffort, nil))
 		}
 		return breakdown, err
 	}

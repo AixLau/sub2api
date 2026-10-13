@@ -897,7 +897,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
 describe('CreateAccountModal gemini explicit cache upstream switch', () => {
   beforeEach(() => {
-    authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 43, platform: 'gemini', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })
@@ -986,7 +985,6 @@ describe('CreateAccountModal gemini explicit cache upstream switch', () => {
 
 describe('CreateAccountModal Vertex API key auth', () => {
   beforeEach(() => {
-    authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 44, platform: 'gemini', type: 'service_account' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })

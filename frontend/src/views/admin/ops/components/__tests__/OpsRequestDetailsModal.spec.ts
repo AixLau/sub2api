@@ -26,7 +26,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
-async function openDetails(sort: 'duration_desc' | 'ttft_desc') {
+async function openDetails(sort: 'duration_desc' | 'first_token_desc') {
   const wrapper = mount(OpsRequestDetailsModal, {
     props: { modelValue: false, timeRange: '1h', preset: { title: 'Details', sort } },
     global: { stubs: { BaseDialog: { template: '<div><slot /></div>' }, Pagination: true } },
@@ -58,7 +58,7 @@ describe('Ops request latency details', () => {
     })
   })
 
-  it('opens the TTFT card with first-token sorting and successful requests', async () => {
+  it('opens the TTFT card with first-token sorting across request kinds', async () => {
     const wrapper = shallowMount(OpsDashboardHeader, {
       props: { overview: {} as OpsDashboardOverview, platform: '', groupId: null, timeRange: '1h', queryMode: 'auto', loading: false, lastUpdated: null },
     })
@@ -70,15 +70,15 @@ describe('Ops request latency details', () => {
     expect(button).toBeDefined()
     await button!.trigger('click')
     expect(wrapper.emitted('openRequestDetails')).toEqual([[
-      { title: 'admin.ops.ttftLabel', kind: 'success', sort: 'ttft_desc' },
+      { title: 'admin.ops.ttftLabel', sort: 'first_token_desc' },
     ]])
     wrapper.unmount()
   })
 
   it.each([true, false])('shows TTFT rather than total duration (desktop: %s)', async (desktop) => {
     viewport.desktop = desktop
-    const wrapper = await openDetails('ttft_desc')
-    expect(listRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ sort: 'ttft_desc' }))
+    const wrapper = await openDetails('first_token_desc')
+    expect(listRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ sort: 'first_token_desc' }))
     expect(wrapper.text()).toContain('admin.ops.ttftLabel')
     expect(wrapper.text()).toContain('800 ms')
     expect(wrapper.text()).toContain('0 ms')
@@ -91,7 +91,7 @@ describe('Ops request latency details', () => {
   })
 
   it('shows account names with id fallback in the account column', async () => {
-    const wrapper = await openDetails('ttft_desc')
+    const wrapper = await openDetails('first_token_desc')
     expect(wrapper.text()).toContain('admin.ops.requestDetails.table.account')
     const accountCells = wrapper.findAll('tbody tr').map(tr => tr.findAll('td')[4].text())
     expect(accountCells).toEqual(['acc-alpha', 'acc-beta', '#999'])
@@ -105,7 +105,9 @@ describe('Ops request latency details', () => {
     expect(listRequestDetails).toHaveBeenCalledWith(expect.objectContaining({ sort: 'duration_desc' }))
     expect(wrapper.text()).toContain('admin.ops.requestDetails.table.duration')
     expect(wrapper.text()).toContain('12000 ms')
-    expect(wrapper.text()).not.toContain('800 ms')
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows.map(row => row.findAll('td')[5].text())).toEqual(['12000 ms', '9000 ms', '5000 ms'])
+    expect(rows.map(row => row.findAll('td')[6].text())).toEqual(['800 ms', '0 ms', '-'])
     wrapper.unmount()
   })
 })

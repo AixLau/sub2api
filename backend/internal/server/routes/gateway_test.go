@@ -576,6 +576,8 @@ func gatewayModerationCoveredRoutesFromManifest(t *testing.T) []string {
 
 func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 	routeSet := map[string]struct{}{
+		"POST /v1/systemone":                           {},
+		"POST /v1beta/cachedContents":                  {},
 		"POST /api/v3/contents/generations/tasks":      {},
 		"POST /v3/contents/generations/tasks":          {},
 		"POST /v1/contents/generations/tasks":          {},

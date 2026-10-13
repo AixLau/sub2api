@@ -227,7 +227,7 @@ func RegisterGatewayRoutes(
 		moderatedGateway.POST("/systemone", coveredModeratedRoute(
 			"/v1/systemone",
 			"GatewayHandler.SystemOne",
-			service.ContentModerationProtocolAnthropicMessages,
+			service.ContentModerationProtocolTypeSafeSystemOne,
 			"System One requests are moderated before upstream forwarding.",
 		), textBodyLimit, h.Gateway.SystemOne)
 		// /v1/messages/count_tokens: OpenAI bridges upstream, Grok estimates
@@ -630,7 +630,7 @@ func RegisterGatewayRoutes(
 		), h.Gateway.GeminiCachedContentsCreate)
 		moderatedGemini.GETNoAudit("/cachedContents", intentionalNoAuditRoute("/v1beta/cachedContents", "GatewayHandler.GeminiCachedContentsList", "Cached content listing reads local account-bound state."), h.Gateway.GeminiCachedContentsList)
 		moderatedGemini.GETNoAudit("/cachedContents/:cacheID", intentionalNoAuditRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsGet", "Cached content lookup reads local account-bound state."), h.Gateway.GeminiCachedContentsGet)
-		moderatedGemini.PATCH("/cachedContents/:cacheID", coveredModeratedRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsPatch", service.ContentModerationProtocolGemini, "Gemini cached content updates forward model-visible content and are moderated before upstream forwarding."), h.Gateway.GeminiCachedContentsPatch)
+		moderatedGemini.PATCH("/cachedContents/:cacheID", intentionalNoAuditRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsPatch", "Cached content updates only adjust expiration; input content is immutable."), h.Gateway.GeminiCachedContentsPatch)
 		moderatedGemini.DELETENoAudit("/cachedContents/:cacheID", intentionalNoAuditRoute("/v1beta/cachedContents/:cacheID", "GatewayHandler.GeminiCachedContentsDelete", "Cached content deletion submits no model-visible content."), h.Gateway.GeminiCachedContentsDelete)
 	}
 

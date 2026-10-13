@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -261,4 +262,21 @@ func TestWriteGeminiCachedContentUpstreamError_RateLimitMappedUnlessUpstreamGate
 	h.writeGeminiCachedContentUpstreamError(c, &service.GeminiCachedContentUpstreamError{StatusCode: http.StatusBadRequest, Body: []byte(`{"error":{"code":400,"message":"Cached content is too small","status":"INVALID_ARGUMENT"}}`)})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "too small", "请求校验类错误仍原样回写")
+}
+
+func TestGeminiCachedContentsCreateAuditBlocksBeforeBillingAndForwarding(t *testing.T) {
+	repo := &geminiCachedContentHandlerRepoStub{}
+	h := newGeminiCachedContentHandlerForTest(repo)
+	engine := &turnCountingEngine{mode: securityaudit.ModeBlocking, decisions: []*securityaudit.PromptDecision{
+		{Kind: securityaudit.DecisionBlock, AllowNextStage: false},
+	}}
+	h.securityAuditCoordinator = securityaudit.NewCoordinator(nil, engine)
+	apiKey := geminiCachedContentTestAPIKey(service.PlatformGemini)
+	c, rec := newGeminiCachedContentTestContext(http.MethodPost, "/v1beta/cachedContents", apiKey)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/cachedContents", strings.NewReader(`{"model":"models/gemini-2.5-pro","contents":[{"role":"user","parts":[{"text":"review this context"}]}],"ttl":"3600s"}`))
+	// Downstream dependencies are absent: reaching billing or account selection would panic.
+	h.GeminiCachedContentsCreate(c)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, int64(1), engine.evaluates.Load())
+	require.Empty(t, repo.records)
 }

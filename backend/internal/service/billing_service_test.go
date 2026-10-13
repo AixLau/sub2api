@@ -2174,3 +2174,15 @@ func TestGPT61SolExplicitZeroCacheWriteAcrossTiers(t *testing.T) {
 		require.Zero(t, cost.CacheCreationCost)
 	}
 }
+
+func TestCalculateCostUnifiedAppliesMaxReasoningMultiplierOnceWithoutResolver(t *testing.T) {
+	svc := newTestBillingService()
+	input := CostInput{Model: "claude-fable-5-1", Tokens: UsageTokens{InputTokens: 1000, OutputTokens: 100}, RateMultiplier: 0.8}
+	standard, err := svc.CalculateCostUnified(input)
+	require.NoError(t, err)
+	input.ReasoningEffort = "max"
+	adjusted, err := svc.CalculateCostUnified(input)
+	require.NoError(t, err)
+	require.InDelta(t, standard.TotalCost*3, adjusted.TotalCost, 1e-12)
+	require.InDelta(t, standard.ActualCost*3, adjusted.ActualCost, 1e-12)
+}

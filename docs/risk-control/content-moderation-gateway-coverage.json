@@ -2555,6 +2555,38 @@
       ],
       "status": "covered",
       "review_reason": "Antigravity Gemini-compatible model action requests use the same Gemini handler and moderation hook before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "handler": "GatewayHandler.SystemOne",
+        "protocol": "typesafe_systemone"
+      },
+      "method": "POST",
+      "path": "/v1/systemone",
+      "handler": "GatewayHandler.SystemOne",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "typesafe_systemone",
+      "status": "covered",
+      "review_reason": "System One performs security audit with its native protocol before forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1beta/cachedContents",
+        "handler": "GatewayHandler.GeminiCachedContentsCreate",
+        "protocol": "gemini"
+      },
+      "method": "POST",
+      "path": "/v1beta/cachedContents",
+      "handler": "GatewayHandler.GeminiCachedContentsCreate",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "gemini",
+      "status": "covered",
+      "review_reason": "Gemini cached content creation audits the content before account selection and upstream creation; TTL updates cannot modify content."
     }
   ]
 }

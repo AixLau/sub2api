@@ -1225,7 +1225,8 @@ func postRouteCanReachUpstreamContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/messages/count_tokens",
+	case "/api/v3/contents/generations/tasks", "/v3/contents/generations/tasks", "/contents/generations/tasks",
+		"/messages/count_tokens",
 		"/responses", "/responses/*subpath", "/alpha/search",
 		"/x_search",
 		"/chat/completions",
@@ -2568,7 +2569,7 @@ func isDirectResponsesImageStageCall(call *ast.CallExpr) bool {
 func contentModerationProtocolArg(call *ast.CallExpr) string {
 	for _, arg := range call.Args {
 		selector, ok := arg.(*ast.SelectorExpr)
-		if ok && strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") || strings.HasPrefix(selector.Sel.Name, "GatewayProtocol") {
+		if ok && (strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") || strings.HasPrefix(selector.Sel.Name, "GatewayProtocol")) {
 			return selector.Sel.Name
 		}
 
@@ -2586,7 +2587,7 @@ func contentModerationProtocolArg(call *ast.CallExpr) string {
 				continue
 			}
 			selector, ok := kv.Value.(*ast.SelectorExpr)
-			if ok && strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") || strings.HasPrefix(selector.Sel.Name, "GatewayProtocol") {
+			if ok && (strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") || strings.HasPrefix(selector.Sel.Name, "GatewayProtocol")) {
 				return selector.Sel.Name
 			}
 		}
@@ -2598,13 +2599,13 @@ func serviceProtocolConstantValue(name string) string {
 	switch name {
 	case "ContentModerationProtocolOpenAIChat":
 		return "openai_chat_completions"
-	case "ContentModerationProtocolOpenAIMessages":
+	case "ContentModerationProtocolOpenAIMessages", "GatewayProtocolOpenAIMessages":
 		return "openai_messages"
 	case "ContentModerationProtocolOpenAIResponses":
 		return "openai_responses"
 	case "ContentModerationProtocolOpenAIImages":
 		return "openai_images"
-	case "ContentModerationProtocolOpenAIEmbeddings":
+	case "ContentModerationProtocolOpenAIEmbeddings", "GatewayProtocolOpenAIEmbeddings":
 		return "openai_embeddings"
 	default:
 		return name

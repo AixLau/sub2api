@@ -165,21 +165,27 @@ const kindBadgeClass = (kind: string) => {
 
 // 明细行只带 account_id；账号名来自 lite 账号列表映射，缺项时强制刷新一次缓存（新建账号场景）。
 async function refreshAccountNames() {
-  const ids = items.value.map(row => row.account_id).filter((id): id is number => typeof id === 'number' && id > 0)
+  const ids = items.value
+    .map(row => row.account_id)
+    .filter((id): id is number => typeof id === 'number' && id > 0)
   if (ids.length === 0) return
   try {
     let map = await getAccountNameMap()
     if (ids.some(id => !map.has(id))) map = await getAccountNameMap(true)
     accountNameById.value = map
-  } catch (e) { console.warn('[OpsRequestDetailsModal] Failed to load account names', e) }
+  } catch (e) {
+    console.warn('[OpsRequestDetailsModal] Failed to load account names', e)
+  }
 }
+
 function accountLabel(row: OpsRequestDetail): string {
   const id = row.account_id
   if (typeof id !== 'number' || id <= 0) return '-'
   return accountNameById.value.get(id) || `#${id}`
 }
 
-const phaseValue = (value: number | null | undefined) => typeof value === 'number' ? `${value} ms` : '-'</script>
+const phaseValue = (value: number | null | undefined) => typeof value === 'number' ? `${value} ms` : '-'
+</script>
 
 <template>
   <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" @close="close">
