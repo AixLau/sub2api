@@ -2,7 +2,7 @@ schema_version: 1
 verified_upstream: 01842576b3d5c1e2545b5a99ad555d36e28ed306
 target_upstream: 01842576b3d5c1e2545b5a99ad555d36e28ed306
 merge_commit: a8d0960b0
-product_head: a8d0960b0
+product_head: df0c2eadc
 product_branch: main
 upstream_remote: upstream
 upstream_branch: main
