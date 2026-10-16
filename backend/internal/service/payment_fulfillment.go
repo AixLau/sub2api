@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 )
 
 // ErrOrderNotFound is returned by HandlePaymentNotification when the webhook
@@ -27,6 +28,22 @@ import (
 // retrying forever (e.g. when a foreign environment's webhook endpoint is
 // misconfigured to point at us, or when our orders table has been wiped).
 var ErrOrderNotFound = errors.New("payment order not found")
+
+func (s *PaymentService) ConfirmNotificationUpstream(ctx context.Context, prov payment.Provider, n *payment.PaymentNotification) error {
+	confirmer, ok := prov.(payment.NotificationConfirmer)
+	if !ok || n == nil || n.Status != payment.NotificationStatusSuccess {
+		return nil
+	}
+	finish := servertiming.ObserveDependency(ctx, "payment")
+	err := confirmer.ConfirmNotification(ctx, n)
+	finish()
+	if err != nil && s != nil && s.entClient != nil {
+		if order, lookupErr := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx); lookupErr == nil {
+			s.writeAuditLog(ctx, order.ID, "PAYMENT_UPSTREAM_UNCONFIRMED", prov.ProviderKey(), map[string]any{"detail": err.Error(), "tradeNo": n.TradeNo, "amount": n.Amount})
+		}
+	}
+	return err
+}
 
 const paymentFulfillmentLeaseDuration = 5 * time.Minute
 

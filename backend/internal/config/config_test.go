@@ -24,6 +24,36 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestLoadDefaultModelsListReadMaxBytes(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, DefaultModelsListReadMaxBytes, cfg.Gateway.ModelsListReadMaxBytes)
+}
+
+func TestLoadDefaultMinOutputTokens(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 128, cfg.Gateway.MinOutputTokens)
+}
+
+func TestLoadMinOutputTokensFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_MIN_OUTPUT_TOKENS", "16")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 16, cfg.Gateway.MinOutputTokens)
+}
+
+func TestValidateMinOutputTokensMinimum(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	cfg.Gateway.MinOutputTokens = 15
+	require.EqualError(t, cfg.Validate(), "gateway.min_output_tokens must be at least 16")
+}
+
 func TestLoadTimezonePrecedence(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -561,6 +591,15 @@ func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
+}
+
+func TestLoadOpenAIWSForceHTTPFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_FORCE_HTTP", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIWS.ForceHTTP)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {
@@ -1834,6 +1873,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.text_max_body_size",
 		},
 		{
+			name:    "gateway models list read limit",
+			mutate:  func(c *Config) { c.Gateway.ModelsListReadMaxBytes = 0 },
+			wantErr: "gateway.models_list_read_max_bytes",
+		},
+		{
 			name:    "gateway response header timeout",
 			mutate:  func(c *Config) { c.Gateway.ResponseHeaderTimeout = -1 },
 			wantErr: "gateway.response_header_timeout",
@@ -1982,11 +2026,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway image concurrency max negative",
 			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.MaxConcurrentRequests = -1 },
 			wantErr: "gateway.image_concurrency.max_concurrent_requests must be non-negative",
-		},
-		{
-			name:    "gateway image concurrency max per user negative",
-			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser = -1 },
-			wantErr: "gateway.image_concurrency.max_concurrent_requests_per_user must be non-negative",
 		},
 		{
 			name:    "gateway image concurrency overflow mode invalid",
@@ -2604,8 +2643,8 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.Gateway.StreamDataIntervalTimeout != 480 {
-		t.Fatalf("stream_data_interval_timeout = %d, want 480", cfg.Gateway.StreamDataIntervalTimeout)
+	if cfg.Gateway.StreamDataIntervalTimeout != 180 {
+		t.Fatalf("stream_data_interval_timeout = %d, want 180", cfg.Gateway.StreamDataIntervalTimeout)
 	}
 	if cfg.Gateway.StreamKeepaliveInterval != 10 {
 		t.Fatalf("stream_keepalive_interval = %d, want 10", cfg.Gateway.StreamKeepaliveInterval)
@@ -2624,9 +2663,6 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequests != 0 {
 		t.Fatalf("image_concurrency.max_concurrent_requests = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequests)
-	}
-	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser != 0 {
-		t.Fatalf("image_concurrency.max_concurrent_requests_per_user = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser)
 	}
 	if cfg.Gateway.ImageConcurrency.OverflowMode != ImageConcurrencyOverflowModeReject {
 		t.Fatalf("image_concurrency.overflow_mode = %q, want %q", cfg.Gateway.ImageConcurrency.OverflowMode, ImageConcurrencyOverflowModeReject)

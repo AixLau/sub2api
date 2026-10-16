@@ -91,11 +91,15 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	for i := range accounts {
 		diag.HasAccountsInPool = true
 		addConfiguredModelNames(configuredModels, &accounts[i])
+		retired := isRetiredOpenAISubscriptionModel(&accounts[i], resolveOpenAIAccountUpstreamModelForRequest(&accounts[i], requestedModel, false))
+		if retired {
+			diag.HasRetiredSubscriptionModel = true
+		}
 		// Mirrors the per-candidate filter used during account selection
 		// (openai_account_scheduler.isAccountRequestCompatible): empty
 		// model_mapping accepts everything; otherwise the explicit / wildcard
 		// mapping must match.
-		if accounts[i].IsModelSupported(requestedModel) {
+		if !retired && accounts[i].IsModelSupported(requestedModel) {
 			diag.HasModelSupport = true
 			return diag
 		}

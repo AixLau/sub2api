@@ -1892,3 +1892,38 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		SlotCleanupInterval:      30 * time.Second,
 	}
 }
+
+func openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx context.Context, account *Account, platform, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) string {
+	platform = NormalizeOpenAICompatiblePlatform(platform)
+	if account == nil {
+		return "account_nil"
+	}
+	if account.Platform != platform || !account.IsOpenAICompatible() {
+		return "platform_mismatch"
+	}
+	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
+		if account.IsSchedulable() {
+			return "model_rate_limited"
+		}
+		return "not_schedulable"
+	}
+	retirementModel := requestedModel
+	if requireCompact {
+		if mapped, matched := account.ResolveCompactMappedModel(requestedModel); matched {
+			retirementModel = mapped
+		}
+	}
+	if isRetiredOpenAISubscriptionModel(account, retirementModel) {
+		return "model_not_supported"
+	}
+	if requestedModel != "" && !supportsOpenAIRequestModel(account, requestedModel, requireCompact) {
+		return "model_not_supported"
+	}
+	if !account.SupportsOpenAIEndpointCapability(requiredCapability) {
+		return "capability_mismatch"
+	}
+	if requireCompact && openAICompactSupportTier(account) == 0 {
+		return "compact_unsupported"
+	}
+	return ""
+}

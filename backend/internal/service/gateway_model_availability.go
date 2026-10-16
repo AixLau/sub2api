@@ -26,6 +26,9 @@ type ModelAvailabilityDiagnosis struct {
 	// on the inspected accounts. It is populated only when model support is
 	// missing, sorted by numeric model version from newest to oldest.
 	SupportedModels []string
+	// HasRetiredSubscriptionModel records a ChatGPT upstream blocked by model
+	// retirement, so an unsupported request can include migration guidance.
+	HasRetiredSubscriptionModel bool
 }
 
 func addConfiguredModelNames(dst map[string]struct{}, account *Account) {

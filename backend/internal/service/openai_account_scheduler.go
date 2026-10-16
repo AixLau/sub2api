@@ -232,7 +232,7 @@ func (d *openAIAccountSelectionDiagnostics) addRequestCompatibilityFilter(
 		d.FilteredByRuntimeStatusCount++
 		return
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	if req.RequestedModel != "" && !supportsOpenAIRequestModel(account, req.RequestedModel, req.RequireCompact) {
 		d.FilteredByModelCount++
 		return
 	}
@@ -1979,7 +1979,16 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	}) {
 		return false, "shadow_parent_unhealthy"
 	}
-	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+	retirementModel := req.RequestedModel
+	if req.RequireCompact {
+		if mapped, matched := account.ResolveCompactMappedModel(req.RequestedModel); matched {
+			retirementModel = mapped
+		}
+	}
+	if isRetiredOpenAISubscriptionModel(account, retirementModel) {
+		return false, "model_not_supported"
+	}
+	if req.RequestedModel != "" && !supportsOpenAIRequestModel(account, req.RequestedModel, req.RequireCompact) {
 		return false, "model_not_supported"
 	}
 	if req.GroupID != nil && s != nil && s.service != nil &&
