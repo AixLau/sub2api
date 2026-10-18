@@ -98,7 +98,7 @@ func TestUsageLogRepositoryGetActiveUsersTrendUsesGatewayAPIUsers(t *testing.T) 
 
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
-	mock.ExpectQuery(regexp.QuoteMeta("WHERE source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL")).WithArgs(start, end).WillReturnRows(
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE ul.source = 'gateway' AND ul.user_id IS NOT NULL AND ul.api_key_id IS NOT NULL AND u.role = 'user'")).WithArgs(start, end).WillReturnRows(
 		sqlmock.NewRows([]string{"date", "active_users"}).AddRow("2025-01-01", int64(2)),
 	)
 
@@ -112,7 +112,7 @@ func TestUsageLogRepositoryGetPerformanceStatsCountsGatewayAPIUsers(t *testing.T
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
 
-	mock.ExpectQuery(regexp.QuoteMeta("COUNT(DISTINCT CASE WHEN source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL THEN user_id END) as active_users")).
+	mock.ExpectQuery(regexp.QuoteMeta("COUNT(DISTINCT CASE WHEN ul.source = 'gateway' AND ul.user_id IS NOT NULL AND ul.api_key_id IS NOT NULL THEN ul.user_id END) as active_users")).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"request_count", "token_count", "active_users"}).
 			AddRow(int64(15), int64(300), int64(2)))
