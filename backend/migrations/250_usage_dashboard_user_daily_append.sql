@@ -81,6 +81,7 @@ BEGIN
         COALESCE(SUM(COALESCE(duration_ms, 0)), 0),
         NOW()
     FROM inserted_usage_logs
+    WHERE user_id IS NOT NULL
     GROUP BY 1, 2
     ON CONFLICT (bucket_date, user_id) DO UPDATE SET
         total_requests = usage_dashboard_user_daily.total_requests + EXCLUDED.total_requests,
@@ -126,7 +127,8 @@ BEGIN
     FROM inserted_usage_logs ul
     LEFT JOIN groups g ON g.id = ul.group_id
     LEFT JOIN accounts a ON a.id = ul.account_id
-    WHERE ul.actual_cost > 0
+    WHERE ul.user_id IS NOT NULL
+      AND ul.actual_cost > 0
       AND CASE
             WHEN g.platform = 'composite' THEN a.platform
             ELSE COALESCE(NULLIF(g.platform, ''), a.platform)
@@ -205,7 +207,8 @@ BEGIN
         COALESCE(SUM(COALESCE(duration_ms, 0)), 0),
         NOW()
     FROM usage_logs
-    WHERE id <= cutover_id
+    WHERE user_id IS NOT NULL
+      AND id <= cutover_id
     GROUP BY 1, 2
     ON CONFLICT (bucket_date, user_id) DO UPDATE SET
         total_requests = usage_dashboard_user_daily.total_requests + EXCLUDED.total_requests,
@@ -251,7 +254,8 @@ BEGIN
     FROM usage_logs ul
     LEFT JOIN groups g ON g.id = ul.group_id
     LEFT JOIN accounts a ON a.id = ul.account_id
-    WHERE ul.id <= cutover_id
+    WHERE ul.user_id IS NOT NULL
+      AND ul.id <= cutover_id
       AND ul.actual_cost > 0
       AND CASE
             WHEN g.platform = 'composite' THEN a.platform
