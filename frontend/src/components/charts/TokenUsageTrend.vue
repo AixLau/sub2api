@@ -272,7 +272,7 @@ const buildTooltipHtml = (title: unknown): string => {
     { label: tokenLabels.value.cacheCreation, value: formatTokens(data.cache_creation_tokens), color: chartColors.value.cacheCreation },
     { label: tokenLabels.value.cacheRead, value: formatTokens(data.cache_read_tokens), color: chartColors.value.cacheRead },
     { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate },
-    ...(props.showCost
+    ...(shouldShowConsumptionTrend.value
       ? [{ label: t('usage.trend.consumption'), value: `$${formatCost(data.actual_cost)}`, color: consumptionColor }]
       : [])
   ]
@@ -281,7 +281,7 @@ const buildTooltipHtml = (title: unknown): string => {
   const costLabel = props.costMetric === 'account' ? 'usage.trend.accountCost' : 'usage.trend.cost'
   const summaryRows = [
     ...(props.showCost && cost !== undefined ? [`${t(costLabel)}: $${formatCost(cost)}`] : []),
-    ...(props.showCost ? [`${t('usage.trend.consumption')}: $${formatCost(data.actual_cost)}`] : []),
+    ...(shouldShowConsumptionTrend.value ? [`${t('usage.trend.consumption')}: $${formatCost(data.actual_cost)}`] : []),
     `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
   ]
 

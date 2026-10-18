@@ -81,8 +81,8 @@ const SelectStub = { template: '<span />' }
 const EmptyStateStub = { template: '<div />' }
 const RouterLinkStub = { template: '<a><slot /></a>' }
 const TokenUsageTrendStub = {
-  props: ['showCost', 'showStandardCost', 'showCacheRate'],
-  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-show-standard-cost="String(showStandardCost)" :data-show-cache-rate="String(showCacheRate)" />',
+  props: ['showCost', 'showStandardCost', 'showCacheRate', 'showConsumptionTrend'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-show-standard-cost="String(showStandardCost)" :data-show-cache-rate="String(showCacheRate)" :data-show-consumption-trend="String(showConsumptionTrend)" />',
 }
 
 const dashboardStats = (): UserStatsType => ({
@@ -362,6 +362,7 @@ describe('user dashboard cost visibility', () => {
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-standard-cost')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cache-rate')).toBe('true')
+    expect(wrapper.find('.token-usage-trend').attributes('data-show-consumption-trend')).toBe('false')
 
     const chartData = JSON.parse(wrapper.get('.chart-data').text())
     expect(chartData.datasets[0]).toMatchObject({

@@ -181,6 +181,7 @@
         :trend-data="trend"
         :loading="loading"
         :show-cost="true"
+        :show-consumption-trend="false"
         :show-standard-cost="true"
         :show-cache-rate="true"
         surface="playfulDashboard"
