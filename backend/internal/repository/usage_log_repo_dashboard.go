@@ -451,22 +451,26 @@ type UserDashboardStats = usagestats.UserDashboardStats
 type PlatformDashboardStats = usagestats.PlatformDashboardStats
 
 // GetUserDashboardActivity returns daily activity and historic contribution metrics.
+// The permanent user buckets are UTC-based; the handler must use the same fixed
+// timezone for the calendar window.
 func (r *usageLogRepository) GetUserDashboardActivity(ctx context.Context, userID int64, windowStart, windowEnd, currentDay time.Time, userTimezone string) (*usagestats.UserDashboardActivity, error) {
 	activity := &usagestats.UserDashboardActivity{
 		WindowStart: windowStart.Format("2006-01-02"),
 		WindowEnd:   windowEnd.AddDate(0, 0, -1).Format("2006-01-02"),
 		CurrentDate: currentDay.Format("2006-01-02"),
+		Timezone:    "UTC",
 		Days:        []usagestats.UserActivityDay{},
 	}
 
+	// Token 活动数据来自永不裁剪的用户级每日桶。不能从 usage_logs 做缺口补差：
+	// 明细清理后补差会改变历史口径，且会把“永久累计”退化成滚动窗口。
 	const query = `
 		WITH daily_usage AS (
 			SELECT
-				(created_at AT TIME ZONE $5)::date AS activity_date,
-				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::bigint AS total_tokens
-			FROM usage_logs
-			WHERE user_id = $1
-			GROUP BY activity_date
+				ud.bucket_date AS activity_date,
+				COALESCE(ud.input_tokens + ud.output_tokens + ud.cache_creation_tokens + ud.cache_read_tokens, 0)::bigint AS total_tokens
+			FROM usage_dashboard_user_daily ud
+			WHERE ud.user_id = $1
 		), streak_groups AS (
 			SELECT
 				activity_date,
@@ -491,7 +495,7 @@ func (r *usageLogRepository) GetUserDashboardActivity(ctx context.Context, userI
 
 	var daysJSON []byte
 	if err := scanSingleRow(ctx, r.sql, query,
-		[]any{userID, activity.WindowStart, windowEnd.Format("2006-01-02"), currentDay.Format("2006-01-02"), userTimezone},
+		[]any{userID, activity.WindowStart, windowEnd.Format("2006-01-02"), currentDay.Format("2006-01-02")},
 		&activity.TotalTokens,
 		&activity.PeakDailyTokens,
 		&activity.CurrentStreakDays,
@@ -510,7 +514,8 @@ func (r *usageLogRepository) GetUserDashboardActivity(ctx context.Context, userI
 // GetUserDashboardStats 获取用户专属的仪表盘统计
 func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64) (*UserDashboardStats, error) {
 	stats := &UserDashboardStats{}
-	today := timezone.Today()
+	totalDurationMs := int64(0)
+	todayDate := time.Now().UTC().Format("2006-01-02")
 
 	// API Key 统计
 	if err := scanSingleRow(
@@ -532,18 +537,19 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 		return nil, err
 	}
 
-	// 累计 Token 统计
+	// Lifetime 统计只能读永不裁剪的用户日桶。usage_logs 是明细保留表，不能作为
+	// 这个查询的补差来源，否则清理后累计值会再次回缩或重复计数。
 	totalStatsQuery := `
 		SELECT
-			COUNT(*) as total_requests,
-			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
-			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
-			COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
-			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
-			COALESCE(SUM(total_cost), 0) as total_cost,
-			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
-		FROM usage_logs
+			COALESCE(SUM(total_requests), 0)::bigint,
+			COALESCE(SUM(input_tokens), 0)::bigint,
+			COALESCE(SUM(output_tokens), 0)::bigint,
+			COALESCE(SUM(cache_creation_tokens), 0)::bigint,
+			COALESCE(SUM(cache_read_tokens), 0)::bigint,
+			COALESCE(SUM(total_cost), 0),
+			COALESCE(SUM(actual_cost), 0),
+			COALESCE(SUM(total_duration_ms), 0)::bigint
+		FROM usage_dashboard_user_daily
 		WHERE user_id = $1
 	`
 	if err := scanSingleRow(
@@ -558,30 +564,33 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 		&stats.TotalCacheReadTokens,
 		&stats.TotalCost,
 		&stats.TotalActualCost,
-		&stats.AverageDurationMs,
+		&totalDurationMs,
 	); err != nil {
 		return nil, err
+	}
+	if stats.TotalRequests > 0 {
+		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
 	}
 	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
 
 	// 今日 Token 统计
 	todayStatsQuery := `
 		SELECT
-			COUNT(*) as today_requests,
+			COALESCE(SUM(total_requests), 0)::bigint as today_requests,
 			COALESCE(SUM(input_tokens), 0) as today_input_tokens,
 			COALESCE(SUM(output_tokens), 0) as today_output_tokens,
 			COALESCE(SUM(cache_creation_tokens), 0) as today_cache_creation_tokens,
 			COALESCE(SUM(cache_read_tokens), 0) as today_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as today_cost,
 			COALESCE(SUM(actual_cost), 0) as today_actual_cost
-		FROM usage_logs
-		WHERE user_id = $1 AND created_at >= $2
+		FROM usage_dashboard_user_daily
+		WHERE user_id = $1 AND bucket_date = $2::date
 	`
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		todayStatsQuery,
-		[]any{userID, today},
+		[]any{userID, todayDate},
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
 		&stats.TodayOutputTokens,
@@ -602,31 +611,23 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	stats.Rpm = rpm
 	stats.Tpm = tpm
 
-	// 按"有效平台"维度拆分（group.platform 优先，否则 account.platform）。
-	// 与 ops 路径口径一致；HAVING 过滤掉无法确定平台的行（避免出现空字符串平台）。
-	// 与上面 totalStatsQuery/todayStatsQuery 的总值可能略微差异，原因有二：
-	//   1) 无平台归属的极少数行（group/account 都没 platform）会被 HAVING 排除；
-	//   2) usageLogSuccessFilterUL 会把 actual_cost = 0 的失败 placeholder 行排除，
-	//      而 totalStatsQuery/todayStatsQuery 没有这层过滤、会把这些行的 request 计数算进去。
+	// 平台拆分也必须来自永久桶。直接扫 usage_logs 会在明细清理后把“累计”拆分
+	// 截断；触发器在写入时保存当时解析出的有效平台。
 	platformQuery := `
 		SELECT
-			` + usageLogEffectivePlatformExpr + ` as platform,
-			COUNT(*) as total_requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as total_tokens,
-			COALESCE(SUM(ul.actual_cost), 0) as total_actual_cost,
-			COUNT(*) FILTER (WHERE ul.created_at >= $2) as today_requests,
-			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens) FILTER (WHERE ul.created_at >= $2), 0) as today_tokens,
-			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2), 0) as today_actual_cost
-		FROM usage_logs ul
-		LEFT JOIN groups g ON g.id = ul.group_id
-		LEFT JOIN accounts a ON a.id = ul.account_id
-		WHERE ul.user_id = $1
-		  AND ` + usageLogSuccessFilterUL + `
-		GROUP BY ` + usageLogEffectivePlatformExpr + `
-		HAVING ` + usageLogEffectivePlatformExpr + ` IS NOT NULL AND ` + usageLogEffectivePlatformExpr + ` <> ''
+			platform,
+			SUM(total_requests)::bigint,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::bigint,
+			COALESCE(SUM(actual_cost), 0),
+			COALESCE(SUM(total_requests) FILTER (WHERE bucket_date = $2::date), 0)::bigint,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE bucket_date = $2::date), 0)::bigint,
+			COALESCE(SUM(actual_cost) FILTER (WHERE bucket_date = $2::date), 0)
+		FROM usage_dashboard_user_platform_daily
+		WHERE user_id = $1
+		GROUP BY platform
 		ORDER BY total_actual_cost DESC
 	`
-	rows, err := r.sql.QueryContext(ctx, platformQuery, userID, today)
+	rows, err := r.sql.QueryContext(ctx, platformQuery, userID, todayDate)
 	if err != nil {
 		return nil, err
 	}

@@ -133,7 +133,7 @@ func TestUsageLogRepositoryGetUserDashboardActivityReturnsSummaryAndDailyRows(t 
 	currentDay := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
 
 	mock.ExpectQuery("(?s)WITH daily_usage AS.*streak_lengths AS.*json_agg").
-		WithArgs(int64(7), "2026-01-05", "2027-01-04", "2026-08-18", "UTC").
+		WithArgs(int64(7), "2026-01-05", "2027-01-04", "2026-08-18").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"total_tokens", "peak_daily_tokens", "current_streak_days", "longest_streak_days", "cumulative_tokens_before_window", "days",
 		}).AddRow(int64(200), int64(80), int64(2), int64(3), int64(20), []byte(`[{"date":"2026-01-05","total_tokens":40}]`)))

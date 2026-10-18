@@ -62,7 +62,7 @@ func TestDashboardActivityUsesAuthenticatedUserAndFixedWeekWindow(t *testing.T) 
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(42), repo.userID)
-	require.Equal(t, "Asia/Shanghai", repo.timezone)
+	require.Equal(t, "UTC", repo.timezone)
 	require.Equal(t, time.Monday, repo.windowStart.Weekday())
 	require.Equal(t, time.Monday, repo.windowEnd.Weekday())
 	require.Equal(t, 52*7*24*time.Hour, repo.windowEnd.Sub(repo.windowStart))

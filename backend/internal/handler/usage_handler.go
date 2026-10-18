@@ -547,13 +547,10 @@ func (h *UsageHandler) DashboardActivity(c *gin.Context) {
 		return
 	}
 
-	userTZ := strings.TrimSpace(c.Query("timezone"))
-	if _, err := time.LoadLocation(userTZ); err != nil {
-		userTZ = timezone.Location().String()
-		if userTZ == "Local" {
-			userTZ = "UTC"
-		}
-	}
+	// User dashboard history is stored in a permanent UTC daily bucket.  Accepting
+	// an arbitrary request timezone would split one historical bucket across two
+	// local dates, so this endpoint deliberately exposes the fixed UTC calendar.
+	userTZ := "UTC"
 	now := timezone.NowInUserLocation(userTZ)
 	currentDay := timezone.StartOfDayInUserLocation(now, userTZ)
 	weekday := int(currentDay.Weekday())

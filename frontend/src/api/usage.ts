@@ -64,6 +64,7 @@ export interface UserDashboardActivity {
   window_start: string
   window_end: string
   current_date: string
+  timezone?: string
   total_tokens: number
   peak_daily_tokens: number
   current_streak_days: number
