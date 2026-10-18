@@ -53,7 +53,7 @@
             :filters="breakdownFilters"
           />
         </div>
-        <div v-if="!filters.source" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div v-if="!filters.source" class="grid grid-cols-1 gap-6">
           <EndpointDistributionChart
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
@@ -68,7 +68,13 @@
             :end-date="endDate"
             :filters="breakdownFilters"
           />
-          <TokenUsageTrend cost-metric="account" :trend-data="trendData" :loading="chartsLoading" show-cost />
+          <TokenUsageTrend
+            cost-metric="account"
+            :trend-data="trendData"
+            :loading="chartsLoading"
+            chart-height-class="h-80"
+            show-cost
+          />
         </div>
       </div>
       <!-- 明细区：tab 栏 + 筛选 + 内容收进同一张卡片，消除割裂感 -->
