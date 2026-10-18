@@ -20,15 +20,19 @@ type userBreakdownRepoCapture struct {
 	service.UsageLogRepository
 	capturedDim   usagestats.UserBreakdownDimension
 	capturedLimit int
+	capturedStart time.Time
+	capturedEnd   time.Time
 	result        []usagestats.UserBreakdownItem
 }
 
 func (r *userBreakdownRepoCapture) GetUserBreakdownStats(
-	_ context.Context, _, _ time.Time,
+	_ context.Context, start, end time.Time,
 	dim usagestats.UserBreakdownDimension, limit int,
 ) ([]usagestats.UserBreakdownItem, error) {
 	r.capturedDim = dim
 	r.capturedLimit = limit
+	r.capturedStart = start
+	r.capturedEnd = end
 	if r.result != nil {
 		return r.result, nil
 	}
@@ -45,6 +49,23 @@ func newUserBreakdownRouter(repo *userBreakdownRepoCapture) *gin.Engine {
 }
 
 // --- tests ---
+
+func TestGetUserBreakdown_ExactSnapshotRangeAndExclusions(t *testing.T) {
+	repo := &userBreakdownRepoCapture{}
+	router := newUserBreakdownRouter(repo)
+	req := httptest.NewRequest(http.MethodGet,
+		"/admin/dashboard/user-breakdown?start_date=2026-03-10&end_date=2026-03-11"+
+			"&start_time=2026-03-10T11:00:05.123Z&end_time=2026-03-11T11:00:05.123Z"+
+			"&model=gpt-5.4&exclude_user_ids=101,202", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, time.Date(2026, 3, 10, 11, 0, 5, 123000000, time.UTC), repo.capturedStart)
+	require.Equal(t, repo.capturedStart.Add(24*time.Hour), repo.capturedEnd)
+	require.Equal(t, "gpt-5.4", repo.capturedDim.Model)
+	require.Equal(t, []int64{101, 202}, repo.capturedDim.ExcludeUserIDs)
+}
 
 func TestGetUserBreakdown_GroupIDFilter(t *testing.T) {
 	repo := &userBreakdownRepoCapture{}

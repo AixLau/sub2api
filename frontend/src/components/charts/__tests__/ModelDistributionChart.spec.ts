@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import type { UserBreakdownItem } from '@/types'
 
 import ModelDistributionChart from '../ModelDistributionChart.vue'
 
@@ -56,6 +57,10 @@ vi.mock('@/api/admin/dashboard', () => ({
 }))
 
 describe('ModelDistributionChart', () => {
+  beforeEach(() => {
+    getUserBreakdown.mockReset().mockResolvedValue({ users: [] })
+  })
+
   const modelStats = [
     {
       model: 'model-a',
@@ -219,7 +224,7 @@ describe('ModelDistributionChart', () => {
     expect(rows[3].text()).toContain('$10.00')
   })
 
-  it('passes exclude_user_ids to user breakdown requests', async () => {
+  it('passes the exact snapshot range and exclusions to user breakdown requests', async () => {
     getUserBreakdown.mockResolvedValue({ users: [] })
     const wrapper = mount(ModelDistributionChart, {
       props: {
@@ -228,6 +233,8 @@ describe('ModelDistributionChart', () => {
         endDate: '2026-06-01',
         filters: {
           exclude_user_ids: '101,202',
+          start_time: '2026-05-31T08:42:00.000Z',
+          end_time: '2026-06-01T08:42:00.000Z',
         },
       },
       global: {
@@ -243,8 +250,88 @@ describe('ModelDistributionChart', () => {
     expect(getUserBreakdown).toHaveBeenCalledWith(
       expect.objectContaining({
         exclude_user_ids: '101,202',
+        start_date: '2026-05-31',
+        end_date: '2026-06-01',
+        start_time: '2026-05-31T08:42:00.000Z',
+        end_time: '2026-06-01T08:42:00.000Z',
         model: 'model-a',
+        model_source: 'requested',
       })
     )
+  })
+
+  const mountBreakdownChart = () => mount(ModelDistributionChart, {
+    props: { modelStats },
+    global: { stubs: { LoadingSpinner: true, UserBreakdownSubTable: true } },
+  })
+
+  const user: UserBreakdownItem = {
+    user_id: 1, email: 'user@example.com', requests: 3,
+    input_tokens: 40, output_tokens: 20, cache_tokens: 0, total_tokens: 60,
+    cost: 0.5, actual_cost: 0.2, account_cost: 0.3,
+  }
+
+  it.each(['resolve', 'reject'] as const)('ignores an outdated request that will %s after another model opens', async (outcome) => {
+    let resolveFirst!: (value: { users: UserBreakdownItem[] }) => void
+    let rejectFirst!: (reason: Error) => void
+    getUserBreakdown.mockReturnValueOnce(new Promise((resolve, reject) => {
+      resolveFirst = resolve
+      rejectFirst = reject
+    }))
+    getUserBreakdown.mockResolvedValueOnce({ users: [user] })
+    const wrapper = mountBreakdownChart()
+
+    await wrapper.findAll('tbody > tr')[0].trigger('click')
+    await wrapper.findAll('tbody > tr').find((row) => row.text().includes('model-b'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'UserBreakdownSubTable' }).props('items')).toEqual([user])
+
+    if (outcome === 'resolve') resolveFirst({ users: [{ ...user, email: 'wrong-model@example.com' }] })
+    else rejectFirst(new Error('Outdated request failed'))
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'UserBreakdownSubTable' }).props('items')).toEqual([user])
+  })
+
+  it('keeps the current model loading when an earlier request completes', async () => {
+    let resolveFirst!: (value: { users: UserBreakdownItem[] }) => void
+    getUserBreakdown.mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+    getUserBreakdown.mockReturnValueOnce(new Promise(() => {}))
+    const wrapper = mountBreakdownChart()
+
+    await wrapper.findAll('tbody > tr')[0].trigger('click')
+    await wrapper.findAll('tbody > tr').find((row) => row.text().includes('model-b'))!.trigger('click')
+    resolveFirst({ users: [user] })
+    await flushPromises()
+
+    const breakdown = wrapper.findComponent({ name: 'UserBreakdownSubTable' })
+    expect(breakdown.props('items')).toEqual([])
+    expect(breakdown.props('loading')).toBe(true)
+  })
+
+  it.each([
+    { modelStats: [...modelStats] },
+    { startDate: '2026-06-02' },
+    { endDate: '2026-06-03' },
+    { source: 'upstream' as const, upstreamModelStats: modelStats },
+    { filters: { exclude_user_ids: '101' } },
+  ])('closes stale breakdowns when the data or query context changes: %j', async (props) => {
+    getUserBreakdown.mockResolvedValue({ users: [user] })
+    const wrapper = mountBreakdownChart()
+    await wrapper.find('tbody tr').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'UserBreakdownSubTable' }).exists()).toBe(true)
+
+    await wrapper.setProps(props)
+    expect(wrapper.findComponent({ name: 'UserBreakdownSubTable' }).exists()).toBe(false)
+  })
+
+  it('shows an empty breakdown after a current request fails', async () => {
+    getUserBreakdown.mockRejectedValue(new Error('Request failed'))
+    const wrapper = mountBreakdownChart()
+    await wrapper.find('tbody tr').trigger('click')
+    await flushPromises()
+    const breakdown = wrapper.findComponent({ name: 'UserBreakdownSubTable' })
+    expect(breakdown.props('items')).toEqual([])
+    expect(breakdown.props('loading')).toBe(false)
   })
 })

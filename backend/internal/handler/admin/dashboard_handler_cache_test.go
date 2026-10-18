@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -103,6 +104,16 @@ func TestDashboardHandler_GetSnapshotV2_NormalizesCacheKeyToMinute(t *testing.T)
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
 	require.Equal(t, int32(1), repo.trendCalls.Load())
+
+	// A cache hit must expose the original query bounds for matching drilldowns.
+	for _, rec := range []*httptest.ResponseRecorder{rec1, rec2} {
+		var body struct {
+			Data dashboardSnapshotV2Response `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		require.Equal(t, "2026-03-11T10:00:05.123Z", body.Data.StartTime)
+		require.Equal(t, "2026-03-11T11:00:05.123Z", body.Data.EndTime)
+	}
 }
 
 func TestDashboardHandler_GetUserGrowthRetention_UsesCache(t *testing.T) {

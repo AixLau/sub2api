@@ -268,7 +268,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
@@ -334,8 +334,21 @@ const props = withDefaults(defineProps<{
 const expandedKey = ref<string | null>(null)
 const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
+let breakdownLoadSeq = 0
+
+watch(
+  () => [props.modelStats, props.upstreamModelStats, props.mappingModelStats, props.source, props.startDate, props.endDate, props.filters],
+  () => {
+    ++breakdownLoadSeq
+    expandedKey.value = null
+    breakdownItems.value = []
+    breakdownLoading.value = false
+  },
+  { deep: true }
+)
 
 const toggleBreakdown = async (type: string, id: string) => {
+  const currentSeq = ++breakdownLoadSeq
   const key = `${type}-${id}`
   if (expandedKey.value === key) {
     expandedKey.value = null
@@ -352,11 +365,12 @@ const toggleBreakdown = async (type: string, id: string) => {
       model: id,
       model_source: props.source,
     })
+    if (currentSeq !== breakdownLoadSeq) return
     breakdownItems.value = res.users || []
   } catch {
-    breakdownItems.value = []
+    if (currentSeq === breakdownLoadSeq) breakdownItems.value = []
   } finally {
-    breakdownLoading.value = false
+    if (currentSeq === breakdownLoadSeq) breakdownLoading.value = false
   }
 }
 

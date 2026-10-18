@@ -151,6 +151,8 @@ export interface DashboardSnapshotV2Response {
   generated_at: string
   start_date: string
   end_date: string
+  start_time: string
+  end_time: string
   granularity: string
   stats?: DashboardSnapshotV2Stats
   trend?: TrendDataPoint[]
@@ -172,6 +174,8 @@ export async function getGroupStats(params?: GroupStatsParams): Promise<GroupSta
 export interface UserBreakdownParams {
   start_date?: string
   end_date?: string
+  start_time?: string
+  end_time?: string
   group_id?: number
   model?: string
   model_source?: 'requested' | 'upstream' | 'mapping'

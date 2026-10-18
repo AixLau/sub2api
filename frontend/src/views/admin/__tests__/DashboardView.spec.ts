@@ -4,17 +4,20 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
+import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getActiveUsersTrend, getUserGrowthRetention, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getActiveUsersTrend, getUserGrowthRetention, getUserSpendingRanking, listAdmins } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
   getActiveUsersTrend: vi.fn(),
   getUserGrowthRetention: vi.fn(),
-  getUserSpendingRanking: vi.fn()
+  getUserSpendingRanking: vi.fn(),
+  listAdmins: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
+    users: { listAdmins },
     dashboard: {
       getSnapshotV2,
       getUserUsageTrend,
@@ -100,12 +103,15 @@ describe('admin DashboardView', () => {
     getActiveUsersTrend.mockReset()
     getUserGrowthRetention.mockReset()
     getUserSpendingRanking.mockReset()
+    listAdmins.mockReset().mockResolvedValue([{ id: 101 }, { id: 202 }])
 
-    getSnapshotV2.mockResolvedValue({
+    getSnapshotV2.mockImplementation(async (params) => ({
       stats: createDashboardStats(),
       trend: [],
-      models: []
-    })
+      models: [],
+      start_time: params.start_time ?? `${params.start_date}T00:00:00.000Z`,
+      end_time: params.end_time ?? new Date(new Date(`${params.end_date}T00:00:00.000Z`).getTime() + 24 * 60 * 60 * 1000).toISOString()
+    }))
     getUserUsageTrend.mockResolvedValue({
       trend: [],
       start_date: '',
@@ -162,7 +168,7 @@ describe('admin DashboardView', () => {
   })
 
   it('uses last 24 hours as default dashboard range', async () => {
-    mount(DashboardView, {
+    const wrapper = mount(DashboardView, {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
@@ -193,9 +199,20 @@ describe('admin DashboardView', () => {
     expect(range.start_time).toEqual(expect.any(String))
     expect(range.end_time).toEqual(expect.any(String))
     expect(new Date(range.end_time!).getTime() - new Date(range.start_time!).getTime()).toBe(24 * 60 * 60 * 1000)
+
+    const chart = wrapper.findComponent(ModelDistributionChart)
+    expect(chart.props('filters')).toEqual({
+      start_date: formatLocalDate(yesterday),
+      end_date: formatLocalDate(now),
+      start_time: range.start_time,
+      end_time: range.end_time,
+      exclude_user_ids: '101,202'
+    })
+    expect(chart.props('startDate')).toBe(formatLocalDate(yesterday))
+    expect(chart.props('endDate')).toBe(formatLocalDate(now))
   })
 
-  it('refreshes summary cards and chart data together', async () => {
+  it('refreshes summary cards and charts together and uses the returned snapshot bounds', async () => {
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
@@ -217,6 +234,12 @@ describe('admin DashboardView', () => {
       include_stats: true
     }))
 
+    // A cached snapshot can have bounds different from the refresh request.
+    getSnapshotV2.mockResolvedValueOnce({
+      stats: createDashboardStats(), trend: [], models: [],
+      start_time: '2026-06-01T11:00:05.123Z',
+      end_time: '2026-06-02T11:00:05.123Z'
+    })
     await wrapper.get('[data-testid="admin-dashboard-chart-refresh"]').trigger('click')
     await flushPromises()
 
@@ -224,6 +247,58 @@ describe('admin DashboardView', () => {
     expect(getSnapshotV2.mock.calls[1][0]).toEqual(expect.objectContaining({
       include_stats: true
     }))
+    expect(wrapper.findComponent(ModelDistributionChart).props('filters')).toEqual(expect.objectContaining({
+      start_time: '2026-06-01T11:00:05.123Z',
+      end_time: '2026-06-02T11:00:05.123Z'
+    }))
+  })
+
+  it('retains the displayed query on failure and uses server bounds for a successful date range change', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          ActiveUsersTrend: true,
+          UserGrowthRetention: true
+        }
+      }
+    })
+    await flushPromises()
+    const chart = wrapper.findComponent(ModelDistributionChart)
+    const originalFilters = chart.props('filters')
+    const picker = wrapper.findComponent({ name: 'DateRangePicker' })
+    let rejectSnapshot!: (reason: Error) => void
+    getSnapshotV2.mockReturnValueOnce(new Promise((_, reject) => { rejectSnapshot = reject }))
+
+    picker.vm.$emit('update:startDate', '2026-06-01')
+    picker.vm.$emit('update:endDate', '2026-06-03')
+    picker.vm.$emit('change', { startDate: '2026-06-01', endDate: '2026-06-03', preset: null })
+    await flushPromises()
+    expect(chart.props('filters')).toEqual(originalFilters)
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    rejectSnapshot(new Error('Snapshot failed'))
+    await flushPromises()
+    consoleError.mockRestore()
+    expect(chart.props('filters')).toEqual(originalFilters)
+    expect(chart.props('startDate')).toBe(originalFilters.start_date)
+
+    await wrapper.get('[data-testid="admin-dashboard-chart-refresh"]').trigger('click')
+    await flushPromises()
+    expect(getSnapshotV2).toHaveBeenLastCalledWith(expect.objectContaining({
+      start_date: '2026-06-01', end_date: '2026-06-03', exclude_user_ids: '101,202'
+    }))
+    expect(chart.props('filters')).toEqual({
+      start_date: '2026-06-01', end_date: '2026-06-03', exclude_user_ids: '101,202',
+      start_time: '2026-06-01T00:00:00.000Z', end_time: '2026-06-04T00:00:00.000Z'
+    })
+    expect(chart.props('startDate')).toBe('2026-06-01')
+    expect(chart.props('endDate')).toBe('2026-06-03')
   })
 
   it('does not load recent usage trend and enlarges token usage trend', async () => {

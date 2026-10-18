@@ -28,6 +28,8 @@ type dashboardSnapshotV2Response struct {
 
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
+	StartTime   string `json:"start_time"`
+	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
 
 	Stats      *dashboardSnapshotV2Stats        `json:"stats,omitempty"`
@@ -163,6 +165,8 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		StartDate:   startTime.Format("2006-01-02"),
 		EndDate:     endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		StartTime:   startTime.Format(time.RFC3339Nano),
+		EndTime:     endTime.Format(time.RFC3339Nano),
 		Granularity: granularity,
 	}
 

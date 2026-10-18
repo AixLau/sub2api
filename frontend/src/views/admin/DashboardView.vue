@@ -251,8 +251,9 @@
               :loading="chartsLoading"
               :ranking-loading="rankingLoading"
               :ranking-error="rankingError"
-              :start-date="startDate"
-              :end-date="endDate"
+              :start-date="modelStatsFilters.start_date"
+              :end-date="modelStatsFilters.end_date"
+              :filters="modelStatsFilters"
               @ranking-click="goToUserUsage"
             />
             <ActiveUsersTrend :trend-data="activeUsersTrend" :loading="activeUsersTrendLoading" />
@@ -296,6 +297,7 @@ import type {
 } from '@/types'
 import type {
   ActiveUsersTrendPoint,
+  UserBreakdownParams,
   UserRetentionPoint,
   UserRetentionSummary
 } from '@/api/admin/dashboard'
@@ -329,6 +331,8 @@ const rankingError = ref(false)
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
+// Keep drilldowns tied to the query that produced the displayed model totals.
+const modelStatsFilters = ref<UserBreakdownParams>({})
 const activeUsersTrend = ref<ActiveUsersTrendPoint[]>([])
 const userRetentionCohorts = ref<UserRetentionPoint[]>([])
 const userRetentionSummary = ref<UserRetentionSummary | null>(null)
@@ -486,10 +490,13 @@ const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRang
     loading.value = true
   }
   chartsLoading.value = true
+  const filters: UserBreakdownParams = {
+    ...range,
+    exclude_user_ids: defaultExcludedAdminUserIDsQuery.value
+  }
   try {
     const response = await adminAPI.dashboard.getSnapshotV2({
-      ...range,
-      exclude_user_ids: defaultExcludedAdminUserIDsQuery.value,
+      ...filters,
       granularity: granularity.value,
       include_stats: includeStats,
       include_trend: true,
@@ -502,6 +509,11 @@ const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRang
       stats.value = response.stats
     }
     trendData.value = response.trend || []
+    modelStatsFilters.value = {
+      ...filters,
+      start_time: response.start_time,
+      end_time: response.end_time
+    }
     modelStats.value = response.models || []
   } catch (error) {
     if (currentSeq !== chartLoadSeq) return
