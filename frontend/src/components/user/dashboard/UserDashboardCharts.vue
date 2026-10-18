@@ -180,7 +180,7 @@
         class="user-dashboard-charts__trend"
         :trend-data="trend"
         :loading="loading"
-        :show-cost="true"
+        :show-cost="false"
         :show-consumption-trend="false"
         :show-standard-cost="true"
         :show-cache-rate="true"

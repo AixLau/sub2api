@@ -334,7 +334,7 @@ describe('user dashboard cost visibility', () => {
     expect(card.text()).toContain('$7796.5673 / $7746.7298')
   })
 
-  it('shows actual and standard cost in charts', () => {
+  it('shows actual and standard cost in model distribution while hiding trend cost', () => {
     const wrapper = mount(UserDashboardCharts, {
       props: {
         loading: false,
@@ -359,7 +359,7 @@ describe('user dashboard cost visibility', () => {
     expect(text).toContain('$24.8752')
     expect(text).toContain('$19.1348')
     expect(text).toContain('Standard')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
+    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('false')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-standard-cost')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cache-rate')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-consumption-trend')).toBe('false')
