@@ -633,12 +633,12 @@ func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID i
 	platformQuery := `
 		SELECT
 			platform,
-			SUM(total_requests)::bigint,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::bigint,
-			COALESCE(SUM(actual_cost), 0),
-			COALESCE(SUM(total_requests) FILTER (WHERE bucket_date = $2::date), 0)::bigint,
-			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE bucket_date = $2::date), 0)::bigint,
-			COALESCE(SUM(actual_cost) FILTER (WHERE bucket_date = $2::date), 0)
+			SUM(total_requests)::bigint AS total_requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::bigint AS total_tokens,
+			COALESCE(SUM(actual_cost), 0) AS total_actual_cost,
+			COALESCE(SUM(total_requests) FILTER (WHERE bucket_date = $2::date), 0)::bigint AS today_requests,
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) FILTER (WHERE bucket_date = $2::date), 0)::bigint AS today_tokens,
+			COALESCE(SUM(actual_cost) FILTER (WHERE bucket_date = $2::date), 0) AS today_actual_cost
 		FROM usage_dashboard_user_platform_daily
 		WHERE user_id = $1
 		GROUP BY platform
