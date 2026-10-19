@@ -1116,6 +1116,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					errStatus, errType, errMsg = status, et, em
 					MarkResponseCommitted(c)
 				}
+				if isOpenAIRequestScopedCapacityShed(message, payloadBytes) {
+					errMsg = OpenAICapacityShedClientMessage
+				}
 				if !clientDisconnected {
 					if !clientOutputStarted {
 						writeAnthropicError(c, errStatus, errType, errMsg)

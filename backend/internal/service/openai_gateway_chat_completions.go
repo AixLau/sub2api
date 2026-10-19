@@ -985,6 +985,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				defaultStatus, defaultErrType, defaultMsg = status, errType, errMsg
 				MarkResponseCommitted(c)
 			}
+			if isOpenAIRequestScopedCapacityShed(message, payloadBytes) {
+				defaultMsg = OpenAICapacityShedClientMessage
+			}
 			errorPayload, _ := json.Marshal(gin.H{
 				"error": gin.H{
 					"type":    defaultErrType,

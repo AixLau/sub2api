@@ -1304,10 +1304,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				// 必须写进独立变量而不是原地改 upstreamMessage：下面的
 				// markOpenAIWSClientVisibleFailure 与 handleOpenAIWSTerminalTransientFailure
 				// 仍要按未改写的原始 payload 判定账号状态，这正是
-				// sanitizeOpenAICapacityShedErrorCodeForClient 注释里写明的前提。
+				// sanitizeOpenAICapacityShedErrorForClient 注释里写明的前提。
 				clientMessage := upstreamMessage
 				if eventType == "error" || eventType == "response.failed" {
-					if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(clientMessage); changed {
+					if rewritten, changed := sanitizeOpenAICapacityShedErrorForClient(clientMessage); changed {
 						clientMessage = rewritten
 					}
 				}

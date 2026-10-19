@@ -379,6 +379,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if codexFailureTerminal && sawBareError && !sawResponseFailed && bareErrorAccountSideEffectsPending {
 			s.handleOpenAIStreamTerminalAccountSideEffects(c, account, bareErrorPayload, failedMessage, resp.Header, mappedModel)
+			s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "stream_failed", bareErrorPayload, failedMessage)
 			bareErrorAccountSideEffectsPending = false
 		}
 		if codexFailureTerminal && sawBareError && !sawResponseFailed && !clientDisconnected {
@@ -585,7 +586,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 					if shouldFailover {
 						sawFailedEvent = true
-						streamEarlyErr = s.newOpenAIStreamFailoverErrorWithModel(c, account, false, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
+						failoverErr := s.newOpenAIStreamFailoverErrorWithModel(c, account, false, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
+						// Only staged frames and heartbeat comments preceded this error.
+						failoverErr.SafeToFailoverAfterWrite = stageFirstOutput
+						streamEarlyErr = failoverErr
 						return
 					}
 					if !cyberHit && !sawBareError {
@@ -1891,6 +1895,9 @@ func buildOpenAIResponseFailedSSE(responseID, model string, createdAt int64, sou
 			`,"response":{"object":"response","created_at":` + strconv.FormatInt(createdAt, 10) +
 			`,"status":"failed","output":[],"error":{"code":"upstream_error","message":"Upstream response failed"}}}`)
 	}
+	if sanitized, changed := sanitizeOpenAICapacityShedErrorForClient(payload); changed {
+		payload = sanitized
+	}
 	return "event: response.failed\ndata: " + string(payload) + "\n\n"
 }
 
@@ -1904,7 +1911,7 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 	// 容量降载码对 Codex CLI 是致命错误；事件既然要写给客户端（failover 已不可用），
 	// 就改写为客户端可重试的错误码。error 帧与 response.failed 都要改：上游降载
 	// 总是先推 error 帧再收 failed，两帧携带同一个错误。
-	if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
+	if rewritten, changed := sanitizeOpenAICapacityShedErrorForClient(updated); changed {
 		updated = rewritten
 	}
 	if !isFailedEvent {

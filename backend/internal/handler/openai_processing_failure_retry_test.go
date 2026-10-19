@@ -29,6 +29,48 @@ func processingRetrySuccess() *http.Response {
 	return processingRetrySSE("event: response.completed\ndata: " + `{"type":"response.completed","response":{"id":"resp_success","model":"gpt-6-astra","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"recovered"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}` + "\n\n")
 }
 
+const overloadFailureEvent = "event: response.failed\ndata: " + `{"type":"response.failed","response":{"id":"resp_overloaded","status":"failed","output":[],"error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}` + "\n\n"
+
+func TestOpenAIOverloadAfterEmptyEventsRetriesSameOAuthAccount(t *testing.T) {
+	stream := "data: " + `{"type":"response.created","response":{"id":"resp_overloaded"}}` + "\n\n" +
+		"data: " + `{"type":"response.output_item.done","item":{"type":"reasoning","summary":[]}}` + "\n\n" +
+		"data: " + `{"type":"response.output_text.delta","delta":""}` + "\n\n" + overloadFailureEvent
+	upstream := newAstraProCapturedUpstream(processingRetrySSE(stream), processingRetrySuccess())
+	h := newOpenAIResponsesFailoverTestHandler(t, upstream)
+	h.maxAccountSwitches = 0
+	c, rec := newAstraProFailoverContext(t, `{"model":"gpt-6-astra","stream":true,"input":"hello"}`)
+	markForwardableModerationReceipt(c, "openai_responses")
+	h.Responses(c)
+	_, accounts, bodies := upstream.snapshot()
+	require.Equal(t, []int64{1, 1}, accounts)
+	require.Equal(t, bodies[0], bodies[1])
+	require.Contains(t, rec.Body.String(), "recovered")
+	require.NotContains(t, rec.Body.String(), "resp_overloaded")
+	require.NotContains(t, rec.Body.String(), "Our servers are currently overloaded")
+}
+
+func TestOpenAIOverloadAfterOutputDoesNotReplayOrLeak(t *testing.T) {
+	for name, output := range map[string]string{
+		"text": `{"type":"response.output_text.delta","delta":"partial"}`,
+		"tool": `{"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"write_file","arguments":""}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			upstream := newAstraProCapturedUpstream(processingRetrySSE("data: "+output+"\n\n"+overloadFailureEvent), processingRetrySuccess())
+			h := newOpenAIResponsesFailoverTestHandler(t, upstream)
+			c, rec := newAstraProFailoverContext(t, `{"model":"gpt-6-astra","stream":true,"input":"hello"}`)
+			markForwardableModerationReceipt(c, "openai_responses")
+			h.Responses(c)
+			_, accounts, _ := upstream.snapshot()
+			require.Equal(t, []int64{1}, accounts)
+			require.Contains(t, rec.Body.String(), "response.failed")
+			require.Contains(t, rec.Body.String(), `"code":"server_error"`)
+			require.NotContains(t, rec.Body.String(), "Our servers are currently overloaded")
+			require.NotContains(t, rec.Body.String(), "server_is_overloaded")
+			require.NotContains(t, rec.Body.String(), "recovered")
+		})
+	}
+}
+
 func TestOpenAIProcessingFailureRetryRecoversOnSameOAuthAccount(t *testing.T) {
 	for _, stream := range []bool{true, false} {
 		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {

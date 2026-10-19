@@ -1094,13 +1094,13 @@ func openAIStreamEventIsMetadata(eventType string) bool {
 	}
 }
 
-func openAIStreamAddedEventStartsClientOutput(payload []byte, eventType string) bool {
+func openAIStreamItemEventStartsClientOutput(payload []byte, eventType string) bool {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return true
 	}
 
 	switch strings.TrimSpace(eventType) {
-	case "response.output_item.added":
+	case "response.output_item.added", "response.output_item.done":
 		item := gjson.GetBytes(payload, "item")
 		if !item.Exists() || !item.IsObject() {
 			return true
@@ -1141,15 +1141,15 @@ func openAIStreamAddedEventStartsClientOutput(payload []byte, eventType string) 
 			}
 			return false
 		case "function_call":
-			return item.Get("arguments").String() != ""
+			return eventType == "response.output_item.done" || item.Get("arguments").String() != ""
 		case "custom_tool_call":
-			return item.Get("input").String() != ""
+			return eventType == "response.output_item.done" || item.Get("input").String() != ""
 		case "compaction":
 			return item.Get("encrypted_content").String() != ""
 		default:
 			return true
 		}
-	case "response.content_part.added":
+	case "response.content_part.added", "response.content_part.done":
 		part := gjson.GetBytes(payload, "part")
 		if !part.Exists() || !part.IsObject() {
 			return true
@@ -1162,7 +1162,7 @@ func openAIStreamAddedEventStartsClientOutput(payload []byte, eventType string) 
 		default:
 			return true
 		}
-	case "response.reasoning_summary_part.added":
+	case "response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
 		part := gjson.GetBytes(payload, "part")
 		if !part.Exists() || !part.IsObject() || strings.TrimSpace(part.Get("type").String()) != "summary_text" {
 			return true
@@ -1189,8 +1189,17 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 		// （content_policy / invalid_request 等）维持原样转发，保留上游错误细节。
 		payload := []byte(trimmed)
 		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload))
-	case "response.output_item.added", "response.content_part.added", "response.reasoning_summary_part.added":
-		return openAIStreamAddedEventStartsClientOutput([]byte(trimmed), eventType)
+	case "response.output_item.added", "response.output_item.done",
+		"response.content_part.added", "response.content_part.done",
+		"response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
+		return openAIStreamItemEventStartsClientOutput([]byte(trimmed), eventType)
+	case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
+		// An empty text delta carries no output and must not disarm overload retry.
+		delta := gjson.Get(trimmed, "delta")
+		return delta.Type != gjson.String || delta.String() != ""
+	case "response.output_text.done", "response.reasoning_text.done", "response.reasoning_summary_text.done":
+		text := gjson.Get(trimmed, "text")
+		return text.Type != gjson.String || text.String() != ""
 	}
 	return !openAIStreamEventIsMetadata(eventType)
 }
@@ -1300,6 +1309,9 @@ func openAIStreamFailedEventErrorCode(payload []byte) string {
 	if code == "" {
 		code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()))
 	}
+	if code == "" && gjson.GetBytes(payload, "type").String() == "error" {
+		code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "code").String()))
+	}
 	return code
 }
 
@@ -1347,35 +1359,46 @@ func logOpenAICapacityFailoverSuppressed(
 // 客户端内置的退避重试。
 const openAICapacityShedRetryableClientCode = "server_error"
 
-// sanitizeOpenAICapacityShedErrorCodeForClient 把即将写给下游客户端的
-// error / response.failed 事件中的容量降载错误码改写为客户端可重试的错误码。
+// sanitizeOpenAICapacityShedErrorForClient 把即将写给下游客户端的
+// error / response.failed 事件中的容量降载错误改写为客户端可重试的通用错误。
 // 走到转发这一步说明网关侧 failover 已不可用（流中途）或已用尽；保留原始降载码
-// 只会让客户端就地终止会话。错误消息原样保留；监控与账号状态判定都基于改写前
+// 只会让客户端就地终止会话。错误消息统一替换；监控与账号状态判定都基于改写前
 // 的原始 payload，不受影响。rate_limit 等其他错误码一律不动（客户端依赖
 // rate_limit_exceeded 原码解析重试延时）。
-func sanitizeOpenAICapacityShedErrorCodeForClient(payload []byte) ([]byte, bool) {
+func sanitizeOpenAICapacityShedErrorForClient(payload []byte) ([]byte, bool) {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) || !isOpenAIUpstreamCapacityShedEvent(payload) {
 		return payload, false
 	}
 	updated := payload
-	changed := false
-	for _, path := range []string{"response.error.code", "error.code"} {
-		parent := strings.TrimSuffix(path, ".code")
-		if !gjson.GetBytes(updated, parent).Exists() {
+	parents := []string{"response.error", "error"}
+	if gjson.GetBytes(payload, "type").String() == "error" &&
+		(gjson.GetBytes(payload, "message").Exists() || gjson.GetBytes(payload, "code").Exists()) {
+		parents = append(parents, "")
+	}
+	for _, parent := range parents {
+		if parent != "" && !gjson.GetBytes(updated, parent).IsObject() {
 			continue
 		}
-		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(updated, path).String()))
-		if code != "" && code != "server_is_overloaded" && code != "slow_down" {
-			continue
+		prefix := parent
+		if prefix != "" {
+			prefix += "."
 		}
-		next, err := sjson.SetBytes(updated, path, openAICapacityShedRetryableClientCode)
+		codePath := prefix + "code"
+		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(updated, codePath).String()))
+		if code == "" || code == "server_is_overloaded" || code == "slow_down" {
+			next, err := sjson.SetBytes(updated, codePath, openAICapacityShedRetryableClientCode)
+			if err != nil {
+				return payload, false
+			}
+			updated = next
+		}
+		next, err := sjson.SetBytes(updated, prefix+"message", OpenAICapacityShedClientMessage)
 		if err != nil {
 			return payload, false
 		}
 		updated = next
-		changed = true
 	}
-	return updated, changed
+	return updated, !bytes.Equal(updated, payload)
 }
 
 // openAIStreamErrorStatusPaths 覆盖流内 error / response.failed 事件里上游状态码的
@@ -1973,6 +1996,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 		if bareErrorAccountSideEffectsPending {
 			s.handleOpenAIStreamTerminalAccountSideEffects(c, account, bareErrorPayload, failedMessage, resp.Header, mappedModel)
+			s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_failed", bareErrorPayload, failedMessage)
 			bareErrorAccountSideEffectsPending = false
 		}
 		if clientDisconnected || !writePendingLines() {

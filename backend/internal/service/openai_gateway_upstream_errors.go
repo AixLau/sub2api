@@ -176,15 +176,8 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 		return false
 	}
 
-	hasOpenAIServerOverloadedCode := func(payload []byte) bool {
-		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()))
-		if code == "" {
-			code = strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
-		}
-		return code == "server_is_overloaded" || code == "slow_down"
-	}
-
-	if len(upstreamBody) > 0 && hasOpenAIServerOverloadedCode(upstreamBody) {
+	switch openAIStreamFailedEventErrorCode(upstreamBody) {
+	case "server_is_overloaded", "slow_down":
 		return true
 	}
 	if isOpenAICapacityShedMessage(upstreamMsg) ||
@@ -544,10 +537,10 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientStatusCode = http.StatusBadGateway
 		failoverErr.ClientMessage = openAIUpstreamAccessUnavailableClientMessage
 	} else if requestScopedCapacity {
-		// Preserve the provider's actionable overload message after gateway
-		// retries are exhausted, but expose it as a retryable server_error.
+		// Keep provider details in ResponseBody for Ops; the client gets a
+		// fixed message even when gateway retries are exhausted.
 		failoverErr.ClientStatusCode = http.StatusServiceUnavailable
-		failoverErr.ClientMessage = openAICapacityShedClientMessage(upstreamMsg, responseBody)
+		failoverErr.ClientMessage = OpenAICapacityShedClientMessage
 	}
 	return failoverErr
 }
@@ -687,20 +680,8 @@ func isOpenAIHTTPUpstreamAccessStateError(_ int, _ string, body []byte) bool {
 	return isOpenAIUpstreamAccessStateError("", body)
 }
 
-func openAICapacityShedClientMessage(upstreamMsg string, body []byte) string {
-	for _, candidate := range []string{
-		upstreamMsg,
-		gjson.GetBytes(body, "error.message").String(),
-		gjson.GetBytes(body, "response.error.message").String(),
-		gjson.GetBytes(body, "message").String(),
-	} {
-		candidate = sanitizeUpstreamErrorMessage(strings.TrimSpace(candidate))
-		if candidate != "" && isOpenAICapacityShedMessage(candidate) {
-			return candidate
-		}
-	}
-	return "Upstream service is temporarily overloaded, please retry later"
-}
+// OpenAICapacityShedClientMessage hides provider overload details on every client path.
+const OpenAICapacityShedClientMessage = "Upstream service temporarily unavailable, please retry later"
 
 // IsOpenAIRequestBodyTooLarge reports whether another account may accept the
 // same request even though the selected account rejected its serialized size.

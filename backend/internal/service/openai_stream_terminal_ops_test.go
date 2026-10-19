@@ -61,6 +61,8 @@ func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 				require.False(t, errors.As(err, &failover), "partial output must never be replayed")
 				require.Equal(t, http.StatusOK, recorder.Code)
 				require.Contains(t, recorder.Body.String(), "partial")
+				require.NotContains(t, recorder.Body.String(), message)
+				require.Contains(t, recorder.Body.String(), OpenAICapacityShedClientMessage)
 				require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed"))
 				value, exists := c.Get(OpsUpstreamErrorsKey)
 				require.True(t, exists, "the provider failure must be available to ops attribution")
@@ -74,5 +76,37 @@ func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 				require.Equal(t, passthrough, events[0].Passthrough)
 			})
 		}
+	}
+}
+
+func TestOpenAICompatStreamOverloadAfterOutputHidesMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, protocol := range []string{"chat", "messages"} {
+		t.Run(protocol, func(t *testing.T) {
+			const message = "Our servers are currently overloaded. Please try again later."
+			stream := "data: " + `{"type":"response.output_text.delta","delta":"partial","output_index":0,"content_index":0}` + "\n\n" +
+				"data: " + `{"type":"response.failed","response":{"id":"resp_overload","status":"failed","error":{"code":"server_is_overloaded","message":"` + message + `"}}}` + "\n\n"
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(stream))}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}}
+			account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+			var err error
+			if protocol == "chat" {
+				_, err = svc.handleChatStreamingResponse(resp, c, account, "model", "model", "model", time.Now(), 0)
+			} else {
+				_, err = svc.handleAnthropicStreamingResponse(resp, c, account, "model", "model", "model", time.Now())
+			}
+			require.Error(t, err)
+			var failover *UpstreamFailoverError
+			require.False(t, errors.As(err, &failover))
+			require.Contains(t, rec.Body.String(), "partial")
+			require.Contains(t, rec.Body.String(), OpenAICapacityShedClientMessage)
+			require.NotContains(t, rec.Body.String(), message)
+			value, exists := c.Get(OpsUpstreamErrorsKey)
+			require.True(t, exists)
+			require.Equal(t, message, value.([]*OpsUpstreamErrorEvent)[0].Message)
+		})
 	}
 }
