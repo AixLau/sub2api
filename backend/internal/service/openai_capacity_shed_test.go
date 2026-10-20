@@ -465,6 +465,50 @@ func TestOpenAIStreamProcessingFailureAfterOutputIsRecorded(t *testing.T) {
 	}
 }
 
+// 生产实测：上游降载常常发生在「响应头已提交、但一个语义字节都没写出」时
+// （gin Size()==0），旧判定把它当成已输出，于是降载既不重试也直接透传，
+// 客户端因 server_is_overloaded 判致命而终止会话。这里锁住修复后的行为：
+// 只有真正写出非心跳字节才算输出，否则必须走同账号重试。
+func TestOpenAIStreamCapacityShedAfterHeaderOnlyCommitRetriesOnSameAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	// 模拟响应头已提交（空 flush / 心跳提交响应头）：Size()==0，但没有语义字节。
+	c.Writer.WriteHeader(http.StatusOK)
+	c.Writer.WriteHeaderNow() // 与 gin Flush() 提交响应头的效果一致
+	require.Equal(t, 0, c.Writer.Size(), "前提：仅提交响应头时 gin 的 Size() 为 0")
+	require.False(t, openAIStreamClientOutputStarted(c, false), "仅提交响应头不得判定为已输出")
+
+	stream := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_header_only"}}`,
+		"",
+		"event: error",
+		`data: {"type":"error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}`,
+		"",
+		"event: response.failed",
+		`data: {"type":"response.failed","response":{"id":"resp_header_only","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"X-Request-Id": []string{"rid-header-only-shed"}},
+		Body:       io.NopCloser(strings.NewReader(stream)),
+	}
+	account := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "acc"}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "gpt-6-astra", "gpt-6-astra")
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr, "输出前降载必须返回重试信号而不是终态错误")
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failoverErr.SameAccountRetryDeadline, time.Second)
+	require.NotContains(t, rec.Body.String(), "server_is_overloaded", "致命降载码不得透传给客户端")
+}
+
 // 客户端写出的 error / response.failed 事件必须保留上游原始错误码与文案：
 // 网关不再把 server_is_overloaded / slow_down 改写成 server_error。
 func TestOpenAIStreamFailedEventsKeepProviderErrorForClient(t *testing.T) {

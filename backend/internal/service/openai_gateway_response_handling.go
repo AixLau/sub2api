@@ -251,7 +251,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	terminalEventType := ""
 	responsesSemanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
-	diagFlushCount := 0 // TEMP-DIAG: 记录本请求实际发生的下游 flush 次数
 	failedMessage := ""
 	clientOutputStarted := false
 	codexFailureTerminal := account != nil && account.IsOpenAIOAuthLike()
@@ -303,7 +302,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					if OpenAICompactKeepaliveAdjustedWrittenSize(c) > 0 {
 						clientOutputStarted = true
 					}
-					diagFlushCount++ // TEMP-DIAG
 					lastDownstreamWriteAt = time.Now()
 				}
 			}
@@ -523,15 +521,21 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
 			forceFlushFailedEvent := false
+			// 降载事件留一条判定依据：客户端是否已经收到语义输出、已写出多少字节。
+			// 据此区分「同账号重试」与「原样透传」是否合理 —— 透传只应发生在已有输出、
+			// 重放会重复内容时。Ops 可按 msg=openai.capacity_shed_decision 聚合观察。
 			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
 				(eventType == "error" || eventType == "response.failed") &&
 				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
-				// TEMP-DIAG: 记录降载事件到达时的判定状态（验证 head-only flush 误报）
-				logger.LegacyPrintf("service.openai_gateway",
-					"TEMP capacity_shed_state account=%d model=%s evt=%s local=%v flushes=%d size=%d adjusted=%d pending=%d semantic_seen=%v decision=%v",
-					account.ID, originalModel, eventType, clientOutputStarted, diagFlushCount,
-					c.Writer.Size(), OpenAICompactKeepaliveAdjustedWrittenSize(c), pendingBytes(),
-					responsesSemanticOutputSeen, openAIStreamClientOutputStarted(c, clientOutputStarted))
+				logger.FromContext(ctx).Info("openai.capacity_shed_decision",
+					zap.Int64("account_id", account.ID),
+					zap.String("model", originalModel),
+					zap.String("event_type", eventType),
+					zap.Bool("client_output_started", openAIStreamClientOutputStarted(c, clientOutputStarted)),
+					zap.Int("output_bytes", OpenAICompactKeepaliveAdjustedWrittenSize(c)),
+					zap.Int64("pending_bytes", pendingBytes()),
+					zap.Bool("semantic_seen", responsesSemanticOutputSeen),
+				)
 			}
 			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
 				(eventType == "error" || eventType == "response.failed") &&
