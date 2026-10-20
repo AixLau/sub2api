@@ -510,6 +510,58 @@ func TestOpenAIStreamCapacityShedAfterHeaderOnlyCommitRetriesOnSameAccount(t *te
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded", "致命降载码不得透传给客户端")
 }
 
+// 生产实测(378 账号):handler 在并发槽位等待期向下游打过一个 ":\n\n"(3 字节)
+// SSE 心跳。心跳会提交 HTTP 200 并提交响应头,但不构成任何语义输出;如果它没有
+// 计入「非语义字节」,上游在正文之前降载时就会因 Writer.Size()==3 被误判成
+// 「已输出」而放弃同账号重试(实测 61 次透传)。修复后心跳必须被扣除,降载仍走
+// 输出前重试,客户端除心跳外收不到任何字节。
+func TestOpenAIStreamSlotWaitHeartbeatDoesNotBlockCapacityShedRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	// handler 的等待期心跳:写入 3 字节并登记为心跳。
+	if _, err := c.Writer.WriteString(":\n\n"); err != nil {
+		t.Fatalf("write heartbeat: %v", err)
+	}
+	RecordOpenAIStreamHeartbeatBytes(c, 3)
+	require.Equal(t, -1, OpenAICompactKeepaliveAdjustedWrittenSize(c),
+		"仅等待期心跳不得被算成语义输出")
+	require.False(t, openAIStreamClientOutputStarted(c, false))
+
+	echo := strings.Repeat("x", 2048)
+	stream := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_hb","echo":"` + echo + `"}}`,
+		"",
+		"event: response.metadata",
+		`data: {"type":"response.metadata","metadata":{"trace":"x"}}`,
+		"",
+		"event: error",
+		`data: {"type":"error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}`,
+		"",
+		"event: response.failed",
+		`data: {"type":"response.failed","response":{"id":"resp_hb","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"X-Request-Id": []string{"rid-heartbeat"}},
+		Body:       io.NopCloser(strings.NewReader(stream)),
+	}
+	account := &Account{ID: 378, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "pro"}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "gpt-6-sol", "gpt-6-sol")
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr, "只有等待期心跳时,降载必须走重试而不是终态")
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, ":\n\n", rec.Body.String(), "客户端只应收到等待期心跳,不应收到任何上游帧")
+}
+
 // 生产实测（431/378 账号）：上游在正文之前推 response.created / response.in_progress /
 // response.metadata，每帧都带几十 KB 的请求回显，随后直接推降载 error + response.failed。
 // response.metadata 曾被当作语义输出：它触发首个 flush、把回显写给客户端并置位

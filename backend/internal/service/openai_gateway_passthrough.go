@@ -1071,6 +1071,19 @@ func recordOpenAIStreamKeepaliveBytes(c *gin.Context, written int) {
 	c.Set(openAIStreamKeepaliveBytesKey, current+written)
 }
 
+// RecordOpenAIStreamHeartbeatBytes 供 handler 登记「进入流式处理之前」已写出的
+// SSE 心跳字节(并发槽位 / 消息队列等待期的 ping,例如 ":\n\n")。
+//
+// 这些心跳会提交 HTTP 200 与 SSE 响应头,但不构成任何语义输出,必须与流内心跳
+// 一样从 OpenAICompactKeepaliveAdjustedWrittenSize 中扣除:否则上游在正文之前
+// 降载时会被误判成「已输出」,丢掉本可安全重放的同账号重试。
+//
+// 生产实测(378 账号):等待并发槽位时打过一个 ":\n\n"(3 字节)心跳,于是 61 次
+// 上游降载被当成输出后透传,客户端收到了本可避免的错误。
+func RecordOpenAIStreamHeartbeatBytes(c *gin.Context, written int) {
+	recordOpenAIStreamKeepaliveBytes(c, written)
+}
+
 func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 	if localStarted {
 		return true

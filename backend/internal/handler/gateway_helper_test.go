@@ -2,11 +2,15 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -155,4 +159,23 @@ func BenchmarkWrapReleaseOnDone(b *testing.B) {
 		release := wrapReleaseOnDone(ctx, func() {})
 		release()
 	}
+}
+
+// 并发槽位/队列等待期的 SSE 心跳必须同时登记到 service 的「非语义字节」口径。
+// 否则 Writer.Size()>0 会让上游在正文之前降载时被误判成「已输出」,从而放弃
+// 本可安全重放的同账号重试(生产实测 378 账号 61 次透传)。
+func TestRecordGatewayStreamHeartbeatFeedsServiceAccounting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	if _, err := c.Writer.WriteString(string(SSEPingFormatComment)); err != nil {
+		t.Fatalf("write ping: %v", err)
+	}
+	recordGatewayStreamHeartbeat(c, len(SSEPingFormatComment))
+
+	require.True(t, gatewayStreamHasOnlyHeartbeats(c))
+	require.Equal(t, -1, service.OpenAICompactKeepaliveAdjustedWrittenSize(c),
+		"等待期心跳不得被算成语义输出")
 }

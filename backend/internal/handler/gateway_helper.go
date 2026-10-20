@@ -26,6 +26,9 @@ func recordGatewayStreamHeartbeat(c *gin.Context, written int) {
 	total, _ := c.Get(gatewayStreamHeartbeatBytesKey)
 	bytes, _ := total.(int)
 	c.Set(gatewayStreamHeartbeatBytesKey, bytes+written)
+	// 同步登记到 service 的「非语义字节」口径:等待期心跳不构成模型输出,
+	// 不得阻止上游降载时的 pre-output 同账号重试(见 RecordOpenAIStreamHeartbeatBytes)。
+	service.RecordOpenAIStreamHeartbeatBytes(c, written)
 }
 
 func gatewayStreamHasOnlyHeartbeats(c *gin.Context) bool {
