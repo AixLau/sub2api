@@ -251,6 +251,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	terminalEventType := ""
 	responsesSemanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
+	diagFlushCount := 0 // TEMP-DIAG: 记录本请求实际发生的下游 flush 次数
 	failedMessage := ""
 	clientOutputStarted := false
 	codexFailureTerminal := account != nil && account.IsOpenAIOAuthLike()
@@ -296,7 +297,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					clientDisconnected = true
 					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
 				} else {
-					clientOutputStarted = true
+					// 只有真正写出非心跳字节才算「客户端已收到输出」：空 flush 只提交
+					// 响应头（gin Size()==0），据此关闭 pre-output failover 会让上游
+					// 降载错误永远落到 post-output 分支，丢掉本可安全重放的同账号重试。
+					if OpenAICompactKeepaliveAdjustedWrittenSize(c) > 0 {
+						clientOutputStarted = true
+					}
+					diagFlushCount++ // TEMP-DIAG
 					lastDownstreamWriteAt = time.Now()
 				}
 			}
@@ -516,6 +523,16 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
 			}
 			forceFlushFailedEvent := false
+			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
+				(eventType == "error" || eventType == "response.failed") &&
+				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
+				// TEMP-DIAG: 记录降载事件到达时的判定状态（验证 head-only flush 误报）
+				logger.LegacyPrintf("service.openai_gateway",
+					"TEMP capacity_shed_state account=%d model=%s evt=%s local=%v flushes=%d size=%d adjusted=%d pending=%d semantic_seen=%v decision=%v",
+					account.ID, originalModel, eventType, clientOutputStarted, diagFlushCount,
+					c.Writer.Size(), OpenAICompactKeepaliveAdjustedWrittenSize(c), pendingBytes(),
+					responsesSemanticOutputSeen, openAIStreamClientOutputStarted(c, clientOutputStarted))
+			}
 			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
 				(eventType == "error" || eventType == "response.failed") &&
 				openAIStreamClientOutputStarted(c, clientOutputStarted) &&

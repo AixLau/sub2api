@@ -1081,7 +1081,11 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 	// compact keepalive comments commit the HTTP response as 200, but they are
 	// not semantic model output and therefore must not block a safe retry.
 	// Without a compact keepalive this is equivalent to checking Writer.Size().
-	return OpenAICompactKeepaliveAdjustedWrittenSize(c) >= 0
+	//
+	// 只提交响应头（gin 的 Size()==0、Adjust 返回 0）没有任何语义字节，必须按
+	// “未输出”处理：把 0 当成已输出会让上游降载永远落在 post-output 分支，
+	// 从而丢掉本可安全重放的同账号重试（生产实测 173 次降载仅 1 次进入重试）。
+	return OpenAICompactKeepaliveAdjustedWrittenSize(c) > 0
 }
 
 // Lifecycle metadata and transport heartbeats are not model output.
