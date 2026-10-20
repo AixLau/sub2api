@@ -251,6 +251,18 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	terminalEventType := ""
 	responsesSemanticOutputSeen := false
 	capacityFailoverSuppressedLogged := false
+	// TEMP-DIAG：按事件类型统计真正交付给客户端的字节，用于分析「已写出内容」的构成
+	deliveredBytesByType := map[string]int64{}
+	deliveredCountByType := map[string]int{}
+	pendingBytesByType := map[string]int64{}
+	pendingCountByType := map[string]int{}
+	histoKey := func(evt string) string {
+		evt = strings.TrimSpace(evt)
+		if evt == "" {
+			return "unknown"
+		}
+		return evt
+	}
 	failedMessage := ""
 	clientOutputStarted := false
 	codexFailureTerminal := account != nil && account.IsOpenAIOAuthLike()
@@ -301,6 +313,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					// 降载错误永远落到 post-output 分支，丢掉本可安全重放的同账号重试。
 					if OpenAICompactKeepaliveAdjustedWrittenSize(c) > 0 {
 						clientOutputStarted = true
+					}
+					// TEMP-DIAG：flush 落盘成功，把待落盘直方图并入交付直方图
+					for k, v := range pendingBytesByType {
+						deliveredBytesByType[k] += v
+						deliveredCountByType[k] += pendingCountByType[k]
+						delete(pendingBytesByType, k)
+						delete(pendingCountByType, k)
 					}
 					lastDownstreamWriteAt = time.Now()
 				}
@@ -535,6 +554,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					zap.Int("output_bytes", OpenAICompactKeepaliveAdjustedWrittenSize(c)),
 					zap.Int64("pending_bytes", pendingBytes()),
 					zap.Bool("semantic_seen", responsesSemanticOutputSeen),
+					// TEMP-DIAG：交付内容构成（按事件类型累计字节/条数）
+					zap.String("delivered_histogram", formatOpenAIStreamByteHistogram(deliveredBytesByType, deliveredCountByType)),
+					zap.String("pending_histogram", formatOpenAIStreamByteHistogram(pendingBytesByType, pendingCountByType)),
 				)
 			}
 			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
@@ -746,6 +768,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					handlePendingWriteError(err)
 				} else {
 					eventInProgress = true
+					// TEMP-DIAG：记录本事件待落盘字节（flush 成功后才计入交付直方图）
+					k := histoKey(eventType)
+					pendingBytesByType[k] += int64(len(line) + 1)
+					pendingCountByType[k]++
 				}
 			}
 
@@ -1920,6 +1946,34 @@ func buildOpenAIResponseFailedSSE(responseID, model string, createdAt int64, sou
 		payload = sanitized
 	}
 	return "event: response.failed\ndata: " + string(payload) + "\n\n"
+}
+
+// TEMP-DIAG：把「事件类型 → 字节/条数」直方图渲染成一行，按字节数从大到小取前 8 类。
+// 用于分析上游降载时客户端到底已经收到了什么内容（回显 vs 推理 vs 正文）。
+func formatOpenAIStreamByteHistogram(bytesByType map[string]int64, countByType map[string]int) string {
+	if len(bytesByType) == 0 {
+		return "(空)"
+	}
+	type kv struct {
+		key   string
+		bytes int64
+	}
+	items := make([]kv, 0, len(bytesByType))
+	for k, v := range bytesByType {
+		items = append(items, kv{key: k, bytes: v})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].bytes > items[j].bytes })
+	var b strings.Builder
+	for i, it := range items {
+		if i >= 8 {
+			break
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s:%dB/%d条", it.key, it.bytes, countByType[it.key])
+	}
+	return b.String()
 }
 
 func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string, clientOutputStarted bool) ([]byte, bool) {
