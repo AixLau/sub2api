@@ -31,9 +31,10 @@ func (r *openAIWSIngressCapacityShedRepo) UpdateExtra(context.Context, int64, ma
 	return nil
 }
 
-// ctx_pool 的 ingress 直写路径把 error / response.failed 交给 WS 客户端前不再做任何
-// 改写：上游错误码与错误文案原样下发，gateway 只在网关侧做重试与账号状态判定。
-func TestProxyResponsesWebSocketFromClient_ForwardsProviderErrorsForClient(t *testing.T) {
+// ctx_pool 的 ingress 直写路径把 error / response.failed 交给 WS 客户端前，把容量
+// 降载码改写为客户端可重试的 server_error（Codex 对 server_is_overloaded /
+// slow_down 判致命并终止会话），文案保留上游原文；非降载错误码一律原样下发。
+func TestProxyResponsesWebSocketFromClient_RewritesCapacityShedCodeForClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
@@ -43,16 +44,16 @@ func TestProxyResponsesWebSocketFromClient_ForwardsProviderErrorsForClient(t *te
 		wantAbsent     []string
 	}{
 		{
-			name: "capacity_shed_error_and_failed_are_passed_through",
+			name: "capacity_shed_error_and_failed_are_rewritten",
 			upstreamEvents: [][]byte{
 				[]byte(`{"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`),
 				[]byte(`{"type":"response.failed","response":{"id":"resp_shed","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
 			},
 			wantContains: []string{
-				`"code":"server_is_overloaded"`,
+				`"code":"server_error"`,
 				"Our servers are currently overloaded. Please try again later.",
 			},
-			wantAbsent: []string{`"code":"server_error"`},
+			wantAbsent: []string{"server_is_overloaded"},
 		},
 		{
 			name: "non_capacity_error_code_is_passed_through",

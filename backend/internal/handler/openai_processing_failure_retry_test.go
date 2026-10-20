@@ -63,10 +63,11 @@ func TestOpenAIOverloadAfterOutputDoesNotReplayOrLeak(t *testing.T) {
 			_, accounts, _ := upstream.snapshot()
 			require.Equal(t, []int64{1}, accounts)
 			require.Contains(t, rec.Body.String(), "response.failed")
-			// 已有语义输出后不再 failover，上游降载事件原样转发，不再改写错误码与文案。
-			require.Contains(t, rec.Body.String(), `"code":"server_is_overloaded"`)
+			// 已有语义输出后不再 failover：只把降载码改写成客户端可重试的 server_error，
+			// 文案保留上游原文（客户端据此退避重试而不是终止会话）。
+			require.Contains(t, rec.Body.String(), `"code":"server_error"`)
 			require.Contains(t, rec.Body.String(), "Our servers are currently overloaded")
-			require.NotContains(t, rec.Body.String(), `"code":"server_error"`)
+			require.NotContains(t, rec.Body.String(), `"code":"server_is_overloaded"`)
 			require.NotContains(t, rec.Body.String(), "recovered")
 		})
 	}

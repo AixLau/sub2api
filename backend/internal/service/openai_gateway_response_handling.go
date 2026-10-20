@@ -1916,6 +1916,9 @@ func buildOpenAIResponseFailedSSE(responseID, model string, createdAt int64, sou
 			`,"response":{"object":"response","created_at":` + strconv.FormatInt(createdAt, 10) +
 			`,"status":"failed","output":[],"error":{"code":"upstream_error","message":"Upstream response failed"}}}`)
 	}
+	if sanitized, changed := sanitizeOpenAICapacityShedErrorCodeForClient(payload); changed {
+		payload = sanitized
+	}
 	return "event: response.failed\ndata: " + string(payload) + "\n\n"
 }
 
@@ -1926,6 +1929,12 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		return payload, false
 	}
 	updated := payload
+	// 容量降载码对 Codex CLI 是致命错误；事件既然要写给客户端（failover 已不可用），
+	// 就改写为客户端可重试的错误码（文案原样保留）。error 帧与 response.failed 都要
+	// 改：上游降载总是先推 error 帧再收 failed，两帧携带同一个错误。
+	if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
+		updated = rewritten
+	}
 	if !isFailedEvent {
 		return updated, !bytes.Equal(updated, payload)
 	}

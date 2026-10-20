@@ -404,8 +404,9 @@ func TestOpenAIStreamCapacityShedAfterOutputForwardsProviderError(t *testing.T) 
 	require.Contains(t, body, "partial")
 	require.NotContains(t, body, "event: error")
 	require.Equal(t, 1, strings.Count(body, "event: response.failed"))
-	require.Contains(t, body, "server_is_overloaded")
-	require.NotContains(t, body, `"code":"server_error"`)
+	// 只改写 code：客户端据此退避重试；文案保留上游原文。
+	require.Contains(t, body, `"code":"server_error"`)
+	require.NotContains(t, body, `"code":"server_is_overloaded"`)
 	require.Contains(t, body, "Our servers are currently overloaded")
 	require.True(t, logSink.ContainsMessage("gateway.failover_suppressed_after_semantic_output"))
 	require.True(t, logSink.ContainsFieldValue("path", "native_sse"))
@@ -509,47 +510,67 @@ func TestOpenAIStreamCapacityShedAfterHeaderOnlyCommitRetriesOnSameAccount(t *te
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded", "致命降载码不得透传给客户端")
 }
 
-// 客户端写出的 error / response.failed 事件必须保留上游原始错误码与文案：
-// 网关不再把 server_is_overloaded / slow_down 改写成 server_error。
-func TestOpenAIStreamFailedEventsKeepProviderErrorForClient(t *testing.T) {
+// 客户端写出的 error / response.failed 事件**只改写降载错误码**：
+// server_is_overloaded / slow_down → server_error（Codex 等客户端据此退避重试，
+// 而不是判致命终止会话）；文案与 type 原样保留。其余错误码一律不动
+// （rate_limit_exceeded 的原码被客户端用来解析重试延时）。
+func TestOpenAIStreamFailedEventsRewriteOnlyCapacityShedCode(t *testing.T) {
 	cases := []struct {
 		name        string
+		eventType   string
 		payload     string
+		wantChanged bool
 		wantContain []string
+		wantAbsent  []string
 	}{
 		{
-			name:        "failed事件保留降载码",
+			name:        "failed事件改写降载码保留文案",
+			eventType:   "response.failed",
 			payload:     `{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"overloaded"}}}`,
-			wantContain: []string{`"code":"server_is_overloaded"`, "overloaded"},
+			wantChanged: true,
+			wantContain: []string{`"code":"server_error"`, "overloaded"},
+			wantAbsent:  []string{"server_is_overloaded"},
 		},
 		{
-			name:        "error帧保留slow_down",
+			name:        "error帧改写slow_down",
+			eventType:   "error",
 			payload:     `{"type":"error","error":{"code":"slow_down","message":"slow down"}}`,
-			wantContain: []string{`"code":"slow_down"`, "slow down"},
+			wantChanged: true,
+			wantContain: []string{`"code":"server_error"`, "slow down"},
+			wantAbsent:  []string{"slow_down"},
 		},
 		{
-			name:        "裸error帧保留顶层码",
+			name:        "裸error帧改写顶层码",
+			eventType:   "error",
 			payload:     `{"type":"error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}`,
-			wantContain: []string{`"code":"server_is_overloaded"`, "Our servers are currently overloaded. Please try again later."},
+			wantChanged: true,
+			wantContain: []string{`"code":"server_error"`, "Our servers are currently overloaded. Please try again later."},
+			wantAbsent:  []string{"server_is_overloaded"},
 		},
 		{
 			name:        "rate_limit保持原码",
+			eventType:   "response.failed",
 			payload:     `{"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded","message":"try again in 3s"}}}`,
+			wantChanged: false,
 			wantContain: []string{`"code":"rate_limit_exceeded"`},
 		},
 		{
 			name:        "非JSON原样",
+			eventType:   "error",
 			payload:     `not-json`,
+			wantChanged: false,
 			wantContain: []string{`not-json`},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, changed := sanitizeOpenAIResponseFailedEventForClient([]byte(tc.payload), "error", false)
-			require.False(t, changed, "client-facing frames must not be rewritten")
-			require.Equal(t, tc.payload, string(out))
+			out, changed := sanitizeOpenAIResponseFailedEventForClient([]byte(tc.payload), tc.eventType, false)
+			require.Equal(t, tc.wantChanged, changed)
 			for _, want := range tc.wantContain {
 				require.Contains(t, string(out), want)
+			}
+			for _, absent := range tc.wantAbsent {
+				require.NotContains(t, string(out), absent)
 			}
 		})
 	}
