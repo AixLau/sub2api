@@ -61,8 +61,9 @@ func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 				require.False(t, errors.As(err, &failover), "partial output must never be replayed")
 				require.Equal(t, http.StatusOK, recorder.Code)
 				require.Contains(t, recorder.Body.String(), "partial")
-				require.NotContains(t, recorder.Body.String(), message)
-				require.Contains(t, recorder.Body.String(), OpenAICapacityShedClientMessage)
+				// The provider overload text reaches the client unchanged; only the
+				// gateway's own retry policy acts on the raw frame.
+				require.Contains(t, recorder.Body.String(), message)
 				require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed"))
 				value, exists := c.Get(OpsUpstreamErrorsKey)
 				require.True(t, exists, "the provider failure must be available to ops attribution")
@@ -79,7 +80,7 @@ func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 	}
 }
 
-func TestOpenAICompatStreamOverloadAfterOutputHidesMessage(t *testing.T) {
+func TestOpenAICompatStreamOverloadAfterOutputKeepsProviderMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, protocol := range []string{"chat", "messages"} {
 		t.Run(protocol, func(t *testing.T) {
@@ -102,8 +103,9 @@ func TestOpenAICompatStreamOverloadAfterOutputHidesMessage(t *testing.T) {
 			var failover *UpstreamFailoverError
 			require.False(t, errors.As(err, &failover))
 			require.Contains(t, rec.Body.String(), "partial")
-			require.Contains(t, rec.Body.String(), OpenAICapacityShedClientMessage)
-			require.NotContains(t, rec.Body.String(), message)
+			require.Contains(t, rec.Body.String(), message)
+			// chat/messages 兼容路径只带 message+type，不再替换成网关文案。
+			require.NotContains(t, rec.Body.String(), "Upstream service temporarily unavailable")
 			value, exists := c.Get(OpsUpstreamErrorsKey)
 			require.True(t, exists)
 			require.Equal(t, message, value.([]*OpsUpstreamErrorEvent)[0].Message)

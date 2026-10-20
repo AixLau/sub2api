@@ -1043,10 +1043,9 @@ func TestProxyOpenAIWSHTTPBridgeTurnRewritesCapacityShedCodeForClient(t *testing
 				require.NoError(t, err)
 			}
 			require.Len(t, writes, 1)
-			require.Contains(t, string(writes[0]), `"code":"server_error"`)
-			require.NotContains(t, string(writes[0]), "server_is_overloaded")
-			require.NotContains(t, string(writes[0]), "Our servers are currently overloaded")
-			require.Contains(t, string(writes[0]), OpenAICapacityShedClientMessage)
+			require.Contains(t, string(writes[0]), "server_is_overloaded")
+			require.Contains(t, string(writes[0]), "Our servers are currently overloaded")
+			require.NotContains(t, string(writes[0]), `"code":"server_error"`)
 		})
 	}
 }
@@ -1333,8 +1332,10 @@ func TestProxyOpenAIWSHTTPBridgeTurnDoesNotReplayCapacityAfterSemanticOutput(t *
 	require.Equal(t, "keepalive", gjson.GetBytes(writes[3], "type").String())
 	var failoverErr *UpstreamFailoverError
 	require.False(t, errors.As(err, &failoverErr))
-	require.Contains(t, string(writes[4]), `"code":"server_error"`)
-	require.NotContains(t, string(writes[4]), "server_is_overloaded")
+	// 已有语义输出后不再 failover：上游降载事件原样下发，不再改写错误码。
+	require.Contains(t, string(writes[4]), `"code":"server_is_overloaded"`)
+	require.Contains(t, string(writes[4]), "Our servers are currently overloaded")
+	require.NotContains(t, string(writes[4]), `"code":"server_error"`)
 	require.True(t, logSink.ContainsMessage("gateway.failover_suppressed_after_semantic_output"))
 	require.True(t, logSink.ContainsFieldValue("path", "ws_http_bridge"))
 }

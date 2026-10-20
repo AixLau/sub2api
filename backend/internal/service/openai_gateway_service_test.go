@@ -1935,6 +1935,10 @@ func TestOpenAIStreamingResponseFailedBeforeOutputReturnsFailover(t *testing.T) 
 	require.True(t, failoverErr.RetryableOnSameAccount)
 	require.Equal(t, OpenAIProcessingFailureReason, failoverErr.Reason)
 	require.Equal(t, OpenAITransientFailureRetryLimit, failoverErr.SameAccountRetryMax)
+	// 处理失败与容量降载同属请求级瞬时故障：进入共享的 2 分钟请求级重试窗口，
+	// 窗口内复用同一账号，错误级 5 次上限只是回退值。
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failoverErr.SameAccountRetryDeadline, time.Second)
 	require.Contains(t, string(failoverErr.ResponseBody), "An error occurred while processing your request")
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())

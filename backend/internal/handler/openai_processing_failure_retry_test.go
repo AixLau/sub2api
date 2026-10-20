@@ -63,9 +63,10 @@ func TestOpenAIOverloadAfterOutputDoesNotReplayOrLeak(t *testing.T) {
 			_, accounts, _ := upstream.snapshot()
 			require.Equal(t, []int64{1}, accounts)
 			require.Contains(t, rec.Body.String(), "response.failed")
-			require.Contains(t, rec.Body.String(), `"code":"server_error"`)
-			require.NotContains(t, rec.Body.String(), "Our servers are currently overloaded")
-			require.NotContains(t, rec.Body.String(), "server_is_overloaded")
+			// 已有语义输出后不再 failover，上游降载事件原样转发，不再改写错误码与文案。
+			require.Contains(t, rec.Body.String(), `"code":"server_is_overloaded"`)
+			require.Contains(t, rec.Body.String(), "Our servers are currently overloaded")
+			require.NotContains(t, rec.Body.String(), `"code":"server_error"`)
 			require.NotContains(t, rec.Body.String(), "recovered")
 		})
 	}
@@ -106,7 +107,9 @@ func TestOpenAIStreamReadErrorRetryRecoversOnSameOAuthAccount(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "stream_read_error")
 }
 
-func TestOpenAIProcessingFailureRetryStopsAfterFiveRetries(t *testing.T) {
+// 处理失败与容量降载同属请求级瞬时故障：重试预算由共享的 2 分钟请求级窗口决定，
+// 不再受错误级 5 次上限约束，窗口内始终复用同一账号、不切号、不封号。
+func TestOpenAIProcessingFailureRetryUsesRequestScopedWindow(t *testing.T) {
 	for _, allowSwitch := range []bool{false, true} {
 		t.Run(fmt.Sprintf("allowSwitch=%t", allowSwitch), func(t *testing.T) {
 			var responses []*http.Response
@@ -124,16 +127,10 @@ func TestOpenAIProcessingFailureRetryStopsAfterFiveRetries(t *testing.T) {
 			markForwardableModerationReceipt(c, "openai_responses")
 			h.Responses(c)
 			_, accounts, _ := upstream.snapshot()
-			if allowSwitch {
-				require.Equal(t, []int64{1, 1, 1, 1, 1, 1, 2}, accounts, "switch only after five same-account retries")
-				require.Equal(t, http.StatusOK, rec.Code)
-				require.Contains(t, rec.Body.String(), "recovered")
-			} else {
-				require.Equal(t, []int64{1, 1, 1, 1, 1, 1}, accounts, "one initial attempt plus exactly five retries")
-				require.Equal(t, http.StatusBadGateway, rec.Code)
-				require.Contains(t, rec.Body.String(), "upstream_error")
-				require.NotContains(t, rec.Body.String(), "recovered")
-			}
+			require.Equal(t, []int64{1, 1, 1, 1, 1, 1, 1}, accounts,
+				"the request-scoped window keeps retrying the same account past the five-attempt cap")
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Contains(t, rec.Body.String(), "recovered")
 		})
 	}
 }

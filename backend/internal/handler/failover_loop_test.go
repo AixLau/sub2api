@@ -137,7 +137,7 @@ func TestRequestScopedCapacityShedHandlerKeepsAccountAfterFifteenRetries(t *test
 	serviceStub := &mockFailoverCooldownService{}
 	err := &service.UpstreamFailoverError{
 		RetryableOnSameAccount:   true,
-		RequestScopedTransient:    true,
+		RequestScopedTransient:   true,
 		SameAccountRetryMax:      10,
 		SameAccountRetryDelay:    time.Nanosecond,
 		SameAccountRetryDeadline: time.Now().Add(time.Minute),
@@ -146,6 +146,31 @@ func TestRequestScopedCapacityShedHandlerKeepsAccountAfterFifteenRetries(t *test
 		require.Equal(t, FailoverContinue, state.HandleFailoverError(context.Background(), serviceStub, 7, "openai", 10, err))
 	}
 	require.Equal(t, 15, state.SameAccountRetryCount[7])
+	require.Zero(t, state.SwitchCount)
+	require.Empty(t, serviceStub.calls)
+	require.Empty(t, serviceStub.cooldownCalls)
+}
+
+// 处理失败（An error occurred while processing your request）与容量降载同属请求级
+// 瞬时故障：窗口内必须持续复用同一账号，错误级 5 次上限不再是硬限制，也不触发账号
+// 冷却或封禁。
+func TestRequestScopedProcessingFailureKeepsAccountPastErrorCap(t *testing.T) {
+	state := NewFailoverState(1, false)
+	serviceStub := &mockFailoverCooldownService{}
+	err := &service.UpstreamFailoverError{
+		Reason:                   service.OpenAIProcessingFailureReason,
+		RetryableOnSameAccount:   true,
+		RequestScopedTransient:   true,
+		SameAccountRetryMax:      service.OpenAITransientFailureRetryLimit,
+		SameAccountRetryDelay:    time.Nanosecond,
+		SameAccountRetryDeadline: time.Now().Add(service.OpenAIRequestScopedRetryWindow),
+	}
+	for i := 0; i < 12; i++ {
+		require.True(t, sameAccountRetryAllowed(err, i, service.OpenAITransientFailureRetryLimit),
+			"retry %d must stay inside the request-scoped window", i)
+		require.Equal(t, FailoverContinue, state.HandleFailoverError(context.Background(), serviceStub, 7, "openai", service.OpenAITransientFailureRetryLimit, err))
+	}
+	require.Equal(t, 12, state.SameAccountRetryCount[7])
 	require.Zero(t, state.SwitchCount)
 	require.Empty(t, serviceStub.calls)
 	require.Empty(t, serviceStub.cooldownCalls)

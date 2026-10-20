@@ -87,7 +87,7 @@ func TestOpenAIAccessStateCredentialFailureUsesTypedSafeResponse(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "must-not-leak")
 }
 
-func TestOpenAICapacityFailoverExhaustionHidesProviderMessage(t *testing.T) {
+func TestOpenAICapacityFailoverExhaustionKeepsProviderMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	message := "Our servers are currently overloaded. Please try again later."
 	failoverErr := &service.UpstreamFailoverError{
@@ -105,9 +105,7 @@ func TestOpenAICapacityFailoverExhaustionHidesProviderMessage(t *testing.T) {
 		(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, failoverErr, false)
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 		require.Equal(t, "server_error", gjson.Get(recorder.Body.String(), "error.type").String())
-		require.Equal(t, service.OpenAICapacityShedClientMessage, gjson.Get(recorder.Body.String(), "error.message").String())
-		require.NotContains(t, recorder.Body.String(), message)
-		require.NotContains(t, recorder.Body.String(), "server_is_overloaded")
+		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
 	})
 
 	t.Run("responses_compat", func(t *testing.T) {
@@ -116,8 +114,7 @@ func TestOpenAICapacityFailoverExhaustionHidesProviderMessage(t *testing.T) {
 		(&GatewayHandler{}).handleResponsesFailoverExhausted(c, failoverErr, false)
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 		require.Equal(t, "server_error", gjson.Get(recorder.Body.String(), "error.code").String())
-		require.Equal(t, service.OpenAICapacityShedClientMessage, gjson.Get(recorder.Body.String(), "error.message").String())
-		require.NotContains(t, recorder.Body.String(), message)
+		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
 	})
 
 	t.Run("anthropic_compat", func(t *testing.T) {
@@ -126,8 +123,7 @@ func TestOpenAICapacityFailoverExhaustionHidesProviderMessage(t *testing.T) {
 		(&OpenAIGatewayHandler{}).handleAnthropicFailoverExhausted(c, failoverErr, false)
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 		require.Equal(t, "api_error", gjson.Get(recorder.Body.String(), "error.type").String())
-		require.Equal(t, service.OpenAICapacityShedClientMessage, gjson.Get(recorder.Body.String(), "error.message").String())
-		require.NotContains(t, recorder.Body.String(), message)
+		require.Equal(t, message, gjson.Get(recorder.Body.String(), "error.message").String())
 	})
 }
 

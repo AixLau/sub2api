@@ -724,9 +724,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			return nil
 		}
 		clientMessage := buildOpenAIWSHTTPBridgeFailedEvent(responseID, originalModel, createdAtStamper.Value(), bareErrorPayload, bareErrorMessage)
-		if rewritten, changed := sanitizeOpenAICapacityShedErrorForClient(clientMessage); changed {
-			clientMessage = rewritten
-		}
 		messages := append(pendingClientMessages, clientMessage)
 		pendingClientMessages = nil
 		pendingClientMessageBytes = 0
@@ -908,16 +905,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 		}
 
-		// 客户端写出副本改写容量降载码：Codex 对 error/response.failed 中的
-		// server_is_overloaded / slow_down 判致命并终止会话，改写后走客户端内置
-		// 重试。账号状态与终止事件判定（下方 handleOpenAIWSTerminalTransientFailure）
-		// 仍使用未改写的 upstreamMessage。
+		// 上游 error / response.failed 原样转发给客户端；账号状态与终止事件判定
+		// （下方 handleOpenAIWSTerminalTransientFailure）同样基于原始 payload。
 		clientMessage := upstreamMessage
-		if eventType == "error" || eventType == "response.failed" {
-			if rewritten, changed := sanitizeOpenAICapacityShedErrorForClient(clientMessage); changed {
-				clientMessage = rewritten
-			}
-		}
 		if !clientDisconnected && !suppressClientMessage {
 			isKeepalive := eventType == "keepalive"
 			stageBeforeSemanticOutput := turn == 1 && account.Platform == PlatformOpenAI && !wroteDownstream

@@ -171,6 +171,28 @@ func isOpenAIInstructionsRequiredError(upstreamStatusCode int, upstreamMsg strin
 	return false
 }
 
+// isOpenAITransientOverloadMessage recognizes the provider's transient overload
+// and processing-failure wording on any error channel. Classification and client
+// message extraction share it so both agree on what counts as an overload.
+func isOpenAITransientOverloadMessage(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if strings.Contains(lower, "an error occurred while processing your request") {
+		return true
+	}
+	if strings.Contains(lower, "selected model is at capacity") {
+		return true
+	}
+	if strings.Contains(lower, "currently overloaded") {
+		return true
+	}
+	return strings.Contains(lower, "you can retry your request") &&
+		strings.Contains(lower, "help.openai.com") &&
+		strings.Contains(lower, "request id")
+}
+
 func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	if upstreamStatusCode < http.StatusBadRequest {
 		return false
@@ -193,24 +215,7 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 		return false
 	}
 
-	match := func(text string) bool {
-		lower := strings.ToLower(strings.TrimSpace(text))
-		if lower == "" {
-			return false
-		}
-		if strings.Contains(lower, "an error occurred while processing your request") {
-			return true
-		}
-		if strings.Contains(lower, "selected model is at capacity") {
-			return true
-		}
-		if strings.Contains(lower, "currently overloaded") {
-			return true
-		}
-		return strings.Contains(lower, "you can retry your request") &&
-			strings.Contains(lower, "help.openai.com") &&
-			strings.Contains(lower, "request id")
-	}
+	match := isOpenAITransientOverloadMessage
 
 	if match(upstreamMsg) {
 		return true
@@ -234,6 +239,7 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 func isOpenAICapacityShedMessage(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	return strings.Contains(lower, "server is overloaded") ||
+		strings.Contains(lower, "server is currently overloaded") ||
 		strings.Contains(lower, "servers are overloaded") ||
 		strings.Contains(lower, "servers are currently overloaded")
 }
@@ -282,6 +288,21 @@ func isOpenAIRequestScopedCapacityShed(upstreamMsg string, upstreamBody []byte) 
 	return isOpenAIUpstreamCapacityShedEvent(upstreamBody) ||
 		isOpenAICapacityShedMessage(upstreamMsg) ||
 		(!gjson.ValidBytes(upstreamBody) && isOpenAICapacityShedMessage(string(upstreamBody)))
+}
+
+// isOpenAIRequestScopedTransient reports whether a provider failure describes
+// this request rather than the selected credential. Capacity shedding and the
+// provider's transient overload signals are provider-wide: every account shares
+// them, so switching credentials only burns the pool. They are retried on the
+// same account inside the shared request-scoped retry window.
+//
+// The provider's explicit processing failure is wired on the HTTP 200 stream
+// path instead (newOpenAIStreamFailoverErrorWithModel): non-2xx responses are
+// already retried by the transport, and nesting both budgets would multiply the
+// upstream calls.
+func isOpenAIRequestScopedTransient(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	return isOpenAIRequestScopedCapacityShed(upstreamMsg, upstreamBody) ||
+		isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
 }
 
 func isOpenAIContextWindowError(upstreamMsg string, upstreamBody []byte) bool {
@@ -505,14 +526,15 @@ func newOpenAIUpstreamFailoverError(
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
 	requestScopedCapacity := isOpenAIRequestScopedCapacityShed(upstreamMsg, responseBody)
+	requestScopedTransient := isOpenAIRequestScopedTransient(statusCode, upstreamMsg, responseBody)
 	failoverErr := &UpstreamFailoverError{
 		StatusCode:             statusCode,
 		ResponseBody:           responseBody,
 		ResponseHeaders:        responseHeaders.Clone(),
-		RetryableOnSameAccount: retryableOnSameAccount || requestScopedCapacity,
-		RequestScopedTransient: requestScopedCapacity,
+		RetryableOnSameAccount: retryableOnSameAccount || requestScopedTransient,
+		RequestScopedTransient: requestScopedTransient,
 	}
-	if requestScopedCapacity {
+	if requestScopedTransient {
 		failoverErr.SameAccountRetryDeadline = time.Now().Add(OpenAIRequestScopedRetryWindow)
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
@@ -537,10 +559,10 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientStatusCode = http.StatusBadGateway
 		failoverErr.ClientMessage = openAIUpstreamAccessUnavailableClientMessage
 	} else if requestScopedCapacity {
-		// Keep provider details in ResponseBody for Ops; the client gets a
-		// fixed message even when gateway retries are exhausted.
+		// Preserve the provider's actionable overload message; the raw body stays
+		// available to Ops either way.
 		failoverErr.ClientStatusCode = http.StatusServiceUnavailable
-		failoverErr.ClientMessage = OpenAICapacityShedClientMessage
+		failoverErr.ClientMessage = openAIProviderTransientClientMessage(upstreamMsg, responseBody, openAICapacityShedFallbackClientMessage)
 	}
 	return failoverErr
 }
@@ -680,8 +702,32 @@ func isOpenAIHTTPUpstreamAccessStateError(_ int, _ string, body []byte) bool {
 	return isOpenAIUpstreamAccessStateError("", body)
 }
 
-// OpenAICapacityShedClientMessage hides provider overload details on every client path.
-const OpenAICapacityShedClientMessage = "Upstream service temporarily unavailable, please retry later"
+const (
+	openAICapacityShedFallbackClientMessage      = "Upstream service is temporarily overloaded, please retry later"
+	openAIProcessingFailureFallbackClientMessage = "Upstream request failed, please retry later"
+)
+
+// openAIProviderTransientClientMessage forwards the provider's own transient
+// failure text so the client keeps the actionable upstream message instead of a
+// gateway-authored replacement. The fallback only applies when the response
+// carries no recognizable overload or processing-failure message at all.
+func openAIProviderTransientClientMessage(upstreamMsg string, body []byte, fallback string) string {
+	for _, candidate := range []string{
+		upstreamMsg,
+		gjson.GetBytes(body, "error.message").String(),
+		gjson.GetBytes(body, "response.error.message").String(),
+		gjson.GetBytes(body, "message").String(),
+	} {
+		candidate = sanitizeUpstreamErrorMessage(strings.TrimSpace(candidate))
+		if candidate == "" {
+			continue
+		}
+		if isOpenAICapacityShedMessage(candidate) || isOpenAITransientOverloadMessage(candidate) {
+			return candidate
+		}
+	}
+	return fallback
+}
 
 // IsOpenAIRequestBodyTooLarge reports whether another account may accept the
 // same request even though the selected account rejected its serialized size.

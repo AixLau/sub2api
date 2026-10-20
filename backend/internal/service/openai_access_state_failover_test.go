@@ -193,17 +193,18 @@ func TestOpenAICyberPolicyWrapped5xxNeverFailsOver(t *testing.T) {
 	require.False(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeOAuth}, http.StatusBadGateway, body))
 }
 
-func TestOpenAICapacityFailoverCarriesSafeTerminalResponse(t *testing.T) {
+func TestOpenAICapacityFailoverCarriesProviderOverloadMessage(t *testing.T) {
 	message := "Our servers are currently overloaded. Please try again later."
 	body := []byte(`{"error":{"code":"server_is_overloaded","message":"` + message + `"}}`)
 	err := newOpenAIUpstreamFailoverError(http.StatusBadRequest, nil, body, message, false)
 
 	require.True(t, err.IsOpenAICapacityShed())
+	require.True(t, err.RetryableOnSameAccount)
+	require.True(t, err.RequestScopedTransient)
+	require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), err.SameAccountRetryDeadline, time.Second)
 	require.Equal(t, http.StatusServiceUnavailable, err.ClientStatusCode)
-	require.Equal(t, OpenAICapacityShedClientMessage, err.ClientMessage)
-	require.NotContains(t, err.ClientMessage, message)
+	require.Equal(t, message, err.ClientMessage, "the provider overload message reaches the client unchanged")
 	require.Equal(t, body, err.ResponseBody, "Ops retains the original provider error")
-	require.NotContains(t, err.ClientMessage, "server_is_overloaded")
 }
 
 func TestOpenAIStreamSemanticStatusesPreservedAcrossTerminalShapes(t *testing.T) {

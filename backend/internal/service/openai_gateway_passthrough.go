@@ -1352,55 +1352,6 @@ func logOpenAICapacityFailoverSuppressed(
 	logger.FromContext(ctx).Warn("gateway.failover_suppressed_after_semantic_output", fields...)
 }
 
-// openAICapacityShedRetryableClientCode 是把上游容量降载错误转发给客户端时改写
-// 使用的错误码。Codex CLI 按闭集对错误码分类：server_is_overloaded / slow_down
-// 被判为致命错误（客户端提示 "Selected model is at capacity. Please try a
-// different model." 并直接终止会话），而 server_error 等致命集之外的错误码会进入
-// 客户端内置的退避重试。
-const openAICapacityShedRetryableClientCode = "server_error"
-
-// sanitizeOpenAICapacityShedErrorForClient 把即将写给下游客户端的
-// error / response.failed 事件中的容量降载错误改写为客户端可重试的通用错误。
-// 走到转发这一步说明网关侧 failover 已不可用（流中途）或已用尽；保留原始降载码
-// 只会让客户端就地终止会话。错误消息统一替换；监控与账号状态判定都基于改写前
-// 的原始 payload，不受影响。rate_limit 等其他错误码一律不动（客户端依赖
-// rate_limit_exceeded 原码解析重试延时）。
-func sanitizeOpenAICapacityShedErrorForClient(payload []byte) ([]byte, bool) {
-	if len(payload) == 0 || !gjson.ValidBytes(payload) || !isOpenAIUpstreamCapacityShedEvent(payload) {
-		return payload, false
-	}
-	updated := payload
-	parents := []string{"response.error", "error"}
-	if gjson.GetBytes(payload, "type").String() == "error" &&
-		(gjson.GetBytes(payload, "message").Exists() || gjson.GetBytes(payload, "code").Exists()) {
-		parents = append(parents, "")
-	}
-	for _, parent := range parents {
-		if parent != "" && !gjson.GetBytes(updated, parent).IsObject() {
-			continue
-		}
-		prefix := parent
-		if prefix != "" {
-			prefix += "."
-		}
-		codePath := prefix + "code"
-		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(updated, codePath).String()))
-		if code == "" || code == "server_is_overloaded" || code == "slow_down" {
-			next, err := sjson.SetBytes(updated, codePath, openAICapacityShedRetryableClientCode)
-			if err != nil {
-				return payload, false
-			}
-			updated = next
-		}
-		next, err := sjson.SetBytes(updated, prefix+"message", OpenAICapacityShedClientMessage)
-		if err != nil {
-			return payload, false
-		}
-		updated = next
-	}
-	return updated, !bytes.Equal(updated, payload)
-}
-
 // openAIStreamErrorStatusPaths 覆盖流内 error / response.failed 事件里上游状态码的
 // 两种拼写：OpenAI 用 status_code，而不少 OpenAI 兼容上游（含二级中转）只写 status。
 // 只认 status_code 会把 401/403/429/529 一律降级成通用 502，账号健康与 failover
@@ -1578,6 +1529,9 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
+	if isOpenAIStreamReadErrorEvent(payload, message) {
+		return true
+	}
 	if isOpenAIUpstreamAccessStateError(message, payload) {
 		return true
 	}
@@ -1631,6 +1585,11 @@ func openAIStreamErrorEventShouldFailover(payload []byte, message string) bool {
 		return false
 	}
 	if isOpenAIUpstreamAccessStateError(message, payload) {
+		return true
+	}
+	if isOpenAIStreamReadErrorEvent(payload, message) {
+		// 语义 stream_read_error 是流本身的瞬时故障；仅在前置输出之前走到这里，
+		// 因此可以安全地原地重放。
 		return true
 	}
 	switch openAIStreamFailedEventSemanticStatus(payload, message) {
@@ -1803,6 +1762,23 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
 		classificationHeaders = nil
 	}
 	failoverErr := s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, headers, classificationHeaders, payload, message, shouldDisable, retryableOnSameAccount)
+	if isOpenAIProcessingFailure(statusCode, message, payload) {
+		// HTTP 200 streams bypass the transport's HTTP-error retry loop, so the
+		// typed budget belongs here rather than in the shared constructor. The
+		// provider's processing failure is provider-wide: keep the request on the
+		// same account inside the shared request-scoped window instead of rotating
+		// credentials, and forward the provider's own message.
+		setOpenAITransientFailureRetry(failoverErr, OpenAIProcessingFailureReason,
+			openAIProviderTransientClientMessage(message, payload, openAIProcessingFailureFallbackClientMessage))
+		failoverErr.SameAccountRetryDeadline = time.Now().Add(OpenAIRequestScopedRetryWindow)
+	} else if account != nil && account.IsOpenAIOAuthLike() && isOpenAIStreamReadErrorEvent(payload, message) {
+		// A semantic stream_read_error is recoverable only while the response is
+		// still pre-output (callers invoke this constructor from that branch).
+		// Keep the replay OAuth-local and bounded so Codex does not observe the
+		// intermediate response.failed event.
+		setOpenAITransientFailureRetry(failoverErr, OpenAIStreamReadFailureReason, message)
+		failoverErr.SameAccountRetryMax = OpenAIStreamReadFailureRetryLimit
+	}
 	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {
 		return failoverErr
 	}
@@ -2148,8 +2124,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						}
 					}
 					if shouldFailover {
-						return resultWithUsage(),
-							s.newOpenAIStreamFailoverErrorWithModel(c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
+						failoverErr := s.newOpenAIStreamFailoverErrorWithModel(c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
+						// 走到这里说明只有前导事件与心跳注释被写出（outputStarted 为 false），
+						// 与原生 SSE 路径一致地允许在同一客户端流内切换账号重试。
+						failoverErr.SafeToFailoverAfterWrite = true
+						return resultWithUsage(), failoverErr
 					}
 					if !cyberHit && !sawBareError {
 						if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {

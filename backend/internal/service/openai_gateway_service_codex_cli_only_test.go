@@ -369,6 +369,44 @@ func TestIsOpenAITransientProcessingError(t *testing.T) {
 		"Missing required parameter: 'instructions'",
 		[]byte(`{"error":{"message":"Missing required parameter: 'instructions'"}}`),
 	))
+
+	// 单数措辞的降载文案同样是状态无关的请求级信号。
+	require.True(t, isOpenAITransientProcessingError(
+		http.StatusBadGateway,
+		"",
+		[]byte(`{"error":{"message":"The server is currently overloaded. Please try again later."}}`),
+	))
+}
+
+// 请求级瞬时故障分类：容量降载与过载文案共享 2 分钟请求级重试窗口；配额等特定
+// 错误保持各自的恢复策略，不能被过载文案吞掉。流内的处理失败在 HTTP 200 流式
+// 构造器里单独接线（见 openai_processing_failure_retry_test.go）。
+func TestOpenAIRequestScopedTransientClassification(t *testing.T) {
+	require.True(t, isOpenAIRequestScopedTransient(
+		http.StatusBadRequest,
+		"Selected model is at capacity. Please try a different model.",
+		[]byte(`{"error":{"message":"Selected model is at capacity. Please try a different model.","type":"invalid_request_error"}}`),
+	))
+	require.True(t, isOpenAIRequestScopedTransient(
+		http.StatusBadRequest,
+		"",
+		[]byte(`{"error":{"code":"server_is_overloaded","message":"Please retry later."}}`),
+	))
+	require.True(t, isOpenAIRequestScopedTransient(
+		http.StatusBadGateway,
+		"",
+		[]byte(`{"error":{"message":"The server is currently overloaded. Please try again later."}}`),
+	))
+	require.False(t, isOpenAIRequestScopedTransient(
+		http.StatusTooManyRequests,
+		"",
+		[]byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_9 in your message."}}`),
+	))
+	require.False(t, isOpenAIRequestScopedTransient(
+		http.StatusBadRequest,
+		"Missing required parameter: 'instructions'",
+		[]byte(`{"error":{"type":"invalid_request_error","code":"missing_required_parameter","message":"Missing required parameter: 'instructions'"}}`),
+	))
 }
 
 func TestIsOpenAIContextWindowError(t *testing.T) {

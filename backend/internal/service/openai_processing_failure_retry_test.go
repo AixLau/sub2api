@@ -24,7 +24,9 @@ func TestOpenAIProcessingFailureRetryClassification(t *testing.T) {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			payload := []byte(fmt.Sprintf(`{"error":{"code":"server_error","message":%q}}`, processingFailureMessage))
 			require.True(t, isOpenAIProcessingFailure(status, processingFailureMessage, payload))
-			// Ordinary HTTP failures already have a transport retry policy.
+			// Ordinary HTTP failures already have a transport retry policy: the
+			// typed request-scoped budget is assigned on the HTTP 200 stream path
+			// only, so a non-2xx response keeps the account failover policy.
 			failure := newOpenAIUpstreamFailoverError(status, nil, payload, processingFailureMessage, false)
 			require.NotEqual(t, OpenAIProcessingFailureReason, failure.Reason)
 			require.Zero(t, failure.SameAccountRetryMax)
@@ -80,6 +82,9 @@ func TestOpenAIProcessingFailureRetryBeforeSemanticOutput(t *testing.T) {
 				require.True(t, failure.SafeToFailoverAfterWrite)
 				require.Equal(t, 5, failure.SameAccountRetryMax)
 				require.True(t, failure.RequestScopedTransient)
+				// The request-scoped window governs the retry budget; the error-level
+				// attempt cap is only a fallback when no window is set.
+				require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failure.SameAccountRetryDeadline, time.Second)
 				require.Equal(t, GatewayFailureScopeRequest, failure.Scope)
 				require.Equal(t, http.StatusBadGateway, failure.ClientStatusCode)
 				require.False(t, failure.ShouldReportAccountScheduleFailure())
