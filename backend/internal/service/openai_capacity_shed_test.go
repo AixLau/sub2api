@@ -510,6 +510,52 @@ func TestOpenAIStreamCapacityShedAfterHeaderOnlyCommitRetriesOnSameAccount(t *te
 	require.NotContains(t, rec.Body.String(), "server_is_overloaded", "致命降载码不得透传给客户端")
 }
 
+// 生产实测（431/378 账号）：上游在正文之前推 response.created / response.in_progress /
+// response.metadata，每帧都带几十 KB 的请求回显，随后直接推降载 error + response.failed。
+// response.metadata 曾被当作语义输出：它触发首个 flush、把回显写给客户端并置位
+// semantic_seen，于是降载被误判成「输出后」，白白丢掉本可安全重放的同账号重试。
+// 修复后这三帧都必须留在 stage 里，降载走同账号重试，客户端一个字节都收不到。
+func TestOpenAIStreamMetadataOnlyPrefixThenCapacityShedRetries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	echo := strings.Repeat("x", 4096)
+	stream := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_echo","echo":"` + echo + `"}}`,
+		"",
+		"event: response.in_progress",
+		`data: {"type":"response.in_progress","response":{"id":"resp_echo","echo":"` + echo + `"}}`,
+		"",
+		"event: response.metadata",
+		`data: {"type":"response.metadata","metadata":{"trace":"x"}}`,
+		"",
+		"event: error",
+		`data: {"type":"error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}`,
+		"",
+		"event: response.failed",
+		`data: {"type":"response.failed","response":{"id":"resp_echo","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"X-Request-Id": []string{"rid-meta-prefix"}},
+		Body:       io.NopCloser(strings.NewReader(stream)),
+	}
+	account := &Account{ID: 431, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "acc"}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "gpt-6.1-sol", "gpt-6.1-sol")
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr, "只有元数据回显的降载必须走重试而不是终态")
+	require.True(t, failoverErr.RequestScopedTransient)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Empty(t, rec.Body.String(), "回显帧必须留在 stage 内，客户端不应收到任何字节")
+	require.False(t, c.Writer.Written(), "响应头也不应提交")
+}
+
 // 客户端写出的 error / response.failed 事件**只改写降载错误码**：
 // server_is_overloaded / slow_down → server_error（Codex 等客户端据此退避重试，
 // 而不是判致命终止会话）；文案与 type 原样保留。其余错误码一律不动

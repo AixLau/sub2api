@@ -1089,9 +1089,14 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 }
 
 // Lifecycle metadata and transport heartbeats are not model output.
+//
+// response.metadata 是部分中转上游在正文之前推送的结构性事件（携带整份 response
+// 对象回显，可达几十 KB）。它不带任何模型输出，必须与 created/in_progress 同类
+// 处理：否则它会触发首个 flush 并置位 semantic_seen，让真正的上游降载被误判为
+// 「输出后」，白白丢掉本可安全重放的同账号重试。
 func openAIStreamEventIsMetadata(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.created", "response.in_progress", "keepalive":
+	case "response.created", "response.in_progress", "response.metadata", "keepalive":
 		return true
 	default:
 		return false
