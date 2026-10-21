@@ -70,7 +70,7 @@ func TestAntigravityTestRequest_CustomPrompt(t *testing.T) {
 			var body []byte
 			var err error
 			if strings.HasPrefix(model, "gemini-") {
-				body, err = svc.buildGeminiTestRequest("test-project", model, prompt)
+				body, err = svc.buildGeminiTestRequestWithPrompt("test-project", model, prompt)
 			} else {
 				body, err = svc.buildClaudeTestRequest("test-project", model, prompt)
 			}
