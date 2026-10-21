@@ -358,6 +358,11 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
+	// 部分 OpenAI 兼容上游只用单个 \n 分隔 data 行，没有 SSE 规范要求的
+	// 空行。严格客户端会把整个响应当成一个未完成事件，最终一个 chunk 都
+	// 解析不到。这里按 data 行补齐事件分隔符；已合规的上游输出保持不变。
+	framer := newOpenAISSEDataFramer(writeLine)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		refusalDetector.ObserveSSELine(line)
@@ -382,7 +387,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		line = stripEmptyChatToolCallIdentityFromSSELine(line)
 
 		line = s.replaceModelInSSELine(line, upstreamModel, originalModel)
-		writeLine(line)
+		framer.Add(line)
 		if line == "" {
 			if !clientDisconnected && clientOutputStarted {
 				c.Writer.Flush()

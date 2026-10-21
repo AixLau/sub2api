@@ -124,6 +124,47 @@ func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDown
 	require.Contains(t, rec.Body.String(), "data: [DONE]")
 }
 
+func TestForwardAsRawChatCompletions_AddsMissingSSEEventSeparators(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"deepseek-v4.1-flash","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	// 上游只用单个 \n 分隔 data 行，没有 SSE 规范要求的空行。
+	upstreamBody := strings.Join([]string{
+		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"deepseek-v4.1-flash","choices":[{"index":0,"delta":{"content":"ok"}}]}`,
+		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"deepseek-v4.1-flash","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+		`data: {"id":"chatcmpl_1","object":"chat.completion.chunk","model":"deepseek-v4.1-flash","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}`,
+		`data: [DONE]`,
+	}, "\n") + "\n"
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_single_newline"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := rawChatCompletionsTestAccount()
+
+	result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 9, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+
+	downstream := rec.Body.String()
+	// 每个 data 行都必须以空行结束，否则严格 SSE 客户端会收到 0 个事件。
+	require.Equal(t, 4, strings.Count(downstream, "\n\n"), "downstream must contain one blank line per data event: %q", downstream)
+	require.Contains(t, downstream, `"choices":[{"index":0,"delta":{"content":"ok"}}]}`+"\n\n")
+	require.Contains(t, downstream, "data: [DONE]\n\n")
+}
+
 func TestForwardAsChatCompletions_OpenAICompatibleGrokRawMissingUsageFailsBeforeWrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
