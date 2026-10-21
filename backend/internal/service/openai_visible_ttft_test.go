@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 
@@ -159,6 +160,14 @@ func TestOpenAINativeMetadataAndKeepaliveDoNotDisarmFirstOutputTimeout(t *testin
 	}
 }
 
+var injectedCreatedAtPattern = regexp.MustCompile(`,"created_at":-?\d+`)
+
+// stripInjectedCreatedAt removes the gateway-injected response.created_at field so
+// exact-payload assertions still match upstream events that never carried it.
+func stripInjectedCreatedAt(body string) string {
+	return injectedCreatedAtPattern.ReplaceAllString(body, "")
+}
+
 func runSyntheticVisibleTTFTStream(t *testing.T, passthrough bool, visibleDelay time.Duration, timeoutSeconds int, visibleEvent string, includePreamble bool) *openaiStreamingResult {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -203,7 +212,7 @@ func runSyntheticVisibleTTFTStream(t *testing.T, passthrough bool, visibleDelay 
 	if includePreamble {
 		require.Contains(t, recorder.Body.String(), `"type":"response.output_item.added"`)
 	}
-	require.Contains(t, recorder.Body.String(), visibleEvent)
+	require.Contains(t, stripInjectedCreatedAt(recorder.Body.String()), visibleEvent)
 	select {
 	case <-writerDone:
 	case <-time.After(time.Second):

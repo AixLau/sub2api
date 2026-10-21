@@ -32,7 +32,8 @@ func TestNormalizeOpenAIAutoResetCreditExtra(t *testing.T) {
 
 	t.Run("阈值和账号类型严格校验", func(t *testing.T) {
 		_, err := normalizeOpenAIAutoResetCreditExtra(PlatformOpenAI, AccountTypeOAuth, false, map[string]any{
-			OpenAIAutoResetCreditEnabledExtraKey: true,
+			OpenAIAutoResetCreditEnabledExtraKey:     true,
+			OpenAIAutoResetCredit7dThresholdExtraKey: 1.5,
 		})
 		require.Error(t, err)
 

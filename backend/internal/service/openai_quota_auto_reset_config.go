@@ -12,7 +12,6 @@ import (
 
 const (
 	OpenAIAutoResetCreditEnabledExtraKey     = "auto_reset_credit_enabled"
-	OpenAIAutoResetCredit5hThresholdExtraKey = "auto_reset_credit_5h_threshold"
 	OpenAIAutoResetCredit7dThresholdExtraKey = "auto_reset_credit_7d_threshold"
 	OpenAIAutoResetCreditStateExtraKey       = "codex_auto_reset_credit_state"
 
@@ -24,7 +23,6 @@ const (
 // 避免后端调度与前端百分比展示混用同一数值语义。
 type OpenAIAutoResetCreditConfig struct {
 	Enabled     bool
-	Threshold5h float64
 	Threshold7d float64
 }
 
@@ -32,16 +30,12 @@ type OpenAIAutoResetCreditConfig struct {
 // 始终保持关闭，防止升级后产生意外消费。
 func ResolveOpenAIAutoResetCreditConfig(account *Account) OpenAIAutoResetCreditConfig {
 	config := OpenAIAutoResetCreditConfig{
-		Threshold5h: openAIAutoResetCreditDefaultThreshold,
 		Threshold7d: openAIAutoResetCreditDefaultThreshold,
 	}
 	if !isOpenAIAutoResetCreditAccount(account) || account.Extra == nil {
 		return config
 	}
 	config.Enabled = resolveAccountExtraBool(account.Extra, OpenAIAutoResetCreditEnabledExtraKey)
-	if value, ok := resolveAccountExtraNumber(account.Extra, OpenAIAutoResetCredit5hThresholdExtraKey); ok && isValidOpenAIAutoResetThreshold(value) {
-		config.Threshold5h = value
-	}
 	if value, ok := resolveAccountExtraNumber(account.Extra, OpenAIAutoResetCredit7dThresholdExtraKey); ok && isValidOpenAIAutoResetThreshold(value) {
 		config.Threshold7d = value
 	}
@@ -60,11 +54,12 @@ func normalizeOpenAIAutoResetCreditExtra(platform, accountType string, isShadow 
 	}
 	normalized := cloneOpenAIAutoResetExtra(extra)
 	delete(normalized, OpenAIAutoResetCreditStateExtraKey)
+	// 5h auto-use was removed; discard the legacy setting on the next account edit.
+	delete(normalized, "auto_reset_credit_5h_threshold")
 
 	_, hasEnabled := normalized[OpenAIAutoResetCreditEnabledExtraKey]
-	_, has5h := normalized[OpenAIAutoResetCredit5hThresholdExtraKey]
 	_, has7d := normalized[OpenAIAutoResetCredit7dThresholdExtraKey]
-	if !hasEnabled && !has5h && !has7d {
+	if !hasEnabled && !has7d {
 		return normalized, nil
 	}
 	if platform != PlatformOpenAI || accountType != AccountTypeOAuth || isShadow {
@@ -79,21 +74,16 @@ func normalizeOpenAIAutoResetCreditExtra(platform, accountType string, isShadow 
 		}
 		enabled = value
 	}
-	for key, present := range map[string]bool{
-		OpenAIAutoResetCredit5hThresholdExtraKey: has5h,
-		OpenAIAutoResetCredit7dThresholdExtraKey: has7d,
-	} {
-		if !present {
-			if enabled {
-				normalized[key] = openAIAutoResetCreditDefaultThreshold
-			}
-			continue
+	if !has7d {
+		if enabled {
+			normalized[OpenAIAutoResetCredit7dThresholdExtraKey] = openAIAutoResetCreditDefaultThreshold
 		}
-		value, ok := parseOpenAIAutoResetThreshold(normalized[key])
+	} else {
+		value, ok := parseOpenAIAutoResetThreshold(normalized[OpenAIAutoResetCredit7dThresholdExtraKey])
 		if !ok || !isValidOpenAIAutoResetThreshold(value) {
-			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_AUTO_RESET_CREDIT_THRESHOLD_INVALID", "%s must be between 0.001 and 1.0", key)
+			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_AUTO_RESET_CREDIT_THRESHOLD_INVALID", "%s must be between 0.001 and 1.0", OpenAIAutoResetCredit7dThresholdExtraKey)
 		}
-		normalized[key] = value
+		normalized[OpenAIAutoResetCredit7dThresholdExtraKey] = value
 	}
 	return normalized, nil
 }
@@ -105,7 +95,6 @@ func stripOpenAIAutoResetCreditManagedExtra(extra map[string]any, stripConfig bo
 	delete(extra, OpenAIAutoResetCreditStateExtraKey)
 	if stripConfig {
 		delete(extra, OpenAIAutoResetCreditEnabledExtraKey)
-		delete(extra, OpenAIAutoResetCredit5hThresholdExtraKey)
 		delete(extra, OpenAIAutoResetCredit7dThresholdExtraKey)
 	}
 	return extra
