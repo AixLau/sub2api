@@ -35,9 +35,17 @@ func RegisterAuthRoutes(
 		auth.POST("/register", rateLimiter.LimitWithOptions("auth-register", 5, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
 		}), h.Auth.Register)
-		auth.POST("/login", rateLimiter.LimitWithOptions("auth-login", 20, time.Minute, middleware.RateLimitOptions{
-			FailureMode: middleware.RateLimitFailClose,
-		}), h.Auth.Login)
+		// 登录除单 IP 限流外，再加一层全局限流：攻击者会使用大量代理 IP
+		// 绕过单 IP 配额，全局桶用于兜底保护 bcrypt 校验和数据库。
+		auth.POST("/login",
+			rateLimiter.GlobalLimitWithOptions("auth-login-global", 120, time.Minute, middleware.RateLimitOptions{
+				FailureMode: middleware.RateLimitFailClose,
+			}),
+			rateLimiter.LimitWithOptions("auth-login", 20, time.Minute, middleware.RateLimitOptions{
+				FailureMode: middleware.RateLimitFailClose,
+			}),
+			h.Auth.Login,
+		)
 		auth.POST("/login/2fa", rateLimiter.LimitWithOptions("auth-login-2fa", 20, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
 		}), h.Auth.Login2FA)

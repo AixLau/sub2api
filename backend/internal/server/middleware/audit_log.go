@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -208,6 +209,10 @@ func NewAuditLogMiddleware(auditService *service.AuditLogService) AuditLogMiddle
 		c.Next()
 
 		if c.GetBool(auditCtxKeySkip) {
+			return
+		}
+		// 限流请求不落审计：攻击流量已被拒绝，继续写库只会放大数据库压力。
+		if c.GetBool(ratelimit.RateLimitExceededContextKey) {
 			return
 		}
 

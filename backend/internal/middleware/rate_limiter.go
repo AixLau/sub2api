@@ -22,6 +22,10 @@ const (
 	RateLimitFailClose
 )
 
+// RateLimitExceededContextKey 标记当前请求已被限流中间件拒绝。
+// 审计等后置中间件可据此跳过对限流请求的落库，避免攻击流量继续放大数据库压力。
+const RateLimitExceededContextKey = "rate_limit_exceeded"
+
 // RateLimitOptions 限流可选配置
 type RateLimitOptions struct {
 	FailureMode RateLimitFailureMode
@@ -128,15 +132,38 @@ func (r *RateLimiter) Limit(key string, limit int, window time.Duration) gin.Han
 	return r.LimitWithOptions(key, limit, window, RateLimitOptions{})
 }
 
-// LimitWithOptions 返回速率限制中间件（带可选配置）
+// LimitWithOptions 返回按客户端 IP 隔离的速率限制中间件（带可选配置）
 func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Duration, opts RateLimitOptions) gin.HandlerFunc {
+	return r.limitWithOptions(key, limit, window, opts, clientIPForRateLimit)
+}
+
+// GlobalLimit 返回全局限流中间件，所有客户端共享同一个计数桶。
+// 用于抵御使用大量代理 IP 绕过单 IP 限流的分布式撞库攻击。
+func (r *RateLimiter) GlobalLimit(key string, limit int, window time.Duration) gin.HandlerFunc {
+	return r.GlobalLimitWithOptions(key, limit, window, RateLimitOptions{})
+}
+
+// GlobalLimitWithOptions 返回全局限流中间件（带可选配置）。
+func (r *RateLimiter) GlobalLimitWithOptions(key string, limit int, window time.Duration, opts RateLimitOptions) gin.HandlerFunc {
+	return r.limitWithOptions(key, limit, window, opts, func(*gin.Context) string {
+		return "global"
+	})
+}
+
+func (r *RateLimiter) limitWithOptions(
+	key string,
+	limit int,
+	window time.Duration,
+	opts RateLimitOptions,
+	dimension func(*gin.Context) string,
+) gin.HandlerFunc {
 	failureMode := opts.FailureMode
 	if failureMode != RateLimitFailClose {
 		failureMode = RateLimitFailOpen
 	}
 
 	return func(c *gin.Context) {
-		result, err := r.Allow(c.Request.Context(), key+":"+clientIPForRateLimit(c), limit, window)
+		result, err := r.Allow(c.Request.Context(), key+":"+dimension(c), limit, window)
 		if err != nil {
 			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", r.prefix+key, failureModeLabel(failureMode), err)
 			if failureMode == RateLimitFailClose {
@@ -167,6 +194,7 @@ func windowTTLMillis(window time.Duration) int64 {
 }
 
 func abortRateLimit(c *gin.Context, retryAfter time.Duration) {
+	c.Set(RateLimitExceededContextKey, true)
 	if retryAfter > 0 {
 		seconds := int64(retryAfter / time.Second)
 		if retryAfter%time.Second > 0 {
