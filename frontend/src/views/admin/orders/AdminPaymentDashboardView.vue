@@ -18,8 +18,8 @@
               {{ d }}{{ t('payment.admin.daySuffix') }}
             </button>
           </div>
-          <button @click="loadDashboard" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
-            <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+          <button @click="refreshAll" :disabled="loading || paidChurnLoading" class="btn btn-secondary" :title="t('common.refresh')">
+            <Icon name="refresh" size="md" :class="loading || paidChurnLoading ? 'animate-spin' : ''" />
           </button>
         </div>
       </div>
@@ -30,7 +30,12 @@
       </div>
       <template v-else-if="stats">
         <OrderStatsCards :stats="stats" />
-        <PaidUserRetentionPanel :stats="stats.paid_churn" />
+        <PaidUserRetentionPanel
+          :stats="paidChurn"
+          :loading="paidChurnLoading"
+          :error="paidChurnFailed"
+          @retry="loadPaidChurn"
+        />
         <DailyRevenueChart :data="stats.daily_series || []" :loading="loading" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div class="card p-4">
@@ -78,7 +83,7 @@ import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { paymentMethodColorClass } from '@/utils/paymentMethodColors'
-import type { CurrencyAmounts, DashboardStats, TopUserPaymentStats } from '@/types/payment'
+import type { CurrencyAmounts, DashboardStats, PaidChurnStats, TopUserPaymentStats } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -93,6 +98,9 @@ const DAYS_OPTIONS = [7, 30, 90] as const
 const days = ref<number>(30)
 const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
+const paidChurn = ref<PaidChurnStats | null>(null)
+const paidChurnLoading = ref(false)
+const paidChurnFailed = ref(false)
 
 function methodColor(type: string): string {
   return paymentMethodColorClass(type)
@@ -133,6 +141,27 @@ async function loadDashboard() {
   }
 }
 
+// Paid-user status is an expensive aggregate and independent of the day
+// window, so it loads on its own and never blocks the main dashboard.
+async function loadPaidChurn() {
+  paidChurnLoading.value = true
+  paidChurnFailed.value = false
+  try {
+    const res = await adminPaymentAPI.getPaidChurn()
+    paidChurn.value = res.data
+  } catch (err: unknown) {
+    paidChurnFailed.value = true
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    paidChurnLoading.value = false
+  }
+}
+
+function refreshAll() {
+  void loadDashboard()
+  void loadPaidChurn()
+}
+
 watch(days, () => loadDashboard())
-onMounted(() => loadDashboard())
+onMounted(() => refreshAll())
 </script>

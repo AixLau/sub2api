@@ -16,7 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/paidchurn"
+	"golang.org/x/sync/singleflight"
 )
 
 // --- Order Status Constants ---
@@ -163,7 +163,6 @@ type DashboardStats struct {
 	DailySeries    []DailyStats        `json:"daily_series"`
 	PaymentMethods []PaymentMethodStat `json:"payment_methods"`
 	TopUsers       TopUsersByCurrency  `json:"top_users"`
-	PaidChurn      paidchurn.Stats     `json:"paid_churn"`
 }
 
 // CurrencyAmounts holds payment amounts keyed by their ISO 4217 currency.
@@ -197,6 +196,9 @@ type TopUsersByCurrency map[string][]TopUserStat
 type PaymentService struct {
 	providerMu               sync.Mutex
 	providersLoaded          bool
+	paidChurnMu              sync.Mutex
+	paidChurnCache           *paidChurnCacheEntry
+	paidChurnFlight          singleflight.Group
 	entClient                *dbent.Client
 	registry                 *payment.Registry
 	loadBalancer             payment.LoadBalancer

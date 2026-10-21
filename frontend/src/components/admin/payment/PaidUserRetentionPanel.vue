@@ -1,5 +1,5 @@
 <template>
-  <section class="card p-5" aria-labelledby="paid-user-retention-title">
+  <section class="card p-5" aria-labelledby="paid-user-retention-title" :aria-busy="loading ? 'true' : 'false'">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 id="paid-user-retention-title" class="text-sm font-semibold text-gray-900 dark:text-white">
@@ -9,12 +9,34 @@
           {{ t('payment.admin.paidUserRetentionHint') }}
         </p>
       </div>
-      <p class="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+      <p
+        v-if="stats"
+        class="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+      >
         {{ t('payment.admin.totalChurned', { count: totalChurned, rate: formatRate(totalChurned) }) }}
       </p>
     </div>
 
-    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div v-if="error && !stats" class="flex flex-col items-center justify-center gap-2 py-8 text-sm text-gray-500 dark:text-gray-400">
+      <p>{{ t('common.error') }}</p>
+      <button type="button" class="btn btn-secondary" @click="emit('retry')">
+        {{ t('common.retry') }}
+      </button>
+    </div>
+
+    <div v-else-if="!stats" class="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="paid-churn-skeleton">
+      <div
+        v-for="i in 4"
+        :key="i"
+        class="min-w-0 animate-pulse rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-dark-600 dark:bg-dark-800"
+      >
+        <div class="h-3 w-16 rounded bg-gray-200 dark:bg-dark-600"></div>
+        <div class="mt-2 h-7 w-12 rounded bg-gray-200 dark:bg-dark-600"></div>
+        <div class="mt-2 h-3 w-10 rounded bg-gray-100 dark:bg-dark-700"></div>
+      </div>
+    </div>
+
+    <div v-else class="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <div class="min-w-0 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-4 dark:border-primary-900/40 dark:bg-primary-950/20">
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
           {{ t('payment.admin.totalPaidUsers') }}
@@ -51,23 +73,37 @@ import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
 import type { PaidChurnStats } from '@/types/payment'
 
-const props = defineProps<{ stats: PaidChurnStats }>()
+const props = defineProps<{
+  stats?: PaidChurnStats | null
+  loading?: boolean
+  error?: boolean
+}>()
+const emit = defineEmits<{ retry: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 
+const EMPTY_STATS: PaidChurnStats = {
+  total_paid_users: 0,
+  days_7_to_14: 0,
+  days_15_to_29: 0,
+  days_30_plus: 0,
+}
+
+const resolvedStats = computed(() => props.stats ?? EMPTY_STATS)
+
 const totalChurned = computed(() =>
-  props.stats.days_7_to_14 + props.stats.days_15_to_29 + props.stats.days_30_plus
+  resolvedStats.value.days_7_to_14 + resolvedStats.value.days_15_to_29 + resolvedStats.value.days_30_plus
 )
 
 const churnItems = computed(() => [
-  { bucket: '7_14', label: t('payment.admin.churnDays7To14'), count: props.stats.days_7_to_14 },
-  { bucket: '15_29', label: t('payment.admin.churnDays15To29'), count: props.stats.days_15_to_29 },
-  { bucket: '30_plus', label: t('payment.admin.churnDays30Plus'), count: props.stats.days_30_plus },
+  { bucket: '7_14', label: t('payment.admin.churnDays7To14'), count: resolvedStats.value.days_7_to_14 },
+  { bucket: '15_29', label: t('payment.admin.churnDays15To29'), count: resolvedStats.value.days_15_to_29 },
+  { bucket: '30_plus', label: t('payment.admin.churnDays30Plus'), count: resolvedStats.value.days_30_plus },
 ])
 
 function formatRate(count: number): string {
-  if (props.stats.total_paid_users <= 0) return '0%'
-  return `${((count / props.stats.total_paid_users) * 100).toFixed(1)}%`
+  if (resolvedStats.value.total_paid_users <= 0) return '0%'
+  return `${((count / resolvedStats.value.total_paid_users) * 100).toFixed(1)}%`
 }
 
 function openUsers(bucket: string) {

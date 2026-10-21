@@ -6,6 +6,7 @@
 import { apiClient } from '../client'
 import type {
   DashboardStats,
+  PaidChurnStats,
   PaymentOrder,
   PaymentChannel,
   SubscriptionPlan,
@@ -81,6 +82,11 @@ export const adminPaymentAPI = {
     return apiClient.get<DashboardStats>('/admin/payment/dashboard', {
       params: days ? { days } : undefined
     })
+  },
+
+  /** Get paid-user retention buckets (loaded separately from the dashboard) */
+  getPaidChurn() {
+    return apiClient.get<PaidChurnStats>('/admin/payment/dashboard/paid-churn')
   },
 
   // ==================== Orders ====================

@@ -44,6 +44,17 @@ func (h *PaymentHandler) GetDashboard(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// GetPaidChurn returns paid-user retention buckets.
+// GET /api/v1/admin/payment/dashboard/paid-churn
+func (h *PaymentHandler) GetPaidChurn(c *gin.Context) {
+	stats, err := h.paymentService.GetPaidChurnStats(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, stats)
+}
+
 // --- Orders ---
 
 // ListOrders returns a paginated list of all payment orders.

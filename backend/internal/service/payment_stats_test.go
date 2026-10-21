@@ -129,6 +129,70 @@ func TestGetDashboardStatsUsesPaymentPrincipalNotCreditedBalance(t *testing.T) {
 	}
 }
 
+func TestGetPaidChurnStatsCachesResults(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	createExhaustedPaidUser(t, client, "first@example.com", time.Now().AddDate(0, 0, -10))
+
+	svc := &PaymentService{entClient: client}
+	first, err := svc.GetPaidChurnStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, first.TotalPaidUsers)
+	require.Equal(t, 1, first.SevenToFourteen)
+
+	// A new paid user must not be visible until the cache entry expires.
+	createExhaustedPaidUser(t, client, "second@example.com", time.Now().AddDate(0, 0, -10))
+
+	cached, err := svc.GetPaidChurnStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, cached.TotalPaidUsers, "second load should reuse cached churn stats")
+
+	svc.paidChurnMu.Lock()
+	svc.paidChurnCache.expiresAt = time.Now().Add(-time.Second)
+	svc.paidChurnMu.Unlock()
+
+	refreshed, err := svc.GetPaidChurnStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, refreshed.TotalPaidUsers, "expired cache should be recomputed")
+}
+
+func createExhaustedPaidUser(t *testing.T, client *dbent.Client, email string, exhaustedAt time.Time) {
+	t.Helper()
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetEmail(email).
+		SetPasswordHash("x").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(email).
+		SetUserName("buyer").
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("RC_" + email).
+		SetPaymentType("alipay").
+		SetPaymentTradeNo("TRADE_" + email).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("test").
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(exhaustedAt.AddDate(0, 0, -20)).
+		SetStatus(OrderStatusCompleted).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.UsageLog.Create().
+		SetUserID(user.ID).
+		SetRequestID("req-" + email).
+		SetModel("gpt-4").
+		SetCreatedAt(exhaustedAt).
+		Save(ctx)
+	require.NoError(t, err)
+}
+
 func TestComputeBasicStatsGroupsAmountsByCurrency(t *testing.T) {
 	t.Parallel()
 

@@ -39,6 +39,27 @@ describe('PaidUserRetentionPanel', () => {
     expect(wrapper.text()).toContain('0.4%')
   })
 
+  it('renders a skeleton until the separately loaded stats arrive', () => {
+    const wrapper = mount(PaidUserRetentionPanel, {
+      props: { stats: null, loading: true },
+      global: { stubs: { Icon: true } },
+    })
+
+    expect(wrapper.find('[data-testid="paid-churn-skeleton"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="total-paid-users"]').exists()).toBe(false)
+  })
+
+  it('offers a retry when the churn request fails', async () => {
+    const wrapper = mount(PaidUserRetentionPanel, {
+      props: { stats: null, loading: false, error: true },
+      global: { stubs: { Icon: true } },
+    })
+
+    expect(wrapper.find('[data-testid="paid-churn-skeleton"]').exists()).toBe(false)
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
   it('opens the matching filtered user list', async () => {
     const wrapper = mount(PaidUserRetentionPanel, {
       props: {

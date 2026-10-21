@@ -65,16 +65,83 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	st.PaymentMethods = buildMethodDistribution(orders)
 	st.TopUsers = buildTopUsers(orders)
 
-	driver, ok := s.entClient.Driver().(*entsql.Driver)
-	if !ok {
-		return nil, fmt.Errorf("payment dashboard: ent driver does not expose sql database")
-	}
-	st.PaidChurn, err = paidchurn.GetStats(ctx, driver.DB(), s.entClient.Driver().Dialect(), now)
-	if err != nil {
-		return nil, err
+	return st, nil
+}
+
+const (
+	// paidChurnCacheTTL bounds how often the expensive churn query runs. The
+	// panel buckets users by 7/15/30 days since exhaustion, so second-level
+	// freshness is unnecessary while dashboard traffic is often bursty.
+	paidChurnCacheTTL = 2 * time.Minute
+	// paidChurnQueryTimeout keeps a stuck upstream query from pinning a
+	// dashboard request forever.
+	paidChurnQueryTimeout = 15 * time.Second
+	paidChurnFlightKey    = "payment-dashboard-paid-churn"
+)
+
+type paidChurnCacheEntry struct {
+	stats     paidchurn.Stats
+	expiresAt time.Time
+}
+
+// GetPaidChurnStats returns the paid-user retention buckets. It is served by
+// its own endpoint so the main dashboard does not block on this query, and the
+// result is reused for paidChurnCacheTTL because the buckets only depend on
+// whole days since a user's quota/subscription was exhausted.
+// singleflight collapses concurrent cold-cache loads into one query.
+func (s *PaymentService) GetPaidChurnStats(ctx context.Context) (paidchurn.Stats, error) {
+	return s.getPaidChurnStats(ctx, time.Now())
+}
+
+func (s *PaymentService) getPaidChurnStats(ctx context.Context, now time.Time) (paidchurn.Stats, error) {
+	if stats, ok := s.cachedPaidChurnStats(now); ok {
+		return stats, nil
 	}
 
-	return st, nil
+	value, err, _ := s.paidChurnFlight.Do(paidChurnFlightKey, func() (any, error) {
+		// Another request may have populated the cache while this one waited
+		// for the in-flight query.
+		if stats, ok := s.cachedPaidChurnStats(time.Now()); ok {
+			return stats, nil
+		}
+
+		driver, ok := s.entClient.Driver().(*entsql.Driver)
+		if !ok {
+			return paidchurn.Stats{}, fmt.Errorf("payment dashboard: ent driver does not expose sql database")
+		}
+
+		// Detach from the caller so one cancelled dashboard request does not
+		// fail every waiter sharing the flight, but still bound the query.
+		queryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), paidChurnQueryTimeout)
+		defer cancel()
+
+		stats, queryErr := paidchurn.GetStats(queryCtx, driver.DB(), s.entClient.Driver().Dialect(), time.Now())
+		if queryErr != nil {
+			return paidchurn.Stats{}, queryErr
+		}
+
+		s.paidChurnMu.Lock()
+		s.paidChurnCache = &paidChurnCacheEntry{
+			stats:     stats,
+			expiresAt: time.Now().Add(paidChurnCacheTTL),
+		}
+		s.paidChurnMu.Unlock()
+		return stats, nil
+	})
+	if err != nil {
+		return paidchurn.Stats{}, err
+	}
+	return value.(paidchurn.Stats), nil
+}
+
+func (s *PaymentService) cachedPaidChurnStats(now time.Time) (paidchurn.Stats, bool) {
+	s.paidChurnMu.Lock()
+	defer s.paidChurnMu.Unlock()
+	entry := s.paidChurnCache
+	if entry == nil || !now.Before(entry.expiresAt) {
+		return paidchurn.Stats{}, false
+	}
+	return entry.stats, true
 }
 
 // computeBasicStats aggregates user payment principal before gateway fees.
