@@ -18,9 +18,7 @@ func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL string, account *Account) (*http.Response, error) {
 	model := openAIOutboundRequestModel(request)
 	transport := openAIOutboundRequestTransport(request)
-	sentTicketState := ""
 	if s.pluginManager != nil {
-		sentTicketState = headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 		if _, hookErr := s.pluginManager.PrepareOpenAIOutbound(request.Context(), request, proxyURL, account, model, transport); hookErr != nil {
 			if _, rejected := hookErr.(*PluginHookRejectedError); rejected {
 				return nil, hookErr
@@ -28,8 +26,12 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 			// Hook runtime errors are fail-open by design; the native transport
 			// remains available while the ticket worker recovers.
 		}
-		sentTicketState = headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 	}
+	// The ticket hook is only a supplier. Capacity reroutes are decided by the
+	// request-scoped retry loop and must win over the hook's cached ticket and
+	// route cookies before the request reaches the wire.
+	applyOpenAICapacityReroute(request, account)
+	sentTicketState := headerValueCaseInsensitive(request.Header, pluginOutboundTicketHeader)
 	var (
 		response *http.Response
 		err      error

@@ -447,6 +447,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 	}
 	c.Request = c.Request.WithContext(service.WithHTTPAccountStateBinding(c.Request.Context(), stateBinding))
+	c.Request = c.Request.WithContext(service.WithOpenAICapacityReroute(c.Request.Context(), service.NewOpenAICapacityRerouteState()))
 	accountBound := stateBinding.AccountID > 0
 	stateWriter := &httpAccountStateWriter{ResponseWriter: c.Writer, record: func(accountID int64, keys []string) error {
 		return h.gatewayService.RecordHTTPAccountState(c.Request.Context(), apiKey.GroupID, subject.UserID, accountID, keys)
@@ -891,12 +892,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
 						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
+							if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
+								service.AdvanceOpenAICapacityReroute(c.Request.Context(), failoverErr.ResponseHeaders)
+							}
 							retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
 								zap.Int("retry_limit", retryLimit),
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+								zap.Int("capacity_reroute_stage", service.OpenAICapacityRerouteStage(c.Request.Context())),
 								zap.Duration("retry_delay", retryDelay),
 							)
 							if failoverErr.IsOpenAICapacityShed() {
@@ -919,6 +924,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						}
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
+					service.ResetOpenAICapacityReroute(c.Request.Context())
 					failedAccountIDs[account.ID] = struct{}{}
 					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 					lastFailoverErr = failoverErr
@@ -1513,6 +1519,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						}
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
+					service.ResetOpenAICapacityReroute(c.Request.Context())
 					failedAccountIDs[account.ID] = struct{}{}
 					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 					lastFailoverErr = failoverErr
