@@ -1162,13 +1162,9 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 // 「输出后」，白白丢掉本可安全重放的同账号重试。
 func openAIStreamEventIsPreamble(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.created",
-		"response.queued",
-		"response.in_progress",
-		"response.metadata",
-		"response.output_item.added",
-		"response.content_part.added",
-		"response.reasoning_summary_part.added":
+	// Queuing and moderation metadata do not commit model output or disarm the
+	// first-output timeout; a following overload must remain safe to retry.
+	case "response.created", "response.queued", "response.in_progress", "response.metadata", "keepalive":
 		return true
 	default:
 		return false
@@ -1259,6 +1255,7 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 	if trimmed == "" {
 		return false
 	}
+	field := ""
 	switch strings.TrimSpace(eventType) {
 	case "ping", "keepalive":
 		return false
@@ -1276,13 +1273,17 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 		"response.content_part.added", "response.content_part.done",
 		"response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
 		return openAIStreamItemEventStartsClientOutput([]byte(trimmed), eventType)
-	case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta":
-		// An empty text delta carries no output and must not disarm overload retry.
-		delta := gjson.Get(trimmed, "delta")
-		return delta.Type != gjson.String || delta.String() != ""
+	case "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
+		"response.function_call_arguments.delta", "response.custom_tool_call_input.delta", "response.refusal.delta":
+		field = "delta"
 	case "response.output_text.done", "response.reasoning_text.done", "response.reasoning_summary_text.done":
-		text := gjson.Get(trimmed, "text")
-		return text.Type != gjson.String || text.String() != ""
+		field = "text"
+	case "response.refusal.done":
+		field = "refusal"
+	}
+	if field != "" && gjson.Valid(trimmed) {
+		value := gjson.Get(trimmed, field)
+		return value.Type != gjson.String || value.String() != ""
 	}
 	return !openAIStreamEventIsPreamble(eventType)
 }

@@ -161,6 +161,9 @@ func resolveCodexOutboundIdentityWithCanonicalUA(candidateUA, canonicalUA string
 	if !ok {
 		originator, pairedUA = canonicalOriginator, canonicalPairedUA
 	}
+	// 旧配置或账号级 UA 可能仍保存 codex-tui。该身份是 sub2api 默认出口曾经
+	// 使用的风险指纹，必须与 UA 首段一起归一为 CLI，不能只替换 originator。
+	originator, pairedUA, _ = openai.NormalizeCodexClientIdentityToCLI(originator, pairedUA)
 	// 生效版本只有一个来源：规范身份（面板版本号 → 自动同步值 → 内置常量，见
 	// SettingService.GetOpenAICodexClientVersion）。UA 与 version 头由此同源派生。
 	version := codexClientVersionFromUA(canonicalRaw)

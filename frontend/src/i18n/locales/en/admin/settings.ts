@@ -70,13 +70,6 @@ export default {
           priceDescription: 'Pricing notes (Markdown)',
           priceDescriptionHint: 'Rendered at the top of the plaza page. Use it for billing rules, exchange rates, promotions, etc.',
         },
-        rewardCampaigns: {
-          title: 'Reward Campaign Center',
-          description: 'Roll out the server-driven reward queue, scratch-card claiming, and campaign administration in stages. Disabled by default.',
-          configureLink: 'Open Reward Campaign Center',
-          enabled: 'Enable Reward Campaign Center',
-          enabledHint: 'When off, the new reward queue and admin APIs are unavailable; legacy welcome and surprise reward adapters remain available.',
-        },
         pluginManagement: {
           title: 'Plugin Management',
           description: 'Controls whether the plugin management entry appears in the admin sidebar. This switch does not control plugin runtime state.',
@@ -487,8 +480,16 @@ export default {
         saveFailed: 'Failed to save Ollama Cloud usage refresh settings'
       },
       opencodeGoUsage: {
-        title: 'OpenCode Go Usage Refresh', description: 'Refresh usage windows reported by OpenCode Go accounts.', enabled: 'Enable global automatic refresh', enabledHint: 'Only opted-in accounts are refreshed.',
-        intervalMinutes: 'Maximum wait (minutes)', intervalHint: 'Range: 5–1440 minutes.', debounceMinutes: 'Quiet period (minutes)', debounceHint: 'Refresh after requests have been quiet.', saved: 'OpenCode Go usage refresh settings saved', saveFailed: 'Failed to save OpenCode Go usage refresh settings'
+        title: 'OpenCode Go Usage Refresh',
+        description: 'Refresh usage windows reported by the upstream OpenCode Go account for individually opted-in accounts. Disabled by default.',
+        enabled: 'Enable global automatic refresh',
+        enabledHint: 'Only accounts with their own automatic refresh switch enabled are refreshed. Manual refresh remains available.',
+        intervalMinutes: 'Max wait while requests continue (minutes)',
+        intervalHint: 'Range: 5–1440 minutes. When continuous requests keep sliding the debounce, force a refresh after this wait.',
+        debounceMinutes: 'Quiet period after last request (minutes)',
+        debounceHint: 'Range: 1–60 minutes, and must be less than the refresh interval. Refresh after the latest model request has been quiet for this long.',
+        saved: 'OpenCode Go usage refresh settings saved',
+        saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
       gatewayForwarding: {
         title: 'Request Forwarding',
@@ -546,17 +547,20 @@ export default {
         antigravityUserAgentVersion: 'Antigravity UA Version',
         antigravityUserAgentVersionPlaceholder: '1.23.2',
         antigravityUserAgentVersionHint: 'Leave empty to use ANTIGRAVITY_USER_AGENT_VERSION or the built-in default 1.23.2; when set, the admin setting takes precedence.',
-        openaiCodexUserAgent: 'OpenAI outbound UA',
-        openaiCodexUserAgentPlaceholder: 'codex-tui/0.146.1 (Ubuntu 22.4.0; x86_64) WindowsTerminal (codex-tui; 0.146.1)',
-        openaiCodexUserAgentHint: 'The global User-Agent for all OpenAI outbound requests (OAuth, API key, HTTP, WebSocket, and probes), overriding account UA and custom headers. Use it to customize the OS / arch / terminal fingerprint. Leave empty to build the standard codex-tui identity from the version below (recommended). If set, both the leading and trailing version declarations are synchronized to the version below, so the UA never stays pinned to the release entered here — under capacity pressure the upstream sheds load by client identity and drops stale or non-official identities first with server_is_overloaded.',
+        openaiCodexUserAgent: 'OpenAI Codex UA',
+        openaiCodexUserAgentPlaceholder: 'codex_cli_rs/0.146.1 (Ubuntu 22.4.0; x86_64) WindowsTerminal',
+        openaiCodexUserAgentHint: 'The full Codex User-Agent used for all outbound requests, for customizing the OS / arch / terminal fingerprint. Leave empty to build the standard codex_cli_rs identity from the version below (recommended). If set, both the leading and trailing version declarations are synchronized to the version below, so the UA never stays pinned to the release entered here — upstream identity and version risk controls may return server_is_overloaded for stale or non-official identities.',
         openaiCodexClientVersion: 'Codex client version',
         openaiCodexClientVersionPlaceholder: 'Leave empty to follow auto-sync',
         openaiCodexClientVersionHint: 'The Codex client version this gateway declares upstream, shared by the User-Agent and the version header. Leave empty to use the auto-synced latest stable release; setting a value pins it and stops following auto-sync.',
         openaiCodexVersionAutoSync: 'Auto-sync Codex version',
         openaiCodexVersionAutoSyncHint: 'Fetches the latest stable client version from the official repository every 6 hours, so you never need to upgrade this service just to keep the version current. When disabled, only the version above or the built-in default is used.',
         openaiCodexVersionSyncedValue: 'Currently synced: {version}',
-
-        claudeCodeClientVersion: 'Claude Code client version', claudeCodeClientVersionHint: 'Version declared upstream for Claude Code requests.', claudeCodeVersionAutoSync: 'Auto-sync Claude Code version', claudeCodeVersionAutoSyncHint: 'Fetch the latest official version automatically.', claudeCodeVersionSyncedValue: 'Currently synced: {version}',
+        claudeCodeClientVersion: 'Claude Code client version',
+        claudeCodeClientVersionHint: "The client version this gateway declares upstream when impersonating the official Claude Code CLI. Leave empty to use the auto-synced latest official release; setting a value pins it and stops following auto-sync. The SUB2API_CLAUDE_CLI_VERSION environment variable or built-in version is used only when neither the manual nor synced value is valid.",
+        claudeCodeVersionAutoSync: 'Auto-sync Claude Code version',
+        claudeCodeVersionAutoSyncHint: 'Fetches the latest Claude Code client version from the official release channel every hour, so you never need to upgrade this service just to keep the version current. When disabled, fetching stops but the previously synced version remains available. The manual version above always takes priority.',
+        claudeCodeVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
         codexClientRestrictionTitle: "Codex client restriction",
         codexHardeningDesc:
@@ -582,9 +586,6 @@ export default {
         codexBlacklist: "User-Agent/Originator Blacklist",
         codexBlacklistDesc:
           "Deny if any field matches; takes precedence over any allow. originator is exact; User-Agent is a 'contains' match (comma-separated).",
-        codexUserBlacklist: "Users blocked from these accounts",
-        codexUserBlacklistDesc:
-          "Blocked users cannot be assigned or use accounts with 'Codex official clients only', even with an official Codex client or a matching UA whitelist. Search by email and select users.",
         codexWhitelist: "User-Agent/Originator Whitelist",
         codexWhitelistDesc:
           "Allow clients outside the official set: requires exact originator and every User-Agent marker present. Still subject to the fingerprint gate unless 'Skip engine fingerprint' is checked.",
@@ -670,11 +671,6 @@ export default {
         contactInfo: 'Contact Info',
         contactInfoPlaceholder: 'e.g., QQ: 123456789',
         contactInfoHint: 'Customer support contact info, displayed on redeem page, profile, etc.',
-        supportGroupQRCodes: 'Community Group QR Codes',
-        supportGroupQRCodesHint: 'Configure the QQ and WeChat group QR codes shown in the header support dialog.',
-        qqGroupQRCode: 'QQ Group QR Code',
-        wechatGroupQRCode: 'WeChat Group QR Code',
-        groupQRCodeHint: 'PNG or JPG, up to 300KB. A clear square QR code is recommended.',
         docUrl: 'Documentation URL',
         docUrlPlaceholder: 'https://docs.example.com',
         docUrlHint: 'Link to your documentation site. Leave empty to hide the documentation link.',
@@ -1153,7 +1149,7 @@ export default {
       },
       openaiFastPolicy: {
         title: 'OpenAI Fast/Flex Policy',
-        description: 'Intercept, filter, or pass OpenAI fast(priority), ultrafast, or flex requests based on the request body service_tier field. Applies to the OpenAI gateway only.',
+        description: 'Intercept, filter, or pass OpenAI fast(priority), ultrafast, or flex requests based on the request body service_tier field. Applies to the OpenAI gateway only. "All tier values" includes explicitly sent tiers only.',
         empty: 'No rules configured. Click the button below to add one.',
         ruleHeader: 'Rule #{index}',
         removeRule: 'Remove rule',
@@ -1179,7 +1175,6 @@ export default {
         userIdsHint: 'Type any part of a user email to search. Leave empty to apply to all Sub2API users. Selected users match requests from their API keys and take precedence over global rules.',
         userSearchPlaceholder: 'Search by user email',
         userSearchEmpty: 'No matching users found',
-        userSearchFailed: 'User search failed. Please enter your search again to retry.',
         userDeleted: '(deleted)',
         userIdFallback: 'User #{id}',
         removeUser: 'Remove user',
@@ -1273,8 +1268,8 @@ export default {
         lowRatePriorityTitle: 'Prefer lower rates',
         lowRatePriorityDescription: 'When enabled, accounts with lower billing rates are preferred. If rates are equal, account priority, current load, and other scheduling factors are considered. This switch is ignored when the experimental scheduler is enabled.',
         oauthRateTitle: 'OAuth scheduling reference rate',
-        oauthRatePriorityDescription: 'When a group contains both API Key and OAuth accounts, this rate is used to order OAuth accounts alongside probed API Key billing rates.',
-        oauthRateWeightedDescription: 'When a group contains both API Key and OAuth accounts, this rate is used for OAuth accounts when calculating the billing-rate score.',
+        oauthRatePriorityDescription: 'OAuth accounts use this reference rate for low-rate-first ordering. Leave blank to use each account\'s own rate. API Key accounts use a valid probed rate when available, otherwise their account rate.',
+        oauthRateWeightedDescription: 'OAuth accounts use this reference rate for the billing-rate score. Leave blank to use each account\'s own rate. API Key accounts use a valid probed rate when available, otherwise their account rate.',
         oauthRateInvalid: 'The OAuth scheduling reference rate must be a non-negative number, or blank to use account rates.',
         stickyWeightedTitle: 'Sticky weighting',
         stickyWeightedDescription: 'When enabled, previous_response_id and session_hash affinity are scored by the advanced scheduler. When disabled, sticky accounts keep the legacy hard-hit behavior.',
@@ -1302,10 +1297,6 @@ export default {
       user_error_view: {
         label: 'Allow users to view their own error requests',
         description: 'When enabled, users can see a redacted view of their failed requests on the usage page (no internal/upstream details). Requires ops monitoring enabled to have data.',
-      },
-      user_usage_ranking: {
-        label: 'Show user usage ranking',
-        description: 'When enabled, users can view a Top 20 ranking by total tokens. Other users are redacted.',
       },
       saveSettings: 'Save Settings',
       saving: 'Saving...',

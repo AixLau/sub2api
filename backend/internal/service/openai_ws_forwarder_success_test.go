@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -465,9 +466,9 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 	require.Equal(t, ids.installationID, headers.Get("x-codex-installation-id"))
 	require.NotEqual(t, "client-installation", headers.Get("x-codex-installation-id"))
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "window", "client-window"), headers.Get("x-codex-window-id"))
-	require.Equal(t, isolateOpenAIUpstreamSessionID(0, account, "client-session"), headers.Get("session-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "session", "client-session"), headers.Get("session-id"))
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "thread", "client-thread"), headers.Get("thread-id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "thread", "client-request"), headers.Get("x-client-request-id"))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "request", "client-request"), headers.Get("x-client-request-id"))
 }
 
 func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
@@ -873,26 +874,25 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthSanitizesInvalidNativeToolItemID
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// WS 握手头与 HTTP 出站共用身份收口：请求端自报身份不参与构造；账号级官方 UA
-	// 保留客户端与指纹，版本段跟随网关规范版本重建（issue #3901）。
+	// WS 握手头与 HTTP 出站共用身份收口：同样强制统一为网关规范身份，
+	// 客户端自报的 originator / user-agent 不参与构造（issue #3901 的配对不变式自然满足）。
 	tests := []struct {
-		name              string
-		accountUserAgent  string
-		requestUserAgent  string
-		requestOriginator string
-		wantOriginator    string
-		wantUA            string
+		name       string
+		userAgent  string
+		originator string
 	}{
-		{name: "global identity overrides account ua", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "codex-tui", wantUA: codexCLIUserAgent},
+		{name: "official desktop ua", userAgent: "Codex Desktop/1.2.3"},
 		{
-			name:              "account and request identities cannot override global ua",
-			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
-			requestUserAgent:  "codex_cli_rs/0.144.1",
-			requestOriginator: "codex_cli_rs",
-			wantOriginator:    "codex-tui",
-			wantUA:            codexCLIUserAgent,
+			name:       "mismatched originator",
+			userAgent:  "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)",
+			originator: "codex_cli_rs",
 		},
-		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
+		{
+			name:       "tui identity",
+			userAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
+			originator: "codex-tui",
+		},
+		{name: "official originator without ua", originator: "codex_vscode"},
 	}
 
 	for _, tt := range tests {
@@ -900,11 +900,11 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
 			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-			if tt.requestUserAgent != "" {
-				c.Request.Header.Set("User-Agent", tt.requestUserAgent)
+			if tt.userAgent != "" {
+				c.Request.Header.Set("User-Agent", tt.userAgent)
 			}
-			if tt.requestOriginator != "" {
-				c.Request.Header.Set("originator", tt.requestOriginator)
+			if tt.originator != "" {
+				c.Request.Header.Set("originator", tt.originator)
 			}
 
 			cfg := &config.Config{}
@@ -951,23 +951,21 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 					"responses_websockets_v2_enabled": true,
 				},
 			}
-			if tt.accountUserAgent != "" {
-				account.Credentials["user_agent"] = tt.accountUserAgent
-			}
 
 			body := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
 			result, err := svc.Forward(context.Background(), c, account, body)
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			require.Equal(t, tt.wantOriginator, captureDialer.lastHeaders.Get("originator"))
-			require.Equal(t, tt.wantUA, captureDialer.lastHeaders.Get("user-agent"))
+			require.Equal(t, openai.CodexDefaultOriginator, captureDialer.lastHeaders.Get("originator"))
+			require.Equal(t, codexCLIUserAgent, captureDialer.lastHeaders.Get("user-agent"))
 			require.Equal(t, codexCLIVersion, captureDialer.lastHeaders.Get("version"))
 		})
 	}
 }
 
-// WS 与 HTTP 统一使用全局身份，账号级 UA 不得改变客户端名或设备指纹。
-func TestOpenAIGatewayService_Forward_WSv2_OAuthIgnoresAccountUserAgent(t *testing.T) {
+// 账号级自定义 UA 是管理员的显式配置，WS 握手与 HTTP 出站必须一视同仁地生效——
+// 否则同一个账号在两种传输上以不同身份出站。指纹保留、版本段重建、originator 配套。
+func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -1026,9 +1024,9 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthIgnoresAccountUserAgent(t *testi
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "codex-tui", captureDialer.lastHeaders.Get("originator"))
+	require.Equal(t, openai.CodexCLIOriginator, captureDialer.lastHeaders.Get("originator"))
 	require.Equal(t,
-		codexCLIUserAgent,
+		"codex_cli_rs/"+codexCLIVersion+" (Mac OS X 15.1.0; arm64) iTerm.app",
 		captureDialer.lastHeaders.Get("user-agent"),
 	)
 	require.Equal(t, codexCLIVersion, captureDialer.lastHeaders.Get("version"))

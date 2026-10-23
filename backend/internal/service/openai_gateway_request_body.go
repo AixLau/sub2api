@@ -276,7 +276,7 @@ func normalizeDeepSeekResponsesImagePart(part map[string]any) bool {
 		}
 		part["type"] = "input_image"
 		part["image_url"] = "data:" + mediaType + ";base64," + data
-		part["url"] = part["image_url"]
+		delete(part, "url")
 		delete(part, "source")
 		return true
 	}
@@ -288,10 +288,13 @@ func normalizeDeepSeekResponsesImagePart(part map[string]any) bool {
 	if detail != "" && strings.TrimSpace(stringValue(part["detail"])) == "" {
 		part["detail"] = detail
 	}
-	changed := partType != "input_image" || stringValue(part["image_url"]) != imageURL || stringValue(part["url"]) != imageURL
+	_, hadURL := part["url"]
+	changed := partType != "input_image" || stringValue(part["image_url"]) != imageURL || hadURL
 	part["type"] = "input_image"
 	part["image_url"] = imageURL
-	part["url"] = imageURL
+	if hadURL {
+		delete(part, "url")
+	}
 	return changed
 }
 

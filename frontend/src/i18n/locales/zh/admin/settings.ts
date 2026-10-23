@@ -70,18 +70,11 @@ export default {
           priceDescription: '价格说明（Markdown）',
           priceDescriptionHint: '展示在模型广场页面顶部，可用于说明计费规则、汇率、优惠活动等。',
         },
-        rewardCampaigns: {
-          title: '奖励活动中心',
-          description: '分批启用服务端奖励队列、刮刮乐领取和运营活动后台。默认关闭。',
-          configureLink: '前往奖励活动中心',
-          enabled: '启用奖励活动中心',
-          enabledHint: '关闭后新奖励队列和管理接口不可访问；旧欢迎礼与惊喜礼兼容接口继续可用。',
-        },
         pluginManagement: {
           title: '插件管理',
-          description: '控制管理后台侧边栏是否显示插件管理入口，不影响插件运行状态。',
-          enabled: '显示插件管理',
-          enabledHint: '关闭后仅隐藏侧边栏入口，不会停止已加载或运行中的插件。',
+          description: '控制管理员侧边栏是否显示插件管理入口。此开关不控制插件运行状态。',
+          enabled: '显示插件管理菜单',
+          enabledHint: '关闭后仅隐藏侧边栏菜单；已加载或正在运行的插件不会因此停止。',
         },
         riskControl: {
           title: '风控中心',
@@ -480,8 +473,16 @@ export default {
         saveFailed: '保存 Ollama Cloud 用量刷新设置失败'
       },
       opencodeGoUsage: {
-        title: 'OpenCode Go 用量刷新', description: '刷新 OpenCode Go 账号返回的用量窗口。', enabled: '启用全局自动刷新', enabledHint: '仅刷新已在账号上开启自动刷新的账号。',
-        intervalMinutes: '最大等待时间（分钟）', intervalHint: '范围：5–1440 分钟。', debounceMinutes: '请求静默时间（分钟）', debounceHint: '请求安静一段时间后刷新。', saved: 'OpenCode Go 用量刷新设置已保存', saveFailed: '保存 OpenCode Go 用量刷新设置失败'
+        title: 'OpenCode Go 用量刷新',
+        description: '刷新上游 OpenCode Go 账号上报的用量窗口；默认关闭，仅对单独开启的账号生效。',
+        enabled: '启用全局自动刷新',
+        enabledHint: '仅刷新账号自身也开启自动刷新的账号。手动刷新不受影响。',
+        intervalMinutes: '请求持续时的最长等待（分钟）',
+        intervalHint: '范围 5–1440 分钟。请求持续不断导致 debounce 一直后移时，最晚在此时间强制刷新。',
+        debounceMinutes: '请求安静等待（分钟）',
+        debounceHint: '范围 1–60 分钟，且必须小于刷新间隔。最后一次模型请求安静满此时长后再抓取用量。',
+        saved: 'OpenCode Go 用量刷新设置已保存',
+        saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
       gatewayForwarding: {
         title: '请求转发行为',
@@ -539,17 +540,20 @@ export default {
         antigravityUserAgentVersion: 'Antigravity UA 版本',
         antigravityUserAgentVersionPlaceholder: '1.23.2',
         antigravityUserAgentVersionHint: '留空时使用 ANTIGRAVITY_USER_AGENT_VERSION 或内置默认值 1.23.2；填写后后台设置优先。',
-        openaiCodexUserAgent: 'OpenAI 出口 UA',
-        openaiCodexUserAgentPlaceholder: 'codex-tui/0.146.1 (Ubuntu 22.4.0; x86_64) WindowsTerminal (codex-tui; 0.146.1)',
-        openaiCodexUserAgentHint: '所有 OpenAI 出口（OAuth、API Key、HTTP、WebSocket 和探测）统一使用的完整 User-Agent，优先于账号 UA 和自定义请求头。用于自定义 OS / 架构 / 终端指纹。留空则按下方版本号拼出标准 codex-tui 形态（推荐）。填写后首段和尾部的版本号仍会被下方版本号同步覆盖，避免这条 UA 停在填写时的旧版本——上游在容量紧张时按客户端身份分优先级降载，陈旧或非官方形态的身份会被优先丢弃并回 server_is_overloaded。',
+        openaiCodexUserAgent: 'OpenAI Codex UA',
+        openaiCodexUserAgentPlaceholder: 'codex_cli_rs/0.146.1 (Ubuntu 22.4.0; x86_64) WindowsTerminal',
+        openaiCodexUserAgentHint: '出站统一使用的完整 Codex User-Agent，用于自定义 OS / 架构 / 终端指纹。留空则按下方版本号拼出标准 codex_cli_rs 形态（推荐）。填写后首段和尾部的版本号仍会被下方版本号同步覆盖，避免这条 UA 停在填写时的旧版本——上游会根据客户端身份和版本进行风控分层，陈旧或非官方形态可能返回 server_is_overloaded。',
         openaiCodexClientVersion: 'Codex 客户端版本号',
         openaiCodexClientVersionPlaceholder: '留空则跟随自动同步',
         openaiCodexClientVersionHint: '网关对上游声明的 Codex 客户端版本号，User-Agent 与 version 头同源使用。留空表示使用自动同步到的官方最新稳定版；填写后固定为该版本，不再跟随同步。',
         openaiCodexVersionAutoSync: '自动同步 Codex 版本号',
         openaiCodexVersionAutoSyncHint: '每 6 小时从官方仓库获取最新稳定版客户端版本号，无需为了跟版本而升级本服务。关闭后仅使用上方手填版本或内置版本。',
         openaiCodexVersionSyncedValue: '当前同步到：{version}',
-
-        claudeCodeClientVersion: 'Claude Code 客户端版本', claudeCodeClientVersionHint: '网关向上游声明的 Claude Code 版本。', claudeCodeVersionAutoSync: '自动同步 Claude Code 版本', claudeCodeVersionAutoSyncHint: '自动获取官方最新版本。', claudeCodeVersionSyncedValue: '当前同步：{version}',
+        claudeCodeClientVersion: 'Claude Code 客户端版本号',
+        claudeCodeClientVersionHint: '网关伪装为官方 Claude Code CLI 时对上游声明的客户端版本号。留空表示使用自动同步到的官方最新版本；填写后固定为该版本，不再跟随同步。仅在手填值和同步值均不可用时，才回退到环境变量 SUB2API_CLAUDE_CLI_VERSION 或内置版本。',
+        claudeCodeVersionAutoSync: '自动同步 Claude Code 版本号',
+        claudeCodeVersionAutoSyncHint: '每小时从官方发布渠道获取最新版本的 Claude Code 客户端版本号，无需为了跟版本而升级本服务。关闭后停止获取新版本，已同步的版本仍可使用；上方手填版本始终优先。',
+        claudeCodeVersionSyncedValue: '当前同步到：{version}',
         codexHardeningTitle: 'Codex 设置',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
@@ -575,9 +579,6 @@ export default {
         codexBlacklist: 'User-Agent/Originator 黑名单',
         codexBlacklistDesc:
           '命中任一字段即拒，优先于一切放行。originator 精确匹配，User-Agent 为包含匹配（多个用逗号分隔）。',
-        codexUserBlacklist: '禁止使用此类账号的用户',
-        codexUserBlacklistDesc:
-          '命中的用户即使使用 Codex 官方客户端或 UA 白名单，也不能分配、调用或使用开启「仅允许 Codex 官方客户端」的账号。按邮箱模糊搜索并选择用户。',
         codexWhitelist: 'User-Agent/Originator 白名单',
         codexWhitelistDesc:
           '放行官方集之外的客户端：需 originator 精确，且每个 User-Agent 标记都命中。默认仍需过引擎指纹门，勾「跳过引擎指纹」可免。',
@@ -662,11 +663,6 @@ export default {
         contactInfo: '客服联系方式',
         contactInfoPlaceholder: '例如：QQ: 123456789',
         contactInfoHint: '填写客服联系方式，将展示在兑换页面、个人资料等位置',
-        supportGroupQRCodes: '用户交流群二维码',
-        supportGroupQRCodesHint: '分别配置头部客服弹窗中展示的 QQ 群和微信群二维码。',
-        qqGroupQRCode: 'QQ 群二维码',
-        wechatGroupQRCode: '微信群二维码',
-        groupQRCodeHint: 'PNG、JPG 格式，最大 300KB，建议使用清晰的正方形二维码。',
         docUrl: '文档链接',
         docUrlHint: '文档网站的链接。留空则隐藏文档链接。',
         docUrlPlaceholder: 'https://docs.example.com',
@@ -690,11 +686,11 @@ export default {
         hideCcsImportButtonHint: '启用后将在 API Keys 页面隐藏"导入 CCS"按钮'
       },
       purchase: {
-        title: '账户充值页面',
-        description: '在侧边栏展示“账户充值”入口，并在页面内通过 iframe 打开指定链接',
-        enabled: '显示账户充值入口',
+        title: '充值/订阅页面',
+        description: '在侧边栏展示“充值/订阅”入口，并在页面内通过 iframe 打开指定链接',
+        enabled: '显示充值/订阅入口',
         enabledHint: '仅在标准模式（非简单模式）下展示',
-        url: '账户充值页面 URL',
+        url: '充值/订阅页面 URL',
         urlPlaceholder: 'https://example.com/purchase',
         urlHint: '必须是完整的 http(s) 链接',
         iframeWarning:
@@ -1147,7 +1143,7 @@ export default {
       },
       openaiFastPolicy: {
         title: 'OpenAI Fast/Flex 策略',
-        description: '基于请求体 service_tier 字段拦截/过滤/透传 OpenAI fast(priority)、ultrafast 与 flex 请求；仅作用于 OpenAI 网关。',
+        description: '基于请求体 service_tier 字段拦截/过滤/透传 OpenAI fast(priority)、ultrafast 与 flex 请求；仅作用于 OpenAI 网关。“全部 tier 值”仅包含显式传入的 tier。',
         empty: '尚未配置任何规则。点击下方按钮新增。',
         ruleHeader: '规则 #{index}',
         removeRule: '删除规则',
@@ -1173,7 +1169,6 @@ export default {
         userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Sub2API 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
         userSearchPlaceholder: '输入用户邮箱搜索',
         userSearchEmpty: '未找到匹配用户',
-        userSearchFailed: '用户搜索失败，请重新输入后重试',
         userDeleted: '（已删除）',
         userIdFallback: '用户 #{id}',
         removeUser: '移除用户',
@@ -1267,9 +1262,9 @@ export default {
         lowRatePriorityTitle: '低倍率优先',
         lowRatePriorityDescription: '开启后优先选择计费倍率较低的账号；倍率相同时，再比较账号优先级和当前负载等。启用实验调度策略后，此开关不生效。',
         oauthRateTitle: 'OAuth 调度参考倍率',
-        oauthRatePriorityDescription: '同一分组同时包含 API Key 和 OAuth 账号时，OAuth 账号按此倍率与已探测的 API Key 计费倍率一起排序。',
-        oauthRateWeightedDescription: '同一分组同时包含 API Key 和 OAuth 账号时，计算“计费倍率”得分时，OAuth 账号按此倍率参与计算。',
-        oauthRateInvalid: 'OAuth 调度参考倍率必须是非负数字，留空则使用账号自身倍率。',
+        oauthRatePriorityDescription: 'OAuth 账号按此参考倍率参与低倍率优先排序；留空时使用各自的账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。',
+        oauthRateWeightedDescription: '计算“计费倍率”得分时，OAuth 账号使用此参考倍率；留空时使用各自的账号倍率。API Key 账号优先使用有效探测倍率，无有效探测时使用账号倍率。',
+        oauthRateInvalid: 'OAuth 调度参考倍率必须是非负数字，或留空以使用账号倍率。',
         stickyWeightedTitle: '粘性加权',
         stickyWeightedDescription: '开启后 previous_response_id 和 session_hash 粘性进入高级调度打分；关闭时仍按旧逻辑硬命中粘性账号。',
         subscriptionPriorityTitle: '订阅优先',
@@ -1296,10 +1291,6 @@ export default {
       user_error_view: {
         label: '允许用户查看自己的错误请求',
         description: '开启后，用户可在用量页查看自己失败请求的精简信息（不含内部/上游错误细节）。需运维监控开启才有数据。',
-      },
-      user_usage_ranking: {
-        label: '展示用户使用排行',
-        description: '开启后，用户可在使用记录中查看按总 Token 排序的 Top 20；其他用户身份将脱敏。',
       },
       saveSettings: '保存设置',
       saving: '保存中...',
