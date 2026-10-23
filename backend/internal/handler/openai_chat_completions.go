@@ -46,7 +46,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	if !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
-	c.Request = c.Request.WithContext(service.WithOpenAICapacityReroute(c.Request.Context(), service.NewOpenAICapacityRerouteState()))
 
 	var body []byte
 	var reqModel string
@@ -345,16 +344,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
 						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
-							if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
-								service.AdvanceOpenAICapacityReroute(c.Request.Context(), failoverErr.ResponseHeaders)
-							}
 							retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai_chat_completions.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),
 								zap.Int("retry_limit", retryLimit),
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-								zap.Int("capacity_reroute_stage", service.OpenAICapacityRerouteStage(c.Request.Context())),
 								zap.Duration("retry_delay", retryDelay),
 							)
 							if failoverErr.IsOpenAICapacityShed() {
@@ -375,7 +370,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						}
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
-					service.ResetOpenAICapacityReroute(c.Request.Context())
 					failedAccountIDs[account.ID] = struct{}{}
 					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 					lastFailoverErr = failoverErr
