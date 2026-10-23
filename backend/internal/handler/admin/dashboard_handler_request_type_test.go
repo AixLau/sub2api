@@ -40,6 +40,9 @@ type dashboardUsageRepoCapture struct {
 	userBreakdownDim      usagestats.UserBreakdownDimension
 	userBreakdownLimit    int
 	userBreakdownCaptured bool
+	modelExcludeUserIDs   []int64
+	groupExcludeUserIDs   []int64
+	trendExcludeUserIDs   []int64
 }
 
 func (s *dashboardUsageRepoCapture) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
@@ -71,6 +74,7 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
 	s.trendStream = filters.Stream
 	s.trendNativeCompaction = filters.NativeCompactionV2
 	s.trendMismatch = filters.UpstreamModelMismatch
+	s.trendExcludeUserIDs = append([]int64(nil), filters.ExcludeUserIDs...)
 	return []usagestats.TrendDataPoint{}, nil
 }
 
@@ -104,6 +108,7 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithUsageFiltersBySource(
 	s.modelStream = filters.Stream
 	s.modelNativeCompaction = filters.NativeCompactionV2
 	s.modelMismatch = filters.UpstreamModelMismatch
+	s.modelExcludeUserIDs = append([]int64(nil), filters.ExcludeUserIDs...)
 	return []usagestats.ModelStat{}, nil
 }
 
@@ -114,6 +119,7 @@ func (s *dashboardUsageRepoCapture) GetGroupStatsWithUsageFilters(
 ) ([]usagestats.GroupStat, error) {
 	s.groupNativeCompaction = filters.NativeCompactionV2
 	s.groupMismatch = filters.UpstreamModelMismatch
+	s.groupExcludeUserIDs = append([]int64(nil), filters.ExcludeUserIDs...)
 	return []usagestats.GroupStat{}, nil
 }
 
@@ -162,7 +168,7 @@ func (s *dashboardUsageRepoCapture) GetUserBreakdownStats(
 func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
-	handler := NewDashboardHandler(dashboardSvc, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil, nil)
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)

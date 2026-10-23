@@ -98,6 +98,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	filters.ExcludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, filters.UserID, filters.ExcludeUserIDs)
 
 	keyRaw, _ := json.Marshal(dashboardSnapshotV2CacheKey{
 		StartTime:             startTime.UTC().Truncate(time.Minute).Format(time.RFC3339),

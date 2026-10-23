@@ -19,14 +19,16 @@ import (
 type DashboardHandler struct {
 	dashboardService   *service.DashboardService
 	aggregationService *service.DashboardAggregationService
+	adminService       service.AdminService
 	startTime          time.Time // Server start time for uptime calculation
 }
 
 // NewDashboardHandler creates a new admin dashboard handler
-func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService) *DashboardHandler {
+func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService, adminService service.AdminService) *DashboardHandler {
 	return &DashboardHandler{
 		dashboardService:   dashboardService,
 		aggregationService: aggregationService,
+		adminService:       adminService,
 		startTime:          time.Now(),
 	}
 }
@@ -398,6 +400,8 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 		return
 	}
 
+	excludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, userID, excludeUserIDs)
+
 	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, billingType, excludeUserIDs, upstreamModelMismatch)
 	if err != nil {
 		response.Error(c, 500, "Failed to get model statistics")
@@ -479,6 +483,8 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+
+	excludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, userID, excludeUserIDs)
 
 	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType, excludeUserIDs, upstreamModelMismatch)
 	if err != nil {
@@ -797,7 +803,7 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	dim.ExcludeUserIDs = excludeUserIDs
+	dim.ExcludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, dim.UserID, excludeUserIDs)
 	if v := c.Query("api_key_id"); v != "" {
 		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
 			dim.APIKeyID = id

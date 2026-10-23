@@ -72,44 +72,6 @@ func parseAdminUsageExcludeUserIDs(c *gin.Context) ([]int64, error) {
 	return ids, nil
 }
 
-// withDefaultAdminUserExclusions keeps admin reporting focused on end-user
-// activity even when the caller does not provide an explicit exclusion list.
-// Explicit exclusions remain supported and are merged without duplicates.
-func (h *UsageHandler) withDefaultAdminUserExclusions(ctx context.Context, userID int64, excluded []int64) []int64 {
-	// An explicit user drill-down is an intentional override of the default
-	// reporting scope, including when the selected user is an administrator.
-	if userID > 0 {
-		return excluded
-	}
-	if h.adminService == nil {
-		return excluded
-	}
-	admins, _, err := h.adminService.ListUsers(ctx, 1, 1000, service.UserListFilters{Role: service.RoleAdmin}, "id", "asc")
-	if err != nil {
-		logger.LegacyPrintf("handler.admin.usage", "failed to load admin users for default exclusion: %v", err)
-		return excluded
-	}
-	seen := make(map[int64]struct{}, len(excluded)+len(admins))
-	merged := make([]int64, 0, len(excluded)+len(admins))
-	for _, id := range excluded {
-		if id > 0 {
-			if _, ok := seen[id]; !ok {
-				seen[id] = struct{}{}
-				merged = append(merged, id)
-			}
-		}
-	}
-	for _, admin := range admins {
-		if admin.ID > 0 {
-			if _, ok := seen[admin.ID]; !ok {
-				seen[admin.ID] = struct{}{}
-				merged = append(merged, admin.ID)
-			}
-		}
-	}
-	return merged
-}
-
 func parseAdminUsageSource(c *gin.Context) (string, error) {
 	source := strings.TrimSpace(c.Query("source"))
 	switch service.UsageSource(source) {
@@ -166,7 +128,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	excludeUserIDs = h.withDefaultAdminUserExclusions(c.Request.Context(), userID, excludeUserIDs)
+	excludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, userID, excludeUserIDs)
 
 	if apiKeyIDStr := c.Query("api_key_id"); apiKeyIDStr != "" {
 		id, err := strconv.ParseInt(apiKeyIDStr, 10, 64)
@@ -336,7 +298,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	excludeUserIDs = h.withDefaultAdminUserExclusions(c.Request.Context(), userID, excludeUserIDs)
+	excludeUserIDs = withDefaultAdminUserExclusions(c.Request.Context(), h.adminService, userID, excludeUserIDs)
 
 	if apiKeyIDStr := c.Query("api_key_id"); apiKeyIDStr != "" {
 		id, err := strconv.ParseInt(apiKeyIDStr, 10, 64)
