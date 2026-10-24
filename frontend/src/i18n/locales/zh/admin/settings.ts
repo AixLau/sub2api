@@ -70,6 +70,13 @@ export default {
           priceDescription: '价格说明（Markdown）',
           priceDescriptionHint: '展示在模型广场页面顶部，可用于说明计费规则、汇率、优惠活动等。',
         },
+        rewardCampaigns: {
+          title: '奖励活动中心',
+          description: '分批启用服务端奖励队列、刮刮乐领取和运营活动后台。默认关闭。',
+          configureLink: '前往奖励活动中心',
+          enabled: '启用奖励活动中心',
+          enabledHint: '关闭后新奖励队列和管理接口不可访问；旧欢迎礼与惊喜礼兼容接口继续可用。',
+        },
         pluginManagement: {
           title: '插件管理',
           description: '控制管理员侧边栏是否显示插件管理入口。此开关不控制插件运行状态。',
@@ -579,6 +586,9 @@ export default {
         codexBlacklist: 'User-Agent/Originator 黑名单',
         codexBlacklistDesc:
           '命中任一字段即拒，优先于一切放行。originator 精确匹配，User-Agent 为包含匹配（多个用逗号分隔）。',
+        codexUserBlacklist: '禁止使用此类账号的用户',
+        codexUserBlacklistDesc:
+          '命中的用户即使使用 Codex 官方客户端或 UA 白名单，也不能分配、调用或使用开启「仅允许 Codex 官方客户端」的账号。按邮箱模糊搜索并选择用户。',
         codexWhitelist: 'User-Agent/Originator 白名单',
         codexWhitelistDesc:
           '放行官方集之外的客户端：需 originator 精确，且每个 User-Agent 标记都命中。默认仍需过引擎指纹门，勾「跳过引擎指纹」可免。',
@@ -663,6 +673,11 @@ export default {
         contactInfo: '客服联系方式',
         contactInfoPlaceholder: '例如：QQ: 123456789',
         contactInfoHint: '填写客服联系方式，将展示在兑换页面、个人资料等位置',
+        supportGroupQRCodes: '用户交流群二维码',
+        supportGroupQRCodesHint: '分别配置头部客服弹窗中展示的 QQ 群和微信群二维码。',
+        qqGroupQRCode: 'QQ 群二维码',
+        wechatGroupQRCode: '微信群二维码',
+        groupQRCodeHint: 'PNG、JPG 格式，最大 300KB，建议使用清晰的正方形二维码。',
         docUrl: '文档链接',
         docUrlHint: '文档网站的链接。留空则隐藏文档链接。',
         docUrlPlaceholder: 'https://docs.example.com',
@@ -1169,6 +1184,7 @@ export default {
         userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Sub2API 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
         userSearchPlaceholder: '输入用户邮箱搜索',
         userSearchEmpty: '未找到匹配用户',
+        userSearchFailed: '用户搜索失败，请重新输入后重试',
         userDeleted: '（已删除）',
         userIdFallback: '用户 #{id}',
         removeUser: '移除用户',
@@ -1291,6 +1307,10 @@ export default {
       user_error_view: {
         label: '允许用户查看自己的错误请求',
         description: '开启后，用户可在用量页查看自己失败请求的精简信息（不含内部/上游错误细节）。需运维监控开启才有数据。',
+      },
+      user_usage_ranking: {
+        label: '展示用户使用排行',
+        description: '开启后，用户可在使用记录中查看按总 Token 排序的 Top 20；其他用户身份将脱敏。',
       },
       saveSettings: '保存设置',
       saving: '保存中...',

@@ -70,6 +70,13 @@ export default {
           priceDescription: 'Pricing notes (Markdown)',
           priceDescriptionHint: 'Rendered at the top of the plaza page. Use it for billing rules, exchange rates, promotions, etc.',
         },
+        rewardCampaigns: {
+          title: 'Reward Campaign Center',
+          description: 'Roll out the server-driven reward queue, scratch-card claiming, and campaign administration in stages. Disabled by default.',
+          configureLink: 'Open Reward Campaign Center',
+          enabled: 'Enable Reward Campaign Center',
+          enabledHint: 'When off, the new reward queue and admin APIs are unavailable; legacy welcome and surprise reward adapters remain available.',
+        },
         pluginManagement: {
           title: 'Plugin Management',
           description: 'Controls whether the plugin management entry appears in the admin sidebar. This switch does not control plugin runtime state.',
@@ -586,6 +593,9 @@ export default {
         codexBlacklist: "User-Agent/Originator Blacklist",
         codexBlacklistDesc:
           "Deny if any field matches; takes precedence over any allow. originator is exact; User-Agent is a 'contains' match (comma-separated).",
+        codexUserBlacklist: "Users blocked from these accounts",
+        codexUserBlacklistDesc:
+          "Blocked users cannot be assigned or use accounts with 'Codex official clients only', even with an official Codex client or a matching UA whitelist. Search by email and select users.",
         codexWhitelist: "User-Agent/Originator Whitelist",
         codexWhitelistDesc:
           "Allow clients outside the official set: requires exact originator and every User-Agent marker present. Still subject to the fingerprint gate unless 'Skip engine fingerprint' is checked.",
@@ -671,6 +681,11 @@ export default {
         contactInfo: 'Contact Info',
         contactInfoPlaceholder: 'e.g., QQ: 123456789',
         contactInfoHint: 'Customer support contact info, displayed on redeem page, profile, etc.',
+        supportGroupQRCodes: 'Community Group QR Codes',
+        supportGroupQRCodesHint: 'Configure the QQ and WeChat group QR codes shown in the header support dialog.',
+        qqGroupQRCode: 'QQ Group QR Code',
+        wechatGroupQRCode: 'WeChat Group QR Code',
+        groupQRCodeHint: 'PNG or JPG, up to 300KB. A clear square QR code is recommended.',
         docUrl: 'Documentation URL',
         docUrlPlaceholder: 'https://docs.example.com',
         docUrlHint: 'Link to your documentation site. Leave empty to hide the documentation link.',
@@ -1175,6 +1190,7 @@ export default {
         userIdsHint: 'Type any part of a user email to search. Leave empty to apply to all Sub2API users. Selected users match requests from their API keys and take precedence over global rules.',
         userSearchPlaceholder: 'Search by user email',
         userSearchEmpty: 'No matching users found',
+        userSearchFailed: 'User search failed. Please enter your search again to retry.',
         userDeleted: '(deleted)',
         userIdFallback: 'User #{id}',
         removeUser: 'Remove user',
@@ -1297,6 +1313,10 @@ export default {
       user_error_view: {
         label: 'Allow users to view their own error requests',
         description: 'When enabled, users can see a redacted view of their failed requests on the usage page (no internal/upstream details). Requires ops monitoring enabled to have data.',
+      },
+      user_usage_ranking: {
+        label: 'Show user usage ranking',
+        description: 'When enabled, users can view a Top 20 ranking by total tokens. Other users are redacted.',
       },
       saveSettings: 'Save Settings',
       saving: 'Saving...',
