@@ -304,6 +304,28 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.get<HTMLSelectElement>('[data-testid="create-codex-fingerprint-mode-select"]').element.value).toBe('device')
   })
 
+  it('enables Codex official clients only and app-server clients by default for OpenAI OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
+    await flushPromises()
+
+    const extra = importCodexSessionMock.mock.calls[0]?.[0]?.extra
+    expect(extra?.codex_cli_only).toBe(true)
+    expect(extra?.codex_cli_only_allow_app_server).toBe(true)
+  })
+
+  it('does not add Codex client restrictions to API key accounts', async () => {
+    await submitApiKeyAccount('openai')
+
+    const extra = createAccountMock.mock.calls[0]?.[0]?.extra
+    expect(extra).not.toHaveProperty('codex_cli_only')
+    expect(extra).not.toHaveProperty('codex_cli_only_allow_app_server')
+  })
+
   it('does not add Codex fingerprint convergence to API key accounts', async () => {
     await submitApiKeyAccount('openai')
 

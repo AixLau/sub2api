@@ -4708,8 +4708,9 @@ const openAIImagesUrlToB64JsonEnabled = ref(false)
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
-const codexCLIOnlyEnabled = ref(false)
-const codexCLIOnlyAppServerEnabled = ref(false)
+// 新建 OpenAI OAuth 账号默认仅允许 Codex 官方客户端，并放行 app-server 客户端。
+const codexCLIOnlyEnabled = ref(true)
+const codexCLIOnlyAppServerEnabled = ref(true)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('device')
 const codexFingerprintModeOptions = computed(() => [
@@ -5240,9 +5241,11 @@ watch(
 watch(
   [accountCategory, () => form.platform],
   ([category, platform]) => {
-    if (platform === 'openai' && category !== 'oauth-based') {
-      codexCLIOnlyEnabled.value = false
-      codexCLIOnlyAppServerEnabled.value = false
+    if (platform === 'openai') {
+      // 切回 OpenAI OAuth 时恢复默认开启；其他类别不支持该限制。
+      const oauthBased = category === 'oauth-based'
+      codexCLIOnlyEnabled.value = oauthBased
+      codexCLIOnlyAppServerEnabled.value = oauthBased
     }
     if (platform !== 'anthropic' || category !== 'apikey') {
       anthropicPassthroughEnabled.value = false
@@ -5673,8 +5676,8 @@ const resetForm = () => {
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-  codexCLIOnlyEnabled.value = false
-  codexCLIOnlyAppServerEnabled.value = false
+  codexCLIOnlyEnabled.value = true
+  codexCLIOnlyAppServerEnabled.value = true
   codexFingerprintMode.value = 'device'
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
