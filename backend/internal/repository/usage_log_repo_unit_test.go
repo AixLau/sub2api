@@ -107,13 +107,54 @@ func TestUsageLogRepositoryGetActiveUsersTrendUsesGatewayAPIUsers(t *testing.T) 
 
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
-	mock.ExpectQuery(regexp.QuoteMeta("WHERE ul.source = 'gateway' AND ul.user_id IS NOT NULL AND ul.api_key_id IS NOT NULL AND u.role = 'user'")).WithArgs(start, end).WillReturnRows(
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL AND (users.role IS NULL OR users.role <> 'admin')")).WithArgs(start, end).WillReturnRows(
 		sqlmock.NewRows([]string{"date", "active_users"}).AddRow("2025-01-01", int64(2)),
 	)
 
 	trend, err := repo.GetActiveUsersTrend(context.Background(), start, end, "day")
 	require.NoError(t, err)
 	require.Equal(t, []usagestats.ActiveUsersTrendPoint{{Date: "2025-01-01", ActiveUsers: 2}}, trend)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetUserUsageTrendExcludesAdminsAndAnonymous(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	mock.ExpectQuery(`(?s)WITH top_users AS .*JOIN users us ON usage_logs\.user_id = us\.id.*WHERE us\.role = 'user'.*JOIN users us ON u\.user_id = us\.id.*WHERE us\.role = 'user'.*u\.user_id IN \(SELECT user_id FROM top_users\)`).
+		WithArgs(start, end, 10, start, end).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "user_id", "email", "username", "requests", "tokens", "cost", "actual_cost"}).
+			AddRow("2025-01-01", int64(7), "user@example.com", "user", int64(3), int64(30), 0.1, 0.1))
+
+	trend, err := repo.GetUserUsageTrend(context.Background(), start, end, "day", 10, "tokens")
+	require.NoError(t, err)
+	require.Equal(t, []UserUsageTrendPoint{{
+		Date: "2025-01-01", UserID: 7, Email: "user@example.com", Username: "user",
+		Requests: 3, Tokens: 30, Cost: 0.1, ActualCost: 0.1,
+	}}, trend)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetUserSpendingRankingExcludesAdminsAndAnonymous(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	mock.ExpectQuery(`(?s)WITH user_spend AS .*JOIN users us ON u\.user_id = us\.id.*WHERE us\.role = 'user'`).
+		WithArgs(start, end, 12).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email", "username", "actual_cost", "requests", "tokens", "total_actual_cost", "total_requests", "total_tokens"}).
+			AddRow(int64(7), "user@example.com", "user", 1.5, int64(3), int64(30), 1.5, int64(3), int64(30)))
+
+	ranking, err := repo.GetUserSpendingRanking(context.Background(), start, end, 0)
+	require.NoError(t, err)
+	require.Len(t, ranking.Ranking, 1)
+	require.Equal(t, int64(7), ranking.Ranking[0].UserID)
+	require.Equal(t, 1.5, ranking.TotalActualCost)
+	require.Equal(t, int64(3), ranking.TotalRequests)
+	require.Equal(t, int64(30), ranking.TotalTokens)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

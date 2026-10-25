@@ -93,9 +93,9 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 		WITH top_users AS (
 			SELECT usage_logs.user_id
 			FROM usage_logs
-			LEFT JOIN users us ON usage_logs.user_id = us.id
-			WHERE usage_logs.created_at >= $1 AND usage_logs.created_at < $2
-			  AND (us.role IS NULL OR us.role <> 'admin')
+			JOIN users us ON usage_logs.user_id = us.id
+			WHERE us.role = 'user'
+			  AND usage_logs.created_at >= $1 AND usage_logs.created_at < $2
 			GROUP BY usage_logs.user_id
 			ORDER BY %s DESC, usage_logs.user_id ASC
 			LIMIT $3
@@ -110,9 +110,9 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 			COALESCE(SUM(u.total_cost), 0) as cost,
 			COALESCE(SUM(u.actual_cost), 0) as actual_cost
 		FROM usage_logs u
-		LEFT JOIN users us ON u.user_id = us.id
-		WHERE u.user_id IN (SELECT user_id FROM top_users)
-		  AND (us.role IS NULL OR us.role <> 'admin')
+		JOIN users us ON u.user_id = us.id
+		WHERE us.role = 'user'
+		  AND u.user_id IN (SELECT user_id FROM top_users)
 		  AND u.created_at >= $4 AND u.created_at < $5
 		GROUP BY date, u.user_id, us.email, us.username
 		ORDER BY date ASC, tokens DESC
@@ -162,9 +162,9 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 				COUNT(*) as requests,
 				COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as tokens
 			FROM usage_logs u
-			LEFT JOIN users us ON u.user_id = us.id
-			WHERE u.created_at >= $1 AND u.created_at < $2
-			  AND (us.role IS NULL OR us.role <> 'admin')
+			JOIN users us ON u.user_id = us.id
+			WHERE us.role = 'user'
+			  AND u.created_at >= $1 AND u.created_at < $2
 			GROUP BY u.user_id, us.email, us.username
 		),
 		ranked AS (
