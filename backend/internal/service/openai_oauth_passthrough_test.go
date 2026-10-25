@@ -2505,7 +2505,7 @@ func TestOpenAIGatewayService_CodexFingerprintMessagesBridgeDoesNotInjectBodyPro
 	require.Equal(t, wantSession, upstream.lastReq.Header.Get("session_id"))
 }
 
-func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {
+func TestOpenAIGatewayService_CodexCLIOnly_NonCodexClientReturnsNoAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -2534,8 +2534,9 @@ func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {
 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.Error(t, err)
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.Contains(t, rec.Body.String(), "Codex official clients")
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), "No available OpenAI accounts")
+	require.NotContains(t, rec.Body.String(), "Codex official clients")
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_AllowOfficialClientFamilies(t *testing.T) {

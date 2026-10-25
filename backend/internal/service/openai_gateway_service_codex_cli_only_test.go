@@ -75,7 +75,7 @@ func TestOpenAIGatewayService_SelectBestAccountFiltersCodexOnlyAccounts(t *testi
 	selected, _, stats := svc.selectBestAccount(ctx, nil, PlatformOpenAI, []Account{restricted, open}, "gpt-5.6-sol", nil, false, "", false)
 	require.NotNil(t, selected)
 	require.Equal(t, int64(2), selected.ID)
-	require.Equal(t, 1, stats.reasons["codex_official_client_user_agent_not_matched"])
+	require.Equal(t, 1, stats.reasons[CodexClientRestrictionReasonNonCodexClient])
 }
 
 type codexSchedulingAccountRepo struct {
@@ -104,7 +104,7 @@ func TestCodexAccountAllowedForSchedulingRefreshesSnapshotBeforeRestrictionCheck
 
 	allowed, reason := codexAccountAllowedForScheduling(ctx, selectedSnapshot, repo, nil, NewOpenAICodexClientRestrictionDetector(nil))
 	require.False(t, allowed)
-	require.Equal(t, CodexClientRestrictionReasonNotMatchedUA, reason)
+	require.Equal(t, CodexClientRestrictionReasonNonCodexClient, reason)
 }
 
 func TestOpenAIGatewayService_Forward_VersionGateMessage(t *testing.T) {
@@ -138,7 +138,7 @@ func TestOpenAIGatewayService_Forward_VersionGateMessage(t *testing.T) {
 		require.NotContains(t, rec.Body.String(), "This account only allows Codex official clients")
 	})
 
-	t.Run("未命中官方：仍返回通用兜底文案", func(t *testing.T) {
+	t.Run("非 Codex 客户端账号错配：按无可用账号返回", func(t *testing.T) {
 		rec, c := newCtx()
 		svc := &OpenAIGatewayService{codexDetector: &stubCodexRestrictionDetector{result: CodexClientRestrictionDetectionResult{
 			Enabled: true,
@@ -148,8 +148,9 @@ func TestOpenAIGatewayService_Forward_VersionGateMessage(t *testing.T) {
 
 		_, err := svc.Forward(context.Background(), c, account(), body)
 		require.Error(t, err)
-		require.Equal(t, http.StatusForbidden, rec.Code)
-		require.Contains(t, rec.Body.String(), "This account only allows Codex official clients")
+		require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		require.Contains(t, rec.Body.String(), "No available OpenAI accounts")
+		require.NotContains(t, rec.Body.String(), "This account only allows Codex official clients")
 	})
 }
 

@@ -499,6 +499,7 @@ type OpenAIGatewayService struct {
 	channelService        *ChannelService
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
+	codexClientCache      CodexClientConfigCache
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
@@ -616,6 +617,14 @@ func NewOpenAIGatewayService(
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
+}
+
+// SetCodexClientConfigCache injects the Redis-backed Codex client config cache.
+// It is optional; when nil the service falls back to the database.
+func (s *OpenAIGatewayService) SetCodexClientConfigCache(cache CodexClientConfigCache) {
+	if s != nil {
+		s.codexClientCache = cache
+	}
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）
@@ -1108,14 +1117,24 @@ func (s *OpenAIGatewayService) detectCodexClientRestriction(c *gin.Context, acco
 	// 安全默认：即便缺 settingService（仅测试/误配可达）也保持指纹门为默认种子，
 	// 避免零值 policy（nil 信号）让指纹门失败开放。有 settingService 时整体覆盖为全局策略。
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
-	if account != nil && account.IsCodexCLIOnlyEnabled() && s != nil && s.settingService != nil {
-		ctx := context.Background()
-		if c != nil && c.Request != nil {
-			ctx = c.Request.Context()
-		}
+	if s == nil || account == nil || !account.IsOpenAIOAuth() {
+		return s.getCodexClientRestrictionDetector().Detect(c, account, policy, body)
+	}
+	ctx := context.Background()
+	if c != nil && c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	state, known := resolveCodexClientAccountState(ctx, account, s.accountRepo, s.codexClientCache)
+	if !known {
+		// The forwarding boundary must not fail open when the account flag is
+		// unknown. Treat it as restricted and require the Codex policy to pass.
+		state = CodexClientAccountState{Enabled: true}
+	}
+	checkedAccount := codexAccountWithClientState(account, state)
+	if s.settingService != nil && state.Enabled {
 		policy = s.settingService.GetCodexRestrictionPolicy(ctx)
 	}
-	return s.getCodexClientRestrictionDetector().Detect(c, account, policy, body)
+	return s.getCodexClientRestrictionDetector().Detect(c, checkedAccount, policy, body)
 }
 
 func getAPIKeyIDFromContext(c *gin.Context) int64 {

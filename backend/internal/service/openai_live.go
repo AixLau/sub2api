@@ -271,8 +271,8 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	request *LiveCallRequest,
 	attestation string,
 ) (*LiveCallCreated, error) {
-	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
-		return nil, ErrNoAllowedCodexAccounts
+	if allowed, reason := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return nil, codexRestrictionDeniedError(reason, "")
 	}
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -505,8 +505,8 @@ func (s *OpenAIGatewayService) GetLiveCallForIdentity(
 	if err != nil {
 		return nil, err
 	}
-	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
-		return nil, ErrNoAllowedCodexAccounts
+	if allowed, reason := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		return nil, codexRestrictionDeniedError(reason, "")
 	}
 	return record, nil
 }

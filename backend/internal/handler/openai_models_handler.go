@@ -17,6 +17,7 @@ func (h *GatewayHandler) pinnedOpenAIModels(c *gin.Context, group *service.Group
 		writeOpenAIModelsError(c, http.StatusInternalServerError, "api_error", "OpenAI model discovery is not configured")
 		return
 	}
+	c.Request = c.Request.WithContext(service.WithCodexRestrictionRequest(c.Request.Context(), c, nil))
 	response, account, err := h.openAIGatewayService.FetchPinnedOpenAIModelsList(
 		c.Request.Context(), group, h.maxAccountSwitches, c.GetHeader("If-None-Match"),
 	)

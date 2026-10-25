@@ -45,40 +45,139 @@ func codexRestrictionRequestFromContext(ctx context.Context) (CodexRestrictionRe
 }
 
 func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Context, account *Account) (bool, string) {
-	return codexAccountAllowedForScheduling(ctx, account, s.accountRepo, s.settingService, s.getCodexClientRestrictionDetector())
+	return codexAccountAllowedForSchedulingWithCache(ctx, account, s.accountRepo, s.settingService, s.codexClientCache, s.getCodexClientRestrictionDetector())
 }
 
+// codexAccountAllowedForScheduling keeps the historical signature for tests
+// and narrow callers that do not have a cache. Production paths use the
+// cache-aware variant so a Redis hit avoids a per-candidate DB refresh.
 func codexAccountAllowedForScheduling(ctx context.Context, account *Account, accountRepo AccountRepository, settings *SettingService, detector CodexClientRestrictionDetector) (bool, string) {
+	return codexAccountAllowedForSchedulingWithCache(ctx, account, accountRepo, settings, nil, detector)
+}
+
+func codexAccountAllowedForSchedulingWithCache(ctx context.Context, account *Account, accountRepo AccountRepository, settings *SettingService, cache CodexClientConfigCache, detector CodexClientRestrictionDetector) (bool, string) {
 	req, ok := codexRestrictionRequestFromContext(ctx)
 	if account == nil || !account.IsOpenAIOAuth() || (!ok && codexRestrictionContextUserID(ctx) <= 0) {
 		return true, ""
 	}
-	// Scheduler snapshots may intentionally omit account Extra fields. Refresh
-	// the account before deciding so a newly enabled codex_cli_only flag cannot
-	// be missed and deferred to the forwarding-stage defensive check.
-	checkedAccount := account
-	if accountRepo != nil {
-		fresh, err := accountRepo.GetByID(ctx, account.ID)
-		if err != nil || fresh == nil {
+	if detector == nil {
+		detector = NewOpenAICodexClientRestrictionDetector(nil)
+	}
+
+	state, known := resolveCodexClientAccountState(ctx, account, accountRepo, cache)
+	if !known {
+		// A cache miss plus an unavailable database means the account flag is
+		// unknown. Non-Codex clients must not be routed to a possibly restricted
+		// account; Codex clients may still use it only after the policy gate.
+		if !ok {
 			return false, "account_unavailable"
 		}
-		checkedAccount = fresh
+		state = CodexClientAccountState{Enabled: true}
 	}
-	if !checkedAccount.IsCodexCLIOnlyEnabled() {
+	if !state.Enabled {
 		return true, ""
 	}
+
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
 	if settings != nil {
 		policy = settings.GetCodexRestrictionPolicy(ctx)
 	}
+	checkedAccount := codexAccountWithClientState(account, state)
+	if !ok {
+		// Preserve the legacy path for callers without an inbound request: only
+		// the user-level policy can be evaluated.
+		if reason := policy.userDenialReason(codexRestrictionContextUserID(ctx)); reason != "" {
+			return false, reason
+		}
+		return true, ""
+	}
+
+	// force_codex_cli is an explicit global bypass: every client is treated as
+	// a Codex CLI client. The detector still applies the user blacklist first.
+	if forced, isForced := detector.(interface{ ForceCodexCLIEnabled() bool }); isForced && forced.ForceCodexCLIEnabled() {
+		result := detector.Detect(req.Context, checkedAccount, policy, req.Body)
+		return result.Matched, result.Reason
+	}
+
+	// Client-type filtering happens in the candidate phase. A request that does
+	// not match the Codex client identity must be routed to accounts that do not
+	// enable codex_cli_only instead of being rejected at the forwarding stage.
+	identity := matchCodexClientIdentity(req.Context.GetHeader("User-Agent"), req.Context.GetHeader("originator"), checkedAccount, policy)
+	if !identity.Matched {
+		return false, CodexClientRestrictionReasonNonCodexClient
+	}
 	if reason := policy.userDenialReason(codexRestrictionContextUserID(ctx)); reason != "" {
 		return false, reason
 	}
-	if !ok {
-		return true, ""
-	}
 	result := detector.Detect(req.Context, checkedAccount, policy, req.Body)
 	return result.Matched, result.Reason
+}
+
+func resolveCodexClientAccountState(ctx context.Context, account *Account, accountRepo AccountRepository, cache CodexClientConfigCache) (CodexClientAccountState, bool) {
+	if account == nil {
+		return CodexClientAccountState{}, false
+	}
+	if cache != nil && account.ID > 0 {
+		state, found, err := cache.GetCodexClientAccountState(ctx, account.ID)
+		if err == nil && found {
+			// When the scheduler snapshot carries the flag explicitly, use it as
+			// a consistency witness. A mismatch means one of the writes was lost
+			// (snapshot vs Redis); never guess, fall back to the database.
+			if explicit, ok := account.Extra["codex_cli_only"].(bool); ok && explicit != state.Enabled {
+				// fall through to the repository
+			} else {
+				return state, true
+			}
+		}
+	}
+	if accountRepo != nil && account.ID > 0 {
+		fresh, err := accountRepo.GetByID(ctx, account.ID)
+		if err != nil || fresh == nil {
+			return CodexClientAccountState{}, false
+		}
+		state := CodexClientAccountStateFromAccount(fresh)
+		if cache != nil {
+			_ = cache.SetCodexClientAccountState(ctx, account.ID, state, DefaultCodexClientConfigCacheTTL)
+		}
+		return state, true
+	}
+	if cache == nil {
+		return CodexClientAccountStateFromAccount(account), true
+	}
+	return CodexClientAccountState{}, false
+}
+
+// codexRestrictionDeniedError maps a scheduling denial to the caller-visible
+// error class. Non-Codex clients are a candidate filter, so exhausting the pool
+// is the ordinary no-available-account result, not the Codex-only 403.
+func codexRestrictionDeniedError(reason, requestedModel string) error {
+	if reason == CodexClientRestrictionReasonNonCodexClient {
+		return noAvailableOpenAISelectionError(requestedModel, false, "")
+	}
+	return noAllowedCodexAccountsError(requestedModel)
+}
+
+func codexAccountWithClientState(account *Account, state CodexClientAccountState) *Account {
+	if account == nil {
+		return nil
+	}
+	cloned := *account
+	extra := make(map[string]any, len(account.Extra)+2)
+	for key, value := range account.Extra {
+		extra[key] = value
+	}
+	if state.Enabled {
+		extra["codex_cli_only"] = true
+	} else {
+		delete(extra, "codex_cli_only")
+	}
+	if state.AppServerAllowed {
+		extra["codex_cli_only_allow_app_server"] = true
+	} else {
+		delete(extra, "codex_cli_only_allow_app_server")
+	}
+	cloned.Extra = extra
+	return &cloned
 }
 
 // CodexOfficialClientsOnlyMessage 是 codex_cli_only 拒绝时面向客户端的通用兜底文案。
@@ -96,6 +195,10 @@ const (
 	CodexClientRestrictionReasonMatchedOriginator = "official_client_originator_matched"
 	// CodexClientRestrictionReasonNotMatchedUA 表示请求未命中任何允许的客户端身份。
 	CodexClientRestrictionReasonNotMatchedUA = "official_client_user_agent_not_matched"
+	// CodexClientRestrictionReasonNonCodexClient 表示请求不是 Codex 客户端。
+	// 该原因不参与"仅 Codex 账号"拒绝文案：调用方应在候选阶段过滤掉受限账号，
+	// 没有剩余账号时按普通无可用账号处理。
+	CodexClientRestrictionReasonNonCodexClient = "non_codex_client"
 	// CodexClientRestrictionReasonForceCodexCLI 表示通过 ForceCodexCLI 配置兜底放行。
 	CodexClientRestrictionReasonForceCodexCLI = "force_codex_cli_enabled"
 	// CodexClientRestrictionReasonBlacklisted 表示请求命中全局黑名单（门内 deny 最先，OR 语义）。
@@ -158,6 +261,42 @@ func NewOpenAICodexClientRestrictionDetector(cfg *config.Config) *OpenAICodexCli
 	return &OpenAICodexClientRestrictionDetector{cfg: cfg}
 }
 
+// ForceCodexCLIEnabled exposes the global bypass so the scheduler can classify
+// every client as a Codex CLI client consistently with Detect.
+func (d *OpenAICodexClientRestrictionDetector) ForceCodexCLIEnabled() bool {
+	return d != nil && d.cfg != nil && d.cfg.Gateway.ForceCodexCLI
+}
+
+// codexClientIdentity 描述一次请求是否属于 Codex 客户端家族，以及命中的
+// 识别来源。它只回答“客户端类型”，不包含账号开关、用户黑名单、版本或
+// 指纹门等账号/policy 判定，供调度阶段和转发阶段共用。
+type codexClientIdentity struct {
+	Matched         bool
+	Reason          string
+	SkipFingerprint bool
+}
+
+func matchCodexClientIdentity(userAgent, originator string, account *Account, policy CodexRestrictionPolicy) codexClientIdentity {
+	switch {
+	case openai.IsCodexOfficialClientRequestStrict(userAgent):
+		return codexClientIdentity{Matched: true, Reason: CodexClientRestrictionReasonMatchedUA}
+	case openai.IsCodexOfficialClientOriginator(originator):
+		return codexClientIdentity{Matched: true, Reason: CodexClientRestrictionReasonMatchedOriginator}
+	default:
+		if entry, ok := openai.MatchClientEntry(userAgent, originator, policy.Whitelist); ok {
+			return codexClientIdentity{
+				Matched:         true,
+				Reason:          CodexClientRestrictionReasonMatchedWhitelistClient,
+				SkipFingerprint: entry.SkipEngineFingerprint,
+			}
+		}
+		if policy.AllowAppServerClients || (account != nil && account.IsCodexCLIOnlyAppServerAllowed()) {
+			return codexClientIdentity{Matched: true, Reason: CodexClientRestrictionReasonMatchedAppServerClient}
+		}
+	}
+	return codexClientIdentity{Reason: CodexClientRestrictionReasonNotMatchedUA}
+}
+
 // Detect 门控顺序（每步可短路）：
 //  1. 账号未开 codex_cli_only → 不限制（Disabled）。
 //  2. 用户黑名单命中 → 立即拒（优先于所有客户端身份规则）。
@@ -196,24 +335,12 @@ func (d *OpenAICodexClientRestrictionDetector) Detect(c *gin.Context, account *A
 	}
 
 	// 5. 身份候选（优先级：官方 > 全局白名单 > App Server 开闸：全局开关 OR 账号开关）。
-	reason := ""
-	skipFingerprint := false
-	switch {
-	case openai.IsCodexOfficialClientRequestStrict(userAgent):
-		reason = CodexClientRestrictionReasonMatchedUA
-	case openai.IsCodexOfficialClientOriginator(originator):
-		reason = CodexClientRestrictionReasonMatchedOriginator
-	default:
-		if entry, ok := openai.MatchClientEntry(userAgent, originator, policy.Whitelist); ok {
-			reason = CodexClientRestrictionReasonMatchedWhitelistClient
-			skipFingerprint = entry.SkipEngineFingerprint
-		} else if policy.AllowAppServerClients || account.IsCodexCLIOnlyAppServerAllowed() {
-			reason = CodexClientRestrictionReasonMatchedAppServerClient
-		}
+	identity := matchCodexClientIdentity(userAgent, originator, account, policy)
+	if !identity.Matched {
+		return CodexClientRestrictionDetectionResult{Enabled: true, Matched: false, Reason: identity.Reason}
 	}
-	if reason == "" {
-		return CodexClientRestrictionDetectionResult{Enabled: true, Matched: false, Reason: CodexClientRestrictionReasonNotMatchedUA}
-	}
+	reason := identity.Reason
+	skipFingerprint := identity.SkipFingerprint
 
 	// 6. Codex 版本：仅对官方候选（官方 UA / 官方 originator）。版本必须可识别（需求②），再校验 [min,max]。
 	//    白名单/账号预设/App Server 候选可能不带可解析引擎版本，整块跳过。
@@ -281,6 +408,16 @@ func (s *OpenAIGatewayService) enforceCodexClientRestriction(ctx context.Context
 		return nil
 	}
 	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	if result.Reason == CodexClientRestrictionReasonNotMatchedUA {
+		// The scheduler should already have excluded restricted accounts for a
+		// non-Codex client. Reaching this branch means the account changed after
+		// selection; report the ordinary no-account result instead of rejecting
+		// the request as a client-type policy violation.
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+			"type": "api_error", "message": "No available OpenAI accounts",
+		}})
+		return fmt.Errorf("codex client account mismatch: %s", result.Reason)
+	}
 	status := http.StatusForbidden
 	errType := "forbidden_error"
 	if result.Reason == CodexClientRestrictionReasonPolicyUnavailable {

@@ -1045,7 +1045,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			continue
 		}
 		if allowed, reason := s.codexAccountAllowedForScheduling(ctx, fresh); !allowed {
-			filterStats.exclude("codex_" + reason)
+			filterStats.exclude(codexRestrictionFilterReason(reason))
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
@@ -1299,7 +1299,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		if allowed, reason := s.codexAccountAllowedForScheduling(ctx, acc); !allowed {
-			filterStats.exclude("codex_" + reason)
+			filterStats.exclude(codexRestrictionFilterReason(reason))
 			continue
 		}
 		if !parentHealthyForShadow(acc, parentLookupL2) {

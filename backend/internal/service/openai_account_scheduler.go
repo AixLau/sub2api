@@ -1483,6 +1483,18 @@ type openAISelectionFilterStats struct {
 	reasons map[string]int
 }
 
+// codexRestrictionFilterReason keeps the diagnostic prefix used by the legacy
+// codex_cli_only rejection path, except for non-Codex clients. Those are a
+// routing filter, not a policy denial: when every candidate is restricted the
+// caller must return the ordinary "no available account" result instead of the
+// Codex-only 403.
+func codexRestrictionFilterReason(reason string) string {
+	if reason == CodexClientRestrictionReasonNonCodexClient {
+		return reason
+	}
+	return "codex_" + reason
+}
+
 func (s openAISelectionFilterStats) onlyCodexRestriction() bool {
 	if s.pool <= 0 || len(s.reasons) == 0 {
 		return false
@@ -1603,7 +1615,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			continue
 		}
 		if allowed, reason := s.service.codexAccountAllowedForScheduling(ctx, account); !allowed {
-			filterStats.exclude("codex_" + reason)
+			filterStats.exclude(codexRestrictionFilterReason(reason))
 			continue
 		}
 		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {

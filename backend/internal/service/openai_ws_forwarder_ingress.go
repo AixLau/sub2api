@@ -2116,5 +2116,10 @@ func (s *OpenAIGatewayService) codexWebSocketRestrictionError(ctx context.Contex
 	}
 	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), result, body)
 	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	if result.Reason == CodexClientRestrictionReasonNotMatchedUA {
+		// Same defensive race as the HTTP boundary: a non-Codex client must
+		// not receive a client-type policy violation, only no-account.
+		return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "no available account", nil)
+	}
 	return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, CodexClientRestrictionMessage(result), nil)
 }

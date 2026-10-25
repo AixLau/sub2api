@@ -88,7 +88,13 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 func (s *SettingService) refreshCachedSettingsAfterWrite(ctx context.Context, settings *SystemSettings, omitted OmittedSettingKeys) {
 	// Invalidate even if the subsequent whole-settings read fails. An omitted
 	// field must not prevent a successfully saved access policy taking effect.
-	s.invalidateCodexRestrictionPolicy()
+	s.invalidateCodexRestrictionPolicy(ctx)
+	if _, whitelistOmitted := omitted[SettingKeyCodexCLIOnlyWhitelist]; !whitelistOmitted {
+		// Write the saved whitelist through to Redis immediately. This closes the
+		// tiny window between invalidation and the next policy reload on other
+		// instances.
+		s.SetCodexClientWhitelistCache(ctx, settings.CodexCLIOnlyWhitelist)
+	}
 	if len(omitted) == 0 {
 		s.refreshCachedSettings(settings)
 		return

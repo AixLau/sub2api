@@ -876,6 +876,7 @@ type GatewayService struct {
 	modelsListCache       *gocache.Cache
 	modelsListCacheTTL    time.Duration
 	settingService        *SettingService
+	codexClientCache      CodexClientConfigCache
 	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
 	debugModelRouting     atomic.Bool
 	debugClaudeMimic      atomic.Bool
@@ -972,6 +973,14 @@ func NewGatewayService(
 		svc.initDebugGatewayBodyFile(path)
 	}
 	return svc
+}
+
+// SetCodexClientConfigCache injects the Redis-backed Codex client config cache.
+// It is optional; when nil the service falls back to the database.
+func (s *GatewayService) SetCodexClientConfigCache(cache CodexClientConfigCache) {
+	if s != nil {
+		s.codexClientCache = cache
+	}
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash

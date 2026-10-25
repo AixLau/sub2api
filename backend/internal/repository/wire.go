@@ -48,6 +48,22 @@ func ProvideSessionLimitCache(rdb *redis.Client, cfg *config.Config) service.Ses
 	return NewSessionLimitCache(rdb, defaultIdleTimeoutMinutes)
 }
 
+// ProvideAccountRepository wires the account repository with the Codex client
+// config cache so account flag updates invalidate routing state synchronously.
+func ProvideAccountRepository(client *ent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache, codexCache service.CodexClientConfigCache) service.AccountRepository {
+	repo := newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
+	repo.codexClientCache = codexCache
+	return repo
+}
+
+// ProvideAdminAccountRepository returns the admin-facing account repository
+// with the same Codex client config cache wiring.
+func ProvideAdminAccountRepository(client *ent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache, codexCache service.CodexClientConfigCache) service.AdminAccountRepository {
+	repo := newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
+	repo.codexClientCache = codexCache
+	return repo
+}
+
 // ProvideSchedulerCache 创建调度快照缓存，并注入快照分块参数。
 func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.SchedulerCache {
 	mgetChunkSize := defaultSchedulerSnapshotMGetChunkSize
@@ -70,8 +86,8 @@ var ProviderSet = wire.NewSet(
 	NewGroupRepository,
 	NewAdminGroupRepository,
 	NewCompositeModelRouteRepository,
-	NewAccountRepository,
-	NewAdminAccountRepository,
+	ProvideAccountRepository,
+	ProvideAdminAccountRepository,
 	NewScheduledTestPlanRepository,   // 定时测试计划仓储
 	NewScheduledTestResultRepository, // 定时测试结果仓储
 	NewProxyRepository,
@@ -111,6 +127,7 @@ var ProviderSet = wire.NewSet(
 
 	// Cache implementations
 	NewGatewayCache,
+	NewCodexClientConfigCache,
 	NewBillingCache,
 	NewAPIKeyCache,
 	NewTempUnschedCache,

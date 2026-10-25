@@ -1173,8 +1173,8 @@ func (s *GatewayService) isAccountSchedulableForModelSelection(ctx context.Conte
 	if account == nil {
 		return false
 	}
-	if account.IsCodexCLIOnlyEnabled() {
-		if allowed, _ := codexAccountAllowedForScheduling(ctx, account, s.accountRepo, s.settingService, NewOpenAICodexClientRestrictionDetector(s.cfg)); !allowed {
+	if account.IsOpenAIOAuth() {
+		if allowed, _ := codexAccountAllowedForSchedulingWithCache(ctx, account, s.accountRepo, s.settingService, s.codexClientCache, NewOpenAICodexClientRestrictionDetector(s.cfg)); !allowed {
 			return false
 		}
 	}

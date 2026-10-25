@@ -584,7 +584,7 @@ func (s *SettingService) MigrateOpenAIAllowClaudeCodeCodexPluginSetting(ctx cont
 	if err := s.settingRepo.Set(dbCtx, SettingKeyCodexCLIOnlyWhitelist, string(encoded)); err != nil {
 		return fmt.Errorf("set %s setting: %w", SettingKeyCodexCLIOnlyWhitelist, err)
 	}
-	s.invalidateCodexRestrictionPolicy()
+	s.invalidateCodexRestrictionPolicy(ctx)
 	return nil
 }
 
@@ -661,7 +661,7 @@ func (s *SettingService) MigrateCodexBodyFingerprintToSignals(ctx context.Contex
 	if err := s.settingRepo.Set(dbCtx, SettingKeyCodexCLIOnlyEngineFingerprintSignals, string(encoded)); err != nil {
 		return fmt.Errorf("set %s setting: %w", SettingKeyCodexCLIOnlyEngineFingerprintSignals, err)
 	}
-	s.invalidateCodexRestrictionPolicy()
+	s.invalidateCodexRestrictionPolicy(ctx)
 	return nil
 }
 
@@ -714,7 +714,7 @@ func normalizedCodexClientMarkers(markers []string) map[string]struct{} {
 func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRestrictionPolicy {
 	if cached, ok := s.codexRestrictionPolicyCache.Load().(*cachedCodexRestrictionPolicy); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
-			return cached.value
+			return s.withFreshCodexClientWhitelist(ctx, cached.value)
 		}
 	}
 	result, _, _ := s.codexRestrictionPolicySF.Do("codex_restriction_policy", func() (any, error) {
@@ -745,7 +745,7 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 		if blacklistErr != nil {
 			slog.Error("load Codex user blacklist failed", "error", blacklistErr)
 		}
-		pol.Whitelist = s.loadCodexClientEntries(dbCtx, SettingKeyCodexCLIOnlyWhitelist)
+		pol.Whitelist = s.loadCodexClientWhitelist(dbCtx)
 		pol.Blacklist = s.loadCodexClientEntries(dbCtx, SettingKeyCodexCLIOnlyBlacklist)
 
 		s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{
@@ -763,6 +763,18 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 	}
 }
 
+// withFreshCodexClientWhitelist refreshes the client whitelist from Redis even
+// when the rest of the policy snapshot is still within its in-process TTL. This
+// keeps a whitelist edit made by another instance effective immediately instead
+// of waiting for the 60s policy cache to expire.
+func (s *SettingService) withFreshCodexClientWhitelist(ctx context.Context, pol CodexRestrictionPolicy) CodexRestrictionPolicy {
+	if s == nil || s.codexClientCache == nil {
+		return pol
+	}
+	pol.Whitelist = s.loadCodexClientWhitelist(ctx)
+	return pol
+}
+
 func (s *SettingService) loadCodexUserIDs(ctx context.Context) (map[int64]struct{}, error) {
 	if s == nil || s.settingRepo == nil {
 		return nil, errors.New("setting repository unavailable")
@@ -777,11 +789,113 @@ func (s *SettingService) loadCodexUserIDs(ctx context.Context) (map[int64]struct
 	return ParseCodexCLIOnlyUserBlacklist(v)
 }
 
-func (s *SettingService) invalidateCodexRestrictionPolicy() {
+func (s *SettingService) invalidateCodexRestrictionPolicy(ctx ...context.Context) {
+	if s == nil {
+		return
+	}
 	s.codexRestrictionPolicyMu.Lock()
 	defer s.codexRestrictionPolicyMu.Unlock()
 	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
 	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{})
+	if s.codexClientCache == nil {
+		return
+	}
+	cacheCtx := context.Background()
+	if len(ctx) > 0 && ctx[0] != nil {
+		cacheCtx = ctx[0]
+	}
+	if err := s.codexClientCache.DeleteCodexClientWhitelist(cacheCtx); err != nil {
+		slog.Warn("invalidate codex client whitelist cache failed", "error", err)
+		// The old entry may still be readable. Bypass Redis on this instance
+		// until a later successful write proves the cache is consistent again.
+		s.codexWhitelistCacheUnreliable.Store(true)
+		return
+	}
+	s.codexWhitelistCacheUnreliable.Store(false)
+}
+
+// SetCodexClientWhitelistCache writes the current whitelist through to Redis.
+// Updates call this after a successful database write so a concurrent request
+// cannot briefly observe the previous whitelist between invalidation and the
+// next cache fill. Invalid entries are ignored (the DB value is authoritative).
+func (s *SettingService) SetCodexClientWhitelistCache(ctx context.Context, raw string) {
+	if s == nil || s.codexClientCache == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	entries, ok := parseCodexClientEntriesJSON(raw)
+	if !ok {
+		if err := s.codexClientCache.DeleteCodexClientWhitelist(ctx); err != nil {
+			slog.Warn("delete invalid codex client whitelist cache failed", "error", err)
+			s.codexWhitelistCacheUnreliable.Store(true)
+			return
+		}
+		s.codexWhitelistCacheUnreliable.Store(false)
+		return
+	}
+	if err := s.codexClientCache.SetCodexClientWhitelist(ctx, entries, DefaultCodexClientConfigCacheTTL); err != nil {
+		slog.Warn("write codex client whitelist cache failed", "error", err)
+		// Never leave an older entry behind when the write-through failed.
+		if delErr := s.codexClientCache.DeleteCodexClientWhitelist(ctx); delErr != nil {
+			slog.Warn("delete stale codex client whitelist cache failed", "error", delErr)
+			s.codexWhitelistCacheUnreliable.Store(true)
+			return
+		}
+		s.codexWhitelistCacheUnreliable.Store(false)
+		return
+	}
+	s.codexWhitelistCacheUnreliable.Store(false)
+}
+
+func (s *SettingService) loadCodexClientWhitelist(ctx context.Context) []openai.AllowedClientEntry {
+	if s == nil {
+		return nil
+	}
+	if s.codexClientCache != nil && !s.codexWhitelistCacheUnreliable.Load() {
+		entries, found, err := s.codexClientCache.GetCodexClientWhitelist(ctx)
+		if err == nil && found {
+			return entries
+		}
+		if err != nil {
+			slog.Warn("read codex client whitelist cache failed; falling back to database", "error", err)
+		}
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyCodexCLIOnlyWhitelist)
+	if errors.Is(err, ErrSettingNotFound) {
+		return nil
+	}
+	if err != nil {
+		slog.Warn("read codex client whitelist setting failed", "error", err)
+		return nil
+	}
+	entries, ok := parseCodexClientEntriesJSON(value)
+	if !ok {
+		return nil
+	}
+	if s.codexClientCache != nil {
+		if err := s.codexClientCache.SetCodexClientWhitelist(ctx, entries, DefaultCodexClientConfigCacheTTL); err != nil {
+			slog.Warn("fill codex client whitelist cache failed", "error", err)
+			s.codexWhitelistCacheUnreliable.Store(true)
+		} else {
+			s.codexWhitelistCacheUnreliable.Store(false)
+		}
+	}
+	return entries
+}
+
+// parseCodexClientEntriesJSON parses a []AllowedClientEntry setting. Empty data
+// is a valid empty list. Malformed JSON returns ok=false so callers fail closed.
+func parseCodexClientEntriesJSON(raw string) ([]openai.AllowedClientEntry, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, true
+	}
+	var entries []openai.AllowedClientEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, false
+	}
+	return entries, true
 }
 
 // loadCodexClientEntries 读取并解析 []openai.AllowedClientEntry JSON 设置；缺失/空/非法 → nil（安全忽略）。

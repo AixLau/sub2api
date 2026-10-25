@@ -50,6 +50,10 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+	// codexClientCache caches the per-account codex_cli_only flags so routing
+	// does not need a database refresh on every candidate. Account writes
+	// refresh it synchronously below.
+	codexClientCache service.CodexClientConfigCache
 }
 
 // BatchUpdateOpenAICapacityHistory merges derived capacity history into all
@@ -539,7 +543,16 @@ func (r *accountRepository) updateAccount(
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
+		// Write the codex flag from the just-saved row even if the snapshot
+		// re-read below fails; this keeps the routing filter in sync with the
+		// committed database value.
+		r.syncCodexClientAccountState(baseCtx, account)
 		r.syncSchedulerAccountSnapshot(baseCtx, account.ID)
+	} else {
+		// Caller-managed transaction: we cannot publish before commit. Drop the
+		// cached flag so the next routing decision reads the committed value
+		// from the database (safe even if the caller rolls back).
+		r.deleteCodexClientAccountState(baseCtx, account.ID)
 	}
 	return nil
 }
@@ -1876,7 +1889,7 @@ func (r *accountRepository) SetGrokOAuthRefreshTempUnschedulableIfCredentialsUnc
 // unschedulable, or temporarily unschedulable, ensuring scheduler and sticky session
 // logic can promptly detect the latest account state and avoid using unavailable accounts.
 func (r *accountRepository) syncSchedulerAccountSnapshot(ctx context.Context, accountID int64) {
-	if r == nil || r.schedulerCache == nil || accountID <= 0 {
+	if r == nil || accountID <= 0 || (r.schedulerCache == nil && r.codexClientCache == nil) {
 		return
 	}
 	account, err := r.GetByID(ctx, accountID)
@@ -1884,9 +1897,12 @@ func (r *accountRepository) syncSchedulerAccountSnapshot(ctx context.Context, ac
 		logger.LegacyPrintf("repository.account", "[Scheduler] sync account snapshot read failed: id=%d err=%v", accountID, err)
 		return
 	}
-	if err := r.schedulerCache.SetAccount(ctx, account); err != nil {
-		logger.LegacyPrintf("repository.account", "[Scheduler] sync account snapshot write failed: id=%d err=%v", accountID, err)
+	if r.schedulerCache != nil {
+		if err := r.schedulerCache.SetAccount(ctx, account); err != nil {
+			logger.LegacyPrintf("repository.account", "[Scheduler] sync account snapshot write failed: id=%d err=%v", accountID, err)
+		}
 	}
+	r.syncCodexClientAccountState(ctx, account)
 }
 
 func (r *accountRepository) syncSchedulerAccountSnapshotDetached(ctx context.Context, accountID int64) {
@@ -1900,16 +1916,42 @@ func (r *accountRepository) syncSchedulerAccountSnapshotDetached(ctx context.Con
 }
 
 func (r *accountRepository) deleteSchedulerAccountSnapshot(ctx context.Context, accountID int64) {
-	if r == nil || r.schedulerCache == nil || accountID <= 0 {
+	if r == nil || accountID <= 0 {
 		return
 	}
-	if err := r.schedulerCache.DeleteAccount(ctx, accountID); err != nil {
-		logger.LegacyPrintf("repository.account", "[Scheduler] delete account snapshot failed: id=%d err=%v", accountID, err)
+	if r.schedulerCache != nil {
+		if err := r.schedulerCache.DeleteAccount(ctx, accountID); err != nil {
+			logger.LegacyPrintf("repository.account", "[Scheduler] delete account snapshot failed: id=%d err=%v", accountID, err)
+		}
+	}
+	r.deleteCodexClientAccountState(ctx, accountID)
+}
+
+func (r *accountRepository) syncCodexClientAccountState(ctx context.Context, account *service.Account) {
+	if r == nil || r.codexClientCache == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	state := service.CodexClientAccountStateFromAccount(account)
+	if err := r.codexClientCache.SetCodexClientAccountState(ctx, account.ID, state, service.DefaultCodexClientConfigCacheTTL); err != nil {
+		logger.LegacyPrintf("repository.account", "[CodexClient] cache write failed: id=%d err=%v", account.ID, err)
+		// Prefer a cache miss (DB fallback) over a stale flag after a failed write.
+		if delErr := r.codexClientCache.DeleteCodexClientAccountState(ctx, account.ID); delErr != nil {
+			logger.LegacyPrintf("repository.account", "[CodexClient] cache invalidation failed: id=%d err=%v", account.ID, delErr)
+		}
+	}
+}
+
+func (r *accountRepository) deleteCodexClientAccountState(ctx context.Context, accountID int64) {
+	if r == nil || r.codexClientCache == nil || accountID <= 0 {
+		return
+	}
+	if err := r.codexClientCache.DeleteCodexClientAccountState(ctx, accountID); err != nil {
+		logger.LegacyPrintf("repository.account", "[CodexClient] cache delete failed: id=%d err=%v", accountID, err)
 	}
 }
 
 func (r *accountRepository) syncSchedulerAccountSnapshots(ctx context.Context, accountIDs []int64) {
-	if r == nil || r.schedulerCache == nil || len(accountIDs) == 0 {
+	if r == nil || len(accountIDs) == 0 || (r.schedulerCache == nil && r.codexClientCache == nil) {
 		return
 	}
 
@@ -1939,9 +1981,12 @@ func (r *accountRepository) syncSchedulerAccountSnapshots(ctx context.Context, a
 		if account == nil {
 			continue
 		}
-		if err := r.schedulerCache.SetAccount(ctx, account); err != nil {
-			logger.LegacyPrintf("repository.account", "[Scheduler] batch sync account snapshot write failed: id=%d err=%v", account.ID, err)
+		if r.schedulerCache != nil {
+			if err := r.schedulerCache.SetAccount(ctx, account); err != nil {
+				logger.LegacyPrintf("repository.account", "[Scheduler] batch sync account snapshot write failed: id=%d err=%v", account.ID, err)
+			}
 		}
+		r.syncCodexClientAccountState(ctx, account)
 	}
 }
 
@@ -2884,6 +2929,12 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	if affected == 0 {
 		return service.ErrAccountNotFound
 	}
+	if _, ok := updates["codex_cli_only"]; ok {
+		r.deleteCodexClientAccountState(baseCtx, id)
+	}
+	if _, ok := updates["codex_cli_only_allow_app_server"]; ok {
+		r.deleteCodexClientAccountState(baseCtx, id)
+	}
 	if durableSchedulerChange {
 		if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
 			return err
@@ -3376,6 +3427,16 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			return 0, err
 		}
 	}
+	_, codexEnabledChanged := updates.Extra["codex_cli_only"]
+	_, codexAppServerChanged := updates.Extra["codex_cli_only_allow_app_server"]
+	codexStateChanged := rows > 0 && (codexEnabledChanged || codexAppServerChanged)
+	if codexStateChanged {
+		// Drop the per-account flags before publishing. If the snapshot reload
+		// below fails we want a cache miss (DB fallback) instead of the old flag.
+		for _, id := range ids {
+			r.deleteCodexClientAccountState(baseCtx, id)
+		}
+	}
 	if tx != nil {
 		if err := tx.Commit(); err != nil {
 			return 0, err
@@ -3387,6 +3448,9 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			shouldSync = true
 		}
 		if updates.Schedulable != nil && !*updates.Schedulable {
+			shouldSync = true
+		}
+		if codexStateChanged {
 			shouldSync = true
 		}
 		if shouldSync {
