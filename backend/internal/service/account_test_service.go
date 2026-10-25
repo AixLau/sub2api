@@ -206,6 +206,9 @@ type AccountTestService struct {
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
 	// WS dialer when nil (supports proxy + coder/websocket handshake).
 	grokWSDialer openAIWSClientDialer
+	// openAIWindowStartModelFailures: "accountID|model" -> time the upstream
+	// rejected that model for a window-start request.
+	openAIWindowStartModelFailures sync.Map
 }
 
 func (s *AccountTestService) SetSettingService(settingService *SettingService) {

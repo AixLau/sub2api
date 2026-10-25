@@ -74,14 +74,40 @@ func (r *accountUsageCodexProbeRepo) ClaimOpenAIExpiredRateLimit(_ context.Conte
 
 type accountUsageWindowStarter struct {
 	accountIDs       []int64
+	modelIDs         []string
 	windowStartProbe []bool
 	result           *ScheduledTestResult
+	// results, when set, are returned in order instead of result.
+	results      []*ScheduledTestResult
+	models       []OpenAIWindowStartModel
+	failedModels []string
 }
 
-func (s *accountUsageWindowStarter) RunTestBackground(ctx context.Context, accountID int64, _ string) (*ScheduledTestResult, error) {
+func (s *accountUsageWindowStarter) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
 	s.accountIDs = append(s.accountIDs, accountID)
+	s.modelIDs = append(s.modelIDs, modelID)
 	s.windowStartProbe = append(s.windowStartProbe, isOpenAIWindowStartProbe(ctx))
+	if len(s.results) > 0 {
+		result := s.results[0]
+		s.results = s.results[1:]
+		return result, nil
+	}
 	return s.result, nil
+}
+
+func (s *accountUsageWindowStarter) OpenAIWindowStartModels(_ context.Context, _ *Account) []OpenAIWindowStartModel {
+	if s.models == nil {
+		return []OpenAIWindowStartModel{{Requested: "gpt-test-cheap", Upstream: "gpt-test-cheap", CostPerToken: 1e-7}}
+	}
+	return s.models
+}
+
+func (s *accountUsageWindowStarter) RecordOpenAIWindowStartModelFailure(_ int64, upstreamModel string) {
+	s.failedModels = append(s.failedModels, upstreamModel)
+}
+
+func newWindowStartReadyAccount(id int64) Account {
+	return Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
 }
 
 type accountUsageRuntimeBlocker struct {
@@ -267,6 +293,7 @@ func TestAccountUsageService_WindowStartRequiresSuccessfulClaim(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &accountUsageCodexProbeRepo{windowStartClaimed: tt.claimed}
+			repo.accounts = []Account{newWindowStartReadyAccount(123)}
 			starter := &accountUsageWindowStarter{result: &ScheduledTestResult{Status: "success"}}
 			task := &openAIRateLimitWindowStartTask{limitedAt: now, resetAt: resetAt}
 			svc := &AccountUsageService{

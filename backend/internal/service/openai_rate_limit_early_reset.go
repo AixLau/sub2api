@@ -46,8 +46,9 @@ func (s *AccountUsageService) recoverOpenAIGlobalRateLimitAfterProbe(ctx context
 	}
 	slog.Info("openai_rate_limit_early_reset_recovered", "account_id", account.ID, "advertised_reset_at", advertisedResetAt)
 
-	s.replaceOpenAIRateLimitWindowStartAfterEarlyReset(account.ID, advertisedResetAt)
-	s.broadcastOpenAIEarlyReset(account.ID, time.Now())
+	clearedAt := time.Now()
+	s.replaceOpenAIRateLimitWindowStartAfterEarlyReset(account.ID, advertisedResetAt, clearedAt)
+	s.broadcastOpenAIEarlyReset(account.ID, clearedAt)
 }
 
 // clearObservedOpenAIRateLimit only clears the generation the probe observed, so
@@ -66,7 +67,7 @@ func (s *AccountUsageService) clearObservedOpenAIRateLimit(ctx context.Context, 
 // the advertised reset (its claim could no longer match the cleared row) and
 // sends the window-start request shortly instead, keeping the same random
 // delay as the regular path.
-func (s *AccountUsageService) replaceOpenAIRateLimitWindowStartAfterEarlyReset(accountID int64, advertisedResetAt time.Time) {
+func (s *AccountUsageService) replaceOpenAIRateLimitWindowStartAfterEarlyReset(accountID int64, advertisedResetAt, clearedAt time.Time) {
 	s.openAIWindowStartMu.Lock()
 	if existing := s.openAIWindowStartTasks[accountID]; existing != nil {
 		if existing.timer != nil {
@@ -80,7 +81,7 @@ func (s *AccountUsageService) replaceOpenAIRateLimitWindowStartAfterEarlyReset(a
 		return
 	}
 	time.AfterFunc(randomOpenAIWindowStartDelay(), func() {
-		s.sendOpenAIRateLimitWindowStart(accountID, advertisedResetAt)
+		s.sendOpenAIRateLimitWindowStart(accountID, advertisedResetAt, clearedAt)
 	})
 }
 

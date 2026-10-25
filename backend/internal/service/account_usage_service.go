@@ -94,6 +94,8 @@ type openAIRateLimitWindowStartClaimer interface {
 
 type openAIRateLimitWindowStarter interface {
 	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
+	OpenAIWindowStartModels(ctx context.Context, account *Account) []OpenAIWindowStartModel
+	RecordOpenAIWindowStartModelFailure(accountID int64, upstreamModel string)
 }
 
 type openAIWindowStartProbeContextKey struct{}
@@ -557,40 +559,7 @@ func (s *AccountUsageService) runOpenAIRateLimitWindowStart(accountID int64, tas
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
 	}
-	s.sendOpenAIRateLimitWindowStart(accountID, task.resetAt)
-}
-
-// sendOpenAIRateLimitWindowStart sends the one-shot request that opens the next
-// sliding window. Callers must already have cleared the 429 state they observed.
-func (s *AccountUsageService) sendOpenAIRateLimitWindowStart(accountID int64, resetAt time.Time) {
-	if s == nil || s.openAIWindowStarter == nil {
-		return
-	}
-	slog.Info("openai_rate_limit_window_start_request", "account_id", accountID, "reset_at", resetAt)
-
-	probeCtx, probeCancel := context.WithTimeout(
-		context.WithValue(context.Background(), openAIWindowStartProbeContextKey{}, true),
-		30*time.Second,
-	)
-	result, probeErr := s.openAIWindowStarter.RunTestBackground(probeCtx, accountID, "")
-	probeCancel()
-	if probeErr != nil || result == nil || result.Status != "success" {
-		var resultStatus string
-		var resultError string
-		if result != nil {
-			resultStatus = result.Status
-			resultError = truncate(strings.TrimSpace(result.ErrorMessage), 240)
-		}
-		slog.Warn(
-			"openai_rate_limit_window_start_failed",
-			"account_id", accountID,
-			"error", probeErr,
-			"result_status", resultStatus,
-			"result_error", resultError,
-		)
-		return
-	}
-	slog.Info("openai_rate_limit_window_started", "account_id", accountID, "reset_at", resetAt)
+	s.sendOpenAIRateLimitWindowStart(accountID, task.resetAt, task.resetAt)
 }
 
 func supportsAnthropicPassiveUsage(account *Account) bool {
