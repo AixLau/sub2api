@@ -1517,6 +1517,43 @@ func (r *accountRepository) ClaimOpenAIExpiredRateLimit(ctx context.Context, id 
 	return true, nil
 }
 
+// ClearOpenAIRateLimitIfObserved clears an OpenAI OAuth parent account's 429
+// cooldown only while it still carries the generation the caller observed. A
+// /wham/usage probe that reports an early upstream reset can race a fresh 429;
+// matching both timestamps keeps that newer cooldown in place.
+func (r *accountRepository) ClearOpenAIRateLimitIfObserved(ctx context.Context, id int64, observedLimitedAt *time.Time, observedResetAt time.Time) (bool, error) {
+	predicates := []dbpredicate.Account{
+		dbaccount.IDEQ(id),
+		dbaccount.PlatformEQ(service.PlatformOpenAI),
+		dbaccount.TypeEQ(service.AccountTypeOAuth),
+		dbaccount.ParentAccountIDIsNil(),
+		dbaccount.RateLimitResetAtEQ(observedResetAt),
+	}
+	if observedLimitedAt == nil {
+		predicates = append(predicates, dbaccount.RateLimitedAtIsNil())
+	} else {
+		predicates = append(predicates, dbaccount.RateLimitedAtEQ(*observedLimitedAt))
+	}
+	updated, err := r.client.Account.Update().
+		Where(predicates...).
+		ClearRateLimitedAt().
+		ClearRateLimitResetAt().
+		ClearOverloadUntil().
+		Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	if updated == 0 {
+		r.syncSchedulerAccountSnapshot(ctx, id)
+		return false, nil
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue OpenAI observed rate-limit clear failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
+}
+
 func (r *accountRepository) UpdateLastUsed(ctx context.Context, id int64) error {
 	now := time.Now()
 	_, err := r.client.Account.Update().

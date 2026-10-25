@@ -494,6 +494,7 @@ func (h *OpenAIOAuthHandler) QueryQuota(c *gin.Context) {
 		return
 	}
 	service.NotifyOpenAIAutoResetCredit(accountID)
+	service.RecoverOpenAIRateLimitAfterQuotaQuery(c.Request.Context(), accountID, usage)
 	response.Success(c, usage)
 }
 
@@ -525,6 +526,7 @@ func (h *OpenAIOAuthHandler) RefreshQuota(c *gin.Context) {
 		return
 	}
 	service.NotifyOpenAIAutoResetCredit(accountID)
+	service.RecoverOpenAIRateLimitAfterQuotaQuery(c.Request.Context(), accountID, usage)
 
 	refreshResponse := openAIQuotaRefreshResponse{OpenAIQuotaUsage: *usage}
 	if err := h.quotaService.CacheCreditsSnapshot(c.Request.Context(), accountID, usage); err != nil {

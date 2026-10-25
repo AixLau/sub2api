@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -337,7 +338,10 @@ type AccountUsageService struct {
 	openAIRecoveryCursor    int64
 	openAIWindowStartMu     sync.Mutex
 	openAIWindowStartTasks  map[int64]*openAIRateLimitWindowStartTask
-	openAISummaryFlight     singleflight.Group
+	// openAIEarlyResetBroadcastAt (unix nanos) debounces the probe-throttle
+	// reset triggered when one account observes an early upstream reset.
+	openAIEarlyResetBroadcastAt atomic.Int64
+	openAISummaryFlight         singleflight.Group
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -378,6 +382,7 @@ func (s *AccountUsageService) StartOpenAIRateLimitRecovery() {
 	if s == nil {
 		return
 	}
+	setOpenAIRateLimitRecoverer(s)
 	if _, ok := s.accountRepo.(openAIRateLimitRecoveryCandidateLister); !ok {
 		return
 	}
@@ -429,10 +434,10 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 			continue
 		}
 		s.scheduleOpenAIRateLimitWindowStart(account)
-		// Keep polling /wham/usage for early upstream resets. The OpenAI usage
-		// path suppresses ClearRateLimit while this generation has a pending
-		// window-start task, so an early availability response cannot invalidate
-		// the timer before it sends the sliding-window request.
+		// Keep polling /wham/usage for early upstream resets (OpenAI promotions
+		// reset windows before the advertised time). An available probe replaces
+		// the pending window-start timer with an immediate one. Once the
+		// advertised reset has passed, the timer owns recovery instead.
 		if account.RateLimitResetAt != nil &&
 			!account.RateLimitResetAt.After(time.Now()) &&
 			s.hasPendingOpenAIRateLimitWindowStart(accountID) {
@@ -552,7 +557,16 @@ func (s *AccountUsageService) runOpenAIRateLimitWindowStart(accountID int64, tas
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
 	}
-	slog.Info("openai_rate_limit_window_start_request", "account_id", accountID, "reset_at", task.resetAt)
+	s.sendOpenAIRateLimitWindowStart(accountID, task.resetAt)
+}
+
+// sendOpenAIRateLimitWindowStart sends the one-shot request that opens the next
+// sliding window. Callers must already have cleared the 429 state they observed.
+func (s *AccountUsageService) sendOpenAIRateLimitWindowStart(accountID int64, resetAt time.Time) {
+	if s == nil || s.openAIWindowStarter == nil {
+		return
+	}
+	slog.Info("openai_rate_limit_window_start_request", "account_id", accountID, "reset_at", resetAt)
 
 	probeCtx, probeCancel := context.WithTimeout(
 		context.WithValue(context.Background(), openAIWindowStartProbeContextKey{}, true),
@@ -576,7 +590,7 @@ func (s *AccountUsageService) runOpenAIRateLimitWindowStart(accountID int64, tas
 		)
 		return
 	}
-	slog.Info("openai_rate_limit_window_started", "account_id", accountID, "reset_at", task.resetAt)
+	slog.Info("openai_rate_limit_window_started", "account_id", accountID, "reset_at", resetAt)
 }
 
 func supportsAnthropicPassiveUsage(account *Account) bool {
@@ -969,7 +983,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					updates = buildCodexSparkWindowExtraUpdates(quotaUsage, now)
 				} else {
 					updates = buildCodexGlobalWindowExtraUpdates(quotaUsage, now)
-					if openAIQuotaShowsAvailable(quotaUsage) && !s.hasPendingOpenAIRateLimitWindowStart(account.ID) {
+					if openAIQuotaShowsAvailable(quotaUsage) {
 						s.recoverOpenAIGlobalRateLimitAfterProbe(ctx, account)
 					}
 				}
@@ -1077,22 +1091,6 @@ func openAIQuotaShowsAvailable(usage *OpenAIQuotaUsage) bool {
 		usage.RateLimit != nil &&
 		usage.RateLimit.Allowed &&
 		!usage.RateLimit.LimitReached
-}
-
-func (s *AccountUsageService) recoverOpenAIGlobalRateLimitAfterProbe(ctx context.Context, account *Account) {
-	if s == nil || s.accountRepo == nil || account == nil || account.IsShadow() || !account.IsRateLimited() {
-		return
-	}
-	if err := s.accountRepo.ClearRateLimit(ctx, account.ID); err != nil {
-		slog.Warn("openai_usage_probe_rate_limit_clear_failed", "account_id", account.ID, "error", err)
-		return
-	}
-	account.RateLimitedAt = nil
-	account.RateLimitResetAt = nil
-	account.OverloadUntil = nil
-	if s.runtimeBlocker != nil {
-		s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
-	}
 }
 
 func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, updates map[string]any) {
