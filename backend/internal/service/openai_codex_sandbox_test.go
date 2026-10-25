@@ -97,11 +97,12 @@ func TestApplyCodexFingerprintSandboxMetadataRawNoop(t *testing.T) {
 func TestOpenAIGatewayService_CodexFingerprintSandboxUsesFinalUserAgent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const (
-		linuxUA   = "codex-tui/0.200.1 (Linux 6.8.0; x86_64) WindowsTerminal"
-		macUA     = "codex-tui/0.200.1 (Mac OS X 15.1; arm64) iTerm"
-		darwinUA  = "codex-tui/0.200.1 (Darwin 24.1.0; arm64) terminal"
-		windowsUA = "codex-tui/0.200.1 (Windows NT 10.0; x86_64) terminal"
-		unknownUA = "codex-tui/0.200.1 (FreeBSD 14.0; x86_64) WindowsTerminal"
+		// 配置的旧 codex-tui 身份会被出站归一为 CLI 身份，版本段与设备指纹保留。
+		linuxUA   = "codex_cli_rs/0.200.1 (Linux 6.8.0; x86_64) WindowsTerminal"
+		macUA     = "codex_cli_rs/0.200.1 (Mac OS X 15.1; arm64) iTerm"
+		darwinUA  = "codex_cli_rs/0.200.1 (Darwin 24.1.0; arm64) terminal"
+		windowsUA = "codex_cli_rs/0.200.1 (Windows NT 10.0; x86_64) terminal"
+		unknownUA = "codex_cli_rs/0.200.1 (FreeBSD 14.0; x86_64) WindowsTerminal"
 	)
 	for _, transport := range []string{"http", "passthrough"} {
 		for _, tt := range []struct {
