@@ -770,10 +770,11 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 	return aggregator
 }
 
-// ProvideSettingService wires SettingService with group reader, proxy repo and
-// the optional Redis-backed Codex client config cache.
-func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, codexClientCache CodexClientConfigCache) *SettingService {
+// ProvideSettingService wires both scoped admin key access and the optional
+// Redis-backed Codex client config cache.
+func ProvideSettingService(scopedKeys ScopedAdminKeyRepository, settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, codexClientCache CodexClientConfigCache) *SettingService {
 	svc := NewSettingService(settingRepo, cfg)
+	svc.scopedAdminKeyRepo = scopedKeys
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
 	svc.SetCodexClientConfigCache(codexClientCache)

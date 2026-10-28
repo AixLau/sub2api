@@ -1,3 +1,4 @@
+import adminAccessKeys from './adminAccessKeys'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -11,6 +12,7 @@ import publicTransit from './publicTransit'
 import { mergeLocaleMessages } from '../merge'
 
 export default mergeLocaleMessages({
+  adminAccessKeys,
   ...landing,
   ...common,
   ...dashboard,

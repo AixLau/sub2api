@@ -318,11 +318,24 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	settingService *SettingService,
-	usageLogRepo UsageLogRepository,
-	billingService *BillingService,
-	pricingResolver *ModelPricingResolver,
-	tlsFPProfileService *TLSFingerprintProfileService,
+	optional ...any,
 ) *AccountTestService {
+	var usageLogRepo UsageLogRepository
+	var billingService *BillingService
+	var pricingResolver *ModelPricingResolver
+	var tlsFPProfileService *TLSFingerprintProfileService
+	if len(optional) > 0 {
+		usageLogRepo, _ = optional[0].(UsageLogRepository)
+	}
+	if len(optional) > 1 {
+		billingService, _ = optional[1].(*BillingService)
+	}
+	if len(optional) > 2 {
+		pricingResolver, _ = optional[2].(*ModelPricingResolver)
+	}
+	if len(optional) > 3 {
+		tlsFPProfileService, _ = optional[3].(*TLSFingerprintProfileService)
+	}
 	return &AccountTestService{
 		accountRepo:               accountRepo,
 		geminiTokenProvider:       geminiTokenProvider,
@@ -2578,6 +2591,14 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 	}
 }
 
+// geminiDefaultTestModel 返回 Gemini 连接测试未指定模型时使用的模型；Google One 账号只能使用其保守模型集。
+func geminiDefaultTestModel(account *Account) string {
+	if account.IsGeminiGoogleOne() {
+		return geminicli.GoogleOneModels[0].ID
+	}
+	return geminicli.DefaultTestModel
+}
+
 // testGeminiAccountConnection tests a Gemini account's connection
 func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	ctx := c.Request.Context()
@@ -2586,7 +2607,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	// Determine the model to use
 	testModelID := modelID
 	if testModelID == "" {
-		testModelID = geminicli.DefaultTestModel
+		testModelID = geminiDefaultTestModel(account)
 	}
 
 	// For static upstream credentials with model mapping, map the model
