@@ -1846,20 +1846,37 @@ func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
 		MonthlyUsageUSD: limit, Group: subGroup,
 	}
 
+	cheapGroup := service.Group{ID: 221, Name: "openai cheap", Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard, RateMultiplier: 0.5, ActiveAccountCount: 1}
+	pricyGroup := service.Group{ID: 222, Name: "openai pricy", Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard, RateMultiplier: 1.5, ActiveAccountCount: 1}
+
 	cases := []struct {
-		name       string
-		balance    float64
-		getActive  func(context.Context, int64, int64) (*service.UserSubscription, error)
-		wantStatus int
+		name          string
+		balance       float64
+		getActive     func(context.Context, int64, int64) (*service.UserSubscription, error)
+		balanceGroups []service.Group
+		wantGroupID   int64
+		wantStatus    int
 	}{
 		{
-			name:    "exhausted subscription uses balance",
+			name:    "exhausted subscription switches to cheapest balance group",
 			balance: 100,
 			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
 				sub := exhaustedSub
 				return &sub, nil
 			},
-			wantStatus: http.StatusOK,
+			balanceGroups: []service.Group{pricyGroup, cheapGroup},
+			wantGroupID:   cheapGroup.ID,
+			wantStatus:    http.StatusOK,
+		},
+		{
+			name:    "exhausted subscription without balance group keeps original group",
+			balance: 100,
+			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+				sub := exhaustedSub
+				return &sub, nil
+			},
+			wantGroupID: subGroup.ID,
+			wantStatus:  http.StatusOK,
 		},
 		{
 			name:    "expired subscription uses balance",
@@ -1867,7 +1884,9 @@ func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
 			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
 				return nil, service.ErrSubscriptionNotFound
 			},
-			wantStatus: http.StatusOK,
+			balanceGroups: []service.Group{cheapGroup},
+			wantGroupID:   cheapGroup.ID,
+			wantStatus:    http.StatusOK,
 		},
 		{
 			name:    "exhausted subscription without balance is rejected",
@@ -1899,7 +1918,7 @@ func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
 				},
 			}
 			cfg := &config.Config{RunMode: config.RunModeStandard}
-			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, subRepo, nil, nil, cfg)
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, &stubBalanceGroupRepo{groups: tc.balanceGroups}, subRepo, nil, nil, cfg)
 			subscriptionService := service.NewSubscriptionService(nil, subRepo, nil, nil, cfg)
 			t.Cleanup(subscriptionService.Stop)
 
@@ -1908,7 +1927,8 @@ func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
 			router.GET("/t", func(c *gin.Context) {
 				resolvedKey, ok := GetAPIKeyFromContext(c)
 				require.True(t, ok)
-				require.Equal(t, subGroup.ID, *resolvedKey.GroupID)
+				require.Equal(t, tc.wantGroupID, *resolvedKey.GroupID)
+				require.Equal(t, tc.wantGroupID, resolvedKey.Group.ID)
 				_, hasSub := GetSubscriptionFromContext(c)
 				require.False(t, hasSub, "balance fallback must not attach the unusable subscription")
 				c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -2121,6 +2141,22 @@ func (r *stubApiKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) er
 }
 func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
+}
+
+// stubBalanceGroupRepo 只实现余额回落分组查询，其余方法调用会 panic。
+type stubBalanceGroupRepo struct {
+	service.GroupRepository
+	groups []service.Group
+}
+
+func (s *stubBalanceGroupRepo) ListActiveByPlatform(_ context.Context, platform string) ([]service.Group, error) {
+	out := make([]service.Group, 0, len(s.groups))
+	for _, g := range s.groups {
+		if g.Platform == platform {
+			out = append(out, g)
+		}
+	}
+	return out, nil
 }
 
 type stubUserSubscriptionRepo struct {

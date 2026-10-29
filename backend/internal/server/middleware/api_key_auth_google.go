@@ -210,8 +210,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 		}
 
-		// 订阅分组的订阅不可用且无其他同平台订阅时，回落到用户余额计费。
+		// 订阅分组的订阅不可用且无其他同平台订阅时，回落到用户余额计费：
+		// 改用同平台倍率最低的余额分组；找不到时仍按原分组以余额计费。
 		if billingErr != nil && canFallbackToBalance(apiKey, billingErr) {
+			if balanceGroup, findErr := apiKeyService.FindBalanceFallbackGroup(c.Request.Context(), apiKey.User, apiKey.Group.Platform); findErr == nil && balanceGroup != nil {
+				apiKey = cloneAPIKeyForBillingGroup(apiKey, balanceGroup)
+				SetOpsFallbackAPIKey(c, apiKey)
+			}
 			subscription = nil
 			billingErr = nil
 		}

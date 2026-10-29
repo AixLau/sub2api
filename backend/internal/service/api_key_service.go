@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/dgraph-io/ristretto"
+	gocache "github.com/patrickmn/go-cache"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -314,6 +315,8 @@ type APIKeyService struct {
 	authInvalidationFailures  atomic.Uint64
 	lastUsedTouchL1           sync.Map // keyID -> nextAllowedAt(time.Time)
 	lastUsedTouchSF           singleflight.Group
+	balanceFallbackCache      *gocache.Cache // 订阅回落余额分组的候选缓存，懒加载
+	balanceFallbackCacheOnce  sync.Once
 }
 
 type APIKeyAuthLookupMetrics struct {
