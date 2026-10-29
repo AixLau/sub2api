@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -260,7 +261,7 @@ func TestHandleStreamingResponse_StreamReadErrorBeforeOutput_TriggersFailover(t 
 	require.NotContains(t, rec.Body.String(), "stream_read_error")
 }
 
-// 上游已经发送过事件（c.Writer 已写过字节）后再发生读错误：
+// 上游已经发送过内容事件（c.Writer 已写过字节）后再发生读错误：
 // SSE 协议无 resume，网关只能透传 stream_read_error 错误事件给客户端，不能 failover。
 func TestHandleStreamingResponse_StreamReadErrorAfterOutput_PassesThrough(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -275,8 +276,9 @@ func TestHandleStreamingResponse_StreamReadErrorAfterOutput_PassesThrough(t *tes
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: &streamReadCloser{
-			payload: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}\n\n"),
-			err:     io.ErrUnexpectedEOF,
+			payload: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}\n\n" +
+				"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n"),
+			err: io.ErrUnexpectedEOF,
 		},
 	}
 
@@ -297,6 +299,34 @@ func TestHandleStreamingResponse_StreamReadErrorAfterOutput_PassesThrough(t *tes
 	require.Contains(t, body, `"type":"error"`, "data 必须含 type:error 顶层字段（Anthropic 标准）")
 	require.Contains(t, body, `"stream_read_error"`, "error.type 必须为 stream_read_error")
 	require.Contains(t, body, "upstream stream disconnected", "error.message 必须包含具体根因，Claude Code 等客户端才能显示有效错误文案")
+}
+
+// 只收到前导事件（message_start）就发生读错误：前导仍在首包缓冲中，客户端未收到字节，
+// 即使 message_start 带有 usage 也必须走 failover。
+func TestHandleStreamingResponse_StreamReadErrorAfterPreludeOnly_TriggersFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newMinimalGatewayService()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: &streamReadCloser{
+			payload: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}\n\n"),
+			err:     io.ErrUnexpectedEOF,
+		},
+	}
+
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.True(t, errors.As(err, &failoverErr), "期望 UpstreamFailoverError: %v", err)
+	require.Zero(t, rec.Body.Len(), "首包缓冲中的前导事件不得写给客户端")
 }
 
 // 默认 (*net.OpError).Error() 会拼接 Source/Addr 字段，泄露内部 IP/端口与上游
@@ -460,11 +490,44 @@ func TestHandleStreamingResponse_SSEErrorEvent_EmptyDataLine(t *testing.T) {
 	require.Equal(t, "", sseErr.RawData)
 }
 
-// 对抗用例：上游先发 message_start 再发 event:error，模拟"流已开始写客户端"+SSE error 帧。
-// 这是 ping 放大场景的服务侧近似（c.Writer 已被写后才出现 error）。
-// 必须仍然返回 *sseStreamErrorEventError 且 RawData 包含真实错误体，
-// 让 Forward 调用方能正确补全 ResponseBody 与 ops 事件。
-func TestHandleStreamingResponse_SSEErrorEvent_AfterPartialStreamOutput(t *testing.T) {
+// 上游先发 message_start 再发 event:error（中转上游常见形态）：message_start 仍在首包缓冲中，
+// 客户端未收到任何字节，必须返回 typed error 且不返回 streamingResult，让 handler 换号重试。
+func TestHandleStreamingResponse_SSEErrorEvent_AfterPreludeOnly_HoldsBackForFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newMinimalGatewayService()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	const errorJSON = `{"type":"error","error":{"type":"upstream_error","message":"Upstream access forbidden, please contact administrator"}}`
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
+
+	go func() {
+		defer func() { _ = pw.Close() }()
+		_, _ = pw.Write([]byte(`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n"))
+		_, _ = pw.Write([]byte("event: ping\ndata: {\"type\": \"ping\"}\n\n"))
+		_, _ = pw.Write([]byte(`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n"))
+		_, _ = pw.Write([]byte("event: error\ndata: " + errorJSON + "\n\n"))
+	}()
+
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	_ = pr.Close()
+
+	require.Error(t, err)
+	require.Nil(t, result, "前导未交付时不得返回 streamingResult，避免对客户端计费")
+	var sseErr *sseStreamErrorEventError
+	require.True(t, errors.As(err, &sseErr), "期望 typed error: %v", err)
+	require.Equal(t, errorJSON, sseErr.RawData)
+	require.Zero(t, rec.Body.Len(), "首包缓冲中的前导事件不得写给客户端")
+	require.False(t, c.Writer.Written())
+}
+
+// 已写出内容 delta 后再来的 event:error：流已对客户端提交，必须返回 typed error 与已观测 usage，
+// handler 据 c.Writer 已写入判定不可 failover。
+func TestHandleStreamingResponse_SSEErrorEvent_AfterContentOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newMinimalGatewayService()
 
@@ -479,24 +542,74 @@ func TestHandleStreamingResponse_SSEErrorEvent_AfterPartialStreamOutput(t *testi
 
 	go func() {
 		defer func() { _ = pw.Close() }()
-		// 先发 message_start，让 handleStreamingResponse 把它转发到客户端 → c.Writer 已被写
 		_, _ = pw.Write([]byte(`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n"))
-		// 紧接着发 event:error
+		_, _ = pw.Write([]byte(`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}` + "\n\n"))
 		_, _ = pw.Write([]byte("event: error\ndata: " + errorJSON + "\n\n"))
 	}()
 
-	_, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
 	_ = pr.Close()
 
 	require.Error(t, err)
 	var sseErr *sseStreamErrorEventError
-	require.True(t, errors.As(err, &sseErr), "已发数据后再来的 SSE event:error 必须仍包成 typed error，期望: %v", err)
+	require.True(t, errors.As(err, &sseErr), "已发内容后再来的 SSE event:error 必须仍包成 typed error，期望: %v", err)
 	require.Equal(t, errorJSON, sseErr.RawData)
+	require.NotNil(t, result)
+	require.Equal(t, 5, result.usage.InputTokens)
 
-	// c.Writer 必定已被写过（message_start 已转发）— 这是 handler 838 行 streamStarted 守卫触发的条件，
-	// 修复前/后均会让 handler 直接走 handleFailoverExhausted 而非切账号；不变。
-	require.Greater(t, rec.Body.Len(), 0, "message_start 应被转发到客户端")
-	require.Contains(t, rec.Body.String(), "message_start")
+	body := rec.Body.String()
+	require.Contains(t, body, "message_start", "首个内容到达时前导事件应一并写出")
+	require.Contains(t, body, "text_delta")
+	require.Less(t, strings.Index(body, "message_start"), strings.Index(body, "text_delta"), "前导事件必须保持原始顺序")
+}
+
+// 上游只发前导事件后长时间无内容：缓冲窗口（取 keepalive 间隔）到期后必须写出前导，
+// 之后的流内错误按已提交处理。
+func TestHandleStreamingResponse_PreludeReleasedAfterHoldbackWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newMinimalGatewayService()
+	svc.cfg.Gateway.StreamKeepaliveInterval = 1
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
+
+	go func() {
+		defer func() { _ = pw.Close() }()
+		_, _ = pw.Write([]byte(`data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}` + "\n\n"))
+		time.Sleep(1500 * time.Millisecond)
+		_, _ = pw.Write([]byte("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"boom\"}}\n\n"))
+	}()
+
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	_ = pr.Close()
+
+	require.Error(t, err)
+	require.NotNil(t, result, "前导已写出后出错应返回已观测 usage")
+	body := rec.Body.String()
+	require.Contains(t, body, "message_start", "缓冲窗口到期后必须写出前导事件")
+	if pingAt := strings.Index(body, "ping"); pingAt >= 0 {
+		require.Less(t, strings.Index(body, "message_start"), pingAt, "前导事件必须早于 keepalive ping")
+	}
+}
+
+func TestIsAnthropicStreamPreludeEvent(t *testing.T) {
+	for data, want := range map[string]bool{
+		"":                                      true,
+		`{"type":"message_start","message":{}}`: true,
+		`{"type":"ping"}`:                       true,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`: true,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta"}}`:   false,
+		`{"type":"message_delta","usage":{"output_tokens":1}}`:                     false,
+		`{"type":"message_stop"}`: false,
+		"[DONE]":                  false,
+		"not-json":                false,
+	} {
+		require.Equal(t, want, isAnthropicStreamPreludeEvent(data), data)
+	}
 }
 
 // 对抗用例：上游发 event:error 但 data 行不是合法 JSON。

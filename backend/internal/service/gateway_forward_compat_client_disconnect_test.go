@@ -510,7 +510,7 @@ func TestForwardAsCompatStreaming_UpstreamErrorEventFailsOver(t *testing.T) {
 			wantStatus int
 		}{
 			{name: "before_output", stream: beforeOutput, wantStatus: 529},
-			{name: "after_output", stream: anthropicStreamWithInBandError("Overloaded", ""), wantStatus: http.StatusForbidden},
+			{name: "after_output", stream: anthropicStreamWithInBandError("Overloaded", ""), wantStatus: 529},
 		} {
 			t.Run(endpoint+"/"+tc.name, func(t *testing.T) {
 				gin.SetMode(gin.TestMode)

@@ -261,7 +261,51 @@ func TestGatewayService_Forward_PreOutputSSEOverloadedErrorUsesSemantic529(t *te
 	require.Empty(t, rec.Body.String(), "pre-output overload must remain eligible for account failover")
 }
 
-func TestGatewayService_Forward_PostOutputSSEOverloadedErrorKeepsExistingStatus(t *testing.T) {
+func TestGatewayService_Forward_PostOutputSSEOverloadedErrorSkipsAccountSideEffects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-3-5-sonnet-latest","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+	parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
+	require.NoError(t, err)
+
+	const errorJSON = `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
+	fixture := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n" +
+		"event: error\ndata: " + errorJSON + "\n\n"
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(fixture)),
+	}}
+	repo := &gatewayForwardErrorPolicyRepoStub{}
+	cfg := &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}
+	svc := &GatewayService{
+		cfg:                  cfg,
+		responseHeaderFilter: compileResponseHeaderFilter(cfg),
+		httpUpstream:         upstream,
+		rateLimitService:     NewRateLimitService(repo, nil, cfg, nil, nil),
+		deferredService:      &DeferredService{},
+	}
+
+	result, err := svc.Forward(context.Background(), c, newAnthropicOAuthAccountForPartialUsageTest(), parsed)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.Usage.InputTokens)
+	require.True(t, IsBillableStreamUsageError(err))
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, 529, failoverErr.StatusCode, "流内错误按 error.type 分类")
+	require.JSONEq(t, errorJSON, string(failoverErr.ResponseBody))
+	require.Zero(t, repo.tempCalls)
+	require.Contains(t, rec.Body.String(), "message_start")
+}
+
+func TestGatewayService_Forward_PreludeOnlySSEOverloadedErrorIsFailoverEligible(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -292,16 +336,15 @@ func TestGatewayService_Forward_PostOutputSSEOverloadedErrorKeepsExistingStatus(
 
 	result, err := svc.Forward(context.Background(), c, newAnthropicOAuthAccountForPartialUsageTest(), parsed)
 	require.Error(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 1, result.Usage.InputTokens)
-	require.True(t, IsBillableStreamUsageError(err))
+	require.Nil(t, result, "前导未交付时不得计费，交由 handler 换号重试")
+	require.False(t, IsBillableStreamUsageError(err))
 
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusForbidden, failoverErr.StatusCode)
+	require.Equal(t, 529, failoverErr.StatusCode)
 	require.JSONEq(t, errorJSON, string(failoverErr.ResponseBody))
-	require.Zero(t, repo.tempCalls)
-	require.Contains(t, rec.Body.String(), "message_start")
+	require.Equal(t, 1, repo.overloadCalls, "前导缓冲中的 529 视为未输出，应触发账号过载冷却")
+	require.Empty(t, rec.Body.String(), "message_start 仍在首包缓冲中，不得写给客户端")
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamMissingTerminalPreservesPartialUsage(t *testing.T) {
@@ -344,4 +387,23 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamMissingTerminalP
 	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 3, result.Usage.OutputTokens)
 	require.Equal(t, "claude-3-7-sonnet-20250219", result.Model)
+}
+
+func TestSSEStreamErrorSemanticStatus(t *testing.T) {
+	for errType, want := range map[string]int{
+		"overloaded_error":      529,
+		"rate_limit_error":      http.StatusTooManyRequests,
+		"authentication_error":  http.StatusUnauthorized,
+		"permission_error":      http.StatusForbidden,
+		"invalid_request_error": http.StatusBadRequest,
+		"not_found_error":       http.StatusNotFound,
+		"request_too_large":     http.StatusRequestEntityTooLarge,
+		"api_error":             http.StatusBadGateway,
+		"upstream_error":        http.StatusBadGateway,
+		"":                      http.StatusBadGateway,
+	} {
+		body := []byte(`{"type":"error","error":{"type":"` + errType + `","message":"x"}}`)
+		require.Equal(t, want, sseStreamErrorSemanticStatus(body), errType)
+	}
+	require.Equal(t, http.StatusBadGateway, sseStreamErrorSemanticStatus([]byte("not-json")))
 }

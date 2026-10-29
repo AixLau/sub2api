@@ -237,6 +237,28 @@ func (s *GatewayService) shouldFailoverOn400(respBody []byte) bool {
 	return false
 }
 
+const (
+	// streamPreludeHoldbackMax 首包缓冲的最长等待时间；下游 keepalive 间隔更短时取 keepalive 间隔。
+	streamPreludeHoldbackMax = 10 * time.Second
+	// streamPreludeHoldbackMaxBytes 首包缓冲的字节上限，超过即写出。
+	streamPreludeHoldbackMaxBytes = 64 * 1024
+)
+
+// isAnthropicStreamPreludeEvent 判断事件是否属于首个内容之前的前导事件。
+// data 为空表示 SSE 注释或无 data 行的事件。前导事件不含模型输出，
+// 暂缓写出不影响客户端语义；其余事件（delta、message_delta、[DONE] 等）结束缓冲。
+func isAnthropicStreamPreludeEvent(data string) bool {
+	if data == "" {
+		return true
+	}
+	switch gjson.Get(data, "type").String() {
+	case "message_start", "ping", "content_block_start":
+		return true
+	default:
+		return false
+	}
+}
+
 // sanitizeStreamError 返回不含网络地址的客户端可见错误描述。
 // 默认 (*net.OpError).Error() 会拼接 Source/Addr 字段，泄露内部 IP/端口与上游
 // 服务器地址（例如 "read tcp 10.0.0.1:54321->52.1.2.3:443: read: connection
@@ -860,6 +882,52 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	pendingEventLines := make([]string, 0, 4)
 
+	writeClientBlocks := func(blocks []string) {
+		if clientDisconnected || len(blocks) == 0 {
+			return
+		}
+		for _, block := range blocks {
+			restored := reverseToolNamesIfPresent(c, []byte(block))
+			if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
+				clientDisconnected = true
+				logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
+				// 不中断读取：客户端断开后仍需继续合并本事件及后续事件的 usage，
+				// 否则会漏计当前事件携带的 usage 导致少计费。后续写入由
+				// clientDisconnected 守卫跳过。
+				return
+			}
+		}
+		flusher.Flush()
+		lastDataAt = time.Now()
+		resetKeepaliveTimer()
+	}
+
+	// 首包缓冲：message_start / ping / content_block_start 等前导事件先暂存，
+	// 首个内容事件到达（或超时、超量）时再一并写出。部分中转上游会先发 message_start，
+	// 随后才在流内报 event:error；前导一旦写给客户端，handler 就只能放弃 failover。
+	// 缓冲期间出错时客户端尚未收到任何字节，可以安全切换账号重试。
+	preludeHolding := true
+	var preludeBlocks []string
+	preludeBytes := 0
+	preludeWindow := streamPreludeHoldbackMax
+	if keepaliveInterval > 0 && keepaliveInterval < preludeWindow {
+		preludeWindow = keepaliveInterval
+	}
+	preludeTimer := time.NewTimer(preludeWindow)
+	defer preludeTimer.Stop()
+	preludeCh := preludeTimer.C
+	releasePrelude := func() {
+		if !preludeHolding {
+			return
+		}
+		preludeHolding = false
+		preludeCh = nil
+		preludeTimer.Stop()
+		blocks := preludeBlocks
+		preludeBlocks = nil
+		writeClientBlocks(blocks)
+	}
+
 	processSSEEvent := func(lines []string) ([]string, string, *sseUsagePatch, error) {
 		if len(lines) == 0 {
 			return nil, "", nil, nil
@@ -1026,6 +1094,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		case ev, ok := <-events:
 			if !ok {
 				// 上游完成，返回结果
+				releasePrelude()
 				if !sawTerminalEvent {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
@@ -1046,17 +1115,19 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				// 客户端未断开，正常的错误处理
 				if errors.Is(ev.err, bufio.ErrTooLong) {
 					logger.LegacyPrintf("service.gateway", "SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
+					releasePrelude()
 					sendErrorEvent("response_too_large", fmt.Sprintf("upstream SSE line exceeded %d bytes", maxLineSize))
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
 				}
 				// 上游中途读错误（unexpected EOF / connection reset 等，常见于 HTTP/2 GOAWAY）：
 				// 若尚未向客户端写过任何字节，包成 UpstreamFailoverError 让 handler 层走 failover/重试。
+				// 首包缓冲中的 message_start usage 未交付给客户端，不阻止 failover。
 				// 已经开始写流时 SSE 协议无 resume，只能透传错误事件给客户端。
 				// 注意:面向客户端的 disconnectMsg 必须用 sanitizeStreamError 剥离地址,
 				// 默认 *net.OpError 的 Error() 会泄露内部 IP/端口和上游地址。完整 ev.err
 				// 仅在下方 LegacyPrintf 内部日志中保留供运维诊断。
 				disconnectMsg := "upstream stream disconnected: " + sanitizeStreamError(ev.err)
-				if !c.Writer.Written() && !claudeUsageHasBillableTokens(usage) {
+				if !c.Writer.Written() && (preludeHolding || !claudeUsageHasBillableTokens(usage)) {
 					logger.LegacyPrintf("service.gateway", "Upstream stream read error before any client output (account=%d), failing over: %v", account.ID, ev.err)
 					body, _ := json.Marshal(map[string]any{
 						"type": "error",
@@ -1071,6 +1142,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						RetryableOnSameAccount: true,
 					}
 				}
+				releasePrelude()
 				sendErrorEvent("stream_read_error", disconnectMsg)
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
 			}
@@ -1085,6 +1157,11 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				outputBlocks, data, usagePatch, err := processSSEEvent(pendingEventLines)
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
+					if preludeHolding {
+						// 前导事件尚未写给客户端：丢弃缓冲，交由 handler 换号重试。
+						// 客户端未收到任何内容，缓冲中的 message_start usage 不计费。
+						return nil, err
+					}
 					if claudeUsageHasBillableTokens(usage) {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, err
 					}
@@ -1095,19 +1172,14 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				}
 
 				for _, block := range outputBlocks {
-					if !clientDisconnected {
-						restored := reverseToolNamesIfPresent(c, []byte(block))
-						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
-							clientDisconnected = true
-							logger.LegacyPrintf("service.gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
-							// 不 break：客户端断开后仍需继续合并本事件及后续事件的 usage，
-							// 否则会漏计当前事件携带的 usage 导致少计费。后续写入由
-							// clientDisconnected 守卫跳过。
-						} else {
-							flusher.Flush()
-							lastDataAt = time.Now()
-							resetKeepaliveTimer()
+					if preludeHolding {
+						preludeBlocks = append(preludeBlocks, block)
+						preludeBytes += len(block)
+						if !isAnthropicStreamPreludeEvent(data) || preludeBytes > streamPreludeHoldbackMaxBytes {
+							releasePrelude()
 						}
+					} else {
+						writeClientBlocks([]string{block})
 					}
 					if data != "" {
 						if firstTokenMs == nil && data != "[DONE]" {
@@ -1138,13 +1210,19 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if s.rateLimitService != nil {
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 			}
+			releasePrelude()
 			sendErrorEvent("stream_timeout", fmt.Sprintf("upstream stream idle for %s", streamInterval))
 			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
+
+		case <-preludeCh:
+			releasePrelude()
 
 		case <-keepaliveCh:
 			if clientDisconnected {
 				continue
 			}
+			// 兜底：keepalive 先于缓冲窗口触发时，先写出前导事件，避免客户端看到 ping 早于 message_start。
+			releasePrelude()
 			if time.Since(lastDataAt) < keepaliveInterval {
 				resetKeepaliveTimer()
 				continue

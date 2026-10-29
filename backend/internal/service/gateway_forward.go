@@ -833,9 +833,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			if errors.As(err, &sseErr) {
 				// 上游 HTTP 200 + SSE 流体内出现 event:error 帧。
 				body := []byte(sseErr.RawData)
-				semanticStatus := http.StatusForbidden
-				if c.Writer.Size() == writerSizeBeforeStream && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
-					semanticStatus = 529
+				semanticStatus := sseStreamErrorSemanticStatus(body)
+				if c.Writer.Size() == writerSizeBeforeStream && semanticStatus == 529 {
 					syntheticResp := &http.Response{
 						StatusCode: semanticStatus,
 						Header:     resp.Header.Clone(),
@@ -1083,14 +1082,37 @@ func (s *GatewayService) isStickyAccountUpstreamRestricted(ctx context.Context, 
 	return s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel)
 }
 
+// sseStreamErrorSemanticStatus 按流内 error.type 推断等价的 HTTP 状态码，供 failover
+// 决策、客户端错误映射与 ops 统计使用。未知类型（含中转上游转发的 upstream_error、
+// api_error）视为上游临时故障，按 502 处理。
+func sseStreamErrorSemanticStatus(body []byte) int {
+	switch gjson.GetBytes(body, "error.type").String() {
+	case "overloaded_error":
+		return 529
+	case "rate_limit_error":
+		return http.StatusTooManyRequests
+	case "authentication_error":
+		return http.StatusUnauthorized
+	case "permission_error":
+		return http.StatusForbidden
+	case "invalid_request_error":
+		return http.StatusBadRequest
+	case "not_found_error":
+		return http.StatusNotFound
+	case "request_too_large":
+		return http.StatusRequestEntityTooLarge
+	default:
+		return http.StatusBadGateway
+	}
+}
+
 // sseStreamErrorEventFailover 把上游 HTTP 200 + SSE 流体内的 event:error 帧转为
-// UpstreamFailoverError：尚未向客户端写出内容且错误类型为 overloaded_error 时按 529
-// 处理并触发账号侧副作用，其余按 403；同时登记 stream_error 运维记录。
+// UpstreamFailoverError：状态码由 sseStreamErrorSemanticStatus 按错误类型推断；
+// 尚未向客户端写出内容且为 529 时触发账号侧副作用；同时登记 stream_error 运维记录。
 func (s *GatewayService) sseStreamErrorEventFailover(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, rawData, model string, outputStarted bool) *UpstreamFailoverError {
 	body := []byte(rawData)
-	semanticStatus := http.StatusForbidden
-	if !outputStarted && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
-		semanticStatus = 529
+	semanticStatus := sseStreamErrorSemanticStatus(body)
+	if !outputStarted && semanticStatus == 529 {
 		syntheticResp := &http.Response{
 			StatusCode: semanticStatus,
 			Header:     resp.Header.Clone(),
