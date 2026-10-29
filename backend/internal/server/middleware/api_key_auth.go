@@ -289,6 +289,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				}
 			}
 
+			// 订阅分组的订阅不可用且无其他同平台订阅时，回落到用户余额计费。
+			if billingErr != nil && canFallbackToBalance(apiKey, billingErr) {
+				subscription = nil
+				billingErr = nil
+			}
+
 			if billingErr != nil {
 				if isSubscriptionType {
 					validateErr := billingErr

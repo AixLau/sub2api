@@ -67,7 +67,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 		ID:          7,
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
-		Balance:     10,
+		Balance:     0, // 无余额，订阅超限时不会回落到余额计费
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{
@@ -917,9 +917,14 @@ func TestAPIKeyAuthLocalClientErrorsUseLocalizedMessages(t *testing.T) {
 			wantMessage: "用户账户未启用",
 		},
 		{
-			name:   "subscription not found",
-			apiKey: activeAPIKey,
-			path:   "/t",
+			name: "subscription not found",
+			apiKey: cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) {
+				// 有余额时会回落到余额计费，这里验证无余额时的拒绝文案。
+				user := *activeUser
+				user.Balance = 0
+				k.User = &user
+			}),
+			path: "/t",
 			subscriptionService: service.NewSubscriptionService(nil, &stubUserSubscriptionRepo{
 				getActive: func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 					return nil, service.ErrSubscriptionNotFound
@@ -1828,6 +1833,94 @@ func TestAPIKeyAuthFallsBackFromBalanceToSubscription(t *testing.T) {
 	subscriptionService.InvalidateSubCacheSync(user.ID, fallbackGroup.ID)
 	request()
 	require.Equal(t, 2, listCalls, "subscription invalidation should evict fallback candidates")
+}
+
+func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now()
+	limit := 10.0
+	subGroup := &service.Group{ID: 211, Name: "openai subscription", Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeSubscription, MonthlyLimitUSD: &limit}
+	exhaustedSub := service.UserSubscription{
+		ID: 511, UserID: 311, GroupID: subGroup.ID, Status: service.SubscriptionStatusActive,
+		ExpiresAt: now.Add(24 * time.Hour), DailyWindowStart: &now, WeeklyWindowStart: &now, MonthlyWindowStart: &now,
+		MonthlyUsageUSD: limit, Group: subGroup,
+	}
+
+	cases := []struct {
+		name       string
+		balance    float64
+		getActive  func(context.Context, int64, int64) (*service.UserSubscription, error)
+		wantStatus int
+	}{
+		{
+			name:    "exhausted subscription uses balance",
+			balance: 100,
+			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+				sub := exhaustedSub
+				return &sub, nil
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:    "expired subscription uses balance",
+			balance: 100,
+			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+				return nil, service.ErrSubscriptionNotFound
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:    "exhausted subscription without balance is rejected",
+			balance: 0,
+			getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+				sub := exhaustedSub
+				return &sub, nil
+			},
+			wantStatus: http.StatusTooManyRequests,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			user := &service.User{ID: 311, Role: service.RoleUser, Status: service.StatusActive, Balance: tc.balance, Concurrency: 2}
+			apiKey := &service.APIKey{ID: 411, UserID: user.ID, Key: "subscription-balance-fallback-key", Status: service.StatusActive, User: user, Group: subGroup}
+			apiKey.GroupID = &subGroup.ID
+
+			apiKeyRepo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+				clone := *apiKey
+				userClone := *user
+				clone.User = &userClone
+				return &clone, nil
+			}}
+			subRepo := &stubUserSubscriptionRepo{
+				getActive: tc.getActive,
+				listActive: func(context.Context, int64) ([]service.UserSubscription, error) {
+					return []service.UserSubscription{exhaustedSub}, nil
+				},
+			}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, subRepo, nil, nil, cfg)
+			subscriptionService := service.NewSubscriptionService(nil, subRepo, nil, nil, cfg)
+			t.Cleanup(subscriptionService.Stop)
+
+			router := gin.New()
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
+			router.GET("/t", func(c *gin.Context) {
+				resolvedKey, ok := GetAPIKeyFromContext(c)
+				require.True(t, ok)
+				require.Equal(t, subGroup.ID, *resolvedKey.GroupID)
+				_, hasSub := GetSubscriptionFromContext(c)
+				require.False(t, hasSub, "balance fallback must not attach the unusable subscription")
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("x-api-key", apiKey.Key)
+			router.ServeHTTP(w, req)
+			require.Equal(t, tc.wantStatus, w.Code)
+		})
+	}
 }
 
 func TestAPIKeyAuthOpenAIQuotaErrorFormat(t *testing.T) {

@@ -210,6 +210,12 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 		}
 
+		// 订阅分组的订阅不可用且无其他同平台订阅时，回落到用户余额计费。
+		if billingErr != nil && canFallbackToBalance(apiKey, billingErr) {
+			subscription = nil
+			billingErr = nil
+		}
+
 		if billingErr != nil {
 			if isSubscriptionType {
 				if errors.Is(billingErr, service.ErrSubscriptionNotFound) {

@@ -857,7 +857,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededReturns429(t 
 		ID:          999,
 		Role:        service.RoleUser,
 		Status:      service.StatusActive,
-		Balance:     10,
+		Balance:     0, // 无余额，订阅超限时不会回落到余额计费
 		Concurrency: 3,
 	}
 	apiKey := &service.APIKey{

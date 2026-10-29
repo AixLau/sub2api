@@ -52,6 +52,18 @@ func canFallbackFromSubscriptionError(err error) bool {
 		errors.Is(err, service.ErrMonthlyLimitExceeded)
 }
 
+// canFallbackToBalance 判断订阅分组在订阅不可用（过期/用尽/不存在）时，能否改用用户余额计费。
+// 订阅为 nil 时下游统一走余额计费，分组（账号调度、倍率）保持不变。
+func canFallbackToBalance(apiKey *service.APIKey, billingErr error) bool {
+	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
+		return false
+	}
+	if !canFallbackFromSubscriptionError(billingErr) {
+		return false
+	}
+	return !apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, nil)
+}
+
 func findFallbackSubscription(ctx context.Context, subscriptionService *service.SubscriptionService, apiKey *service.APIKey, excludedGroupID int64) (*service.APIKey, *service.UserSubscription, error) {
 	if subscriptionService == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
 		return nil, nil, service.ErrSubscriptionNotFound
