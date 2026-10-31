@@ -8286,6 +8286,12 @@
                       :options="loadBalanceOptions"
                       class="w-40"
                     />
+                    <p
+                      v-if="form.payment_load_balance_strategy === 'priority'"
+                      class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                    >
+                      {{ t("admin.settings.payment.strategyPriorityHint") }}
+                    </p>
                   </div>
                   <div>
                     <label class="input-label">{{
@@ -12812,6 +12818,10 @@ const loadBalanceOptions = computed(() => [
     value: "least-amount",
     label: t("admin.settings.payment.strategyLeastAmount"),
   },
+  {
+    value: "priority",
+    label: t("admin.settings.payment.strategyPriority"),
+  },
 ]);
 
 const cancelRateLimitUnitOptions = computed(() => [
@@ -12889,6 +12899,11 @@ function findProviderEnablementConflict(
 ): { method: "alipay" | "wxpay"; conflicting: ProviderInstance } | null {
   const claimedMethods = getProviderVisibleMethods(candidate);
   if (claimedMethods.length === 0) {
+    return null;
+  }
+  // Priority routing intentionally runs several instances for one method:
+  // orders go to the first instance (by sort order) whose limits accept them.
+  if (form.payment_load_balance_strategy === "priority") {
     return null;
   }
 

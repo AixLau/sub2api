@@ -901,6 +901,8 @@ export default {
         loadBalanceStrategy: 'Load Balance Strategy',
         strategyRoundRobin: 'Round Robin',
         strategyLeastAmount: 'Least Daily Amount',
+        strategyPriority: 'Priority (sort order)',
+        strategyPriorityHint: 'Allows several providers for one payment method: each order goes to the first instance in sort order whose single/daily limits still accept it, and falls through to the next one when exceeded.',
         providerManagement: 'Provider Management',
         providerManagementDesc: 'Manage payment provider instances',
         createProvider: 'Add Provider',

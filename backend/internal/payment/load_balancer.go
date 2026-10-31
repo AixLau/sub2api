@@ -20,6 +20,10 @@ type Strategy string
 const (
 	StrategyRoundRobin  Strategy = "round-robin"
 	StrategyLeastAmount Strategy = "least-amount"
+	// StrategyPriority picks the first instance in sort order whose limits still
+	// accept the order, e.g. a cheaper but limited channel first and an unlimited
+	// fallback channel after it.
+	StrategyPriority Strategy = "priority"
 )
 
 // ChannelLimits holds limits for a single payment channel within a provider instance.
@@ -82,7 +86,7 @@ type instanceCandidate struct {
 //  1. Query all enabled instances for providerKey, filter by supported paymentType
 //  2. Batch-query daily usage (PENDING + PAID + COMPLETED + RECHARGING) for all candidates
 //  3. Filter out instances where: single-min/max violated OR daily remaining < orderAmount
-//  4. Pick from survivors using the configured strategy (round-robin / least-amount)
+//  4. Pick from survivors using the configured strategy (round-robin / least-amount / priority)
 //  5. If all filtered out, fall back to full list (let the provider itself reject)
 func (lb *DefaultLoadBalancer) SelectInstance(
 	ctx context.Context,
@@ -129,7 +133,7 @@ func (lb *DefaultLoadBalancer) queryEnabledInstances(
 		query = query.Where(paymentproviderinstance.ProviderKey(providerKey))
 	}
 	instances, err := query.
-		Order(dbent.Asc(paymentproviderinstance.FieldSortOrder)).
+		Order(dbent.Asc(paymentproviderinstance.FieldSortOrder), dbent.Asc(paymentproviderinstance.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query provider instances: %w", err)
@@ -272,6 +276,10 @@ func getInstanceChannelLimits(inst *dbent.PaymentProviderInstance, paymentType P
 
 // pickByStrategy selects one instance from the available candidates.
 func (lb *DefaultLoadBalancer) pickByStrategy(candidates []instanceCandidate, strategy Strategy) instanceCandidate {
+	if strategy == StrategyPriority {
+		// Candidates keep the sort_order from queryEnabledInstances.
+		return candidates[0]
+	}
 	if strategy == StrategyLeastAmount && len(candidates) > 1 {
 		return pickLeastAmount(candidates)
 	}

@@ -896,6 +896,8 @@ export default {
         loadBalanceStrategy: '负载均衡策略',
         strategyRoundRobin: '轮询',
         strategyLeastAmount: '最少金额',
+        strategyPriority: '按排序优先',
+        strategyPriorityHint: '同一支付方式可同时启用多个服务商：订单优先走排序靠前、且单笔/每日限额仍允许的实例，超限后自动顺延到下一个。例如官方支付宝（限额 50/1000）排第一，HaozPay 排第二。',
         providerManagement: '服务商管理',
         providerManagementDesc: '管理支付服务商实例',
         createProvider: '添加服务商',

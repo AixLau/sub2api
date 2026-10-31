@@ -591,3 +591,42 @@ func int64SliceEqual(a, b []int64) bool {
 	}
 	return true
 }
+
+// Priority routing: a cheaper but limited official Alipay instance comes first
+// in sort order, an unlimited aggregator after it.
+func TestPriorityStrategyPrefersFirstInstanceWithinLimits(t *testing.T) {
+	t.Parallel()
+
+	official := testInstance(1, "alipay", makeLimitsJSON("alipay", ChannelLimits{SingleMax: 50, DailyLimit: 1000}))
+	aggregator := testInstance(2, "haozpay", "")
+	lb := &DefaultLoadBalancer{}
+
+	pick := func(orderAmount, officialUsedToday float64) int64 {
+		candidates := []instanceCandidate{{inst: official, dailyUsed: officialUsedToday}, {inst: aggregator}}
+		available := filterByLimits(candidates, "alipay", orderAmount)
+		if len(available) == 0 {
+			available = candidates
+		}
+		return lb.pickByStrategy(available, StrategyPriority).inst.ID
+	}
+
+	cases := []struct {
+		name        string
+		amount      float64
+		officialUse float64
+		want        int64
+	}{
+		{"small order goes to official", 30, 0, 1},
+		{"exactly single max goes to official", 50, 0, 1},
+		{"above single max falls back", 50.01, 0, 2},
+		{"daily limit reached falls back", 30, 980, 2},
+		{"daily limit exactly filled stays official", 20, 980, 1},
+	}
+	for _, tc := range cases {
+		for i := 0; i < 3; i++ { // deterministic, unlike round-robin
+			if got := pick(tc.amount, tc.officialUse); got != tc.want {
+				t.Fatalf("%s: picked instance %d, want %d", tc.name, got, tc.want)
+			}
+		}
+	}
+}
