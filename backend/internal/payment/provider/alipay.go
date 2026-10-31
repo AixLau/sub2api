@@ -23,10 +23,11 @@ const (
 
 // Alipay response constants.
 const (
-	alipayFundChangeYes    = "Y"
-	alipayErrTradeNotExist = "ACQ.TRADE_NOT_EXIST"
-	alipayRefundStatusSucc = "REFUND_SUCCESS"
-	alipayRefundRequestSep = "-refund-"
+	alipayEnvironmentSandbox = "sandbox"
+	alipayFundChangeYes      = "Y"
+	alipayErrTradeNotExist   = "ACQ.TRADE_NOT_EXIST"
+	alipayRefundStatusSucc   = "REFUND_SUCCESS"
+	alipayRefundRequestSep   = "-refund-"
 	// 支付宝提示退款发起后过早查询可能查不到、之后又处理成功；超过该时长仍无记录才判定失败。
 	alipayRefundQueryNotFoundGrace = 10 * time.Minute
 )
@@ -78,7 +79,7 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	if a.client != nil {
 		return a.client, nil
 	}
-	client, err := alipay.New(a.config["appId"], a.config["privateKey"], true)
+	client, err := alipay.New(a.config["appId"], a.config["privateKey"], !a.isSandbox())
 	if err != nil {
 		return nil, fmt.Errorf("alipay init client: %w", err)
 	}
@@ -94,6 +95,13 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	}
 	a.client = client
 	return a.client, nil
+}
+
+// isSandbox reports whether this instance targets the Alipay sandbox gateway
+// (openapi-sandbox.dl.alipaydev.com). Production is the default; only an
+// explicit environment=sandbox switches the gateway.
+func (a *Alipay) isSandbox() bool {
+	return strings.EqualFold(strings.TrimSpace(a.config["environment"]), alipayEnvironmentSandbox)
 }
 
 func (a *Alipay) Name() string        { return "Alipay" }
@@ -306,8 +314,13 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 		return nil, fmt.Errorf("alipay verify notification: %w", err)
 	}
 
+	if err := a.validateNotificationSeller(notification); err != nil {
+		return nil, err
+	}
+
+	// 退款、分账等事件的通知同样可能携带 TRADE_SUCCESS，不能当作付款成功。
 	status := payment.ProviderStatusFailed
-	if notification.TradeStatus == alipay.TradeStatusSuccess || notification.TradeStatus == alipay.TradeStatusFinished {
+	if isAlipayPaidTradeStatus(notification.TradeStatus) && !isAlipayNonPaymentEvent(notification) {
 		status = payment.ProviderStatusSuccess
 	}
 
@@ -339,6 +352,34 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 		RawData:  rawBody,
 		Metadata: metadata,
 	}, nil
+}
+
+func isAlipayPaidTradeStatus(status alipay.TradeStatus) bool {
+	return status == alipay.TradeStatusSuccess || status == alipay.TradeStatusFinished
+}
+
+// isAlipayNonPaymentEvent detects refund / settlement notifications, which carry
+// out_biz_no, gmt_refund or refund_fee even when trade_status is TRADE_SUCCESS.
+func isAlipayNonPaymentEvent(n *alipay.Notification) bool {
+	if n == nil {
+		return false
+	}
+	return strings.TrimSpace(n.OutBizNo) != "" ||
+		strings.TrimSpace(n.GmtRefund) != "" ||
+		strings.TrimSpace(n.RefundFee) != ""
+}
+
+// validateNotificationSeller rejects notifications whose seller_id differs from
+// the configured merchant PID. The check is skipped when sellerId is not configured.
+func (a *Alipay) validateNotificationSeller(n *alipay.Notification) error {
+	expected := strings.TrimSpace(a.config["sellerId"])
+	if expected == "" || n == nil {
+		return nil
+	}
+	if actual := strings.TrimSpace(n.SellerId); actual != expected {
+		return fmt.Errorf("alipay notification seller_id mismatch: expected %s, got %s", expected, actual)
+	}
+	return nil
 }
 
 // Refund requests a refund through Alipay.

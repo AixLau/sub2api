@@ -69,6 +69,11 @@ export const PAYMENT_MODE_POPUP = 'popup'
  * precreate→pagepay flow. */
 export const PAYMENT_MODE_REDIRECT = 'redirect'
 
+export const ALIPAY_ENVIRONMENT_OPTIONS: TypeOption[] = [
+  { value: 'production', label: 'Production' },
+  { value: 'sandbox', label: 'Sandbox' },
+]
+
 export const PAYMENT_CURRENCY_OPTIONS: TypeOption[] = [
   { value: 'CNY', label: 'CNY' },
   { value: 'HKD', label: 'HKD' },
@@ -140,6 +145,8 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'appId', label: 'App ID', sensitive: false },
     { key: 'privateKey', label: '', sensitive: true },
     { key: 'publicKey', label: '', sensitive: true },
+    { key: 'sellerId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_sellerIdHint' },
+    { key: 'environment', label: '', sensitive: false, defaultValue: 'production', hintKey: 'admin.settings.payment.field_alipayEnvironmentHint', options: ALIPAY_ENVIRONMENT_OPTIONS },
   ],
   wxpay: [
     { key: 'appId', label: 'App ID', sensitive: false },
