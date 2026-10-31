@@ -102,6 +102,27 @@ describe('PaymentStatusPanel', () => {
     expect(wrapper.emitted('success')).toHaveLength(1)
   })
 
+  it('embeds the official Alipay QR page in an iframe for embedded mode', async () => {
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: '',
+        payUrl: 'https://openapi.alipay.com/gateway.do?qr_pay_mode=4',
+        paymentMode: 'embedded',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'alipay',
+        orderType: 'balance',
+      },
+      global: { stubs: { Icon: true } },
+    })
+
+    await flushPromises()
+    const frame = wrapper.find('[data-test="payment-embedded-qr"]')
+    expect(frame.exists()).toBe(true)
+    expect(frame.attributes('src')).toBe('https://openapi.alipay.com/gateway.do?qr_pay_mode=4')
+    expect(wrapper.text()).not.toContain('payment.qr.payInNewWindowHint')
+  })
+
   it('shows reopen button in QR mode when payUrl is also available', async () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window)
 
