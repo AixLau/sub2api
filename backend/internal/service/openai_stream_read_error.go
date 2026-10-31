@@ -79,11 +79,16 @@ func OpenAIUpstreamStreamReadErrorDetails(err error) (code, message string, ok b
 // transport read error: the upstream has already delivered a complete
 // response.failed event, but the failure is still safe to replay when no
 // semantic output has reached the client.
+//
+// A cascaded sub2api upstream (an apikey account pointing at another gateway)
+// reports its own transport failures with the codes this file emits, so all of
+// them must be recognized here or the pre-output failover is lost.
 func isOpenAIStreamReadErrorEvent(payload []byte, message string) bool {
 	if len(bytes.TrimSpace(payload)) > 0 && gjson.ValidBytes(payload) {
 		for _, path := range []string{"response.error.code", "error.code", "code"} {
 			switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, path).String())) {
-			case "stream_read_error", "upstream_stream_read_error":
+			case "stream_read_error", OpenAIUpstreamStreamReadErrorCode,
+				OpenAIUpstreamHTTP2StreamErrorCode, OpenAIUpstreamStreamTruncatedCode:
 				return true
 			}
 		}
