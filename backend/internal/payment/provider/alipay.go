@@ -23,10 +23,16 @@ const (
 
 // Alipay response constants.
 const (
-	alipayFundChangeYes    = "Y"
-	alipayErrTradeNotExist = "ACQ.TRADE_NOT_EXIST"
-	alipayRefundStatusSucc = "REFUND_SUCCESS"
-	alipayRefundRequestSep = "-refund-"
+	alipayEnvironmentSandbox = "sandbox"
+	// alipayPaymentModeEmbedded renders the page.pay checkout as an embeddable
+	// QR (qr_pay_mode=4) so the frontend can show it inline in an iframe.
+	alipayPaymentModeEmbedded = "embedded"
+	alipayQRPayModeEmbedded   = "4"
+	alipayEmbeddedQRCodeWidth = "200"
+	alipayFundChangeYes       = "Y"
+	alipayErrTradeNotExist    = "ACQ.TRADE_NOT_EXIST"
+	alipayRefundStatusSucc    = "REFUND_SUCCESS"
+	alipayRefundRequestSep    = "-refund-"
 	// 支付宝提示退款发起后过早查询可能查不到、之后又处理成功；超过该时长仍无记录才判定失败。
 	alipayRefundQueryNotFoundGrace = 10 * time.Minute
 )
@@ -78,7 +84,7 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	if a.client != nil {
 		return a.client, nil
 	}
-	client, err := alipay.New(a.config["appId"], a.config["privateKey"], true)
+	client, err := alipay.New(a.config["appId"], a.config["privateKey"], !a.isSandbox())
 	if err != nil {
 		return nil, fmt.Errorf("alipay init client: %w", err)
 	}
@@ -94,6 +100,13 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	}
 	a.client = client
 	return a.client, nil
+}
+
+// isSandbox reports whether this instance targets the Alipay sandbox gateway
+// (openapi-sandbox.dl.alipaydev.com). Production is the default; only an
+// explicit environment=sandbox switches the gateway.
+func (a *Alipay) isSandbox() bool {
+	return strings.EqualFold(strings.TrimSpace(a.config["environment"]), alipayEnvironmentSandbox)
 }
 
 func (a *Alipay) Name() string        { return "Alipay" }
@@ -174,8 +187,15 @@ func (a *Alipay) createDesktopTrade(ctx context.Context, client *alipay.Client, 
 	// Explicit redirect mode: merchant opted into "always open the Alipay
 	// checkout page in a new tab" via the provider instance's payment_mode.
 	// Skip precreate to avoid a wasted API call.
-	if strings.EqualFold(strings.TrimSpace(a.config["paymentMode"]), "redirect") {
+	mode := strings.TrimSpace(a.config["paymentMode"])
+	if strings.EqualFold(mode, "redirect") {
 		return a.createPagePayTrade(client, req, notifyURL, returnURL)
+	}
+	// Embedded mode: page.pay with qr_pay_mode=4 returns a QR-only cashier page
+	// that the frontend embeds in an iframe. Only needs 网站支付
+	// (FAST_INSTANT_TRADE_PAY), not 当面付, so precreate is skipped.
+	if strings.EqualFold(mode, alipayPaymentModeEmbedded) {
+		return a.createEmbeddedPagePayTrade(client, req, notifyURL, returnURL)
 	}
 
 	resp, precreateErr := a.createPrecreateTrade(ctx, client, req, notifyURL)
@@ -235,6 +255,27 @@ func (a *Alipay) createPagePayTrade(client *alipay.Client, req payment.CreatePay
 	// Only PayURL is exposed: alipay.trade.page.pay returns a checkout page URL
 	// that must be opened in a browser, not a scannable payment QR. Setting it
 	// as QRCode would let the frontend render an unscannable image.
+	return &payment.CreatePaymentResponse{
+		TradeNo: req.OrderID,
+		PayURL:  payURL.String(),
+	}, nil
+}
+
+func (a *Alipay) createEmbeddedPagePayTrade(client *alipay.Client, req payment.CreatePaymentRequest, notifyURL, returnURL string) (*payment.CreatePaymentResponse, error) {
+	param := alipay.TradePagePay{}
+	param.OutTradeNo = req.OrderID
+	param.TotalAmount = req.Amount
+	param.Subject = req.Subject
+	param.ProductCode = alipayProductCodePagePay
+	param.NotifyURL = notifyURL
+	param.ReturnURL = returnURL
+	param.QRPayMode = alipayQRPayModeEmbedded
+	param.QRCodeWidth = alipayEmbeddedQRCodeWidth
+
+	payURL, err := alipayTradePagePay(client, param)
+	if err != nil {
+		return nil, fmt.Errorf("alipay TradePagePay (embedded): %w", err)
+	}
 	return &payment.CreatePaymentResponse{
 		TradeNo: req.OrderID,
 		PayURL:  payURL.String(),
@@ -306,8 +347,13 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 		return nil, fmt.Errorf("alipay verify notification: %w", err)
 	}
 
+	if err := a.validateNotificationSeller(notification); err != nil {
+		return nil, err
+	}
+
+	// 退款、分账等事件的通知同样可能携带 TRADE_SUCCESS，不能当作付款成功。
 	status := payment.ProviderStatusFailed
-	if notification.TradeStatus == alipay.TradeStatusSuccess || notification.TradeStatus == alipay.TradeStatusFinished {
+	if isAlipayPaidTradeStatus(notification.TradeStatus) && !isAlipayNonPaymentEvent(notification) {
 		status = payment.ProviderStatusSuccess
 	}
 
@@ -339,6 +385,34 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 		RawData:  rawBody,
 		Metadata: metadata,
 	}, nil
+}
+
+func isAlipayPaidTradeStatus(status alipay.TradeStatus) bool {
+	return status == alipay.TradeStatusSuccess || status == alipay.TradeStatusFinished
+}
+
+// isAlipayNonPaymentEvent detects refund / settlement notifications, which carry
+// out_biz_no, gmt_refund or refund_fee even when trade_status is TRADE_SUCCESS.
+func isAlipayNonPaymentEvent(n *alipay.Notification) bool {
+	if n == nil {
+		return false
+	}
+	return strings.TrimSpace(n.OutBizNo) != "" ||
+		strings.TrimSpace(n.GmtRefund) != "" ||
+		strings.TrimSpace(n.RefundFee) != ""
+}
+
+// validateNotificationSeller rejects notifications whose seller_id differs from
+// the configured merchant PID. The check is skipped when sellerId is not configured.
+func (a *Alipay) validateNotificationSeller(n *alipay.Notification) error {
+	expected := strings.TrimSpace(a.config["sellerId"])
+	if expected == "" || n == nil {
+		return nil
+	}
+	if actual := strings.TrimSpace(n.SellerId); actual != expected {
+		return fmt.Errorf("alipay notification seller_id mismatch: expected %s, got %s", expected, actual)
+	}
+	return nil
 }
 
 // Refund requests a refund through Alipay.

@@ -74,6 +74,24 @@ describe('getVisibleMethods', () => {
 })
 
 describe('decidePaymentLaunch', () => {
+  it('shows official Alipay embedded mode inline on desktop and redirects on mobile', () => {
+    const result = createOrderResult({
+      pay_url: 'https://openapi.alipay.com/gateway.do?qr_pay_mode=4',
+      payment_mode: 'embedded',
+    })
+    const desktop = decidePaymentLaunch(result, { visibleMethod: 'alipay', orderType: 'balance', isMobile: false })
+    expect(desktop.kind).toBe('qr_waiting')
+    expect(desktop.paymentState.payUrl).toBe('https://openapi.alipay.com/gateway.do?qr_pay_mode=4')
+    expect(desktop.paymentState.qrCode).toBe('')
+    expect(desktop.paymentState.paymentMode).toBe('embedded')
+
+    const mobile = decidePaymentLaunch(createOrderResult({
+      pay_url: 'https://openapi.alipay.com/gateway.do?wap',
+      payment_mode: 'embedded',
+    }), { visibleMethod: 'alipay', orderType: 'balance', isMobile: true })
+    expect(mobile.kind).toBe('redirect_waiting')
+  })
+
   it('uses Stripe popup waiting flow for desktop Alipay client secret', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       client_secret: 'cs_test',
