@@ -148,6 +148,7 @@
             :payment-type="paymentState.paymentType"
             :provider-key="paymentState.providerKey"
             :pay-url="paymentState.payUrl"
+            :payment-mode="paymentState.paymentMode"
             :order-type="paymentState.orderType"
             :currency="paymentState.currency || selectedCurrency"
             :pay-amount="paymentState.payAmount || paymentState.amount"

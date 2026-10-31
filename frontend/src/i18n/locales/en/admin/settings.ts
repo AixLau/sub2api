@@ -831,6 +831,7 @@ export default {
         easypayRedirect: 'Redirect',
         paymentMode: 'Payment Mode',
         modeRedirect: 'Redirect',
+        modeEmbedded: 'Embedded QR',
         modeQRCode: 'QR Code',
         modePopup: 'Popup',
         validationNameRequired: 'Provider name is required',

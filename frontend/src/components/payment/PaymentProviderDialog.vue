@@ -322,6 +322,7 @@ import {
   PAYMENT_MODE_QRCODE,
   PAYMENT_MODE_POPUP,
   PAYMENT_MODE_REDIRECT,
+  PAYMENT_MODE_EMBEDDED,
   STRIPE_SDK_API_VERSION,
   getAvailableTypes,
   extractBaseUrl,
@@ -349,7 +350,7 @@ function isValidPaymentMode(providerKey: string, mode: string): boolean {
     return mode === PAYMENT_MODE_QRCODE || mode === PAYMENT_MODE_POPUP
   }
   if (providerKey === 'alipay') {
-    return mode === '' || mode === PAYMENT_MODE_REDIRECT
+    return mode === '' || mode === PAYMENT_MODE_REDIRECT || mode === PAYMENT_MODE_EMBEDDED
   }
   return mode === ''
 }
@@ -440,6 +441,7 @@ const paymentModeOptions = computed(() => {
     return [
       { value: '', label: t('admin.settings.payment.modeQRCode') },
       { value: PAYMENT_MODE_REDIRECT, label: t('admin.settings.payment.modeRedirect') },
+      { value: PAYMENT_MODE_EMBEDDED, label: t('admin.settings.payment.modeEmbedded') },
     ]
   }
   return [

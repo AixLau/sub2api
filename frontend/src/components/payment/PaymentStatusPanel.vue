@@ -180,7 +180,7 @@
     </template>
 
     <!-- QR Code Mode -->
-    <template v-else-if="qrUrl">
+    <template v-else-if="qrUrl || embeddedPayUrl">
       <div class="overflow-hidden rounded-2xl bg-surface-panel ring-1 ring-line-default">
         <!-- Brand header bar -->
         <div :class="['flex items-center gap-3 px-6 py-4', brandHeaderClass]">
@@ -206,8 +206,19 @@
             <div :class="['absolute -bottom-1.5 -right-1.5 h-5 w-5 rounded-br-md border-b-2 border-r-2', brandCornerClass]"></div>
             <Lens>
               <div class="relative rounded-xl bg-white p-3">
+                <iframe
+                  v-if="embeddedPayUrl"
+                  data-test="payment-embedded-qr"
+                  :src="embeddedPayUrl"
+                  :title="scanTitle"
+                  width="220"
+                  height="220"
+                  scrolling="no"
+                  referrerpolicy="no-referrer-when-downgrade"
+                  class="block border-0"
+                ></iframe>
                 <img
-                  v-if="qrDataUrl"
+                  v-else-if="qrDataUrl"
                   data-test="payment-qr-image"
                   :src="qrDataUrl"
                   alt=""
@@ -217,7 +228,7 @@
                 />
                 <div v-else class="h-[220px] w-[220px]"></div>
                 <!-- Brand logo overlay -->
-                <div v-if="isAlipay || isWxpay" class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div v-if="(isAlipay || isWxpay) && !embeddedPayUrl" class="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-black/5">
                     <img :src="brandIcon" alt="" class="h-7 w-7" />
                   </span>
@@ -315,6 +326,7 @@ const props = defineProps<{
   currency?: string
   outTradeNo?: string
   mobileAlipayDeepLink?: boolean
+  paymentMode?: string
 }>()
 
 type PaymentOutcome = 'success' | 'cancelled' | 'expired'
@@ -369,6 +381,13 @@ const isHostedQrAggregator = computed(() => {
     || providerKey === 'haozpay'
 })
 const isMobileAlipayDeepLink = computed(() => props.mobileAlipayDeepLink === true && isBuiltInAlipayMethod(props.paymentType) && !!qrUrl.value)
+// Official Alipay "embedded" mode: page.pay URL with qr_pay_mode=4 renders the
+// QR itself, so it is shown in an iframe instead of being encoded locally.
+const embeddedPayUrl = computed(() => {
+  if (qrUrl.value || !props.payUrl) return ''
+  if (!isBuiltInAlipayMethod(props.paymentType)) return ''
+  return String(props.paymentMode || '').trim().toLowerCase() === 'embedded' ? props.payUrl : ''
+})
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
 
 const qrBorderClass = computed(() => {

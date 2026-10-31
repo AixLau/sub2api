@@ -571,3 +571,38 @@ func TestAlipayQueryRefundErrorsKeepRefundPending(t *testing.T) {
 		t.Fatal("gateway error must be returned so the refund stays pending")
 	}
 }
+
+func TestCreateTradeEmbeddedModeUsesPagePayQRMode4(t *testing.T) {
+	origPreCreate := alipayTradePreCreate
+	origPagePay := alipayTradePagePay
+	t.Cleanup(func() {
+		alipayTradePreCreate = origPreCreate
+		alipayTradePagePay = origPagePay
+	})
+
+	alipayTradePreCreate = func(ctx context.Context, client *alipay.Client, param alipay.TradePreCreate) (*alipay.TradePreCreateRsp, error) {
+		t.Fatal("embedded mode must not call precreate")
+		return nil, nil
+	}
+	var got alipay.TradePagePay
+	alipayTradePagePay = func(client *alipay.Client, param alipay.TradePagePay) (*url.URL, error) {
+		got = param
+		return url.Parse("https://openapi.alipay.com/gateway.do?embedded")
+	}
+
+	provider := &Alipay{config: map[string]string{"paymentMode": " Embedded "}}
+	resp, err := provider.createDesktopTrade(context.Background(), &alipay.Client{}, payment.CreatePaymentRequest{
+		OrderID: "sub2_104",
+		Amount:  "1.00",
+		Subject: "Balance recharge",
+	}, "https://merchant.example.com/api/v1/payment/webhook/alipay", "https://merchant.example.com/payment/result")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ProductCode != alipayProductCodePagePay || got.QRPayMode != "4" || got.QRCodeWidth == "" {
+		t.Fatalf("unexpected page pay params: product=%q qr_pay_mode=%q width=%q", got.ProductCode, got.QRPayMode, got.QRCodeWidth)
+	}
+	if resp.PayURL == "" || resp.QRCode != "" {
+		t.Fatalf("embedded mode must return pay_url only, got %+v", resp)
+	}
+}

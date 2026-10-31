@@ -24,10 +24,15 @@ const (
 // Alipay response constants.
 const (
 	alipayEnvironmentSandbox = "sandbox"
-	alipayFundChangeYes      = "Y"
-	alipayErrTradeNotExist   = "ACQ.TRADE_NOT_EXIST"
-	alipayRefundStatusSucc   = "REFUND_SUCCESS"
-	alipayRefundRequestSep   = "-refund-"
+	// alipayPaymentModeEmbedded renders the page.pay checkout as an embeddable
+	// QR (qr_pay_mode=4) so the frontend can show it inline in an iframe.
+	alipayPaymentModeEmbedded = "embedded"
+	alipayQRPayModeEmbedded   = "4"
+	alipayEmbeddedQRCodeWidth = "200"
+	alipayFundChangeYes       = "Y"
+	alipayErrTradeNotExist    = "ACQ.TRADE_NOT_EXIST"
+	alipayRefundStatusSucc    = "REFUND_SUCCESS"
+	alipayRefundRequestSep    = "-refund-"
 	// 支付宝提示退款发起后过早查询可能查不到、之后又处理成功；超过该时长仍无记录才判定失败。
 	alipayRefundQueryNotFoundGrace = 10 * time.Minute
 )
@@ -182,8 +187,15 @@ func (a *Alipay) createDesktopTrade(ctx context.Context, client *alipay.Client, 
 	// Explicit redirect mode: merchant opted into "always open the Alipay
 	// checkout page in a new tab" via the provider instance's payment_mode.
 	// Skip precreate to avoid a wasted API call.
-	if strings.EqualFold(strings.TrimSpace(a.config["paymentMode"]), "redirect") {
+	mode := strings.TrimSpace(a.config["paymentMode"])
+	if strings.EqualFold(mode, "redirect") {
 		return a.createPagePayTrade(client, req, notifyURL, returnURL)
+	}
+	// Embedded mode: page.pay with qr_pay_mode=4 returns a QR-only cashier page
+	// that the frontend embeds in an iframe. Only needs 网站支付
+	// (FAST_INSTANT_TRADE_PAY), not 当面付, so precreate is skipped.
+	if strings.EqualFold(mode, alipayPaymentModeEmbedded) {
+		return a.createEmbeddedPagePayTrade(client, req, notifyURL, returnURL)
 	}
 
 	resp, precreateErr := a.createPrecreateTrade(ctx, client, req, notifyURL)
@@ -243,6 +255,27 @@ func (a *Alipay) createPagePayTrade(client *alipay.Client, req payment.CreatePay
 	// Only PayURL is exposed: alipay.trade.page.pay returns a checkout page URL
 	// that must be opened in a browser, not a scannable payment QR. Setting it
 	// as QRCode would let the frontend render an unscannable image.
+	return &payment.CreatePaymentResponse{
+		TradeNo: req.OrderID,
+		PayURL:  payURL.String(),
+	}, nil
+}
+
+func (a *Alipay) createEmbeddedPagePayTrade(client *alipay.Client, req payment.CreatePaymentRequest, notifyURL, returnURL string) (*payment.CreatePaymentResponse, error) {
+	param := alipay.TradePagePay{}
+	param.OutTradeNo = req.OrderID
+	param.TotalAmount = req.Amount
+	param.Subject = req.Subject
+	param.ProductCode = alipayProductCodePagePay
+	param.NotifyURL = notifyURL
+	param.ReturnURL = returnURL
+	param.QRPayMode = alipayQRPayModeEmbedded
+	param.QRCodeWidth = alipayEmbeddedQRCodeWidth
+
+	payURL, err := alipayTradePagePay(client, param)
+	if err != nil {
+		return nil, fmt.Errorf("alipay TradePagePay (embedded): %w", err)
+	}
 	return &payment.CreatePaymentResponse{
 		TradeNo: req.OrderID,
 		PayURL:  payURL.String(),

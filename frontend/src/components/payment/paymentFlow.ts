@@ -248,6 +248,18 @@ export function decidePaymentLaunch(
     return { kind: 'qr_waiting', paymentState, recovery: paymentState }
   }
 
+  // Official Alipay embedded mode: the page.pay URL renders a QR-only cashier
+  // (qr_pay_mode=4) that the status panel shows inline in an iframe.
+  if (
+    visibleMethod === 'alipay'
+    && normalizedPaymentMode === 'embedded'
+    && !effectiveMobile
+    && baseState.payUrl
+    && !baseState.qrCode
+  ) {
+    return { kind: 'qr_waiting', paymentState: baseState, recovery: baseState }
+  }
+
   const prefersRedirect = normalizedPaymentMode === 'redirect'
     || normalizedPaymentMode === 'popup'
     || (effectiveMobile && !!baseState.payUrl)

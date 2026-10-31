@@ -47,6 +47,13 @@ const (
 	AirwallexDemoStaticDomain = "https://static-demo.airwallex.com"
 	// AirwallexDemoCheckoutDomain 是 Airwallex 沙箱环境收银台元素和 iframe 域名。
 	AirwallexDemoCheckoutDomain = "https://checkout-demo.airwallex.com"
+	// AlipayGatewayDomain 承载 qr_pay_mode=4 内嵌二维码 iframe 的入口，随后跳转到收银台域名。
+	AlipayGatewayDomain = "https://openapi.alipay.com"
+	// AlipayCashierDomain 是内嵌二维码实际渲染的支付宝收银台域名。
+	AlipayCashierDomain = "https://excashier.alipay.com"
+	// AlipaySandboxGatewayDomain / AlipaySandboxCashierDomain 是对应的沙箱域名。
+	AlipaySandboxGatewayDomain = "https://openapi-sandbox.dl.alipaydev.com"
+	AlipaySandboxCashierDomain = "https://excashier-sandbox.dl.alipaydev.com"
 )
 
 var requiredCSPDirectiveValues = []struct {
@@ -83,6 +90,10 @@ var requiredCSPDirectiveValues = []struct {
 	{"style-src", AirwallexDemoStaticDomain},
 	{"style-src", AirwallexDemoCheckoutDomain},
 	{"frame-src", AirwallexDemoCheckoutDomain},
+	{"frame-src", AlipayGatewayDomain},
+	{"frame-src", AlipayCashierDomain},
+	{"frame-src", AlipaySandboxGatewayDomain},
+	{"frame-src", AlipaySandboxCashierDomain},
 }
 
 // GenerateNonce generates a cryptographically secure random nonce.

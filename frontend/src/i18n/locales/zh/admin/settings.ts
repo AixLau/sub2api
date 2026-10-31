@@ -826,6 +826,7 @@ export default {
         easypayRedirect: '跳转',
         paymentMode: '支付模式',
         modeRedirect: '跳转',
+        modeEmbedded: '内嵌二维码',
         modeQRCode: '二维码',
         modePopup: '弹窗',
         validationNameRequired: '服务商名称不能为空',

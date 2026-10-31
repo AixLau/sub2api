@@ -68,6 +68,9 @@ export const PAYMENT_MODE_POPUP = 'popup'
  * literal (case-insensitive); other values fall back to the default
  * precreate→pagepay flow. */
 export const PAYMENT_MODE_REDIRECT = 'redirect'
+/** Alipay-only: page.pay with qr_pay_mode=4, shown as an inline QR iframe.
+ * Only requires 网站支付 (FAST_INSTANT_TRADE_PAY), not 当面付. */
+export const PAYMENT_MODE_EMBEDDED = 'embedded'
 
 export const ALIPAY_ENVIRONMENT_OPTIONS: TypeOption[] = [
   { value: 'production', label: 'Production' },
