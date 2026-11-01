@@ -196,7 +196,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  reset: []
+  'account-updated': [account: Account]
   'quota-refreshed': []
 }>()
 
@@ -477,24 +477,45 @@ const confirmReset = async () => {
     return
   }
   resetting.value = true
+  const accountID = props.account.id
   creditsCacheWarning.value = false
   error.value = null
   resetMessage.value = null
   resetWarning.value = null
   try {
-    const result: OpenAIQuotaResetResult = await resetOpenAIQuota(props.account.id)
-    // Refresh the reset-credit count so the badge reflects the consumed credit.
-    // handleQuery clears resetMessage on entry, so the success toast is set
-    // AFTER it resolves.
-    await handleQuery()
-    resetMessage.value = t('admin.accounts.openaiQuotaReset.resetSuccess', {
-      windows: result.windows_reset
-    })
-    emit('reset')
+    const result: OpenAIQuotaResetResult = await resetOpenAIQuota(accountID)
+    if (props.account.id !== accountID) return
+    updateCredits(result.quota ?? null)
+    showResetCreditDetails.value = false
+    if (result.cache_refreshed && result.quota) {
+      data.value = result.quota
+      cachedData.value = result.quota
+    } else {
+      // A credit was consumed but the post-reset count could not be read back.
+      // Whatever we still hold is one generation stale, so report the count as
+      // unknown instead of letting a second consumption start from stale data.
+      data.value = null
+    }
+    // The backend clears the 429 cooldown before reloading the row, so patching
+    // the list with it is what drops the stale rate-limit badge.
+    if (result.account) emit('account-updated', result.account)
+
+    if (result.warning_code === 'reset_credit_cache_refresh_failed') {
+      resetWarning.value = t('admin.accounts.openaiQuotaReset.resetCacheRefreshFailed')
+    } else if (result.warning_code === 'account_state_recovery_failed') {
+      resetWarning.value = t('admin.accounts.openaiQuotaReset.resetAccountRecoveryFailed')
+    } else if (result.warning_code === 'account_state_refresh_failed') {
+      resetWarning.value = t('admin.accounts.openaiQuotaReset.resetAccountRefreshFailed')
+    } else {
+      resetMessage.value = t('admin.accounts.openaiQuotaReset.resetSuccess', {
+        windows: result.windows_reset
+      })
+    }
   } catch (e) {
+    if (props.account.id !== accountID) return
     error.value = extractErrorMessage(e)
   } finally {
-    resetting.value = false
+    if (props.account.id === accountID) resetting.value = false
   }
 }
 
