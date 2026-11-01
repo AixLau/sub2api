@@ -47,7 +47,7 @@ func (s *AccountUsageService) recoverOpenAIGlobalRateLimitAfterProbe(ctx context
 	slog.Info("openai_rate_limit_early_reset_recovered", "account_id", account.ID, "advertised_reset_at", advertisedResetAt)
 
 	clearedAt := time.Now()
-	s.replaceOpenAIRateLimitWindowStartAfterEarlyReset(account.ID, advertisedResetAt, clearedAt)
+	s.replaceOpenAIRateLimitWindowStart(account.ID, advertisedResetAt, clearedAt)
 	s.broadcastOpenAIEarlyReset(account.ID, clearedAt)
 }
 
@@ -63,11 +63,12 @@ func (s *AccountUsageService) clearObservedOpenAIRateLimit(ctx context.Context, 
 	return true, nil
 }
 
-// replaceOpenAIRateLimitWindowStartAfterEarlyReset cancels the timer armed for
-// the advertised reset (its claim could no longer match the cleared row) and
-// sends the window-start request shortly instead, keeping the same random
-// delay as the regular path.
-func (s *AccountUsageService) replaceOpenAIRateLimitWindowStartAfterEarlyReset(accountID int64, advertisedResetAt, clearedAt time.Time) {
+// replaceOpenAIRateLimitWindowStart is used when a cooldown ends before its
+// advertised reset (an early upstream reset or a redeemed reset credit). It
+// cancels the timer armed for the advertised reset (its claim could no longer
+// match the cleared row) and sends the window-start request shortly instead,
+// keeping the same random delay as the regular path.
+func (s *AccountUsageService) replaceOpenAIRateLimitWindowStart(accountID int64, advertisedResetAt, clearedAt time.Time) {
 	s.openAIWindowStartMu.Lock()
 	if existing := s.openAIWindowStartTasks[accountID]; existing != nil {
 		if existing.timer != nil {
@@ -120,15 +121,19 @@ func setOpenAIRateLimitRecoverer(service *AccountUsageService) {
 	openAIRateLimitRecovererRegistry.Unlock()
 }
 
+func currentOpenAIRateLimitRecoverer() *AccountUsageService {
+	openAIRateLimitRecovererRegistry.RLock()
+	defer openAIRateLimitRecovererRegistry.RUnlock()
+	return openAIRateLimitRecovererRegistry.service
+}
+
 // RecoverOpenAIRateLimitAfterQuotaQuery lets an explicit admin quota query
 // recover a cooldown account the same way a background /wham/usage probe does.
 func RecoverOpenAIRateLimitAfterQuotaQuery(ctx context.Context, accountID int64, usage *OpenAIQuotaUsage) {
 	if accountID <= 0 || !openAIQuotaShowsAvailable(usage) {
 		return
 	}
-	openAIRateLimitRecovererRegistry.RLock()
-	service := openAIRateLimitRecovererRegistry.service
-	openAIRateLimitRecovererRegistry.RUnlock()
+	service := currentOpenAIRateLimitRecoverer()
 	if service == nil || service.accountRepo == nil {
 		return
 	}
@@ -137,4 +142,21 @@ func RecoverOpenAIRateLimitAfterQuotaQuery(ctx context.Context, accountID int64,
 		return
 	}
 	service.recoverOpenAIGlobalRateLimitAfterProbe(ctx, account)
+}
+
+// StartOpenAIWindowAfterQuotaReset opens the fresh usage window after a reset
+// credit was redeemed and the account state recovered, the same way an
+// automatically cleared cooldown does. The usual window-start guards still
+// apply, so nothing is sent if the account served traffic in the meantime.
+func StartOpenAIWindowAfterQuotaReset(accountID int64) {
+	if accountID <= 0 {
+		return
+	}
+	service := currentOpenAIRateLimitRecoverer()
+	if service == nil {
+		return
+	}
+	resetAt := time.Now()
+	service.replaceOpenAIRateLimitWindowStart(accountID, resetAt, resetAt)
+	slog.Info("openai_quota_reset_window_start_scheduled", "account_id", accountID)
 }
