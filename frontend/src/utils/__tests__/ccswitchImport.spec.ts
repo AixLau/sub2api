@@ -14,7 +14,7 @@ function paramsFromDeeplink(deeplink: string): URLSearchParams {
 
 describe('ccswitchImport utils', () => {
   it('defaults OpenAI CC Switch imports to the current Codex model', () => {
-    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-5.5')
+    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-6.1-sol')
   })
 
   it('defaults Grok Build imports to the current Grok model', () => {
@@ -144,6 +144,8 @@ describe('CC Switch long-context config', () => {
     const toml = decode(params.get('config'))
     expect(toml).toContain('model_context_window = 1000000')
     expect(toml).toContain('model_auto_compact_token_limit = 800000')
+    expect(toml).toContain('model = "gpt-6.1-sol"')
+    expect(toml).not.toContain('disable_response_storage')
     expect(toml).toContain('base_url = "https://api.example.com"')
   })
 })

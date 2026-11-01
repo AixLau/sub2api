@@ -6,7 +6,10 @@ set -euo pipefail
 
 GATEWAY_URL="https://aixlau.me"
 CLAUDE_BASE_URL="$GATEWAY_URL/antigravity"
-DEFAULT_CODEX_MODEL="gpt-5.5"
+DEFAULT_CODEX_MODEL="gpt-6.1-sol"
+LONG_CONTEXT_WINDOW=1000000
+AUTO_COMPACT_PERCENT=80
+CODEX_AUTO_COMPACT_TOKEN_LIMIT=800000
 MANAGED_BEGIN="# BEGIN SUB2API MANAGED BLOCK"
 MANAGED_END="# END SUB2API MANAGED BLOCK"
 YES=0
@@ -436,13 +439,14 @@ write_codex_config() {
   tmp="$(mktemp)"
 
   {
-    printf '# Sub2API Codex config generated on 2026-07-12.\n'
+    printf '# Sub2API Codex config generated on 2026-11-01.\n'
     printf 'model_provider = "xinglian"\n'
     printf 'model = "%s"\n' "$DEFAULT_CODEX_MODEL"
     printf 'model_reasoning_effort = "high"\n'
     printf 'model_reasoning_summary = "auto"\n'
     printf 'model_verbosity = "medium"\n'
-    printf 'disable_response_storage = true\n'
+    printf 'model_context_window = %s\n' "$LONG_CONTEXT_WINDOW"
+    printf 'model_auto_compact_token_limit = %s\n' "$CODEX_AUTO_COMPACT_TOKEN_LIMIT"
     printf 'preferred_auth_method = "apikey"\n'
     printf '\n'
     printf '[model_providers.xinglian]\n'
@@ -462,7 +466,8 @@ write_claude_settings() {
   tmp="$(mktemp)"
 
   if [ -f "$file" ]; then
-    jq --arg base "$CLAUDE_BASE_URL" --arg token "$API_KEY" '
+    jq --arg base "$CLAUDE_BASE_URL" --arg token "$API_KEY" \
+      --arg window "$LONG_CONTEXT_WINDOW" --arg pct "$AUTO_COMPACT_PERCENT" '
       if type != "object" then
         error("settings root must be an object")
       elif (.env? != null and (.env | type) != "object") then
@@ -470,16 +475,20 @@ write_claude_settings() {
       else
         .env = ((.env // {}) + {
           ANTHROPIC_BASE_URL: $base,
-          ANTHROPIC_AUTH_TOKEN: $token
+          ANTHROPIC_AUTH_TOKEN: $token,
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: $window,
+          CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: $pct,
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
         })
       end
     ' "$file" >"$tmp"
   elif command -v jq >/dev/null 2>&1; then
     jq -n --arg base "$CLAUDE_BASE_URL" --arg token "$API_KEY" \
-      '{env: {ANTHROPIC_BASE_URL: $base, ANTHROPIC_AUTH_TOKEN: $token}}' >"$tmp"
+      --arg window "$LONG_CONTEXT_WINDOW" --arg pct "$AUTO_COMPACT_PERCENT" \
+      '{env: {ANTHROPIC_BASE_URL: $base, ANTHROPIC_AUTH_TOKEN: $token, CLAUDE_CODE_AUTO_COMPACT_WINDOW: $window, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: $pct, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"}}' >"$tmp"
   else
-    printf '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "%s",\n    "ANTHROPIC_AUTH_TOKEN": "%s"\n  }\n}\n' \
-      "$(json_escape "$CLAUDE_BASE_URL")" "$(json_escape "$API_KEY")" >"$tmp"
+    printf '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "%s",\n    "ANTHROPIC_AUTH_TOKEN": "%s",\n    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "%s",\n    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "%s",\n    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"\n  }\n}\n' \
+      "$(json_escape "$CLAUDE_BASE_URL")" "$(json_escape "$API_KEY")" "$LONG_CONTEXT_WINDOW" "$AUTO_COMPACT_PERCENT" >"$tmp"
   fi
 
   mv "$tmp" "$file"
