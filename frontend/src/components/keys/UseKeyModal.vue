@@ -1033,9 +1033,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}network_access = "enabled"
-windows_wsl_setup_acknowledged = true
-
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
@@ -1269,8 +1267,6 @@ ${codexLocalCatalogToml.value}# Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
 # model_context_window = 500000
-# network_access = "enabled"
-# windows_wsl_setup_acknowledged = true
 
 [model_providers.sub2api]
 name = "Sub2API Grok"
@@ -1377,9 +1373,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}network_access = "enabled"
-windows_wsl_setup_acknowledged = true
-
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
