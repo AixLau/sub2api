@@ -238,12 +238,26 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
       },
       fetched_at: 1770000000,
     })
+    const recovered = makeAccount({ parent_account_id: null, rate_limited_at: null, rate_limit_reset_at: null })
     vi.mocked(resetOpenAIQuota).mockResolvedValue({
       code: 'ok',
       windows_reset: 2,
+      quota: {
+        rate_limit_reset_credits: { available_count: 0, credits: [] },
+        fetched_at: 1770000100,
+      },
+      account: recovered,
+      cache_refreshed: true,
+      account_state_recovered: true,
     })
     const wrapper = mount(OpenAIQuotaResetCell, {
-      props: { account: makeAccount({ parent_account_id: null }) },
+      props: {
+        account: makeAccount({
+          parent_account_id: null,
+          rate_limited_at: '2026-07-01T00:00:00Z',
+          rate_limit_reset_at: '2099-07-01T05:00:00Z',
+        }),
+      },
     })
 
     await wrapper.findAll('button')[0].trigger('click')
@@ -253,7 +267,10 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     await flushPromises()
 
     expect(resetOpenAIQuota).toHaveBeenCalledWith(1)
-    expect(wrapper.emitted('reset')).toHaveLength(1)
+    // 后端已解除 429 并回读账号行，列表必须用它替换旧行，否则限流徽章不会消失。
+    expect(wrapper.emitted('account-updated')).toEqual([[recovered]])
+    expect(refreshOpenAIQuota).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.resetSuccess')
     wrapper.unmount()
   })
 })
