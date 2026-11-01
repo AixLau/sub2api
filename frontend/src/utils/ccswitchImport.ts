@@ -1,7 +1,7 @@
 import type { GroupPlatform } from '@/types'
 import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
 
-export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-5.5'
+export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-6.1-sol'
 export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
 
 export type CcSwitchClientType = 'claude' | 'gemini'
@@ -66,8 +66,7 @@ function escapeTomlBasicString(value: string): string {
 function buildCodexImportToml(endpoint: string): string {
   return `model_provider = "sub2api"
 model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
-${codexLongContextTomlLines()}disable_response_storage = true
-
+${codexLongContextTomlLines()}
 [model_providers.sub2api]
 name = "sub2api"
 base_url = "${escapeTomlBasicString(endpoint)}"

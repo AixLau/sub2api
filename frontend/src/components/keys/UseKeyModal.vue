@@ -1026,15 +1026,14 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
-  const model = selectCodexCatalogModel('gpt-5.5')
+  const model = selectCodexCatalogModel('gpt-6.1-sol')
   const reasoningEffortLine = codexReasoningEffortTomlLine(model)
 
   // config.toml content
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}${codexLongContextTomlLines()}disable_response_storage = true
-${codexLocalCatalogToml.value}network_access = "enabled"
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
 [model_providers.OpenAI]
@@ -1270,7 +1269,6 @@ ${codexLocalCatalogToml.value}# Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
 # model_context_window = 500000
-# disable_response_storage = true
 # network_access = "enabled"
 # windows_wsl_setup_acknowledged = true
 
@@ -1308,7 +1306,7 @@ function generateRoutedCodexFiles(
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   const preferredModels: Partial<Record<GroupPlatform, string>> = {
-    openai: 'gpt-5.5',
+    openai: 'gpt-6.1-sol',
     anthropic: 'claude-sonnet-5-5',
     gemini: 'gemini-2.5-pro',
     antigravity: 'claude-sonnet-5-5',
@@ -1317,7 +1315,7 @@ function generateRoutedCodexFiles(
     zhipu: 'glm-4.7',
     deepseek: 'deepseek-v4-pro',
     minimax: 'MiniMax-M3',
-    composite: 'gpt-5.5'
+    composite: 'gpt-6.1-sol'
   }
   const preferredModel = preferredModels[platform] || ''
   const model = selectCodexCatalogModel(preferredModel)
@@ -1346,7 +1344,6 @@ function generateRoutedCodexFiles(
 model_provider = "sub2api"
 model = "${model}"
 review_model = "${model}"
-disable_response_storage = true
 ${codexLocalCatalogToml.value}
 [model_providers.sub2api]
 name = "Sub2API ${label}"
@@ -1373,15 +1370,14 @@ supports_websockets = false${codexModelCatalogMode.value === 'remote' ? '\n\n[fe
 function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
-  const model = selectCodexCatalogModel('gpt-5.5')
+  const model = selectCodexCatalogModel('gpt-6.1-sol')
   const reasoningEffortLine = codexReasoningEffortTomlLine(model)
 
   // config.toml content with WebSocket v2
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}${codexLongContextTomlLines()}disable_response_storage = true
-${codexLocalCatalogToml.value}network_access = "enabled"
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
 [model_providers.OpenAI]
