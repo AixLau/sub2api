@@ -93,6 +93,10 @@ test_codex_config_creation_only() {
   [ ! -e "$home_dir/.claude/settings.json" ] || fail "Claude settings should not be created for codex client"
   assert_contains "$home_dir/.codex/config.toml" 'model_provider = "xinglian"'
   assert_contains "$home_dir/.codex/config.toml" '[model_providers.xinglian]'
+  assert_contains "$home_dir/.codex/config.toml" 'model = "gpt-6.1-sol"'
+  assert_contains "$home_dir/.codex/config.toml" 'model_context_window = 1000000'
+  assert_contains "$home_dir/.codex/config.toml" 'model_auto_compact_token_limit = 800000'
+  assert_not_contains "$home_dir/.codex/config.toml" 'disable_response_storage'
   assert_contains "$home_dir/.codex/config.toml" 'name = "星链 AI"'
   assert_contains "$home_dir/.codex/config.toml" "base_url = \"$GATEWAY_URL\""
   assert_contains "$home_dir/.codex/config.toml" 'wire_api = "responses"'
@@ -114,6 +118,8 @@ test_claude_config_creation_only() {
   assert_file "$home_dir/.claude/settings.json"
   assert_json_value "$home_dir/.claude/settings.json" '.env.ANTHROPIC_BASE_URL' "$CLAUDE_URL"
   assert_json_value "$home_dir/.claude/settings.json" '.env.ANTHROPIC_AUTH_TOKEN' "$API_KEY"
+  assert_json_value "$home_dir/.claude/settings.json" '.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW' "1000000"
+  assert_json_value "$home_dir/.claude/settings.json" '.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE' "80"
 }
 
 test_existing_codex_files_are_backed_up_and_replaced() {
@@ -163,7 +169,7 @@ test_existing_config_without_provider_is_replaced() {
 
   local first_line
   first_line="$(sed -n '1p' "$home_dir/.codex/config.toml")"
-  [ "$first_line" = '# Sub2API Codex config generated on 2026-07-12.' ] || fail "Codex config should be replaced with generated config"
+  [ "$first_line" = '# Sub2API Codex config generated on 2026-11-01.' ] || fail "Codex config should be replaced with generated config"
   assert_not_contains "$home_dir/.codex/config.toml" '[mcp_servers.keep]'
   assert_not_contains "$home_dir/.codex/config.toml" 'command = "keep-me"'
 }
