@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -164,4 +165,59 @@ func TestBroadcastOpenAIEarlyReset_ClearsOtherProbeThrottlesOncePerCooldown(t *t
 	if _, ok := cache.openAIProbeCache.Load(int64(2)); ok {
 		t.Fatal("a detection after the cooldown should broadcast again")
 	}
+}
+
+type openAIQuotaResetStubRecoverer struct{ err error }
+
+func (r openAIQuotaResetStubRecoverer) RecoverAccountState(context.Context, int64, AccountRecoveryOptions) (*SuccessfulTestRecoveryResult, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &SuccessfulTestRecoveryResult{ClearedRateLimit: true}, nil
+}
+
+// 用卡后的恢复流程与 429 自动解除共用窗口激活：成功恢复时替换按公布重置时间挂起的
+// 激活定时器，恢复失败则保留原定时器。不能并行：依赖进程级 recoverer 注册表。
+func TestRunOpenAIQuotaResetPostProcess_StartsWindowAfterRecovery(t *testing.T) {
+	cases := []struct {
+		name        string
+		recoverErr  error
+		wantPending bool
+	}{
+		{name: "recovered", wantPending: false},
+		{name: "recovery_failed", recoverErr: errors.New("boom"), wantPending: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Now()
+			account := newOpenAIEarlyResetAccount(321, now)
+			timer := time.AfterFunc(time.Hour, func() {})
+			t.Cleanup(func() { timer.Stop() })
+			svc := &AccountUsageService{
+				accountRepo: &openAIEarlyResetRepo{},
+				openAIWindowStartTasks: map[int64]*openAIRateLimitWindowStartTask{
+					account.ID: {limitedAt: *account.RateLimitedAt, resetAt: *account.RateLimitResetAt, timer: timer},
+				},
+			}
+			setOpenAIRateLimitRecoverer(svc)
+			t.Cleanup(func() { setOpenAIRateLimitRecoverer(nil) })
+
+			result := RunOpenAIQuotaResetPostProcess(context.Background(), account.ID, nil, openAIQuotaResetStubRecoverer{err: tc.recoverErr}, nil)
+
+			if result.AccountStateRecovered == (tc.recoverErr != nil) {
+				t.Fatalf("AccountStateRecovered = %v with recover error %v", result.AccountStateRecovered, tc.recoverErr)
+			}
+			if got := svc.hasPendingOpenAIRateLimitWindowStart(account.ID); got != tc.wantPending {
+				t.Fatalf("pending window start = %v, want %v", got, tc.wantPending)
+			}
+			if stillRunning := timer.Stop(); stillRunning != tc.wantPending {
+				t.Fatalf("advertised-reset timer running = %v, want %v", stillRunning, tc.wantPending)
+			}
+		})
+	}
+}
+
+func TestStartOpenAIWindowAfterQuotaReset_NoRecovererIsNoop(t *testing.T) {
+	setOpenAIRateLimitRecoverer(nil)
+	StartOpenAIWindowAfterQuotaReset(1)
 }

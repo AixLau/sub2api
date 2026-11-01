@@ -32,8 +32,8 @@ type OpenAIQuotaResetPostProcessResult struct {
 	WarningCode           string
 }
 
-// RunOpenAIQuotaResetPostProcess 按“解除限流、刷新额度缓存、刷新账号行”的固定顺序
-// 执行消费后恢复，避免手动和自动入口在失败语义上逐渐分叉。
+// RunOpenAIQuotaResetPostProcess 按“解除限流并激活新窗口、刷新额度缓存、刷新账号行”的
+// 固定顺序执行消费后恢复，避免手动和自动入口在失败语义上逐渐分叉。
 func RunOpenAIQuotaResetPostProcess(
 	ctx context.Context,
 	accountID int64,
@@ -52,6 +52,7 @@ func RunOpenAIQuotaResetPostProcess(
 		return result
 	}
 	result.AccountStateRecovered = true
+	StartOpenAIWindowAfterQuotaReset(accountID)
 
 	if quota != nil {
 		usage, usageErr := quota.QueryUsage(ctx, accountID)
