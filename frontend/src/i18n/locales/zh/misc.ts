@@ -365,6 +365,8 @@ export default {
       scanToPay: '请扫码支付',
       scanAlipay: '支付宝扫码支付',
       scanWxpay: '微信扫码支付',
+      cashierLoading: '正在加载支付宝收银台…',
+      cashierSlow: '收银台加载较慢。如二维码未显示，请点击下方“重新打开支付页面”。',
       scanAlipayHint: '请使用手机打开支付宝，扫描二维码完成支付',
       scanWxpayHint: '请使用手机打开微信，扫描二维码完成支付',
       payInNewWindow: '请在新窗口中完成支付',
