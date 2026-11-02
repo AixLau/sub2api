@@ -1,5 +1,9 @@
 import type { GroupPlatform } from '@/types'
-import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
+import {
+  CODEX_DESKTOP_TOML,
+  buildClaudeCodeEnv,
+  codexLongContextTomlLines
+} from '@/utils/claudeCodeConfig'
 
 export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-6.1-sol'
 export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
@@ -72,7 +76,8 @@ name = "sub2api"
 base_url = "${escapeTomlBasicString(endpoint)}"
 wire_api = "responses"
 requires_openai_auth = true
-`
+
+${CODEX_DESKTOP_TOML}`
 }
 
 /** Claude Code settings.json fragment with the 1M context and compaction defaults. */
