@@ -409,6 +409,16 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <!-- Import to Magpie Button -->
+              <button
+                v-if="supportsMagpieImport(row.group?.platform)"
+                data-testid="import-to-magpie"
+                @click="importToMagpie(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
+              >
+                <Icon name="upload" size="sm" />
+                <span class="text-xs">{{ t('keys.importToMagpie') }}</span>
+              </button>
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -1257,6 +1267,7 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
+import { buildMagpieImportLink, supportsMagpieImport } from '@/utils/magpieImport'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -2131,6 +2142,18 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   } catch (error) {
     appStore.showError(t('keys.ccSwitchNotInstalled'))
   }
+}
+
+// The usemagpie.ai page hands the link to the Magpie app (or offers a download);
+// parameters sit in the URL fragment, so the key is never sent to that server.
+const importToMagpie = (row: ApiKey) => {
+  const link = buildMagpieImportLink({
+    baseUrl: publicSettings.value?.api_base_url || window.location.origin,
+    siteOrigin: window.location.origin,
+    platform: row.group?.platform,
+    apiKey: row.key
+  })
+  window.open(link, '_blank', 'noopener')
 }
 
 const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
