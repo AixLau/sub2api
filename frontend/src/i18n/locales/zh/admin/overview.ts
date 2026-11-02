@@ -27,7 +27,7 @@ export default {
       cacheToday: '今日缓存',
       performance: '性能指标',
       recent1mActiveUsers: '近 1 分钟用户',
-      recent1mActiveUsersUnit: 'U/1m',
+      recent1mActiveUsersUnit: 'U/M',
       avgResponse: '平均响应',
       averageTime: '平均时间',
       active: '活跃',
