@@ -204,21 +204,26 @@
             <div :class="['absolute -right-1.5 -top-1.5 h-5 w-5 rounded-tr-md border-r-2 border-t-2', brandCornerClass]"></div>
             <div :class="['absolute -bottom-1.5 -left-1.5 h-5 w-5 rounded-bl-md border-b-2 border-l-2', brandCornerClass]"></div>
             <div :class="['absolute -bottom-1.5 -right-1.5 h-5 w-5 rounded-br-md border-b-2 border-r-2', brandCornerClass]"></div>
-            <Lens>
+            <!-- A hosted cashier must have only one browsing context. Lens duplicates its slot. -->
+            <div v-if="embeddedPayUrl" class="rounded-xl bg-white p-3">
+              <iframe
+                :key="embeddedPayUrl"
+                data-test="payment-embedded-qr"
+                :src="embeddedPayUrl"
+                :title="scanTitle"
+                width="220"
+                height="220"
+                scrolling="no"
+                referrerpolicy="no-referrer-when-downgrade"
+                class="block border-0"
+                @load="onEmbeddedFrameLoad"
+                @error="onEmbeddedFrameError"
+              ></iframe>
+            </div>
+            <Lens v-else>
               <div class="relative rounded-xl bg-white p-3">
-                <iframe
-                  v-if="embeddedPayUrl"
-                  data-test="payment-embedded-qr"
-                  :src="embeddedPayUrl"
-                  :title="scanTitle"
-                  width="220"
-                  height="220"
-                  scrolling="no"
-                  referrerpolicy="no-referrer-when-downgrade"
-                  class="block border-0"
-                ></iframe>
                 <img
-                  v-else-if="qrDataUrl"
+                  v-if="qrDataUrl"
                   data-test="payment-qr-image"
                   :src="qrDataUrl"
                   alt=""
@@ -228,7 +233,7 @@
                 />
                 <div v-else class="h-[220px] w-[220px]"></div>
                 <!-- Brand logo overlay -->
-                <div v-if="(isAlipay || isWxpay) && !embeddedPayUrl" class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div v-if="isAlipay || isWxpay" class="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-black/5">
                     <img :src="brandIcon" alt="" class="h-7 w-7" />
                   </span>
@@ -236,6 +241,16 @@
               </div>
             </Lens>
           </div>
+
+          <!-- Keep feedback outside the cross-origin frame: never cover an already visible QR. -->
+          <p
+            v-if="embeddedPayUrl"
+            data-test="payment-embedded-status"
+            role="status"
+            class="mt-3 min-h-10 max-w-[16rem] text-center text-sm text-gray-500 dark:text-gray-400"
+          >
+            {{ embeddedFrameState === 'loading' ? t('payment.qr.cashierLoading') : embeddedFrameState === 'slow' ? t('payment.qr.cashierSlow') : '' }}
+          </p>
 
           <p v-if="scanHint" class="mt-5 max-w-[16rem] text-center text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ scanHint }}</p>
 
@@ -388,6 +403,27 @@ const embeddedPayUrl = computed(() => {
   if (!isBuiltInAlipayMethod(props.paymentType)) return ''
   return String(props.paymentMode || '').trim().toLowerCase() === 'embedded' ? props.payUrl : ''
 })
+// The cross-origin load event only means the cashier document loaded, not that its QR is ready.
+const embeddedFrameState = ref<'loading' | 'loaded' | 'slow'>('loading')
+let embeddedFrameTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearEmbeddedFrameTimer() {
+  if (embeddedFrameTimer !== null) {
+    clearTimeout(embeddedFrameTimer)
+    embeddedFrameTimer = null
+  }
+}
+
+function onEmbeddedFrameLoad() {
+  clearEmbeddedFrameTimer()
+  embeddedFrameState.value = 'loaded'
+}
+
+function onEmbeddedFrameError() {
+  clearEmbeddedFrameTimer()
+  embeddedFrameState.value = 'slow'
+}
+
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
 
 const qrBorderClass = computed(() => {
@@ -612,6 +648,7 @@ async function handleCancel() {
 function handleDone() { cleanup(); emit('done') }
 
 function cleanup() {
+  clearEmbeddedFrameTimer()
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
   alipayLauncher?.dispose()
@@ -629,6 +666,14 @@ if (props.expiresAt) {
 startCountdown(seconds)
 pollTimer = setInterval(pollStatus, 3000)
 renderQR()
+
+watch([embeddedPayUrl, outcome], ([url, settled]) => {
+  clearEmbeddedFrameTimer()
+  embeddedFrameState.value = 'loading'
+  if (url && !settled) {
+    embeddedFrameTimer = setTimeout(onEmbeddedFrameError, 15000)
+  }
+}, { immediate: true })
 
 watch([() => qrUrl.value, showQRCode], () => renderQR())
 onMounted(() => {

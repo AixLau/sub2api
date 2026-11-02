@@ -23,7 +23,7 @@ export default {
       cacheToday: 'Cache (Today)',
       performance: 'Performance',
       recent1mActiveUsers: 'users in last 1 min',
-      recent1mActiveUsersUnit: 'U/1m',
+      recent1mActiveUsersUnit: 'U/M',
       avgResponse: 'Avg Response',
       averageTime: 'Average Time',
       active: 'active',

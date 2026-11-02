@@ -341,6 +341,8 @@ export default {
       scanToPay: 'Scan to Pay',
       scanAlipay: 'Alipay QR Payment',
       scanWxpay: 'WeChat QR Payment',
+      cashierLoading: 'Loading the Alipay checkout…',
+      cashierSlow: 'The checkout is taking longer to load. If the QR code is missing, use “Reopen Payment Page” below.',
       scanAlipayHint: 'Open Alipay on your phone and scan the QR code to pay',
       scanWxpayHint: 'Open WeChat on your phone and scan the QR code to pay',
       payInNewWindow: 'Complete Payment in New Window',

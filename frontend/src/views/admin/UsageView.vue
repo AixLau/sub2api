@@ -53,7 +53,7 @@
             :filters="breakdownFilters"
           />
         </div>
-        <div v-if="!filters.source" class="grid grid-cols-1 gap-6">
+        <div v-if="!filters.source" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <EndpointDistributionChart
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"

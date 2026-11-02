@@ -14,7 +14,7 @@ function paramsFromDeeplink(deeplink: string): URLSearchParams {
 
 describe('ccswitchImport utils', () => {
   it('defaults OpenAI CC Switch imports to the current Codex model', () => {
-    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-5.5')
+    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-6.1-sol')
   })
 
   it('defaults Grok Build imports to the current Grok model', () => {
@@ -99,6 +99,54 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('gemini')
     expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
     expect(params.has('model')).toBe(false)
+  })
+})
+
+describe('CC Switch long-context config', () => {
+  const input = {
+    baseUrl: 'https://api.example.com',
+    providerName: '站点',
+    apiKey: 'sk-test',
+    usageScript: 'return true'
+  }
+  const decode = (value: string | null) =>
+    new TextDecoder().decode(Uint8Array.from(atob(value || ''), (c) => c.charCodeAt(0)))
+
+  it('imports Claude groups with 1M model pins and the compaction threshold', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({ ...input, platform: 'anthropic', clientType: 'claude' })
+    )
+    expect(params.get('configFormat')).toBe('json')
+    const env = JSON.parse(decode(params.get('config'))).env
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://api.example.com')
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-test')
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-5-5[1m]')
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-5-5[1m]')
+    expect(env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBe('claude-fable-5-1[1m]')
+    expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1000000')
+    expect(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE).toBe('80')
+  })
+
+  it('keeps non-Claude platforms on their own models in Claude Code imports', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({ ...input, platform: 'deepseek', clientType: 'claude' })
+    )
+    const env = JSON.parse(decode(params.get('config'))).env
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_OPUS_MODEL')
+    expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1000000')
+  })
+
+  it('imports Codex with the 1M context window and auto-compact limit', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({ ...input, platform: 'openai', clientType: 'claude' })
+    )
+    expect(params.get('configFormat')).toBe('toml')
+    const toml = decode(params.get('config'))
+    expect(toml).toContain('model_context_window = 1000000')
+    expect(toml).toContain('model_auto_compact_token_limit = 800000')
+    expect(toml).toContain('model = "gpt-6.1-sol"')
+    expect(toml).not.toContain('disable_response_storage')
+    expect(toml).toContain('base_url = "https://api.example.com"')
   })
 })
 

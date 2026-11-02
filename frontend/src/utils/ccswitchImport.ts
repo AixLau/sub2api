@@ -1,6 +1,7 @@
 import type { GroupPlatform } from '@/types'
+import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
 
-export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-5.5'
+export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-6.1-sol'
 export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
 
 export type CcSwitchClientType = 'claude' | 'gemini'
@@ -9,6 +10,9 @@ export interface CcSwitchImportConfig {
   app: string
   endpoint: string
   model?: string
+  /** Provider config CC Switch merges into the imported provider. */
+  config?: string
+  configFormat?: 'json' | 'toml'
 }
 
 export interface CcSwitchImportDeeplinkInput {
@@ -54,6 +58,36 @@ function withoutTrailingSlashes(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '')
 }
 
+function escapeTomlBasicString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/** Codex config.toml with the 1M context window and auto-compaction threshold. */
+function buildCodexImportToml(endpoint: string): string {
+  return `model_provider = "sub2api"
+model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
+${codexLongContextTomlLines()}
+[model_providers.sub2api]
+name = "sub2api"
+base_url = "${escapeTomlBasicString(endpoint)}"
+wire_api = "responses"
+requires_openai_auth = true
+`
+}
+
+/** Claude Code settings.json fragment with the 1M context and compaction defaults. */
+function buildClaudeImportJson(endpoint: string, apiKey: string, pinClaudeModels: boolean): string {
+  return JSON.stringify({ env: buildClaudeCodeEnv(endpoint, apiKey, { pinClaudeModels }) })
+}
+
+/** UTF-8 safe base64 (btoa alone throws on non-Latin-1 characters). */
+function encodeBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
 export function resolveCcSwitchImportConfig(
   platform: GroupPlatform | undefined | null,
   clientType: CcSwitchClientType,
@@ -71,7 +105,9 @@ export function resolveCcSwitchImportConfig(
         // CC Switch's Codex provider appends the OpenAI-compatible path itself.
         // Passing /v1 here can make the client request /v1/v1/....
         endpoint: withoutTrailingSlashes(baseUrl),
-        model: OPENAI_CC_SWITCH_CODEX_MODEL
+        model: OPENAI_CC_SWITCH_CODEX_MODEL,
+        config: buildCodexImportToml(withoutTrailingSlashes(baseUrl)),
+        configFormat: 'toml'
       }
     case 'gemini':
       return {
@@ -94,6 +130,13 @@ export function resolveCcSwitchImportConfig(
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
+  if (config.app === 'claude') {
+    // Only Anthropic groups serve Claude model IDs directly; other platforms
+    // routed through Claude Code keep their own model mapping.
+    const pinClaudeModels = (input.platform || 'anthropic') === 'anthropic'
+    config.config = buildClaudeImportJson(config.endpoint, input.apiKey, pinClaudeModels)
+    config.configFormat = 'json'
+  }
   const entries: [string, string][] = [
     ['resource', 'provider'],
     ['app', config.app],
@@ -101,7 +144,7 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
     ['homepage', input.baseUrl],
     ['endpoint', config.endpoint],
     ['apiKey', input.apiKey],
-    ['configFormat', 'json'],
+    ['configFormat', config.configFormat || 'json'],
     ['usageEnabled', 'true'],
     ['usageScript', btoa(input.usageScript)],
     ['usageAutoInterval', '30']
@@ -109,6 +152,10 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
 
   if (config.model) {
     entries.splice(2, 0, ['model', config.model])
+  }
+
+  if (config.config) {
+    entries.push(['config', encodeBase64(config.config)])
   }
 
   return `ccswitch://v1/import?${new URLSearchParams(entries).toString()}`

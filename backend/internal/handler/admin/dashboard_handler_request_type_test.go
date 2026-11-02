@@ -452,3 +452,38 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
 }
+
+func TestDashboardSnapshotForceBypassesCaches(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+	repo := &dashboardUsageRepoCapture{
+		dashboardStats: &usagestats.DashboardStats{Tpm: 100},
+	}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	const base = "/admin/dashboard/snapshot-v2?include_stats=true&include_trend=false&include_model_stats=false" +
+		"&start_time=2026-07-22T12:00:00Z&end_time=2026-07-23T12:00:00Z"
+	get := func(url string) string {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+	statsCalls := func() int { return repo.globalStatsCalls + repo.rangeStatsCalls }
+
+	require.Contains(t, get(base), `"tpm":100`)
+	require.Equal(t, 1, statsCalls())
+
+	// A normal reload is served from cache, even though the source changed.
+	repo.dashboardStats = &usagestats.DashboardStats{Tpm: 200}
+	require.Contains(t, get(base), `"tpm":100`)
+	require.Equal(t, 1, statsCalls())
+
+	// force=true recomputes and returns the fresh value.
+	require.Contains(t, get(base+"&force=true"), `"tpm":200`)
+	require.Equal(t, 2, statsCalls())
+
+	// The fresh result is written back for subsequent normal reloads.
+	require.Contains(t, get(base), `"tpm":200`)
+	require.Equal(t, 2, statsCalls())
+}

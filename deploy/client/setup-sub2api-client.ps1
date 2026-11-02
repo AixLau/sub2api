@@ -9,7 +9,10 @@ $ErrorActionPreference = "Stop"
 
 $GatewayUrl = "https://aixlau.me"
 $ClaudeBaseUrl = "$GatewayUrl/antigravity"
-$DefaultCodexModel = "gpt-5.5"
+$DefaultCodexModel = "gpt-6.1-sol"
+$LongContextWindow = 1000000
+$AutoCompactPercent = 80
+$CodexAutoCompactTokenLimit = 800000
 $Backups = New-Object System.Collections.Generic.List[string]
 
 if (-not ("Sub2ApiTimeoutWebClient" -as [type])) {
@@ -222,13 +225,14 @@ function Write-CodexConfig {
     param([string]$Path)
 
     $Out = New-Object System.Collections.Generic.List[string]
-    $Out.Add("# Sub2API Codex config generated on 2026-07-12.") | Out-Null
+    $Out.Add("# Sub2API Codex config generated on 2026-11-01.") | Out-Null
     $Out.Add('model_provider = "xinglian"') | Out-Null
     $Out.Add("model = `"$DefaultCodexModel`"") | Out-Null
     $Out.Add('model_reasoning_effort = "high"') | Out-Null
     $Out.Add('model_reasoning_summary = "auto"') | Out-Null
     $Out.Add('model_verbosity = "medium"') | Out-Null
-    $Out.Add('disable_response_storage = true') | Out-Null
+    $Out.Add("model_context_window = $LongContextWindow") | Out-Null
+    $Out.Add("model_auto_compact_token_limit = $CodexAutoCompactTokenLimit") | Out-Null
     $Out.Add('preferred_auth_method = "apikey"') | Out-Null
     $Out.Add("") | Out-Null
     $Out.Add('[model_providers.xinglian]') | Out-Null
@@ -255,6 +259,9 @@ function Write-ClaudeSettings {
 
     Set-JsonProperty -Object $EnvObject -Name "ANTHROPIC_BASE_URL" -Value $ClaudeBaseUrl
     Set-JsonProperty -Object $EnvObject -Name "ANTHROPIC_AUTH_TOKEN" -Value $ApiKey
+    Set-JsonProperty -Object $EnvObject -Name "CLAUDE_CODE_AUTO_COMPACT_WINDOW" -Value "$LongContextWindow"
+    Set-JsonProperty -Object $EnvObject -Name "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE" -Value "$AutoCompactPercent"
+    Set-JsonProperty -Object $EnvObject -Name "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" -Value "1"
     Write-JsonObject -Path $Path -Object $Object
 }
 

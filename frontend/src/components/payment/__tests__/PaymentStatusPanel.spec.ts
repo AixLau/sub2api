@@ -102,25 +102,95 @@ describe('PaymentStatusPanel', () => {
     expect(wrapper.emitted('success')).toHaveLength(1)
   })
 
-  it('embeds the official Alipay QR page in an iframe for embedded mode', async () => {
-    const wrapper = mount(PaymentStatusPanel, {
-      props: {
-        orderId: 42,
-        qrCode: '',
-        payUrl: 'https://openapi.alipay.com/gateway.do?qr_pay_mode=4',
-        paymentMode: 'embedded',
-        expiresAt: '2099-01-01T12:30:00Z',
-        paymentType: 'alipay',
-        orderType: 'balance',
-      },
-      global: { stubs: { Icon: true } },
+  describe('official Alipay embedded checkout', () => {
+    const props = {
+      orderId: 42,
+      qrCode: '',
+      payUrl: 'https://openapi.alipay.com/gateway.do?qr_pay_mode=4',
+      paymentMode: 'embedded',
+      expiresAt: '2099-01-01T12:30:00Z',
+      paymentType: 'alipay',
+      orderType: 'balance',
+    }
+
+    beforeEach(() => {
+      // The global mock disables Lens; exercise the real desktop duplication path.
+      const media = window.matchMedia('(pointer: coarse)')
+      vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ ...media, media: query, matches: false }))
     })
 
-    await flushPromises()
-    const frame = wrapper.find('[data-test="payment-embedded-qr"]')
-    expect(frame.exists()).toBe(true)
-    expect(frame.attributes('src')).toBe('https://openapi.alipay.com/gateway.do?qr_pay_mode=4')
-    expect(wrapper.text()).not.toContain('payment.qr.payInNewWindowHint')
+    afterEach(() => {
+      vi.mocked(window.matchMedia).mockRestore()
+    })
+
+    it('loads one cashier on desktop and clears feedback after document load', async () => {
+      const wrapper = mount(PaymentStatusPanel, { props })
+      await flushPromises()
+      expect(wrapper.findAll('iframe')).toHaveLength(1)
+      expect(wrapper.findComponent(Lens).exists()).toBe(false)
+      expect(wrapper.get('iframe').attributes('src')).toBe(props.payUrl)
+      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+      expect(toCanvas).not.toHaveBeenCalled()
+      await wrapper.get('iframe').trigger('load')
+      expect(wrapper.get('[data-test="payment-embedded-status"]').text()).toBe('')
+      await vi.advanceTimersByTimeAsync(15000)
+      expect(wrapper.text()).not.toContain('payment.qr.cashierSlow')
+      expect(wrapper.findAll('iframe')).toHaveLength(1)
+      wrapper.unmount()
+    })
+
+    it('shows slow-load guidance without hiding or reloading the cashier, then accepts a late load', async () => {
+      const wrapper = mount(PaymentStatusPanel, { props })
+      const frame = wrapper.get('iframe').element
+      await vi.advanceTimersByTimeAsync(14999)
+      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(wrapper.text()).toContain('payment.qr.cashierSlow')
+      expect(wrapper.get('iframe').element).toBe(frame)
+      expect(wrapper.text()).toContain('payment.qr.openPayWindow')
+      await wrapper.get('iframe').trigger('load')
+      expect(wrapper.text()).not.toContain('payment.qr.cashierSlow')
+      wrapper.unmount()
+    })
+
+    it('handles a frame error and resets loading for a different payment URL', async () => {
+      const wrapper = mount(PaymentStatusPanel, { props })
+      const frame = wrapper.get('iframe').element
+      await wrapper.get('iframe').trigger('error')
+      expect(wrapper.text()).toContain('payment.qr.cashierSlow')
+      await wrapper.setProps({ payUrl: props.payUrl + '&order=next' })
+      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+      expect(wrapper.get('iframe').element).not.toBe(frame)
+      expect(wrapper.findAll('iframe')).toHaveLength(1)
+      wrapper.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('clears the pending load timer when the order is cancelled', async () => {
+      cancelOrder.mockResolvedValue(undefined)
+      const wrapper = mount(PaymentStatusPanel, { props })
+      const cancel = wrapper.findAll('button').find(b => b.text().includes('payment.qr.cancelOrder'))!
+      await cancel.trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('payment.qr.cancelled')
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      expect(vi.getTimerCount()).toBe(0)
+      wrapper.unmount()
+    })
+
+    it('keeps HaozPay QR images local without mounting a cashier', async () => {
+      const wrapper = mount(PaymentStatusPanel, {
+        props: { ...props, paymentMode: 'qrcode', providerKey: 'haozpay', payUrl: '', qrCode: 'https://pay.example.com/qr/42' },
+      })
+      await flushPromises()
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      expect(wrapper.find('[data-test="payment-embedded-status"]').exists()).toBe(false)
+      expect(wrapper.findComponent(Lens).exists()).toBe(true)
+      expect(wrapper.findAll('[data-test="payment-qr-image"]')).toHaveLength(2)
+      expect(toCanvas).toHaveBeenCalled()
+      wrapper.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 
   it('shows reopen button in QR mode when payUrl is also available', async () => {

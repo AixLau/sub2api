@@ -13,13 +13,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// getPerformanceStats 获取近1分钟的请求数、Token 数和网关 API 活跃用户数（可选按用户过滤）。
+// getPerformanceStats 获取近1分钟的请求数、Token 数（含缓存创建/读取 Token）和网关 API 活跃用户数（可选按用户过滤）。
 func (r *usageLogRepository) getPerformanceStats(ctx context.Context, userID int64) (rpm, tpm, activeUsers int64, err error) {
 	oneMinuteAgo := time.Now().Add(-1 * time.Minute)
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) as request_count,
-			COALESCE(SUM(input_tokens + output_tokens), 0) as token_count,
+			COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) as token_count,
 			COUNT(DISTINCT CASE WHEN %s THEN ul.user_id END) as active_users
 		FROM usage_logs ul
 		JOIN users u ON u.id = ul.user_id

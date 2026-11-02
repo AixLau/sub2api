@@ -132,6 +132,16 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return stats, nil
 }
 
+// RefreshDashboardStats bypasses the stats cache, recomputes the dashboard
+// stats synchronously and writes the fresh result back to the cache.
+func (s *DashboardService) RefreshDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
+	stats, err := s.refreshDashboardStats(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("refresh dashboard stats: %w", err)
+	}
+	return stats, nil
+}
+
 // GetDashboardStatsWithRange returns dashboard usage totals for the exact
 // requested window. Range-specific results must not use the global stats cache.
 func (s *DashboardService) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {

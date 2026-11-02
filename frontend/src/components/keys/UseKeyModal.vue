@@ -275,6 +275,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { buildCodexModelCatalogUrl, fetchCodexModelsManifest } from '@/api/codex'
 import type { GroupPlatform } from '@/types'
+import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
@@ -871,52 +872,50 @@ Invoke-RestMethod -Method Post -Uri "${endpoint}" -Headers $headers -ContentType
   }
 }
 
-function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
-  let path: string
-  let content: string
-
+function formatShellEnv(environment: Record<string, string>): string {
+  const isNumeric = (value: string) => /^\d+$/.test(value)
   switch (activeTab.value) {
-    case 'unix':
-      path = 'Terminal'
-      content = `export ANTHROPIC_BASE_URL="${baseUrl}"
-export ANTHROPIC_AUTH_TOKEN="${apiKey}"
-export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
-      break
     case 'cmd':
-      path = 'Command Prompt'
-      content = `set ANTHROPIC_BASE_URL=${baseUrl}
-set ANTHROPIC_AUTH_TOKEN=${apiKey}
-set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
-      break
+      return Object.entries(environment)
+        .map(([name, value]) => `set ${name}=${value}`)
+        .join('\n')
     case 'powershell':
-      path = 'PowerShell'
-      content = `$env:ANTHROPIC_BASE_URL="${baseUrl}"
-$env:ANTHROPIC_AUTH_TOKEN="${apiKey}"
-$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
-      break
+      return Object.entries(environment)
+        .map(([name, value]) => `$env:${name}=${isNumeric(value) ? value : `"${value}"`}`)
+        .join('\n')
     default:
-      path = 'Terminal'
-      content = ''
+      return Object.entries(environment)
+        .map(([name, value]) => `export ${name}=${isNumeric(value) ? value : `"${value}"`}`)
+        .join('\n')
   }
+}
 
-  const vscodeSettingsPath = activeTab.value === 'unix'
+function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  // Claude groups pin the current Claude models with the [1m] selector; other
+  // platforms routed through Claude Code keep their own model IDs.
+  const environment = buildClaudeCodeEnv(baseUrl, apiKey, {
+    pinClaudeModels: props.platform === 'anthropic'
+  })
+  const pathLabels: Record<string, string> = {
+    unix: 'Terminal',
+    cmd: 'Command Prompt',
+    powershell: 'PowerShell'
+  }
+  const path = pathLabels[activeTab.value] || 'Terminal'
+  const content = pathLabels[activeTab.value] ? formatShellEnv(environment) : ''
+
+  const settingsPath = activeTab.value === 'unix'
     ? '~/.claude/settings.json'
     : '%USERPROFILE%\\.claude\\settings.json'
-
-  const vscodeContent = `{
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "env": {
-    "ANTHROPIC_BASE_URL": "${baseUrl}",
-    "ANTHROPIC_AUTH_TOKEN": "${apiKey}",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
-  }
-}`
 
   return [
     { path, content },
     {
-      path: vscodeSettingsPath,
-      content: vscodeContent,
+      path: settingsPath,
+      content: JSON.stringify({
+        $schema: 'https://json.schemastore.org/claude-code-settings.json',
+        env: environment
+      }, null, 2),
       hint: t('keys.useKeyModal.claudeSettingsHint')
     }
   ]
@@ -1027,17 +1026,14 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
-  const model = selectCodexCatalogModel('gpt-5.5')
+  const model = selectCodexCatalogModel('gpt-6.1-sol')
   const reasoningEffortLine = codexReasoningEffortTomlLine(model)
 
   // config.toml content
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}disable_response_storage = true
-${codexLocalCatalogToml.value}network_access = "enabled"
-windows_wsl_setup_acknowledged = true
-
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
@@ -1271,9 +1267,6 @@ ${codexLocalCatalogToml.value}# Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
 # model_context_window = 500000
-# disable_response_storage = true
-# network_access = "enabled"
-# windows_wsl_setup_acknowledged = true
 
 [model_providers.sub2api]
 name = "Sub2API Grok"
@@ -1309,16 +1302,16 @@ function generateRoutedCodexFiles(
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   const preferredModels: Partial<Record<GroupPlatform, string>> = {
-    openai: 'gpt-5.5',
-    anthropic: 'claude-sonnet-4-6',
+    openai: 'gpt-6.1-sol',
+    anthropic: 'claude-sonnet-5-5',
     gemini: 'gemini-2.5-pro',
-    antigravity: 'claude-sonnet-4-6',
+    antigravity: 'claude-sonnet-5-5',
     grok: 'grok-4.5',
     kimi: 'kimi-k2.5',
     zhipu: 'glm-4.7',
     deepseek: 'deepseek-v4-pro',
     minimax: 'MiniMax-M3',
-    composite: 'gpt-5.5'
+    composite: 'gpt-6.1-sol'
   }
   const preferredModel = preferredModels[platform] || ''
   const model = selectCodexCatalogModel(preferredModel)
@@ -1347,7 +1340,6 @@ function generateRoutedCodexFiles(
 model_provider = "sub2api"
 model = "${model}"
 review_model = "${model}"
-disable_response_storage = true
 ${codexLocalCatalogToml.value}
 [model_providers.sub2api]
 name = "Sub2API ${label}"
@@ -1374,17 +1366,14 @@ supports_websockets = false${codexModelCatalogMode.value === 'remote' ? '\n\n[fe
 function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
-  const model = selectCodexCatalogModel('gpt-5.5')
+  const model = selectCodexCatalogModel('gpt-6.1-sol')
   const reasoningEffortLine = codexReasoningEffortTomlLine(model)
 
   // config.toml content with WebSocket v2
   const configContent = `model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
-${reasoningEffortLine}disable_response_storage = true
-${codexLocalCatalogToml.value}network_access = "enabled"
-windows_wsl_setup_acknowledged = true
-
+${reasoningEffortLine}${codexLongContextTomlLines()}${codexLocalCatalogToml.value}
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
