@@ -484,7 +484,11 @@ const onDateRangeChange = (range: {
 }
 
 // Load data
-const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRangeParams) => {
+const loadDashboardSnapshot = async (
+  includeStats: boolean,
+  range: DashboardRangeParams,
+  force = false
+) => {
   const currentSeq = ++chartLoadSeq
   if (includeStats && !stats.value) {
     loading.value = true
@@ -502,7 +506,8 @@ const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRang
       include_trend: true,
       include_model_stats: true,
       include_group_stats: false,
-      include_users_trend: false
+      include_users_trend: false,
+      ...(force ? { force: true } : {})
     })
     if (currentSeq !== chartLoadSeq) return
     if (includeStats && response.stats) {
@@ -618,7 +623,7 @@ const loadChartData = async () => {
 const refreshDashboard = async () => {
   const range = getDashboardRangeParams()
   await Promise.all([
-    loadDashboardSnapshot(true, range),
+    loadDashboardSnapshot(true, range, true),
     loadActiveUsersTrend(range),
     loadUserSpendingRanking(range)
   ])

@@ -82,6 +82,9 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 	}
 
 	includeStats := parseBoolQueryWithDefault(c.Query("include_stats"), true)
+	// force=true is sent by the manual refresh button: skip the snapshot and
+	// stats caches, recompute now, and write the fresh result back.
+	force := parseBoolQueryWithDefault(c.Query("force"), false)
 	includeTrend := parseBoolQueryWithDefault(c.Query("include_trend"), true)
 	includeModels := parseBoolQueryWithDefault(c.Query("include_model_stats"), true)
 	includeGroups := parseBoolQueryWithDefault(c.Query("include_group_stats"), false)
@@ -123,7 +126,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 	})
 	cacheKey := string(keyRaw)
 
-	cached, hit, err := dashboardSnapshotV2Cache.GetOrLoad(cacheKey, func() (any, error) {
+	load := func() (any, error) {
 		return h.buildSnapshotV2Response(
 			c.Request.Context(),
 			startTime,
@@ -136,8 +139,22 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 			includeGroups,
 			includeUsersTrend,
 			usersTrendLimit,
+			force,
 		)
-	})
+	}
+	var (
+		cached snapshotCacheEntry
+		hit    bool
+	)
+	if force {
+		var payload any
+		payload, err = load()
+		if err == nil {
+			cached = dashboardSnapshotV2Cache.Set(cacheKey, payload)
+		}
+	} else {
+		cached, hit, err = dashboardSnapshotV2Cache.GetOrLoad(cacheKey, load)
+	}
 	if err != nil {
 		response.Error(c, 500, err.Error())
 		return
@@ -161,6 +178,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	filters *dashboardSnapshotV2Filters,
 	includeStats, includeTrend, includeModels, includeGroups, includeUsersTrend bool,
 	usersTrendLimit int,
+	force bool,
 ) (*dashboardSnapshotV2Response, error) {
 	resp := &dashboardSnapshotV2Response{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -175,7 +193,15 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 		// The summary cards show today and accumulated values. Keep them on the
 		// global stats source so tokens, costs, and requests share one time scope;
 		// the selected range only applies to the charts below.
-		stats, err := h.dashboardService.GetDashboardStats(ctx)
+		var (
+			stats *usagestats.DashboardStats
+			err   error
+		)
+		if force {
+			stats, err = h.dashboardService.RefreshDashboardStats(ctx)
+		} else {
+			stats, err = h.dashboardService.GetDashboardStats(ctx)
+		}
 		if err != nil {
 			return nil, errors.New("failed to get dashboard statistics")
 		}
