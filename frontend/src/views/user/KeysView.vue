@@ -1559,7 +1559,8 @@ const groupOptions = computed(() =>
   }))
 )
 
-const createProvider = ref<KeyGroupProvider>('anthropic')
+const DEFAULT_CREATE_PROVIDER: KeyGroupProvider = 'openai'
+const createProvider = ref<KeyGroupProvider>(DEFAULT_CREATE_PROVIDER)
 const createProviderOptions = computed(() => KEY_GROUP_PROVIDERS.map((value) => ({
   value,
   label: t(`keys.providers.${value}`),
@@ -1581,7 +1582,8 @@ const selectCreateProvider = (provider: KeyGroupProvider) => {
 watch([showCreateModal, createProviderOptions], ([isOpen, providers], [wasOpen]) => {
   if (!isOpen) return
   if (!wasOpen || !providers.some((provider) => provider.value === createProvider.value && provider.count > 0)) {
-    selectCreateProvider(providers.find((provider) => provider.count > 0)?.value ?? 'anthropic')
+    const preferred = providers.find((provider) => provider.value === DEFAULT_CREATE_PROVIDER && provider.count > 0)
+    selectCreateProvider(preferred?.value ?? providers.find((provider) => provider.count > 0)?.value ?? DEFAULT_CREATE_PROVIDER)
   }
   if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
     formData.value.group_id = null
