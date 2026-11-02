@@ -288,6 +288,7 @@ export default {
         hint: 'Config path: ~/.config/opencode/opencode.json (or opencode.jsonc), create if not exists. Use default providers (openai/anthropic/google) or custom provider_id. API Key can be configured directly or via /connect command. This is an example, adjust models and options as needed.',
       },
     },
+    advancedSettings: 'Advanced Settings',
     customKeyLabel: 'Custom Key',
     customKeyPlaceholder: 'Enter your custom key (min 16 chars)',
     customKeyHint: 'Only letters, numbers, underscores and hyphens allowed. Minimum 16 characters.',

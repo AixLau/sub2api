@@ -580,6 +580,32 @@
           </Select>
         </div>
 
+        <div v-if="showEditModal">
+          <label class="input-label">{{ t('keys.statusLabel') }}</label>
+          <Select
+            v-model="formData.status"
+            :options="statusOptions"
+            :placeholder="t('keys.selectStatus')"
+          />
+        </div>
+
+        <!-- Advanced Settings (collapsed by default) -->
+        <div class="rounded-lg border border-gray-200 dark:border-dark-600">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+            data-test="key-advanced-toggle"
+            :aria-expanded="showAdvancedSettings"
+            @click="showAdvancedSettings = !showAdvancedSettings"
+          >
+            <span>{{ t('keys.advancedSettings') }}</span>
+            <Icon
+              name="chevronDown"
+              size="sm"
+              :class="['text-gray-400 transition-transform', showAdvancedSettings ? 'rotate-180' : '']"
+            />
+          </button>
+          <div v-show="showAdvancedSettings" data-test="key-advanced-content" class="space-y-5 border-t border-gray-200 px-4 pb-4 pt-4 dark:border-dark-600">
         <!-- Custom Key Section (only for create) -->
         <div v-if="!showEditModal" class="space-y-3">
           <div class="flex items-center justify-between">
@@ -611,15 +637,6 @@
             <p v-if="customKeyError" class="mt-1 text-sm text-red-500">{{ customKeyError }}</p>
             <p v-else class="input-hint">{{ t('keys.customKeyHint') }}</p>
           </div>
-        </div>
-
-        <div v-if="showEditModal">
-          <label class="input-label">{{ t('keys.statusLabel') }}</label>
-          <Select
-            v-model="formData.status"
-            :options="statusOptions"
-            :placeholder="t('keys.selectStatus')"
-          />
         </div>
 
         <!-- IP Restriction Section -->
@@ -978,6 +995,8 @@
                 {{ formatDateTime(selectedKey.expires_at) }}
               </span>
             </div>
+          </div>
+        </div>
           </div>
         </div>
       </form>
@@ -1402,6 +1421,12 @@ const filterGroupId = ref<string | number>('')
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
+const showAdvancedSettings = ref(false)
+watch([showCreateModal, showEditModal], ([isCreateOpen, isEditOpen], [wasCreateOpen, wasEditOpen]) => {
+  if ((isCreateOpen && !wasCreateOpen) || (isEditOpen && !wasEditOpen)) {
+    showAdvancedSettings.value = false
+  }
+})
 const showDeleteDialog = ref(false)
 const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)

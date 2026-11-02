@@ -683,9 +683,10 @@ describe('user KeysView column settings', () => {
     it('classifies all configured platforms and retains the complete table filter', async () => {
       const wrapper = await openCreate()
       expect(wrapper.findAll('input[name="key-provider"]')).toHaveLength(4)
-      expect(optionIds(wrapper)).toEqual([1])
-      await chooseProvider(wrapper, 'openai')
+      expect(wrapper.get<HTMLInputElement>('input[value="openai"]').element.checked).toBe(true)
       expect(optionIds(wrapper)).toEqual([2])
+      await chooseProvider(wrapper, 'anthropic')
+      expect(optionIds(wrapper)).toEqual([1])
       await chooseProvider(wrapper, 'domestic')
       expect(optionIds(wrapper)).toEqual([3, 4, 5, 6])
       await chooseProvider(wrapper, 'other')
@@ -709,6 +710,19 @@ describe('user KeysView column settings', () => {
       await flushPromises()
       expect(keysAPI.create).toHaveBeenCalledOnce()
       expect(vi.mocked(keysAPI.create).mock.calls[0].slice(0, 2)).toEqual(['My key', 5])
+    })
+
+    it('collapses advanced settings by default and expands them on toggle', async () => {
+      const wrapper = await openCreate()
+      const content = () => wrapper.get<HTMLElement>('[data-test="key-advanced-content"]')
+      expect(content().element.style.display).toBe('none')
+      expect(content().text()).toContain('keys.customKeyLabel')
+      expect(content().text()).toContain('keys.ipRestriction')
+      expect(content().text()).toContain('keys.quotaLimit')
+      expect(content().text()).toContain('keys.rateLimitSection')
+      expect(content().text()).toContain('keys.expiration')
+      await wrapper.get('[data-test="key-advanced-toggle"]').trigger('click')
+      expect(content().element.style.display).toBe('')
     })
 
     it('defaults to a provider with available groups and disables empty categories', async () => {
@@ -743,7 +757,7 @@ describe('user KeysView column settings', () => {
       await groupSelect(wrapper).vm.$emit('update:modelValue', 5)
       await wrapper.get('[data-test="close-dialog"]').trigger('click')
       await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
-      expect(optionIds(wrapper)).toEqual([1])
+      expect(optionIds(wrapper)).toEqual([2])
       expect(groupSelect(wrapper).props('modelValue')).toBeNull()
       await wrapper.get('[data-test="close-dialog"]').trigger('click')
       await getButtonByText(wrapper, 'common.edit').trigger('click')
