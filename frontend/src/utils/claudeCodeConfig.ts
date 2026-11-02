@@ -51,19 +51,3 @@ model_auto_compact_token_limit = ${CODEX_AUTO_COMPACT_TOKEN_LIMIT}
 `
 }
 
-/**
- * Codex desktop app preferences shipped with the one-click import and the
- * setup scripts (deploy/client/setup-sub2api-client.{sh,ps1} keep a copy).
- */
-export const CODEX_DESKTOP_TOML = `[desktop]
-followUpQueueMode = "queue"
-localeOverride = "zh-CN"
-default-workspace-full-view = false
-preventSleepWhileRunning = true
-show-context-window-usage = true
-dock-icon-preference = "codex-system"
-enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "persistent", "max", "none"]
-conversationDetailMode = "STEPS_COMMANDS"
-ambient-suggestions-enabled = false
-browser-show-full-url = true
-`

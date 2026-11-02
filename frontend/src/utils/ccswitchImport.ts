@@ -1,6 +1,5 @@
 import type { GroupPlatform } from '@/types'
 import {
-  CODEX_DESKTOP_TOML,
   buildClaudeCodeEnv,
   codexLongContextTomlLines
 } from '@/utils/claudeCodeConfig'
@@ -66,18 +65,24 @@ function escapeTomlBasicString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
-/** Codex config.toml with the 1M context window and auto-compaction threshold. */
-function buildCodexImportToml(endpoint: string): string {
+/**
+ * Codex config.toml for the CC Switch import. CC Switch treats it as untrusted
+ * and keeps only a whitelist (src-tauri/src/deeplink/codex_link.rs): the
+ * provider id is always rewritten to `custom`, and global tables such as
+ * `[desktop]` or `[features]` are dropped, so only provider-scoped keys go here.
+ */
+function buildCodexImportToml(endpoint: string, providerName: string): string {
   return `model_provider = "sub2api"
 model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
+review_model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
+model_reasoning_effort = "high"
 ${codexLongContextTomlLines()}
 [model_providers.sub2api]
-name = "sub2api"
+name = "${escapeTomlBasicString(providerName)}"
 base_url = "${escapeTomlBasicString(endpoint)}"
 wire_api = "responses"
 requires_openai_auth = true
-
-${CODEX_DESKTOP_TOML}`
+`
 }
 
 /** Claude Code settings.json fragment with the 1M context and compaction defaults. */
@@ -110,9 +115,7 @@ export function resolveCcSwitchImportConfig(
         // CC Switch's Codex provider appends the OpenAI-compatible path itself.
         // Passing /v1 here can make the client request /v1/v1/....
         endpoint: withoutTrailingSlashes(baseUrl),
-        model: OPENAI_CC_SWITCH_CODEX_MODEL,
-        config: buildCodexImportToml(withoutTrailingSlashes(baseUrl)),
-        configFormat: 'toml'
+        model: OPENAI_CC_SWITCH_CODEX_MODEL
       }
     case 'gemini':
       return {
@@ -135,6 +138,10 @@ export function resolveCcSwitchImportConfig(
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
+  if (config.app === 'codex') {
+    config.config = buildCodexImportToml(config.endpoint, input.providerName)
+    config.configFormat = 'toml'
+  }
   if (config.app === 'claude') {
     // Only Anthropic groups serve Claude model IDs directly; other platforms
     // routed through Claude Code keep their own model mapping.
