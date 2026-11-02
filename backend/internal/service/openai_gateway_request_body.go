@@ -330,42 +330,45 @@ func normalizeOpenAIResponsesReasoningContent(body []byte) ([]byte, bool, error)
 		return body, false, nil
 	}
 
-	input := gjson.GetBytes(body, "input")
+	input := parseRawJSONView(body).Get("input")
 	if !input.IsArray() {
 		return body, false, nil
 	}
 
-	normalized := body
+	// Rewrite only the affected items and splice the input array back once.
+	// Deleting input.N.content on the whole body per item copies the full
+	// request for every reasoning item, which is O(items × body) on long
+	// conversations with large image/tool payloads.
+	items := make([]string, 0)
 	changed := false
 	index := 0
 	var normalizeErr error
 	input.ForEach(func(_, item gjson.Result) bool {
 		currentIndex := index
 		index++
-		if !item.IsObject() || strings.TrimSpace(item.Get("type").String()) != "reasoning" {
-			return true
-		}
-
 		// The field is invalid for Codex reasoning input regardless of whether it
 		// is an array, string, object, or null. Omitting it is accepted by both
 		// the public Responses API and the stricter ChatGPT internal endpoint.
-		if !item.Get("content").Exists() {
+		if !item.IsObject() || strings.TrimSpace(item.Get("type").String()) != "reasoning" || !item.Get("content").Exists() {
+			items = append(items, item.Raw)
 			return true
 		}
-		path := fmt.Sprintf("input.%d.content", currentIndex)
-		next, err := sjson.DeleteBytes(normalized, path)
+		next, err := sjson.Delete(item.Raw, "content")
 		if err != nil {
-			normalizeErr = fmt.Errorf("delete %s: %w", path, err)
+			normalizeErr = fmt.Errorf("delete input.%d.content: %w", currentIndex, err)
 			return false
 		}
-		normalized = next
+		items = append(items, next)
 		changed = true
 		return true
 	})
 	if normalizeErr != nil {
 		return body, false, normalizeErr
 	}
-	return normalized, changed, nil
+	if !changed {
+		return body, false, nil
+	}
+	return replaceOpenAIRawInput(body, input, items), true, nil
 }
 
 func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {

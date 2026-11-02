@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -61,6 +62,46 @@ func TestNormalizeOpenAIResponsesReasoningContent_RemovesInvalidContentOnly(t *t
 	assert.Equal(t, "output_text", gjson.GetBytes(normalized, "input.2.content.0.type").String(),
 		"valid assistant output_text content must be preserved")
 	assert.Equal(t, "hello", gjson.GetBytes(normalized, "input.0.content.0.text").String())
+}
+
+func TestNormalizeOpenAIResponsesReasoningContent_ManyItemsPreservesOtherBytes(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4", "input" : [ "raw-string" ,` +
+		`{"type":"reasoning","content":[{"type":"reasoning_text","text":"a"}],"summary":[]},` +
+		`{"type":"function_call_output","call_id":"c1","output":"keep  spacing"},` +
+		`{"type":"reasoning","summary":[],"content":"b"}` +
+		`] ,"stream":true}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningContent(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, gjson.ValidBytes(normalized))
+	assert.Equal(t, `{"model":"gpt-5.4", "input" : ["raw-string",`+
+		`{"type":"reasoning","summary":[]},`+
+		`{"type":"function_call_output","call_id":"c1","output":"keep  spacing"},`+
+		`{"type":"reasoning","summary":[]}`+
+		`] ,"stream":true}`, string(normalized))
+}
+
+func BenchmarkNormalizeOpenAIResponsesReasoningContent_LargeBody(b *testing.B) {
+	payload := strings.Repeat("x", 64*1024)
+	var sb strings.Builder
+	sb.WriteString(`{"model":"gpt-5.4","input":[`)
+	for i := 0; i < 200; i++ {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(`{"type":"function_call_output","call_id":"c","output":"` + payload + `"},`)
+		sb.WriteString(`{"type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"t"}]}`)
+	}
+	sb.WriteString(`]}`)
+	body := []byte(sb.String())
+	b.SetBytes(int64(len(body)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := normalizeOpenAIResponsesReasoningContent(body); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestNormalizeOpenAIResponsesReasoningContent_NoOpWithoutReasoningContent(t *testing.T) {
