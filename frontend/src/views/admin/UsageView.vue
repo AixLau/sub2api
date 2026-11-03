@@ -73,7 +73,7 @@
             cost-metric="account"
             :trend-data="trendData"
             :loading="chartsLoading"
-            chart-height-class="h-80"
+            chart-height-class="h-64"
             show-cost
           />
         </div>
