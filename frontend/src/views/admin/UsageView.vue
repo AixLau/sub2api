@@ -64,6 +64,7 @@
             :show-source-toggle="true"
             :show-metric-toggle="true"
             :title="t('usage.endpointDistribution')"
+            fill-height
             :start-date="startDate"
             :end-date="endDate"
             :filters="breakdownFilters"
