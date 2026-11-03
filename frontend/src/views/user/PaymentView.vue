@@ -230,6 +230,7 @@ import {
 } from '@/components/payment/paymentFlow'
 import { platformLabel } from '@/utils/platformColors'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
+import { preconnectAlipayCashier } from '@/components/payment/alipayPreconnect'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
@@ -939,6 +940,14 @@ function selectInternalPlan(plan: SubscriptionPlan): void {
   )
   if (option) selectSubscriptionOption(option)
 }
+
+// Warm the official Alipay cashier connections as soon as Alipay is chosen on
+// desktop, so the embedded QR appears sooner after the order is created.
+watch(selectedMethod, (method) => {
+  if (normalizeVisibleMethod(method) === 'alipay' && !isMobileDevice()) {
+    preconnectAlipayCashier()
+  }
+}, { immediate: true })
 
 watch(availableNinePlusProducts, (products) => {
   if (!products.length) {

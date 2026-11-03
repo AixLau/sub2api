@@ -123,34 +123,68 @@ describe('PaymentStatusPanel', () => {
       vi.mocked(window.matchMedia).mockRestore()
     })
 
-    it('loads one cashier on desktop and clears feedback after document load', async () => {
+    const skeleton = (wrapper: ReturnType<typeof mount>) => wrapper.find('[data-test="payment-qr-skeleton"]')
+    const frameHidden = (wrapper: ReturnType<typeof mount>) => wrapper.get('iframe').classes().includes('opacity-0')
+
+    it('loads one cashier behind a QR skeleton and fades it in shortly after load', async () => {
       const wrapper = mount(PaymentStatusPanel, { props })
       await flushPromises()
       expect(wrapper.findAll('iframe')).toHaveLength(1)
       expect(wrapper.findComponent(Lens).exists()).toBe(false)
       expect(wrapper.get('iframe').attributes('src')).toBe(props.payUrl)
-      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
       expect(toCanvas).not.toHaveBeenCalled()
+
+      // Before load: skeleton visible, frame transparent and not interactive.
+      expect(skeleton(wrapper).exists()).toBe(true)
+      expect(frameHidden(wrapper)).toBe(true)
+      expect(wrapper.get('iframe').classes()).toContain('pointer-events-none')
+      expect(wrapper.get('[data-test="payment-embedded-qr-box"]').attributes('aria-busy')).toBe('true')
+      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+
+      // Load only means the document arrived; give Alipay time to draw the QR.
       await wrapper.get('iframe').trigger('load')
+      await vi.advanceTimersByTimeAsync(299)
+      expect(frameHidden(wrapper)).toBe(true)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(frameHidden(wrapper)).toBe(false)
       expect(wrapper.get('[data-test="payment-embedded-status"]').text()).toBe('')
+
+      // Skeleton unmounts after the fade so its shimmer stops.
+      await vi.advanceTimersByTimeAsync(200)
+      expect(skeleton(wrapper).exists()).toBe(false)
+
       await vi.advanceTimersByTimeAsync(15000)
       expect(wrapper.text()).not.toContain('payment.qr.cashierSlow')
       expect(wrapper.findAll('iframe')).toHaveLength(1)
       wrapper.unmount()
     })
 
-    it('shows slow-load guidance without hiding or reloading the cashier, then accepts a late load', async () => {
+    it('reveals the frame after 4s even without a load event so a drawn QR is never hidden', async () => {
+      const wrapper = mount(PaymentStatusPanel, { props })
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(frameHidden(wrapper)).toBe(true)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(frameHidden(wrapper)).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('shows slow-load guidance with an open-in-window action at 8s, then accepts a late load', async () => {
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue({ closed: false } as Window)
       const wrapper = mount(PaymentStatusPanel, { props })
       const frame = wrapper.get('iframe').element
-      await vi.advanceTimersByTimeAsync(14999)
-      expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+      await vi.advanceTimersByTimeAsync(7999)
+      expect(wrapper.text()).not.toContain('payment.qr.cashierSlow')
       await vi.advanceTimersByTimeAsync(1)
       expect(wrapper.text()).toContain('payment.qr.cashierSlow')
       expect(wrapper.get('iframe').element).toBe(frame)
-      expect(wrapper.text()).toContain('payment.qr.openPayWindow')
+
+      await wrapper.get('[data-test="payment-embedded-open-window"]').trigger('click')
+      expect(openSpy).toHaveBeenCalledWith(props.payUrl, 'paymentPopup', expect.any(String))
+
       await wrapper.get('iframe').trigger('load')
       expect(wrapper.text()).not.toContain('payment.qr.cashierSlow')
       wrapper.unmount()
+      openSpy.mockRestore()
     })
 
     it('handles a frame error and resets loading for a different payment URL', async () => {
@@ -160,6 +194,8 @@ describe('PaymentStatusPanel', () => {
       expect(wrapper.text()).toContain('payment.qr.cashierSlow')
       await wrapper.setProps({ payUrl: props.payUrl + '&order=next' })
       expect(wrapper.text()).toContain('payment.qr.cashierLoading')
+      expect(skeleton(wrapper).exists()).toBe(true)
+      expect(frameHidden(wrapper)).toBe(true)
       expect(wrapper.get('iframe').element).not.toBe(frame)
       expect(wrapper.findAll('iframe')).toHaveLength(1)
       wrapper.unmount()
