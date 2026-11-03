@@ -1258,6 +1258,14 @@ type GatewayOpenAIHTTP2Config struct {
 	FallbackWindowSeconds int `mapstructure:"fallback_window_seconds"`
 	// FallbackTTLSeconds: 触发后回退 HTTP/1.1 的持续时间（秒）
 	FallbackTTLSeconds int `mapstructure:"fallback_ttl_seconds"`
+	// ReadIdleTimeoutSeconds: 连接多久收不到任何帧就发 PING 探测（秒），0 使用内置默认 15
+	ReadIdleTimeoutSeconds int `mapstructure:"read_idle_timeout_seconds"`
+	// PingTimeoutSeconds: PING 发出后多久无应答判定连接丢失（秒），0 使用内置默认 45。
+	// 上游拥塞时单条连接会整体停顿几十秒后恢复，期限过短会把可恢复的连接连同其上的流一起掐断。
+	PingTimeoutSeconds int `mapstructure:"ping_timeout_seconds"`
+	// MaxStreamsPerConnection: 账号级隔离下每条 HTTP/2 连接的目标并发流数，0 表示不拆分。
+	// 连接数按 ceil(账号并发/该值) 推算（上限 8），单条连接停顿或被判死只波及其上的少数流。
+	MaxStreamsPerConnection int `mapstructure:"max_streams_per_connection"`
 }
 
 // GatewayOpenAIProxyStreamCircuitConfig controls the bounded, in-process
@@ -2587,6 +2595,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 2)
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
+	viper.SetDefault("gateway.openai_http2.read_idle_timeout_seconds", 15)
+	viper.SetDefault("gateway.openai_http2.ping_timeout_seconds", 45)
+	viper.SetDefault("gateway.openai_http2.max_streams_per_connection", 2)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.disabled", false)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.failure_threshold", 2)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.window_seconds", 60)
@@ -3689,6 +3700,15 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIHTTP2.FallbackTTLSeconds < 0 {
 		return fmt.Errorf("gateway.openai_http2.fallback_ttl_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIHTTP2.ReadIdleTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_http2.read_idle_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIHTTP2.PingTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_http2.ping_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIHTTP2.MaxStreamsPerConnection < 0 {
+		return fmt.Errorf("gateway.openai_http2.max_streams_per_connection must be non-negative")
 	}
 	if c.Gateway.OpenAIProxyStreamCircuit.FailureThreshold < 0 {
 		return fmt.Errorf("gateway.openai_proxy_stream_circuit.failure_threshold must be non-negative")

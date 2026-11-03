@@ -76,9 +76,17 @@ const (
 	defaultOpenAIHTTP2FallbackErrorThreshold = 2
 	defaultOpenAIHTTP2FallbackWindow         = 60 * time.Second
 	defaultOpenAIHTTP2FallbackTTL            = 10 * time.Minute
-	// OpenAI 保留原有的探测与应答期限，避免中转站的延迟 PING 应答被长流策略提前判死。
+	// OpenAI 读空闲 15 秒发 PING，45 秒无应答才判定连接丢失（可由配置覆盖）。
+	// 上游拥塞时单条连接会整体停顿几十秒后恢复；15 秒的应答期限会把这类连接连同
+	// 其上已开始输出的流一起掐断（客户端看到 stream_read_error）。中转站的延迟
+	// PING 应答同样需要宽于长流策略的期限。
 	openAIHTTP2ReadIdleTimeout = 15 * time.Second
-	openAIHTTP2PingTimeout     = 15 * time.Second
+	openAIHTTP2PingTimeout     = 45 * time.Second
+	// maxOpenAIHTTP2ConnectionLanes: 单账号最多拆出的 HTTP/2 连接分道数
+	maxOpenAIHTTP2ConnectionLanes = 8
+	// openAIHTTP2LongGapLogThreshold: 响应体读取停顿超过该值后仍读到 EOF 时记日志。
+	// 取旧探测策略（15s 读空闲 + 15s 应答）判死连接所需的停顿长度，用于评估放宽期限的收益。
+	openAIHTTP2LongGapLogThreshold = 30 * time.Second
 	// 长流 HTTP/2 连接健康探测：池化连接被代理/NAT
 	// 静默掐断会成为“死连接”（两端都以为存活），请求落上去会挂到 TCP 重传超时
 	// （分钟级）。Go 的 http2.Transport 默认 ReadIdleTimeout=0（不发健康 PING），
@@ -116,6 +124,8 @@ type poolSettings struct {
 	maxConnsPerHost       int           // 每主机最大连接数（含活跃）
 	idleConnTimeout       time.Duration // 空闲连接超时时间
 	responseHeaderTimeout time.Duration // 等待响应头超时时间
+	http2ReadIdleTimeout  time.Duration // OpenAI HTTP/2 读空闲多久发 PING（0 使用模式默认值）
+	http2PingTimeout      time.Duration // OpenAI HTTP/2 PING 应答期限（0 使用模式默认值）
 }
 
 type openAIHTTP2Settings struct {
@@ -135,6 +145,8 @@ type upstreamClientEntry struct {
 	protocolMode string       // 协议模式（default/long_stream_h2/openai_h1/openai_h2/openai_h1_fallback）
 	lastUsed     int64        // 最后使用时间戳（纳秒），用于 LRU 淘汰
 	inFlight     int64        // 当前进行中的请求数，>0 时不可淘汰
+	lane         int          // OpenAI HTTP/2 连接分道序号（未拆分时为 0）
+	lastActivity int64        // 最近收到响应头或响应体数据的时间戳（纳秒），用于识别停顿的分道
 }
 
 type openAIHTTP2FallbackState struct {
@@ -235,10 +247,15 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
-	resp.Body = wrapTrackedBody(resp.Body, func() {
+	onClose := func() {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
-	})
+	}
+	if entry.protocolMode == upstreamProtocolModeOpenAIH2 {
+		resp.Body = newOpenAIH2StreamBody(resp.Body, entry, accountID, onClose)
+	} else {
+		resp.Body = wrapTrackedBody(resp.Body, onClose)
+	}
 
 	return resp, nil
 }
@@ -750,12 +767,22 @@ func (s *httpUpstreamService) getClientEntryWithProtocolOverride(proxyURL string
 	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
 	// 构建连接池配置键（用于检测配置变更）
 	poolKey := buildPoolKey(settings, protocolMode)
+	lanes := s.openAIHTTP2ConnectionLanes(isolation, protocolMode, accountConcurrency)
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
 
 	// 读锁快速路径：命中缓存直接返回，减少锁竞争
 	s.mu.RLock()
+	lane := 0
+	if lanes > 1 {
+		stallAfter := settings.http2ReadIdleTimeout
+		if stallAfter <= 0 {
+			stallAfter = openAIHTTP2ReadIdleTimeout
+		}
+		lane = s.pickConnectionLaneLocked(cacheKey, lanes, isolation, proxyKey, poolKey, nowUnix, stallAfter)
+		cacheKey = connectionLaneCacheKey(cacheKey, lane)
+	}
 	if entry, ok := s.clients[cacheKey]; ok && s.shouldReuseEntry(entry, isolation, proxyKey, poolKey) {
 		atomic.StoreInt64(&entry.lastUsed, nowUnix)
 		if markInFlight {
@@ -806,8 +833,10 @@ func (s *httpUpstreamService) getClientEntryWithProtocolOverride(proxyURL string
 		proxyKey:     proxyKey,
 		poolKey:      poolKey,
 		protocolMode: protocolMode,
+		lane:         lane,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
+	atomic.StoreInt64(&entry.lastActivity, nowUnix)
 	if markInFlight {
 		atomic.StoreInt64(&entry.inFlight, 1)
 	}
@@ -818,6 +847,54 @@ func (s *httpUpstreamService) getClientEntryWithProtocolOverride(proxyURL string
 	s.evictOverLimitLocked()
 	s.mu.Unlock()
 	return entry, nil
+}
+
+// openAIHTTP2ConnectionLanes 计算账号拆分的 HTTP/2 连接分道数。
+// 一条 HTTP/2 连接停顿或被 PING 判死时，其上所有流一起失败；按账号并发拆成多条连接后，
+// 单次故障只波及该分道上的少数流。仅账号级隔离下的 OpenAI HTTP/2 生效（H1 本就一请求一连接）。
+func (s *httpUpstreamService) openAIHTTP2ConnectionLanes(isolation, protocolMode string, accountConcurrency int) int {
+	if s == nil || s.cfg == nil || protocolMode != upstreamProtocolModeOpenAIH2 {
+		return 1
+	}
+	if isolation != config.ConnectionPoolIsolationAccount && isolation != config.ConnectionPoolIsolationAccountProxy {
+		return 1
+	}
+	perConnection := s.cfg.Gateway.OpenAIHTTP2.MaxStreamsPerConnection
+	if perConnection <= 0 || accountConcurrency <= perConnection {
+		return 1
+	}
+	return min((accountConcurrency+perConnection-1)/perConnection, maxOpenAIHTTP2ConnectionLanes)
+}
+
+// pickConnectionLaneLocked 为新请求选择连接分道（需持有读锁或写锁）。
+// 优先选在途请求最少的分道，同负载取序号最小的，空分道直接胜出；有在途请求却超过一个
+// 探测周期没收到任何响应数据的分道视为停顿，只在所有分道都停顿时才会被选中，
+// 避免新请求在 PING 判死前继续堆到疑似失联的连接上。
+func (s *httpUpstreamService) pickConnectionLaneLocked(baseKey string, lanes int, isolation, proxyKey, poolKey string, nowUnix int64, stallAfter time.Duration) int {
+	best, bestLoad, bestStalled := 0, int64(0), true
+	for lane := 0; lane < lanes; lane++ {
+		var load int64
+		stalled := false
+		if entry, ok := s.clients[connectionLaneCacheKey(baseKey, lane)]; ok && s.shouldReuseEntry(entry, isolation, proxyKey, poolKey) {
+			load = atomic.LoadInt64(&entry.inFlight)
+			stalled = load > 0 && nowUnix-atomic.LoadInt64(&entry.lastActivity) >= int64(stallAfter)
+		}
+		if lane == 0 || (bestStalled && !stalled) || (bestStalled == stalled && load < bestLoad) {
+			best, bestLoad, bestStalled = lane, load, stalled
+		}
+		if load == 0 {
+			break
+		}
+	}
+	return best
+}
+
+// connectionLaneCacheKey 返回分道的缓存键；分道 0 沿用原缓存键，未拆分时行为不变。
+func connectionLaneCacheKey(baseKey string, lane int) string {
+	if lane <= 0 {
+		return baseKey
+	}
+	return fmt.Sprintf("%s|lane:%d", baseKey, lane)
 }
 
 // shouldReuseEntry 判断缓存条目是否可复用
@@ -996,6 +1073,15 @@ func (s *httpUpstreamService) applyProfilePoolSettings(settings poolSettings, pr
 		if s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIResponseHeaderTimeout > 0 {
 			settings.responseHeaderTimeout = time.Duration(s.cfg.Gateway.OpenAIResponseHeaderTimeout) * time.Second
 		}
+		if s != nil && s.cfg != nil {
+			h2cfg := s.cfg.Gateway.OpenAIHTTP2
+			if h2cfg.ReadIdleTimeoutSeconds > 0 {
+				settings.http2ReadIdleTimeout = time.Duration(h2cfg.ReadIdleTimeoutSeconds) * time.Second
+			}
+			if h2cfg.PingTimeoutSeconds > 0 {
+				settings.http2PingTimeout = time.Duration(h2cfg.PingTimeoutSeconds) * time.Second
+			}
+		}
 	case service.HTTPUpstreamProfileGrok:
 		// Grok can stall before its first byte under capacity pressure. Keep the
 		// generic 600s gateway timeout from turning one request into a 10-minute
@@ -1018,6 +1104,9 @@ func buildPoolKey(settings poolSettings, protocolMode string) string {
 		settings.idleConnTimeout,
 		settings.responseHeaderTimeout,
 	)
+	if settings.http2ReadIdleTimeout > 0 || settings.http2PingTimeout > 0 {
+		base += fmt.Sprintf("|h2_ping:%s/%s", settings.http2ReadIdleTimeout, settings.http2PingTimeout)
+	}
 	if protocolMode == "" || protocolMode == upstreamProtocolModeDefault {
 		return base
 	}
@@ -1436,7 +1525,7 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		transport.ForceAttemptHTTP2 = true
 		// 显式配置 http2 并启用 PING 健康探测，剔除代理/NAT 静默掐断的死连接，
 		// 避免请求挂在死连接上直到 TCP 重传超时（分钟级）。
-		if _, err := enableHTTP2KeepAlive(transport, protocolMode); err != nil {
+		if _, err := enableHTTP2KeepAlive(transport, settings, protocolMode); err != nil {
 			return nil, err
 		}
 	case upstreamProtocolModeOpenAIH1:
@@ -1457,7 +1546,8 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 // Go 默认惰性配置 http2 且 ReadIdleTimeout=0（不发健康 PING），无法检测被代理/NAT
 // 静默掐断的死连接。此处主动设置 ReadIdleTimeout/PingTimeout，让死连接被提前 PING
 // 出并关闭，请求得以重建连接而非挂到 TCP 重传超时。返回底层 *http2.Transport 便于测试。
-func enableHTTP2KeepAlive(transport *http.Transport, protocolMode string) (*http2.Transport, error) {
+// settings 中的 http2 探测参数仅覆盖 OpenAI 模式；连接因 PING 无应答被关闭时记一条日志。
+func enableHTTP2KeepAlive(transport *http.Transport, settings poolSettings, protocolMode string) (*http2.Transport, error) {
 	h2, err := http2.ConfigureTransports(transport)
 	if err != nil {
 		return nil, err
@@ -1468,6 +1558,21 @@ func enableHTTP2KeepAlive(transport *http.Transport, protocolMode string) (*http
 		if protocolMode == upstreamProtocolModeOpenAIH2 {
 			h2.ReadIdleTimeout = openAIHTTP2ReadIdleTimeout
 			h2.PingTimeout = openAIHTTP2PingTimeout
+			if settings.http2ReadIdleTimeout > 0 {
+				h2.ReadIdleTimeout = settings.http2ReadIdleTimeout
+			}
+			if settings.http2PingTimeout > 0 {
+				h2.PingTimeout = settings.http2PingTimeout
+			}
+		}
+		readIdleTimeout, pingTimeout := h2.ReadIdleTimeout, h2.PingTimeout
+		h2.CountError = func(errType string) {
+			if errType == "conn_close_lost_ping" {
+				slog.Warn("upstream_http2_conn_lost_ping",
+					"protocol_mode", protocolMode,
+					"read_idle_timeout", readIdleTimeout.String(),
+					"ping_timeout", pingTimeout.String())
+			}
 		}
 	}
 	return h2, nil
@@ -1567,6 +1672,55 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 		return body
 	}
 	return &trackedBody{ReadCloser: body, onClose: onClose}
+}
+
+// openAIH2StreamBody 跟踪 OpenAI HTTP/2 响应体的读取：每次读到数据都刷新所在分道的
+// 活跃时间（供分道选择识别停顿连接），并在停顿超过旧探测策略判死阈值后仍读到 EOF 时
+// 记日志。停顿期间 PING 也可能正常应答，该日志只是放宽应答期限挽回流数的上限参考，
+// 需与 upstream_http2_conn_lost_ping 的数量变化对照着看。
+type openAIH2StreamBody struct {
+	trackedBody
+	entry     *upstreamClientEntry
+	accountID int64
+	lastRead  atomic.Int64
+	maxGap    atomic.Int64
+	sawEOF    atomic.Bool
+}
+
+func newOpenAIH2StreamBody(body io.ReadCloser, entry *upstreamClientEntry, accountID int64, onClose func()) io.ReadCloser {
+	if body == nil {
+		return body
+	}
+	nowUnix := time.Now().UnixNano()
+	atomic.StoreInt64(&entry.lastActivity, nowUnix)
+	b := &openAIH2StreamBody{entry: entry, accountID: accountID}
+	b.ReadCloser = body
+	b.onClose = func() {
+		onClose()
+		if gap := time.Duration(b.maxGap.Load()); gap >= openAIHTTP2LongGapLogThreshold && b.sawEOF.Load() {
+			slog.Info("openai_http2_stream_completed_after_long_gap",
+				"account_id", b.accountID,
+				"lane", b.entry.lane,
+				"max_gap_ms", gap.Milliseconds())
+		}
+	}
+	b.lastRead.Store(nowUnix)
+	return b
+}
+
+func (b *openAIH2StreamBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		nowUnix := time.Now().UnixNano()
+		atomic.StoreInt64(&b.entry.lastActivity, nowUnix)
+		if gap := nowUnix - b.lastRead.Swap(nowUnix); gap > b.maxGap.Load() {
+			b.maxGap.Store(gap)
+		}
+	}
+	if errors.Is(err, io.EOF) {
+		b.sawEOF.Store(true)
+	}
+	return n, err
 }
 
 // decompressResponseBody 根据 Content-Encoding 解压响应体。

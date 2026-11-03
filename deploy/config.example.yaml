@@ -469,6 +469,13 @@ gateway:
     fallback_error_threshold: 2
     fallback_window_seconds: 60
     fallback_ttl_seconds: 600
+    # HTTP/2 连接健康探测：读空闲多少秒后发 PING，PING 多少秒无应答判定连接丢失。
+    # 上游拥塞时连接会整体停顿几十秒后恢复，应答期限过短会把其上已开始输出的流一起掐断。
+    read_idle_timeout_seconds: 15
+    ping_timeout_seconds: 45
+    # 每条 HTTP/2 连接的目标并发流数：按 ceil(账号并发/该值) 拆成多条连接（上限 8），
+    # 新请求落到在途最少且未停顿的连接。0 表示同账号全部请求复用一条连接。
+    max_streams_per_connection: 2
   # OpenAI Responses SSE 代理断流熔断；按 proxy_id 跨账号隔离，仅影响下一次调度。
   # 隔离是偏好而非硬闸：当全部候选账号都在被隔离代理下时自动放行（fail-open），
   # 不会因熔断而返回"无可用账号"。3 秒内的并发断流合并为一次失败事件。

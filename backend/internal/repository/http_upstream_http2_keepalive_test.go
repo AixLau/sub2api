@@ -44,12 +44,12 @@ func TestEnableHTTP2KeepAlive_EnablesPingHealthCheck(t *testing.T) {
 		readIdleTimeout time.Duration
 		pingTimeout     time.Duration
 	}{
-		{upstreamProtocolModeOpenAIH2, 15 * time.Second, 15 * time.Second},
+		{upstreamProtocolModeOpenAIH2, 15 * time.Second, 45 * time.Second},
 		{upstreamProtocolModeLongStreamH2, 10 * time.Second, 5 * time.Second},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			tr := &http.Transport{}
-			h2, err := enableHTTP2KeepAlive(tr, tc.mode)
+			h2, err := enableHTTP2KeepAlive(tr, poolSettings{}, tc.mode)
 			require.NoError(t, err)
 			require.NotNil(t, h2, "必须返回已配置的 *http2.Transport")
 			require.Equal(t, tc.readIdleTimeout, h2.ReadIdleTimeout)
@@ -57,6 +57,22 @@ func TestEnableHTTP2KeepAlive_EnablesPingHealthCheck(t *testing.T) {
 			requireHTTP2Configured(t, tr, "http2 必须已挂到底层 http.Transport 上")
 		})
 	}
+}
+
+// 配置的探测参数只覆盖 OpenAI 模式，长流模式保持自身的快速判死策略。
+func TestEnableHTTP2KeepAlive_SettingsOverrideOnlyOpenAI(t *testing.T) {
+	settings := poolSettings{http2ReadIdleTimeout: 20 * time.Second, http2PingTimeout: 60 * time.Second}
+
+	h2, err := enableHTTP2KeepAlive(&http.Transport{}, settings, upstreamProtocolModeOpenAIH2)
+	require.NoError(t, err)
+	require.Equal(t, 20*time.Second, h2.ReadIdleTimeout)
+	require.Equal(t, 60*time.Second, h2.PingTimeout)
+	require.NotNil(t, h2.CountError, "PING 判死需要记日志")
+
+	h2, err = enableHTTP2KeepAlive(&http.Transport{}, settings, upstreamProtocolModeLongStreamH2)
+	require.NoError(t, err)
+	require.Equal(t, longStreamHTTP2ReadIdleTimeout, h2.ReadIdleTimeout)
+	require.Equal(t, longStreamHTTP2PingTimeout, h2.PingTimeout)
 }
 
 // long_stream_h2 模式构建的 Transport 必须带上 H2 PING 健康探测，从源头剔除死连接。

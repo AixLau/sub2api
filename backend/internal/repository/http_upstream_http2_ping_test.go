@@ -31,9 +31,11 @@ func TestBuildUpstreamTransport_HTTP2PingPolicy(t *testing.T) {
 	}{
 		{"OpenAI延迟应答", upstreamProtocolModeOpenAIH2, 6 * time.Second, 22 * time.Second, false, false, 22 * time.Second},
 		{"OpenAI已开始输出后延迟应答", upstreamProtocolModeOpenAIH2, 6 * time.Second, 22 * time.Second, true, false, 22 * time.Second},
+		// 上游拥塞时连接整体停顿数十秒后恢复：旧的 15 秒应答期限会在 30 秒处判死已开始输出的流。
+		{"OpenAI已开始输出后停顿30秒恢复", upstreamProtocolModeOpenAIH2, 30 * time.Second, 50 * time.Second, true, false, 50 * time.Second},
 		{"OpenAI正常应答但长时间无业务输出", upstreamProtocolModeOpenAIH2, 0, 40 * time.Second, false, false, 40 * time.Second},
-		{"OpenAI无应答且未收到响应头", upstreamProtocolModeOpenAIH2, -1, time.Minute, false, true, 30 * time.Second},
-		{"OpenAI无应答且已开始输出", upstreamProtocolModeOpenAIH2, -1, time.Minute, true, true, 30 * time.Second},
+		{"OpenAI无应答且未收到响应头", upstreamProtocolModeOpenAIH2, -1, 2 * time.Minute, false, true, time.Minute},
+		{"OpenAI无应答且已开始输出", upstreamProtocolModeOpenAIH2, -1, 2 * time.Minute, true, true, time.Minute},
 		{"长流保持原有超时", upstreamProtocolModeLongStreamH2, 6 * time.Second, 22 * time.Second, false, true, 15 * time.Second},
 		{"长流正常应答", upstreamProtocolModeLongStreamH2, 0, 40 * time.Second, false, false, 40 * time.Second},
 	} {
@@ -52,7 +54,12 @@ func TestBuildUpstreamTransport_HTTP2PingPolicy(t *testing.T) {
 					peerDone <- err
 				}()
 
-				tr, err := buildUpstreamTransport(http2KeepAliveTestPoolSettings(), nil, tc.mode)
+				settings := http2KeepAliveTestPoolSettings()
+				if tc.mode == upstreamProtocolModeOpenAIH2 {
+					// 与生产一致：OpenAI profile 默认不设响应头超时，判死只来自 PING 探测。
+					settings.responseHeaderTimeout = 0
+				}
+				tr, err := buildUpstreamTransport(settings, nil, tc.mode)
 				require.NoError(t, err)
 				defer tr.CloseIdleConnections()
 				// 仅把 TLS 建连替换为内存 HTTP/2 连接，保活参数仍来自生产构建器。
@@ -61,7 +68,7 @@ func TestBuildUpstreamTransport_HTTP2PingPolicy(t *testing.T) {
 				tr.DialContext = func(context.Context, string, string) (net.Conn, error) {
 					return clientConn, nil
 				}
-				client := &http.Client{Transport: tr, Timeout: 50 * time.Second}
+				client := &http.Client{Transport: tr, Timeout: 90 * time.Second}
 				started := time.Now()
 				resp, requestErr := client.Post("http://upstream.test/v1/responses", "application/json", strings.NewReader(`{"stream":true}`))
 				resultErr := requestErr
