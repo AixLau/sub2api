@@ -29,11 +29,11 @@ describe('ccswitchImport utils', () => {
   }
 
   it.each([
-    ['https://api.example.com', 'https://api.example.com'],
-    ['https://api.example.com/', 'https://api.example.com'],
+    ['https://api.example.com', 'https://api.example.com/v1'],
+    ['https://api.example.com/', 'https://api.example.com/v1'],
     ['https://api.example.com/v1', 'https://api.example.com/v1'],
     ['https://api.example.com/v1/', 'https://api.example.com/v1']
-  ])('keeps Codex imports on the configured endpoint for base URL %s', (baseUrl, endpoint) => {
+  ])('imports Codex with one /v1 suffix for base URL %s', (baseUrl, endpoint) => {
     const params = paramsFromDeeplink(
       buildCcSwitchImportDeeplink({
         ...baseInput,
@@ -112,7 +112,7 @@ describe('CC Switch long-context config', () => {
   const decode = (value: string | null) =>
     new TextDecoder().decode(Uint8Array.from(atob(value || ''), (c) => c.charCodeAt(0)))
 
-  it('imports Claude groups with 1M model pins and the compaction threshold', () => {
+  it('imports Claude groups with the compaction threshold and no model pins', () => {
     const params = paramsFromDeeplink(
       buildCcSwitchImportDeeplink({ ...input, platform: 'anthropic', clientType: 'claude' })
     )
@@ -120,9 +120,9 @@ describe('CC Switch long-context config', () => {
     const env = JSON.parse(decode(params.get('config'))).env
     expect(env.ANTHROPIC_BASE_URL).toBe('https://api.example.com')
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-test')
-    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('claude-opus-5-5[1m]')
-    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet-5-5[1m]')
-    expect(env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBe('claude-fable-5-1[1m]')
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_OPUS_MODEL')
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_SONNET_MODEL')
+    expect(env).not.toHaveProperty('ANTHROPIC_DEFAULT_FABLE_MODEL')
     expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1000000')
     expect(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE).toBe('80')
   })
@@ -141,12 +141,53 @@ describe('CC Switch long-context config', () => {
       buildCcSwitchImportDeeplink({ ...input, platform: 'openai', clientType: 'claude' })
     )
     expect(params.get('configFormat')).toBe('toml')
+    expect(params.get('iconUrl')).toBe('https://aixlau.me/logo.png')
     const toml = decode(params.get('config'))
     expect(toml).toContain('model_context_window = 1000000')
     expect(toml).toContain('model_auto_compact_token_limit = 800000')
     expect(toml).toContain('model = "gpt-6.1-sol"')
     expect(toml).not.toContain('disable_response_storage')
-    expect(toml).toContain('base_url = "https://api.example.com"')
+    expect(toml).toContain('review_model = "gpt-6.1-sol"')
+    expect(toml).toContain('model_reasoning_effort = "high"')
+    expect(toml).toContain('name = "星链 AI"')
+    expect(toml).not.toContain('[desktop]')
+    expect(toml).toContain('base_url = "https://api.example.com/v1"')
+  })
+})
+
+describe('CC Switch usage script extractor', () => {
+  function extract(response: unknown) {
+    // eslint-disable-next-line no-new-func
+    const config = new Function(`return ${CC_SWITCH_USAGE_SCRIPT}`)() as {
+      extractor: (response: unknown) => Record<string, unknown>
+    }
+    return config.extractor(response)
+  }
+
+  it('hides the unlimited -1 remaining of subscription groups', () => {
+    const result = extract({ isValid: true, planName: 'Pro', remaining: -1, unit: 'USD' })
+    expect(result).toEqual({ isValid: true, unit: 'USD', planName: 'Pro' })
+  })
+
+  it('survives UTF-8 base64 encoding in the deeplink', () => {
+    const deeplink = buildCcSwitchImportDeeplink({
+      baseUrl: 'https://api.example.com',
+      platform: 'anthropic',
+      clientType: 'claude',
+      providerName: 'Sub2API',
+      apiKey: 'sk-test',
+      usageScript: CC_SWITCH_USAGE_SCRIPT
+    })
+    const encoded = paramsFromDeeplink(deeplink).get('usageScript') || ''
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0)))
+    expect(decoded).toBe(CC_SWITCH_USAGE_SCRIPT)
+  })
+
+  it('reports key quota usage and invalid keys', () => {
+    expect(extract({ remaining: 3, quota: { used: 7, limit: 10, unit: 'USD' } }))
+      .toEqual({ isValid: true, unit: 'USD', remaining: 3, used: 7, total: 10 })
+    expect(extract({ isValid: false, status: 'disabled' }))
+      .toMatchObject({ isValid: false, invalidMessage: 'disabled' })
   })
 })
 

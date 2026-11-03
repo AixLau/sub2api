@@ -409,6 +409,16 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <!-- Import to Magpie Button -->
+              <button
+                v-if="supportsMagpieImport(row.group?.platform)"
+                data-testid="import-to-magpie"
+                @click="importToMagpie(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
+              >
+                <Icon name="upload" size="sm" />
+                <span class="text-xs">{{ t('keys.importToMagpie') }}</span>
+              </button>
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -580,6 +590,32 @@
           </Select>
         </div>
 
+        <div v-if="showEditModal">
+          <label class="input-label">{{ t('keys.statusLabel') }}</label>
+          <Select
+            v-model="formData.status"
+            :options="statusOptions"
+            :placeholder="t('keys.selectStatus')"
+          />
+        </div>
+
+        <!-- Advanced Settings (collapsed by default) -->
+        <div class="rounded-lg border border-gray-200 dark:border-dark-600">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200"
+            data-test="key-advanced-toggle"
+            :aria-expanded="showAdvancedSettings"
+            @click="showAdvancedSettings = !showAdvancedSettings"
+          >
+            <span>{{ t('keys.advancedSettings') }}</span>
+            <Icon
+              name="chevronDown"
+              size="sm"
+              :class="['text-gray-400 transition-transform', showAdvancedSettings ? 'rotate-180' : '']"
+            />
+          </button>
+          <div v-show="showAdvancedSettings" data-test="key-advanced-content" class="space-y-5 border-t border-gray-200 px-4 pb-4 pt-4 dark:border-dark-600">
         <!-- Custom Key Section (only for create) -->
         <div v-if="!showEditModal" class="space-y-3">
           <div class="flex items-center justify-between">
@@ -611,15 +647,6 @@
             <p v-if="customKeyError" class="mt-1 text-sm text-red-500">{{ customKeyError }}</p>
             <p v-else class="input-hint">{{ t('keys.customKeyHint') }}</p>
           </div>
-        </div>
-
-        <div v-if="showEditModal">
-          <label class="input-label">{{ t('keys.statusLabel') }}</label>
-          <Select
-            v-model="formData.status"
-            :options="statusOptions"
-            :placeholder="t('keys.selectStatus')"
-          />
         </div>
 
         <!-- IP Restriction Section -->
@@ -980,6 +1007,8 @@
             </div>
           </div>
         </div>
+          </div>
+        </div>
       </form>
       <template #footer>
         <div class="flex justify-end gap-3">
@@ -1238,6 +1267,7 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
+import { buildMagpieImportLink, supportsMagpieImport } from '@/utils/magpieImport'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1402,6 +1432,12 @@ const filterGroupId = ref<string | number>('')
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
+const showAdvancedSettings = ref(false)
+watch([showCreateModal, showEditModal], ([isCreateOpen, isEditOpen], [wasCreateOpen, wasEditOpen]) => {
+  if ((isCreateOpen && !wasCreateOpen) || (isEditOpen && !wasEditOpen)) {
+    showAdvancedSettings.value = false
+  }
+})
 const showDeleteDialog = ref(false)
 const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
@@ -1559,7 +1595,8 @@ const groupOptions = computed(() =>
   }))
 )
 
-const createProvider = ref<KeyGroupProvider>('anthropic')
+const DEFAULT_CREATE_PROVIDER: KeyGroupProvider = 'openai'
+const createProvider = ref<KeyGroupProvider>(DEFAULT_CREATE_PROVIDER)
 const createProviderOptions = computed(() => KEY_GROUP_PROVIDERS.map((value) => ({
   value,
   label: t(`keys.providers.${value}`),
@@ -1581,7 +1618,8 @@ const selectCreateProvider = (provider: KeyGroupProvider) => {
 watch([showCreateModal, createProviderOptions], ([isOpen, providers], [wasOpen]) => {
   if (!isOpen) return
   if (!wasOpen || !providers.some((provider) => provider.value === createProvider.value && provider.count > 0)) {
-    selectCreateProvider(providers.find((provider) => provider.count > 0)?.value ?? 'anthropic')
+    const preferred = providers.find((provider) => provider.value === DEFAULT_CREATE_PROVIDER && provider.count > 0)
+    selectCreateProvider(preferred?.value ?? providers.find((provider) => provider.count > 0)?.value ?? DEFAULT_CREATE_PROVIDER)
   }
   if (!formGroupOptions.value.some((group) => group.value === formData.value.group_id)) {
     formData.value.group_id = null
@@ -2104,6 +2142,18 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   } catch (error) {
     appStore.showError(t('keys.ccSwitchNotInstalled'))
   }
+}
+
+// The usemagpie.ai page hands the link to the Magpie app (or offers a download);
+// parameters sit in the URL fragment, so the key is never sent to that server.
+const importToMagpie = (row: ApiKey) => {
+  const link = buildMagpieImportLink({
+    baseUrl: publicSettings.value?.api_base_url || window.location.origin,
+    siteOrigin: window.location.origin,
+    platform: row.group?.platform,
+    apiKey: row.key
+  })
+  window.open(link, '_blank', 'noopener')
 }
 
 const handleCcsClientSelect = (clientType: CcSwitchClientType) => {

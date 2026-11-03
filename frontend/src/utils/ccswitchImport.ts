@@ -1,5 +1,9 @@
 import type { GroupPlatform } from '@/types'
-import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
+import {
+  buildClaudeCodeEnv,
+  codexLongContextTomlLines
+} from '@/utils/claudeCodeConfig'
+import { PROVIDER_DISPLAY_NAME, PROVIDER_ICON_URL } from '@/utils/providerBrand'
 
 export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-6.1-sol'
 export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
@@ -25,59 +29,81 @@ export interface CcSwitchImportDeeplinkInput {
 }
 
 /**
- * Balance query CC Switch runs against the imported provider. CC Switch fills
- * `{{baseUrl}}` with the provider's base URL as stored — Codex and Grok imports
- * carry a trailing `/v1` (see `withV1Endpoint`), Claude ones do not, and users
- * may edit it either way afterwards — then evaluates the script, so the URL
- * strips an existing `/v1` instead of blindly appending one (`/v1/v1/usage`
- * is a 404 and CC Switch shows "query failed").
+ * Balance query CC Switch runs against the imported provider: the Sub2API
+ * template from CC Switch's deeplink integration guide (identical to the
+ * in-app template since v4.0.10). `{{baseUrl}}` is the provider address as
+ * stored — Codex and Grok imports carry `/v1`, Claude ones do not — so the URL
+ * strips an existing `/v1` before appending `/v1/usage`. Unlimited
+ * subscription groups report `remaining: -1`, which is hidden rather than shown.
  */
 export const CC_SWITCH_USAGE_SCRIPT = `({
-    request: {
-      url: "{{baseUrl}}".replace(/\\/+$/, "").replace(/\\/v1$/, "") + "/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
+  request: {
+    url: "{{baseUrl}}".replace(/\\/+$/, "").replace(/\\/v1$/, "") + "/v1/usage",
+    method: "GET",
+    headers: {
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "cc-switch/1.0"
     }
-  })`
+  },
+  extractor: function (response) {
+    var quota = response.quota || {};
+    var result = {
+      isValid: response.isValid !== false,
+      unit: response.unit || quota.unit || "USD"
+    };
+    if (typeof response.planName === "string") result.planName = response.planName;
+    if (typeof response.remaining === "number" && response.remaining >= 0) {
+      result.remaining = response.remaining;
+    }
+    if (quota.limit > 0) {
+      result.used = quota.used;
+      result.total = quota.limit;
+    }
+    if (!result.isValid) {
+      result.invalidMessage = response.status
+        ? String(response.status)
+        : "查询失败";
+    }
+    return result;
+  }
+})`
 
 function withV1Endpoint(baseUrl: string): string {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
   return normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`
 }
 
-function withoutTrailingSlashes(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '')
-}
-
 function escapeTomlBasicString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
-/** Codex config.toml with the 1M context window and auto-compaction threshold. */
+/**
+ * Codex config.toml for the CC Switch import. CC Switch treats it as untrusted
+ * and keeps only a whitelist (src-tauri/src/deeplink/codex_link.rs): the
+ * provider id is always rewritten to `custom`, and global tables such as
+ * `[desktop]` or `[features]` are dropped, so only provider-scoped keys go here.
+ */
 function buildCodexImportToml(endpoint: string): string {
   return `model_provider = "sub2api"
 model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
+review_model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
+model_reasoning_effort = "high"
 ${codexLongContextTomlLines()}
 [model_providers.sub2api]
-name = "sub2api"
+name = "${escapeTomlBasicString(PROVIDER_DISPLAY_NAME)}"
 base_url = "${escapeTomlBasicString(endpoint)}"
 wire_api = "responses"
 requires_openai_auth = true
 `
 }
 
-/** Claude Code settings.json fragment with the 1M context and compaction defaults. */
-function buildClaudeImportJson(endpoint: string, apiKey: string, pinClaudeModels: boolean): string {
-  return JSON.stringify({ env: buildClaudeCodeEnv(endpoint, apiKey, { pinClaudeModels }) })
+/**
+ * Claude Code settings.json fragment with the 1M context and compaction
+ * defaults. Model aliases stay unset: for genuine Claude models CC Switch's
+ * guide says to leave them empty so Claude Code uses its own model list.
+ */
+function buildClaudeImportJson(endpoint: string, apiKey: string): string {
+  return JSON.stringify({ env: buildClaudeCodeEnv(endpoint, apiKey) })
 }
 
 /** UTF-8 safe base64 (btoa alone throws on non-Latin-1 characters). */
@@ -102,12 +128,10 @@ export function resolveCcSwitchImportConfig(
     case 'openai':
       return {
         app: 'codex',
-        // CC Switch's Codex provider appends the OpenAI-compatible path itself.
-        // Passing /v1 here can make the client request /v1/v1/....
-        endpoint: withoutTrailingSlashes(baseUrl),
-        model: OPENAI_CC_SWITCH_CODEX_MODEL,
-        config: buildCodexImportToml(withoutTrailingSlashes(baseUrl)),
-        configFormat: 'toml'
+        // CC Switch writes this verbatim as base_url; Codex appends /responses,
+        // so OpenAI-format providers carry /v1 (per CC Switch's integration guide).
+        endpoint: withV1Endpoint(baseUrl),
+        model: OPENAI_CC_SWITCH_CODEX_MODEL
       }
     case 'gemini':
       return {
@@ -130,11 +154,12 @@ export function resolveCcSwitchImportConfig(
 
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
+  if (config.app === 'codex') {
+    config.config = buildCodexImportToml(config.endpoint)
+    config.configFormat = 'toml'
+  }
   if (config.app === 'claude') {
-    // Only Anthropic groups serve Claude model IDs directly; other platforms
-    // routed through Claude Code keep their own model mapping.
-    const pinClaudeModels = (input.platform || 'anthropic') === 'anthropic'
-    config.config = buildClaudeImportJson(config.endpoint, input.apiKey, pinClaudeModels)
+    config.config = buildClaudeImportJson(config.endpoint, input.apiKey)
     config.configFormat = 'json'
   }
   const entries: [string, string][] = [
@@ -143,10 +168,11 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
     ['name', input.providerName],
     ['homepage', input.baseUrl],
     ['endpoint', config.endpoint],
+    ['iconUrl', PROVIDER_ICON_URL],
     ['apiKey', input.apiKey],
     ['configFormat', config.configFormat || 'json'],
     ['usageEnabled', 'true'],
-    ['usageScript', btoa(input.usageScript)],
+    ['usageScript', encodeBase64(input.usageScript)],
     ['usageAutoInterval', '30']
   ]
 

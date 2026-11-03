@@ -240,6 +240,18 @@ function Write-CodexConfig {
     $Out.Add("base_url = `"$GatewayUrl`"") | Out-Null
     $Out.Add('wire_api = "responses"') | Out-Null
     $Out.Add("requires_openai_auth = true") | Out-Null
+    $Out.Add("") | Out-Null
+    $Out.Add('[desktop]') | Out-Null
+    $Out.Add('followUpQueueMode = "queue"') | Out-Null
+    $Out.Add('localeOverride = "zh-CN"') | Out-Null
+    $Out.Add('default-workspace-full-view = false') | Out-Null
+    $Out.Add('preventSleepWhileRunning = true') | Out-Null
+    $Out.Add('show-context-window-usage = true') | Out-Null
+    $Out.Add('dock-icon-preference = "codex-system"') | Out-Null
+    $Out.Add('enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "persistent", "max", "none"]') | Out-Null
+    $Out.Add('conversationDetailMode = "STEPS_COMMANDS"') | Out-Null
+    $Out.Add('ambient-suggestions-enabled = false') | Out-Null
+    $Out.Add('browser-show-full-url = true') | Out-Null
 
     Write-Utf8NoBom -Path $Path -Content ($Out -join [Environment]::NewLine)
 }

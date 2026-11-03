@@ -205,7 +205,19 @@
             <div :class="['absolute -bottom-1.5 -left-1.5 h-5 w-5 rounded-bl-md border-b-2 border-l-2', brandCornerClass]"></div>
             <div :class="['absolute -bottom-1.5 -right-1.5 h-5 w-5 rounded-br-md border-b-2 border-r-2', brandCornerClass]"></div>
             <!-- A hosted cashier must have only one browsing context. Lens duplicates its slot. -->
-            <div v-if="embeddedPayUrl" class="rounded-xl bg-white p-3">
+            <!-- The skeleton sits under the iframe; the iframe fades in once Alipay has had time to draw its QR. -->
+            <div
+              v-if="embeddedPayUrl"
+              data-test="payment-embedded-qr-box"
+              class="relative h-[244px] w-[244px] rounded-xl bg-white p-3"
+              :aria-busy="!embeddedFrameVisible"
+            >
+              <QrCodeSkeleton
+                v-if="!embeddedFrameRevealed"
+                :size="220"
+                :icon="brandIcon"
+                :class="['absolute left-3 top-3 transition-opacity duration-150', embeddedFrameVisible ? 'opacity-0' : 'opacity-100']"
+              />
               <iframe
                 :key="embeddedPayUrl"
                 data-test="payment-embedded-qr"
@@ -215,7 +227,10 @@
                 height="220"
                 scrolling="no"
                 referrerpolicy="no-referrer-when-downgrade"
-                class="block border-0"
+                :class="[
+                  'relative block border-0 transition-opacity duration-150 motion-reduce:transition-none',
+                  embeddedFrameVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+                ]"
                 @load="onEmbeddedFrameLoad"
                 @error="onEmbeddedFrameError"
               ></iframe>
@@ -249,7 +264,18 @@
             role="status"
             class="mt-3 min-h-10 max-w-[16rem] text-center text-sm text-gray-500 dark:text-gray-400"
           >
-            {{ embeddedFrameState === 'loading' ? t('payment.qr.cashierLoading') : embeddedFrameState === 'slow' ? t('payment.qr.cashierSlow') : '' }}
+            <template v-if="embeddedFrameState === 'slow'">
+              {{ t('payment.qr.cashierSlow') }}
+              <button
+                type="button"
+                data-test="payment-embedded-open-window"
+                class="mt-2 block w-full font-medium text-content-brand underline-offset-2 hover:underline"
+                @click="reopenPopup"
+              >
+                {{ t('payment.qr.openInNewWindow') }}
+              </button>
+            </template>
+            <template v-else-if="!embeddedFrameVisible">{{ t('payment.qr.cashierLoading') }}</template>
           </p>
 
           <p v-if="scanHint" class="mt-5 max-w-[16rem] text-center text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ scanHint }}</p>
@@ -318,6 +344,7 @@ import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
 import Lens from '@/components/inspira/Lens.vue'
+import QrCodeSkeleton from '@/components/payment/QrCodeSkeleton.vue'
 import QRCode from 'qrcode'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
@@ -403,25 +430,83 @@ const embeddedPayUrl = computed(() => {
   if (!isBuiltInAlipayMethod(props.paymentType)) return ''
   return String(props.paymentMode || '').trim().toLowerCase() === 'embedded' ? props.payUrl : ''
 })
-// The cross-origin load event only means the cashier document loaded, not that its QR is ready.
-const embeddedFrameState = ref<'loading' | 'loaded' | 'slow'>('loading')
-let embeddedFrameTimer: ReturnType<typeof setTimeout> | null = null
+// The embedded cashier is cross-origin: its load event only means the document
+// loaded, and Alipay's scripts still need a moment to draw the QR. So the iframe
+// stays transparent over a QR-shaped skeleton and fades in shortly after load.
+// A hard fallback reveals it anyway so a QR that is already drawn is never hidden.
+const EMBEDDED_REVEAL_DELAY_MS = 300
+const EMBEDDED_REVEAL_FALLBACK_MS = 4000
+const EMBEDDED_SLOW_MS = 8000
+const EMBEDDED_SKELETON_UNMOUNT_MS = 200
 
-function clearEmbeddedFrameTimer() {
-  if (embeddedFrameTimer !== null) {
-    clearTimeout(embeddedFrameTimer)
-    embeddedFrameTimer = null
+const embeddedFrameState = ref<'loading' | 'loaded' | 'slow'>('loading')
+const embeddedFrameVisible = ref(false)
+const embeddedFrameRevealed = ref(false)
+let embeddedRevealTimer: ReturnType<typeof setTimeout> | null = null
+let embeddedFallbackTimer: ReturnType<typeof setTimeout> | null = null
+let embeddedSlowTimer: ReturnType<typeof setTimeout> | null = null
+let embeddedUnmountTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearEmbeddedFrameTimers() {
+  for (const timer of [embeddedRevealTimer, embeddedFallbackTimer, embeddedSlowTimer, embeddedUnmountTimer]) {
+    if (timer !== null) clearTimeout(timer)
   }
+  embeddedRevealTimer = null
+  embeddedFallbackTimer = null
+  embeddedSlowTimer = null
+  embeddedUnmountTimer = null
+}
+
+function revealEmbeddedFrame() {
+  if (embeddedFrameVisible.value) return
+  embeddedFrameVisible.value = true
+  if (embeddedFallbackTimer !== null) {
+    clearTimeout(embeddedFallbackTimer)
+    embeddedFallbackTimer = null
+  }
+  // Unmount the skeleton after the 150ms fade so its shimmer stops animating.
+  embeddedUnmountTimer = setTimeout(() => {
+    embeddedUnmountTimer = null
+    embeddedFrameRevealed.value = true
+  }, EMBEDDED_SKELETON_UNMOUNT_MS)
 }
 
 function onEmbeddedFrameLoad() {
-  clearEmbeddedFrameTimer()
+  if (embeddedSlowTimer !== null) {
+    clearTimeout(embeddedSlowTimer)
+    embeddedSlowTimer = null
+  }
   embeddedFrameState.value = 'loaded'
+  if (embeddedFrameVisible.value || embeddedRevealTimer !== null) return
+  embeddedRevealTimer = setTimeout(() => {
+    embeddedRevealTimer = null
+    revealEmbeddedFrame()
+  }, EMBEDDED_REVEAL_DELAY_MS)
 }
 
 function onEmbeddedFrameError() {
-  clearEmbeddedFrameTimer()
+  if (embeddedSlowTimer !== null) {
+    clearTimeout(embeddedSlowTimer)
+    embeddedSlowTimer = null
+  }
   embeddedFrameState.value = 'slow'
+  revealEmbeddedFrame()
+}
+
+function resetEmbeddedFrame(active: boolean) {
+  clearEmbeddedFrameTimers()
+  embeddedFrameState.value = 'loading'
+  embeddedFrameVisible.value = false
+  embeddedFrameRevealed.value = false
+  if (!active) return
+  embeddedFallbackTimer = setTimeout(() => {
+    embeddedFallbackTimer = null
+    revealEmbeddedFrame()
+  }, EMBEDDED_REVEAL_FALLBACK_MS)
+  embeddedSlowTimer = setTimeout(() => {
+    embeddedSlowTimer = null
+    if (embeddedFrameState.value === 'loading') embeddedFrameState.value = 'slow'
+  }, EMBEDDED_SLOW_MS)
 }
 
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
@@ -648,7 +733,7 @@ async function handleCancel() {
 function handleDone() { cleanup(); emit('done') }
 
 function cleanup() {
-  clearEmbeddedFrameTimer()
+  clearEmbeddedFrameTimers()
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
   alipayLauncher?.dispose()
@@ -668,11 +753,7 @@ pollTimer = setInterval(pollStatus, 3000)
 renderQR()
 
 watch([embeddedPayUrl, outcome], ([url, settled]) => {
-  clearEmbeddedFrameTimer()
-  embeddedFrameState.value = 'loading'
-  if (url && !settled) {
-    embeddedFrameTimer = setTimeout(onEmbeddedFrameError, 15000)
-  }
+  resetEmbeddedFrame(!!url && !settled)
 }, { immediate: true })
 
 watch([() => qrUrl.value, showQRCode], () => renderQR())

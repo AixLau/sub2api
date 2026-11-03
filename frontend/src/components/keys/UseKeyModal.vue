@@ -891,11 +891,7 @@ function formatShellEnv(environment: Record<string, string>): string {
 }
 
 function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
-  // Claude groups pin the current Claude models with the [1m] selector; other
-  // platforms routed through Claude Code keep their own model IDs.
-  const environment = buildClaudeCodeEnv(baseUrl, apiKey, {
-    pinClaudeModels: props.platform === 'anthropic'
-  })
+  const environment = buildClaudeCodeEnv(baseUrl, apiKey)
   const pathLabels: Record<string, string> = {
     unix: 'Terminal',
     cmd: 'Command Prompt',

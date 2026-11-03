@@ -454,6 +454,18 @@ write_codex_config() {
     printf 'base_url = "%s"\n' "$GATEWAY_URL"
     printf 'wire_api = "responses"\n'
     printf 'requires_openai_auth = true\n'
+    printf '\n'
+    printf '%s\n' '[desktop]'
+    printf '%s\n' 'followUpQueueMode = "queue"'
+    printf '%s\n' 'localeOverride = "zh-CN"'
+    printf '%s\n' 'default-workspace-full-view = false'
+    printf '%s\n' 'preventSleepWhileRunning = true'
+    printf '%s\n' 'show-context-window-usage = true'
+    printf '%s\n' 'dock-icon-preference = "codex-system"'
+    printf '%s\n' 'enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "persistent", "max", "none"]'
+    printf '%s\n' 'conversationDetailMode = "STEPS_COMMANDS"'
+    printf '%s\n' 'ambient-suggestions-enabled = false'
+    printf '%s\n' 'browser-show-full-url = true'
   } >"$tmp"
 
   mv "$tmp" "$file"

@@ -97,6 +97,11 @@ test_codex_config_creation_only() {
   assert_contains "$home_dir/.codex/config.toml" 'model_context_window = 1000000'
   assert_contains "$home_dir/.codex/config.toml" 'model_auto_compact_token_limit = 800000'
   assert_not_contains "$home_dir/.codex/config.toml" 'disable_response_storage'
+  assert_contains "$home_dir/.codex/config.toml" '[desktop]'
+  assert_contains "$home_dir/.codex/config.toml" 'localeOverride = "zh-CN"'
+  assert_contains "$home_dir/.codex/config.toml" 'enabled-reasoning-efforts = ["low", "medium", "high", "xhigh", "ultra", "persistent", "max", "none"]'
+  assert_contains "$home_dir/.codex/config.toml" 'browser-show-full-url = true'
+  assert_not_contains "$home_dir/.codex/config.toml" 'toys-'
   assert_contains "$home_dir/.codex/config.toml" 'name = "星链 AI"'
   assert_contains "$home_dir/.codex/config.toml" "base_url = \"$GATEWAY_URL\""
   assert_contains "$home_dir/.codex/config.toml" 'wire_api = "responses"'
