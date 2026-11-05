@@ -195,11 +195,13 @@ type SystemSettings struct {
 	IdentityPatchPrompt string `json:"identity_patch_prompt"`
 
 	// Ops monitoring (vNext)
-	OpsMonitoringEnabled         bool
-	ShowOpenAINonPlus5hUsage     bool
-	OpsRealtimeMonitoringEnabled bool
-	OpsQueryModeDefault          string
-	OpsMetricsIntervalSeconds    int
+	OpsMonitoringEnabled     bool
+	ShowOpenAINonPlus5hUsage bool
+	// AccountTestPresetPromptEnabled 账号测试是否注入预设提示词（默认开启）
+	AccountTestPresetPromptEnabled bool
+	OpsRealtimeMonitoringEnabled   bool
+	OpsQueryModeDefault            string
+	OpsMetricsIntervalSeconds      int
 
 	// Channel Monitor feature
 	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`

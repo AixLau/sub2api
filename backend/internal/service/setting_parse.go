@@ -793,6 +793,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Ops monitoring settings (default: enabled, fail-open)
 	result.OpsMonitoringEnabled = !isFalseSettingValue(settings[SettingKeyOpsMonitoringEnabled])
 	result.ShowOpenAINonPlus5hUsage = settings[SettingKeyShowOpenAINonPlus5hUsage] == "true"
+	result.AccountTestPresetPromptEnabled = !isFalseSettingValue(settings[SettingKeyAccountTestPresetPromptEnabled])
 	result.OpsRealtimeMonitoringEnabled = !isFalseSettingValue(settings[SettingKeyOpsRealtimeMonitoringEnabled])
 	result.OpsQueryModeDefault = string(ParseOpsQueryMode(settings[SettingKeyOpsQueryModeDefault]))
 	result.OpsMetricsIntervalSeconds = 60

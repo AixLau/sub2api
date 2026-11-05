@@ -462,6 +462,11 @@ const (
 	SettingKeyOpsMonitoringEnabled     = "ops_monitoring_enabled"
 	SettingKeyShowOpenAINonPlus5hUsage = "show_openai_non_plus_5h_usage"
 
+	// SettingKeyAccountTestPresetPromptEnabled controls whether admin account tests inject the
+	// built-in system prompt / instructions (Claude Code system, Codex instructions, Gemini
+	// systemInstruction). Default: enabled.
+	SettingKeyAccountTestPresetPromptEnabled = "account_test_preset_prompt_enabled"
+
 	// SettingKeyOpsRealtimeMonitoringEnabled controls realtime features (e.g. WS/QPS push).
 	SettingKeyOpsRealtimeMonitoringEnabled = "ops_realtime_monitoring_enabled"
 

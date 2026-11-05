@@ -232,6 +232,8 @@ type UpdateSettingsRequest struct {
 	// Ops monitoring (vNext)
 	OpsMonitoringEnabled         *bool   `json:"ops_monitoring_enabled"`
 	ShowOpenAINonPlus5hUsage     *bool   `json:"show_openai_non_plus_5h_usage"`
+	// AccountTestPresetPromptEnabled 账号测试是否注入预设提示词（nil 表示保持原值）
+	AccountTestPresetPromptEnabled *bool `json:"account_test_preset_prompt_enabled"`
 	OpsRealtimeMonitoringEnabled *bool   `json:"ops_realtime_monitoring_enabled"`
 	OpsQueryModeDefault          *string `json:"ops_query_mode_default"`
 	OpsMetricsIntervalSeconds    *int    `json:"ops_metrics_interval_seconds"`
@@ -1711,6 +1713,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			if req.ShowOpenAINonPlus5hUsage != nil { return *req.ShowOpenAINonPlus5hUsage }
 			return previousSettings.ShowOpenAINonPlus5hUsage
 		}(),
+		AccountTestPresetPromptEnabled: func() bool {
+			if req.AccountTestPresetPromptEnabled != nil {
+				return *req.AccountTestPresetPromptEnabled
+			}
+			return previousSettings.AccountTestPresetPromptEnabled
+		}(),
 		OpsRealtimeMonitoringEnabled: func() bool {
 			if req.OpsRealtimeMonitoringEnabled != nil {
 				return *req.OpsRealtimeMonitoringEnabled
@@ -2370,6 +2378,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		IdentityPatchPrompt:                                    updatedSettings.IdentityPatchPrompt,
 		OpsMonitoringEnabled:                                   updatedSettings.OpsMonitoringEnabled,
 		ShowOpenAINonPlus5hUsage:                               updatedSettings.ShowOpenAINonPlus5hUsage,
+		AccountTestPresetPromptEnabled:                         updatedSettings.AccountTestPresetPromptEnabled,
 		OpsRealtimeMonitoringEnabled:                           updatedSettings.OpsRealtimeMonitoringEnabled,
 		OpsQueryModeDefault:                                    updatedSettings.OpsQueryModeDefault,
 		OpsMetricsIntervalSeconds:                              updatedSettings.OpsMetricsIntervalSeconds,

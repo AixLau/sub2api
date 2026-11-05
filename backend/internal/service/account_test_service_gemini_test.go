@@ -15,7 +15,7 @@ import (
 func TestCreateGeminiTestPayload_ImageModel(t *testing.T) {
 	t.Parallel()
 
-	payload := createGeminiTestPayload("gemini-2.5-flash-image", "draw a tiny robot")
+	payload := createGeminiTestPayload("gemini-2.5-flash-image", "draw a tiny robot", true)
 
 	var parsed struct {
 		Contents []struct {
