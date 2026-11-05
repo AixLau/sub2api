@@ -453,14 +453,14 @@ func TestSanitizeGrokResponsesToolsSimplifiesInvalidRootUnions(t *testing.T) {
 	}
 }
 
-func TestPatchGrokResponsesBodyKeepsMetadataWhenSimplifyingTypedRootUnion(t *testing.T) {
+func TestPatchGrokResponsesBodySimplifiesTypedRootUnionAndStripsMetadata(t *testing.T) {
 	body := []byte(`{"model":"grok-4.6","metadata":{"session_id":"abc","large_id":9007199254740993},"tools":[{"type":"function","name":"automation_update","strict":true,"parameters":{"type":"object","oneOf":[{"$ref":"#/$defs/update"},{"type":"null"}],"$defs":{"update":{"type":"object","properties":{"id":{"type":"string"}}}}}}]}`)
 
 	patched, _, err := patchGrokResponsesBodyWithClientTools(body, "grok-4.6")
 	require.NoError(t, err)
 	require.True(t, json.Valid(patched))
-	require.Equal(t, "abc", gjson.GetBytes(patched, "metadata.session_id").String())
-	require.Equal(t, "9007199254740993", gjson.GetBytes(patched, "metadata.large_id").Raw)
+	// Grok rejects request metadata; it is stripped like the other Grok body patches.
+	require.False(t, gjson.GetBytes(patched, "metadata").Exists())
 	tool := gjson.GetBytes(patched, `tools.#(name=="automation_update")`)
 	require.Equal(t, "object", tool.Get("parameters.type").String())
 	require.True(t, tool.Get("parameters.properties").IsObject())

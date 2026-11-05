@@ -391,6 +391,9 @@ type ResponsesResponse struct {
 type ResponsesError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Type keeps the upstream error category (e.g. invalid_request_error) so a
+	// re-marshalled failed response can still be classified as request-scoped.
+	Type string `json:"type,omitempty"`
 }
 
 // ResponsesIncompleteDetails explains why a response is incomplete.

@@ -100,7 +100,8 @@ func (s *OpenAIGatewayService) BeginOpenAIWSIngressSessionPreemptionWithClient(
 	preemptThreadID := ""
 	preemptGroupID := getOpenAIGroupIDFromContext(c)
 	preemptAPIKeyID := getAPIKeyIDFromContext(c)
-	notifyPreempted := func() {}
+	// 无客户端连接时保持 nil：preempt 走同步取消，取代者返回时旧会话已被取消。
+	var notifyPreempted func()
 	if clientConn != nil {
 		notifyPreempted = func() {
 			_ = clientConn.Close(coderws.StatusTryAgainLater, openAIWSSessionPreemptedCloseReason)

@@ -2130,7 +2130,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_GlobalIdentityOverridesAccount(t 
 		codexCLIUserAgent,
 		upstream.lastReq.Header.Get("User-Agent"),
 	)
-	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
+	// codex-tui 是曾被优先降载的出口指纹，统一为 CLI 身份（见 resolveCodexOutboundIdentityWithCanonicalUA）。
+	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 
