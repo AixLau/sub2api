@@ -1746,7 +1746,11 @@ export default {
         todayRequests: 'Today Requests',
         todayTokens: 'Today Tokens',
         todayCost: 'Today Cost',
-        usageTrend: '30-Day Cost, Request, Token & Cache Rate Trend',
+        usageTrend: 'Cost, Request, Token & Cache Rate Trend',
+        timeRange: 'Time range',
+        last24Hours: 'Last 24 hours',
+        last7Days: 'Last 7 days',
+        last30Days: 'Last 30 days',
         noData: 'No usage data available for this account'
       },
       usageWindow: {

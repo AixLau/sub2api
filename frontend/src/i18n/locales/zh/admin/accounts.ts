@@ -1806,7 +1806,11 @@ export default {
         todayRequests: '今日请求',
         todayTokens: '今日 Token',
         todayCost: '今日费用',
-        usageTrend: '30天费用、请求、Token与缓存率趋势',
+        usageTrend: '费用、请求、Token与缓存率趋势',
+        timeRange: '时间范围',
+        last24Hours: '近24小时',
+        last7Days: '近7天',
+        last30Days: '近30天',
         noData: '该账号暂无使用数据'
       }
     },
