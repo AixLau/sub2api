@@ -175,13 +175,26 @@ func unavailablePromptDecision(code string) *PromptDecision {
 // CheckSelectedAccount runs only the deferred prompt audit. Legacy moderation
 // has its own selected-account gate and must not be executed twice here.
 func (c *Coordinator) CheckSelectedAccount(ctx context.Context, req Request) *Decision {
-	if c == nil || c.prompt == nil || isPromptAuditExcludedModel(req.Model) {
-		return nil
-	}
-	scoped, ok := c.prompt.(interface{ RequiresSelectedAccount() bool })
-	if !ok || !scoped.RequiresSelectedAccount() {
+	if !c.SelectedAccountAuditApplies(req) {
 		return nil
 	}
 	decision := c.CheckWithLegacy(ctx, req, nil)
 	return &decision
+}
+
+// SelectedAccountAuditApplies reports whether CheckSelectedAccount would run
+// the prompt audit for req. Requests whose account falls outside the selected
+// account scope are a no-op, so callers can skip (and must not cache) them.
+func (c *Coordinator) SelectedAccountAuditApplies(req Request) bool {
+	if c == nil || c.prompt == nil || isPromptAuditExcludedModel(req.Model) {
+		return false
+	}
+	scoped, ok := c.prompt.(interface{ RequiresSelectedAccount() bool })
+	if !ok || !scoped.RequiresSelectedAccount() {
+		return false
+	}
+	if covered, ok := c.prompt.(interface{ AuditsSelectedAccount(Request) bool }); ok {
+		return covered.AuditsSelectedAccount(req)
+	}
+	return true
 }
