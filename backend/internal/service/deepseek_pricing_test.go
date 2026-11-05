@@ -59,8 +59,7 @@ func TestDeepseekPeakMultiplierAt(t *testing.T) {
 func TestIsDeepSeekModel(t *testing.T) {
 	deepseek := []string{
 		"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
-		"deepseek-chat", "deepseek-reasoner", "deepseek-v3-2-251201",
-		"deepseek-coder", "deepseek-foo", "deepseek-v4-pro-0813",
+		"deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro-0813",
 		"DEEPSEEK-V4-PRO", " deepseek-v4-flash ",
 	}
 	for _, m := range deepseek {

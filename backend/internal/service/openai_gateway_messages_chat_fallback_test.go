@@ -128,13 +128,10 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			require.NotNil(t, result)
 			require.Equal(t, tt.mapped, gjson.GetBytes(upstream.lastBody, "model").String())
 			require.Equal(t, tt.wantEffort, gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
-			if tt.wantEffort == "none" {
-				// The product records disabled thinking as an absent billing effort.
-				require.Nil(t, result.ReasoningEffort)
-			} else {
-				require.NotNil(t, result.ReasoningEffort)
-				require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
-			}
+			// Disabled thinking is forwarded as "none" and recorded as such, so a
+			// per-effort "none" billing multiplier can apply to it.
+			require.NotNil(t, result.ReasoningEffort)
+			require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
 		})
 	}
 }

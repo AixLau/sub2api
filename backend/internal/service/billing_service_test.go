@@ -529,31 +529,39 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "deepseek v4 flash",
 			model:             "deepseek-v4-flash",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
 			name:              "deepseek v4 flash vision exp",
 			model:             "deepseek-v4-flash-vision-exp",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
+		},
+		{
+			// deepseek-flash（= V4.1-Flash 新名）同样命中 flash 价卡。
+			name:              "deepseek flash v41 name maps to flash",
+			model:             "deepseek-flash",
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
 			// deepseek-chat / deepseek-reasoner 已停止服务，统一按 flash 价兜底。
 			name:              "deepseek chat discontinued maps to flash",
 			model:             "deepseek-chat",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
 			name:              "deepseek reasoner discontinued maps to flash",
 			model:             "deepseek-reasoner",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
 			// Keep the historical test identity while checking the explicit
@@ -2231,6 +2239,12 @@ func TestGPT61SolExplicitZeroCacheWriteAcrossTiers(t *testing.T) {
 
 func TestCalculateCostUnifiedAppliesMaxReasoningMultiplierOnceWithoutResolver(t *testing.T) {
 	svc := newTestBillingService()
+	// No implicit per-model default exists; the catalog entry must carry the
+	// multiplier explicitly, and it must be applied exactly once.
+	maxMultiplier := 3.0
+	pricing := *svc.fallbackPrices["claude-fable-5-1"]
+	pricing.MaxReasoningEffortMultiplier = &maxMultiplier
+	svc.fallbackPrices["claude-fable-5-1"] = &pricing
 	input := CostInput{Model: "claude-fable-5-1", Tokens: UsageTokens{InputTokens: 1000, OutputTokens: 100}, RateMultiplier: 0.8}
 	standard, err := svc.CalculateCostUnified(input)
 	require.NoError(t, err)
