@@ -980,6 +980,9 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 			routeMeta.ModerationRequired = true
 			routeMeta.Status = moderationcoverage.StatusCovered
 			moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(routeMeta))
+			// The route-level pipeline that issues the moderation receipt is not
+			// mounted here; simulate its allow receipt.
+			markForwardableModerationReceipt(c, routeMeta.Protocol)
 		}
 		c.Next()
 	})

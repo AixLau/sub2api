@@ -87,6 +87,9 @@ func newAstraProFailoverContext(t *testing.T, body string) (*gin.Context, *httpt
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
 	moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(openAIResponsesHTTPRouteMetaForTest()))
+	// The route-level OpenAI HTTP pipeline (which issues the moderation receipt)
+	// is not mounted in this handler-level test; simulate its allow receipt.
+	markForwardableModerationReceipt(c, service.ContentModerationProtocolOpenAIResponses)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
