@@ -972,15 +972,8 @@ func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) 
 		pipeline = newGatewayPreForwardPipeline(nil)
 	}
 	input := ctx.input
-	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
-		decision := ctx.handler.checkSecurityAudit(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
-		if decision != nil && !decision.AllowNextStage {
-			ctx.handler.writeGatewayPreForwardPromptAuditError(ctx.c, input.ErrorFormat, decision)
-			return gatewayPreForwardStageResult{Blocked: true}
-		}
-		return gatewayPreForwardStageResult{}
-	}
 
+	// Content moderation runs once, through the pipeline's moderation guard.
 	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
 		APIKey:   input.APIKey,
 		Subject:  input.Subject,
@@ -988,13 +981,23 @@ func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) 
 		Model:    input.Model,
 		Body:     input.Body,
 	})
-	if decision == nil || !decision.Blocked {
-		return gatewayPreForwardStageResult{}
+	if decision != nil && decision.Blocked {
+		if ctx.handler != nil {
+			ctx.handler.writeGatewayPreForwardModerationError(ctx.c, input.ErrorFormat, decision)
+		}
+		return gatewayPreForwardStageResult{Blocked: true}
 	}
-	if ctx.handler != nil {
-		ctx.handler.writeGatewayPreForwardModerationError(ctx.c, input.ErrorFormat, decision)
+
+	// The security audit coordinator then reuses that moderation decision for
+	// prompt auditing instead of running legacy moderation a second time.
+	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
+		auditDecision := ctx.handler.checkSecurityAuditWithLegacy(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body, decision)
+		if auditDecision != nil && !auditDecision.AllowNextStage {
+			ctx.handler.writeGatewayPreForwardPromptAuditError(ctx.c, input.ErrorFormat, auditDecision)
+			return gatewayPreForwardStageResult{Blocked: true}
+		}
 	}
-	return gatewayPreForwardStageResult{Blocked: true}
+	return gatewayPreForwardStageResult{}
 }
 
 func (p *GatewayPreForwardPipeline) Run(h *GatewayHandler, c *gin.Context, reqLog *zap.Logger, input gatewayPreForwardPipelineInput) gatewayPreForwardPipelineResult {

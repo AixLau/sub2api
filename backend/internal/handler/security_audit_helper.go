@@ -51,6 +51,39 @@ func (h *GatewayHandler) checkSecurityAudit(c *gin.Context, reqLog *zap.Logger, 
 	return runSecurityAudit(c, reqLog, h.securityAuditCoordinator, h.contentModerationService, apiKey, subject, protocol, model, body, "http")
 }
 
+// checkSecurityAuditWithLegacy runs the HTTP security audit while reusing the
+// content moderation decision the pipeline's moderation stage already produced
+// for this request, so moderation runs once and prompt auditing still runs.
+func (h *GatewayHandler) checkSecurityAuditWithLegacy(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, moderation *service.ContentModerationDecision) *securityaudit.Decision {
+	if h == nil || h.securityAuditCoordinator == nil || c == nil || c.Request == nil {
+		return nil
+	}
+	if completed, exists := c.Get(securityAuditCompletedContextKey); exists && completed == true {
+		return nil
+	}
+	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, "http")
+	logSecurityAuditStart(reqLog, request, len(body), false)
+	decision := h.securityAuditCoordinator.CheckWithLegacy(c.Request.Context(), request, legacyDecisionFromContentModeration(moderation))
+	if decision.AllowNextStage {
+		c.Set(securityAuditCompletedContextKey, true)
+	}
+	logSecurityAuditDone(reqLog, request, decision, false)
+	return &decision
+}
+
+// legacyDecisionFromContentModeration converts a content moderation decision
+// into the coordinator's legacy form. nil means moderation produced no verdict.
+func legacyDecisionFromContentModeration(decision *service.ContentModerationDecision) *securityaudit.LegacyDecision {
+	if decision == nil {
+		return nil
+	}
+	return &securityaudit.LegacyDecision{
+		Allowed: decision.Allowed, Blocked: decision.Blocked, Flagged: decision.Flagged,
+		Message: decision.Message, StatusCode: decision.StatusCode,
+		ErrorCode: contentModerationErrorCode(decision), Action: decision.Action,
+	}
+}
+
 func (h *OpenAIGatewayHandler) checkSecurityAudit(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte) *securityaudit.Decision {
 	if h == nil {
 		return nil
@@ -82,11 +115,7 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			return nil
 		}
 		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
-		decision.Legacy = &securityaudit.LegacyDecision{
-			Allowed: legacyDecision.Allowed, Blocked: legacyDecision.Blocked, Flagged: legacyDecision.Flagged,
-			Message: legacyDecision.Message, StatusCode: legacyDecision.StatusCode,
-			ErrorCode: contentModerationErrorCode(legacyDecision), Action: legacyDecision.Action,
-		}
+		decision.Legacy = legacyDecisionFromContentModeration(legacyDecision)
 		if legacyDecision.Blocked {
 			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), contentModerationErrorCode(legacyDecision), legacyDecision.Message, false
 		}
