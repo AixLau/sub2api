@@ -917,10 +917,14 @@ func TestOpenAIModeratedRoutesHaveGatewayPipelineModerationCoverage(t *testing.T
 	require.Empty(t, routeSetDifference(openAIProtocols, guardProtocols),
 		"OpenAI moderated route protocols must still pass through the OpenAI pre-forward moderation stage")
 	require.True(t, pipelineCoverage.DelegatesToOpenAIGatewayPipeline,
-		"OpenAI moderation_required registrar protocols must be covered by the GatewayPipeline moderation stage; checkWithModerationGuard does not call OpenAIGatewayPipeline.CheckModeration")
-	require.True(t, pipelineCoverage.ForwardsModerationProtocol,
-		"checkWithModerationGuard calls OpenAIGatewayPipeline.CheckModeration at %s, but must forward moderationGuardInput.Protocol or the whole moderationGuardInput so registrar protocol coverage reaches the pipeline stage",
-		strings.Join(pipelineCoverage.Locations, ", "))
+		"OpenAI moderation_required registrar protocols must be covered by the GatewayPipeline moderation stage; no OpenAI moderation stage calls OpenAIGatewayPipeline.CheckModeration")
+	for _, stage := range openAIModerationStageTypes {
+		require.True(t, pipelineCoverage.StageDelegates[stage],
+			"%s.Run must call OpenAIGatewayPipeline.CheckModeration", stage)
+		require.True(t, pipelineCoverage.StageForwards[stage],
+			"%s.Run calls OpenAIGatewayPipeline.CheckModeration (%s) but must forward moderationGuardInput.Protocol or the whole input so registrar protocol coverage reaches the pipeline stage",
+			stage, strings.Join(pipelineCoverage.Locations, ", "))
+	}
 
 	pipelineProtocols := guardProtocols
 	require.Empty(t, routeSetDifference(openAIProtocols, pipelineProtocols),
@@ -2061,6 +2065,28 @@ type openAIGatewayPipelineModerationCoverage struct {
 	DelegatesToOpenAIGatewayPipeline bool
 	ForwardsModerationProtocol       bool
 	Locations                        []string
+	// Per moderation stage (receiver type of its Run method): whether it calls
+	// OpenAIGatewayPipeline.CheckModeration and forwards the request protocol.
+	StageDelegates map[string]bool
+	StageForwards  map[string]bool
+}
+
+// openAIModerationStageTypes are the pipeline stages that run content moderation
+// for OpenAI routes (they replaced the former checkWithModerationGuard helper).
+var openAIModerationStageTypes = []string{"OpenAIHTTPModerationStage", "OpenAIWebSocketModerationStage"}
+
+func funcReceiverTypeName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return ""
+	}
+	expr := fn.Recv.List[0].Type
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		return ident.Name
+	}
+	return ""
 }
 
 func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
@@ -2142,7 +2168,11 @@ func openAIGatewayPipelineModerationCoverageFromHandlerSources(t *testing.T) ope
 	files := handlerSourceFiles(t, "*.go")
 	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
 	repoRoot := repoRootFromTestFile(t)
-	coverage := openAIGatewayPipelineModerationCoverage{}
+	coverage := openAIGatewayPipelineModerationCoverage{StageDelegates: map[string]bool{}, StageForwards: map[string]bool{}}
+	isModerationStage := map[string]bool{}
+	for _, name := range openAIModerationStageTypes {
+		isModerationStage[name] = true
+	}
 
 	for _, file := range files {
 		src, err := os.ReadFile(file)
@@ -2153,7 +2183,11 @@ func openAIGatewayPipelineModerationCoverageFromHandlerSources(t *testing.T) ope
 
 		for _, decl := range parsed.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Name.Name != "checkWithModerationGuard" || fn.Body == nil {
+			if !ok || fn.Name.Name != "Run" || fn.Body == nil {
+				continue
+			}
+			stageType := funcReceiverTypeName(fn)
+			if !isModerationStage[stageType] {
 				continue
 			}
 
@@ -2172,6 +2206,7 @@ func openAIGatewayPipelineModerationCoverageFromHandlerSources(t *testing.T) ope
 				}
 
 				coverage.DelegatesToOpenAIGatewayPipeline = true
+				coverage.StageDelegates[stageType] = true
 				pos := fset.Position(selector.Sel.Pos())
 				if rel, err := filepath.Rel(repoRoot, file); err == nil {
 					coverage.Locations = append(coverage.Locations, fmt.Sprintf("%s:%d", filepath.ToSlash(rel), pos.Line))
@@ -2180,6 +2215,7 @@ func openAIGatewayPipelineModerationCoverageFromHandlerSources(t *testing.T) ope
 				}
 				if callForwardsModerationInputProtocol(call) {
 					coverage.ForwardsModerationProtocol = true
+					coverage.StageForwards[stageType] = true
 				}
 				return true
 			})
