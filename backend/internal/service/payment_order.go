@@ -162,6 +162,10 @@ func buildNinePlusCreateOrderRequest(req CreateOrderRequest, user *User) CreateO
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
+	// 订单类型必须走白名单：未知类型会跳过充值开关与倍率计算，履约时却仍按余额到账。
+	if !isSupportedPaymentOrderType(req.OrderType) {
+		return nil, infraerrors.BadRequest("INVALID_ORDER_TYPE", "unsupported order type")
+	}
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}

@@ -94,6 +94,7 @@ func runGeminiImageGateEndpoint(t *testing.T, ep geminiImageGateEndpoint, group 
 	}
 	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
+	attachGatewayRouteForTest(c)
 
 	ep.call(h, c)
 	return recorder, c, schedulerCache

@@ -1072,6 +1072,14 @@ export default {
         securityWarning: '警告：此密钥拥有完整的管理员权限，请妥善保管。',
         usage: '使用方法：在请求头中添加 x-api-key: <your-admin-api-key>'
       },
+      accountTestUsage: {
+        title: '账号测试与用量显示',
+        description: '管理后台账号测试请求的提示词，以及账号列表中的用量窗口展示',
+        presetPrompt: '账号测试使用预设提示词',
+        presetPromptHint: '默认开启。开启时按平台与模型注入预设系统提示词（Claude Code system、按模型选择的 Codex instructions、Gemini systemInstruction）；关闭后只发送测试输入。注意：部分 OAuth 上游（如 Claude OAuth）可能要求预设提示词，关闭后测试可能失败；Antigravity 上游必需身份提示词，不受此开关影响。',
+        openaiNonPlus5hUsage: 'OpenAI OAuth 非 Plus/Team 账号显示 5h 用量',
+        openaiNonPlus5hUsageHint: '默认关闭。开启后允许 Pro 等没有原生 5 小时窗口的账号显示 5h 数据。',
+      },
       overloadCooldown: {
         title: '529 过载冷却',
         description: '配置上游返回 529（过载）时的账号调度暂停策略',

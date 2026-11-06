@@ -128,7 +128,6 @@ func fillGlobalPricingFallback(pricingService *PricingService, models []Supporte
 				models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
 			}
 		}
-		models[i].Pricing = withDefaultMaxReasoningEffortMultiplier(models[i].Pricing, models[i].Name)
 	}
 }
 
@@ -184,12 +183,14 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 			InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
 			OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
 			MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
+			ReasoningEffortMultipliers:   reasoningEffortMultipliersFromPricing(existing),
 		}
 	}
 	return &ChannelModelPricing{
 		BillingMode:                  mode,
 		CacheWrite1hPrice:            nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
 		MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
+		ReasoningEffortMultipliers:   reasoningEffortMultipliersFromPricing(existing),
 		InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
 		OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
 		CacheWritePrice:              cacheWritePriceFromLiteLLM(lp),
@@ -214,17 +215,6 @@ func cacheWritePriceFromLiteLLM(lp *LiteLLMModelPricing) *float64 {
 	}
 	return nil
 
-}
-
-func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
-	if pricing == nil {
-		return nil
-	}
-	clone := pricing.Clone()
-	if clone.MaxReasoningEffortMultiplier == nil {
-		clone.MaxReasoningEffortMultiplier = defaultMaxReasoningEffortMultiplier(model)
-	}
-	return &clone
 }
 
 func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {

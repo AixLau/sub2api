@@ -1078,6 +1078,14 @@ export default {
         securityWarning: 'Warning: This key provides full admin access. Keep it secure.',
         usage: 'Usage: Add to request header - x-api-key: <your-admin-api-key>'
       },
+      accountTestUsage: {
+        title: 'Account Testing & Usage Display',
+        description: 'Prompts used by admin account tests, and usage-window display in the account list',
+        presetPrompt: 'Use preset prompt in account tests',
+        presetPromptHint: 'Enabled by default. Injects the preset system prompt per platform and model (Claude Code system, model-specific Codex instructions, Gemini systemInstruction); when disabled only the test input is sent. Note: some OAuth upstreams (e.g. Claude OAuth) may require the preset prompt, so tests may fail when disabled; Antigravity always requires its identity prompt and is not affected.',
+        openaiNonPlus5hUsage: 'Show 5h usage for non-Plus/Team OpenAI OAuth accounts',
+        openaiNonPlus5hUsageHint: 'Disabled by default. When enabled, accounts without a native 5-hour window (e.g. Pro) also show 5h data.',
+      },
       overloadCooldown: {
         title: '529 Overload Cooldown',
         description: 'Configure account scheduling pause strategy when upstream returns 529 (overloaded)',

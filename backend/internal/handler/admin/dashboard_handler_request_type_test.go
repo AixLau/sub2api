@@ -274,9 +274,13 @@ func TestDashboardSnapshotUsesGlobalStatsForAccumulatedSummary(t *testing.T) {
 	}
 	router := newDashboardRequestTypeTestRouter(repo)
 
+	// The retention window is anchored at the current time, so the chart range
+	// must be too; a fixed calendar date eventually falls outside the window.
+	chartEnd := time.Now().UTC().Add(-time.Hour).Truncate(time.Minute)
+	chartStart := chartEnd.Add(-24 * time.Hour)
 	req := httptest.NewRequest(http.MethodGet,
 		"/admin/dashboard/snapshot-v2?include_stats=true&include_trend=false&include_model_stats=false"+
-			"&start_time=2026-07-22T12:00:00Z&end_time=2026-07-23T12:00:00Z",
+			"&start_time="+chartStart.Format(time.RFC3339)+"&end_time="+chartEnd.Format(time.RFC3339),
 		nil,
 	)
 	rec := httptest.NewRecorder()
@@ -287,8 +291,8 @@ func TestDashboardSnapshotUsesGlobalStatsForAccumulatedSummary(t *testing.T) {
 	// complete raw-log retention window instead of the request's chart range.
 	require.Zero(t, repo.globalStatsCalls)
 	require.Equal(t, 1, repo.rangeStatsCalls)
-	require.True(t, repo.rangeStatsStart.Before(time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)))
-	require.True(t, repo.rangeStatsEnd.After(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)))
+	require.True(t, repo.rangeStatsStart.Before(chartStart))
+	require.True(t, repo.rangeStatsEnd.After(chartEnd))
 	require.Contains(t, rec.Body.String(), `"total_tokens":78580000000`)
 	require.Contains(t, rec.Body.String(), `"total_actual_cost":5960`)
 	require.Contains(t, rec.Body.String(), `"total_account_cost":2540`)

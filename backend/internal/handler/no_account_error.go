@@ -123,7 +123,14 @@ func classifyNoAccountError(
 
 	result := diag.DiagnoseModelAvailabilityForPlatform(ctx, apiKey.GroupID, routingModel, platform)
 	if result.HasAccountsInPool && !result.HasModelSupport {
-		message := fmt.Sprintf("Model %q is not supported by any configured account in this group", displayModel)
+		// The supported list names models in the routing namespace. When group
+		// dispatch mapped the client's model to a different routing model, that
+		// list would leak internal names, so only the requested model is shown.
+		var supported []string
+		if displayModel == routingModel {
+			supported = result.SupportedModels
+		}
+		message := modelNotFoundMessage(displayModel, supported)
 		if result.HasRetiredSubscriptionModel {
 			message = fmt.Sprintf("Model %q targets GPT-5.5, which retired from Codex with ChatGPT sign-in on October 14, 2026. Select an available replacement such as GPT-6.1 Sol or GPT-6 Luna, or configure an API-key upstream that supports GPT-5.5.", displayModel)
 		}
@@ -189,4 +196,43 @@ func openAICompatibleSelectionErrorForLog(err error, platform string) error {
 		return err
 	}
 	return fmt.Errorf("%s", message)
+}
+
+// maxSupportedModelsInError caps how many supported models a model_not_found
+// message lists, keeping the error readable for large groups.
+const maxSupportedModelsInError = 20
+
+// modelNotFoundMessage builds the user-facing model_not_found message. When
+// supported models are known they are appended (case-insensitive matches of the
+// requested model first, so a casing typo points at the right name), truncated to
+// maxSupportedModelsInError entries.
+func modelNotFoundMessage(model string, supportedModels []string) string {
+	message := fmt.Sprintf("Model %q is not supported by any configured account in this group", model)
+	if len(supportedModels) == 0 {
+		return message
+	}
+	ordered := make([]string, 0, len(supportedModels))
+	for _, candidate := range supportedModels {
+		if strings.EqualFold(candidate, model) {
+			ordered = append(ordered, candidate)
+		}
+	}
+	for _, candidate := range supportedModels {
+		if !strings.EqualFold(candidate, model) {
+			ordered = append(ordered, candidate)
+		}
+	}
+	truncated := len(ordered) > maxSupportedModelsInError
+	if truncated {
+		ordered = ordered[:maxSupportedModelsInError]
+	}
+	quoted := make([]string, len(ordered))
+	for i, candidate := range ordered {
+		quoted[i] = strconv.Quote(candidate)
+	}
+	list := strings.Join(quoted, ", ")
+	if truncated {
+		list += ", ..."
+	}
+	return message + ". Supported models: " + list
 }

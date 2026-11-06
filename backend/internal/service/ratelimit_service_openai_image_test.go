@@ -159,6 +159,9 @@ func TestOpenAIGatewayServiceForwardImages_TextFallbackDoesNotCoolImageCapabilit
 		},
 	}
 
+	// The Codex client-restriction gate reads the stored account state and fails
+	// closed when it is unknown; expose this unrestricted account to it.
+	repo.accountsByID = map[int64]*Account{account.ID: account}
 	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
 
 	require.Nil(t, result)
@@ -178,7 +181,9 @@ func TestOpenAIGatewayServiceForwardImages_TextFallbackDoesNotCoolImageCapabilit
 func TestOpenAIGatewayServiceForwardImages_StructuredUnavailableCoolsImageCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &modelNotFoundAccountRepoStub{}
-	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat"}`)
+	// gpt-image-2 now uses the Codex direct-images endpoint; gpt-image-1 still
+	// goes through the Responses image tool, whose SSE error frame is under test.
+	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat"}`)
 	upstreamSSE := "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r\",\"error\":" +
 		"{\"type\":\"upstream_error\",\"code\":\"image_generation_unavailable\"," +
 		"\"message\":\"image generation tool is not available for this account\"}}}\n\n"
@@ -211,6 +216,9 @@ func TestOpenAIGatewayServiceForwardImages_StructuredUnavailableCoolsImageCapabi
 		},
 	}
 
+	// The Codex client-restriction gate reads the stored account state and fails
+	// closed when it is unknown; expose this unrestricted account to it.
+	repo.accountsByID = map[int64]*Account{account.ID: account}
 	before := time.Now()
 	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
 

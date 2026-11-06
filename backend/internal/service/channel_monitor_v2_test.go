@@ -310,7 +310,9 @@ func TestChannelMonitorV2HealthMinimumSampleBoundaries(t *testing.T) {
 			require.NotNil(t, health.TTFTScore)
 			require.NotNil(t, health.CacheScore)
 			require.NotNil(t, health.Score)
-			require.InDelta(t, 80.0, *health.Score, 0.01)
+			// The public score is the success rate; a critical cache band stays a
+			// diagnostic component and is not blended into it.
+			require.InDelta(t, 100.0, *health.Score, 0.01)
 			require.Equal(t, "healthy", health.Overall)
 		})
 	}

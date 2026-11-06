@@ -466,14 +466,28 @@ func normalizeAccountTestPrompt(prompt string) string {
 	return "hi"
 }
 
-// createTestPayload creates a Claude Code style test request payload
-func createTestPayload(modelID, prompt string) (map[string]any, error) {
+// accountTestPresetPromptEnabled reports whether account tests should inject the
+// built-in system prompt / instructions. Internal OpenAI window-start probes
+// always keep the preset so they stay indistinguishable from real Codex traffic.
+func (s *AccountTestService) accountTestPresetPromptEnabled(ctx context.Context) bool {
+	if isOpenAIWindowStartProbe(ctx) {
+		return true
+	}
+	if s == nil || s.settingService == nil {
+		return true
+	}
+	return s.settingService.IsAccountTestPresetPromptEnabled(ctx)
+}
+
+// createTestPayload creates a Claude Code style test request payload.
+// usePresetPrompt controls whether the Claude Code system prompt is injected.
+func createTestPayload(modelID, prompt string, usePresetPrompt bool) (map[string]any, error) {
 	sessionID, err := generateSessionString()
 	if err != nil {
 		return nil, err
 	}
 
-	return map[string]any{
+	payload := map[string]any{
 		"model": modelID,
 		"messages": []map[string]any{
 			{
@@ -489,7 +503,15 @@ func createTestPayload(modelID, prompt string) (map[string]any, error) {
 				},
 			},
 		},
-		"system": []map[string]any{
+		"metadata": map[string]string{
+			"user_id": sessionID,
+		},
+		"max_tokens":  1024,
+		"temperature": 1,
+		"stream":      true,
+	}
+	if usePresetPrompt {
+		payload["system"] = []map[string]any{
 			{
 				"type": "text",
 				"text": claudeCodeSystemPrompt,
@@ -497,14 +519,9 @@ func createTestPayload(modelID, prompt string) (map[string]any, error) {
 					"type": "ephemeral",
 				},
 			},
-		},
-		"metadata": map[string]string{
-			"user_id": sessionID,
-		},
-		"max_tokens":  1024,
-		"temperature": 1,
-		"stream":      true,
-	}, nil
+		}
+	}
+	return payload, nil
 }
 
 // TestAccountConnection tests an account's connection by sending a test request
@@ -715,7 +732,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	c.Writer.Flush()
 
 	// Create Claude Code style payload (same for all account types)
-	payload, err := createTestPayload(testModelID, prompt)
+	payload, err := createTestPayload(testModelID, prompt, s.accountTestPresetPromptEnabled(ctx))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
@@ -795,7 +812,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	payload, err := createTestPayload(testModelID, prompt)
+	payload, err := createTestPayload(testModelID, prompt, s.accountTestPresetPromptEnabled(ctx))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
@@ -1052,7 +1069,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if isOAuth {
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
-	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt)
+	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt, s.accountTestPresetPromptEnabled(ctx))
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -1120,7 +1137,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			"endpoint", req.URL.Path,
 			"model", upstreamTestModelID,
 			"input_text", normalizeAccountTestPrompt(prompt),
-			"instruction_bytes", len(openai.DefaultInstructions),
+			"instruction_bytes", len(openAITestPayloadInstructions(payload)),
 		)
 	}
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
@@ -2431,7 +2448,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		testModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
-	payloadBytes, _ := json.Marshal(createOpenAICompactProbePayload(testModelID, isOAuth))
+	payloadBytes, _ := json.Marshal(createOpenAICompactProbePayload(testModelID, isOAuth, s.accountTestPresetPromptEnabled(ctx)))
 	if !agentIdentityTaskRecoveryWasTried(ctx) {
 		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	}
@@ -2628,7 +2645,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 	c.Writer.Flush()
 
 	// Create test payload (Gemini format)
-	payload := createGeminiTestPayload(testModelID, prompt)
+	payload := createGeminiTestPayload(testModelID, prompt, s.accountTestPresetPromptEnabled(ctx))
 
 	// Build request based on account type
 	var req *http.Request
@@ -2856,7 +2873,8 @@ func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, accessT
 
 // createGeminiTestPayload creates a minimal test payload for Gemini API.
 // Image models use the image-generation path so the frontend can preview the returned image.
-func createGeminiTestPayload(modelID string, prompt string) []byte {
+// usePresetPrompt controls whether the default systemInstruction is injected for text models.
+func createGeminiTestPayload(modelID string, prompt string, usePresetPrompt bool) []byte {
 	if isImageGenerationModel(modelID) {
 		imagePrompt := strings.TrimSpace(prompt)
 		if imagePrompt == "" {
@@ -2897,11 +2915,13 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 				},
 			},
 		},
-		"systemInstruction": map[string]any{
+	}
+	if usePresetPrompt {
+		payload["systemInstruction"] = map[string]any{
 			"parts": []map[string]any{
 				{"text": "You are a helpful AI assistant."},
 			},
-		},
+		}
 	}
 	bytes, _ := json.Marshal(payload)
 	return bytes
@@ -2990,8 +3010,12 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader,
 	}
 }
 
-// createOpenAITestPayload creates a test payload for OpenAI Responses API
-func createOpenAITestPayload(modelID string, isOAuth bool, prompt string) map[string]any {
+// createOpenAITestPayload creates a test payload for OpenAI Responses API.
+// When usePresetPrompt is true, instructions are the real Codex base prompt for
+// modelID (same model-aware selection as real forwarding). When false, OAuth
+// accounts still send an empty instructions field (the ChatGPT Codex endpoint
+// requires it) and API key accounts omit it.
+func createOpenAITestPayload(modelID string, isOAuth bool, prompt string, usePresetPrompt bool) map[string]any {
 	payload := map[string]any{
 		"model": modelID,
 		"input": []map[string]any{
@@ -3013,10 +3037,19 @@ func createOpenAITestPayload(modelID string, isOAuth bool, prompt string) map[st
 		payload["store"] = false
 	}
 
-	// All accounts require instructions for Responses API
-	payload["instructions"] = openai.DefaultInstructions
+	switch {
+	case usePresetPrompt:
+		payload["instructions"] = openai.CodexBaseInstructionsForModel(modelID)
+	case isOAuth:
+		payload["instructions"] = ""
+	}
 
 	return payload
+}
+
+func openAITestPayloadInstructions(payload map[string]any) string {
+	instructions, _ := payload["instructions"].(string)
+	return instructions
 }
 
 func createOpenAIChatCompletionsTestPayload(modelID string, prompt string) map[string]any {

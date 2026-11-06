@@ -250,7 +250,7 @@ func TestGetRequestCredentialMapsPermanentGrokOAuthFailureAndRedactsSecrets(t *t
 	account := expiredGrokOAuthAccountForCredentialTest(701)
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
-	cache := &grokTokenCacheForProviderTest{lockResult: true}
+	cache := &grokTokenCacheForProviderTest{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 		err: infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_TOKEN_REFRESH_FAILED", "invalid_grant access_token=leaked-access refresh_token=leaked-refresh"),
@@ -364,7 +364,7 @@ func TestGetRequestCredentialPermanentMappingsPersistAndInvalidate(t *testing.T)
 			baseRepo := &tokenRefreshAccountRepo{}
 			baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 			repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-			cache := &grokTokenCacheForProviderTest{lockResult: true, token: tt.cachedToken}
+			cache := &grokTokenCacheForProviderTest{token: tt.cachedToken}
 			provider := NewGrokTokenProvider(repo, cache)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{err: tt.refreshErr})
 			svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -408,7 +408,7 @@ func TestGetRequestCredentialMissingAccessNeverRefreshesAndPermanentlyFailsOver(
 			baseRepo := &tokenRefreshAccountRepo{}
 			baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 			repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-			cache := &grokTokenCacheForProviderTest{lockResult: true, token: "stale-cache-must-not-win"}
+			cache := &grokTokenCacheForProviderTest{token: "stale-cache-must-not-win"}
 			refresher := &grokCredentialCountingRefresher{}
 			provider := NewGrokTokenProvider(repo, cache)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), refresher)
@@ -440,7 +440,7 @@ func TestGetRequestCredentialWarmCachedAccessWithMissingRefreshPermanentlyFailsO
 	baseRepo := &tokenRefreshAccountRepo{}
 	baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 	repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-	cache := &grokTokenCacheForProviderTest{lockResult: true, token: "valid-access"}
+	cache := &grokTokenCacheForProviderTest{token: "valid-access"}
 	refresher := &grokCredentialCountingRefresher{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), refresher)
@@ -466,7 +466,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		account := expiredGrokOAuthAccountForCredentialTest(702)
 		repo := &tokenRefreshAccountRepo{}
 		repo.accountsByID = map[int64]*Account{account.ID: account}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{err: errors.New("temporary refresh transport failure")})
 		svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -515,7 +515,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 				baseRepo := &tokenRefreshAccountRepo{}
 				baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 				repo := &grokCredentialRereadFailureRepo{tokenRefreshAccountRepo: baseRepo, account: tt.account, err: tt.err}
-				cache := &grokTokenCacheForProviderTest{lockResult: true}
+				cache := &grokTokenCacheForProviderTest{}
 				provider := NewGrokTokenProvider(repo, cache)
 				provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), NewGrokTokenRefresher(nil))
 				svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -579,7 +579,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 				tt.mutate(&freshAccount)
 				repo := &tokenRefreshAccountRepo{}
 				repo.accountsByID = map[int64]*Account{staleAccount.ID: &freshAccount}
-				cache := &grokTokenCacheForProviderTest{lockResult: true}
+				cache := &grokTokenCacheForProviderTest{}
 				provider := NewGrokTokenProvider(repo, cache)
 				provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), NewGrokTokenRefresher(nil))
 				svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -608,7 +608,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		baseRepo := &tokenRefreshAccountRepo{}
 		baseRepo.accountsByID = map[int64]*Account{staleAccount.ID: &freshAccount}
 		repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), NewGrokTokenRefresher(nil))
 		svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -642,7 +642,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 			repaired.Credentials["expires_at"] = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 			repo.accountsByID[staleAccount.ID] = &repaired
 		}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), NewGrokTokenRefresher(nil))
 		svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -669,7 +669,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 			repaired.Credentials["expires_at"] = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
 			repo.accountsByID[account.ID] = &repaired
 		}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 			err: infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_TOKEN_REFRESH_FAILED", "invalid_grant"),
@@ -691,7 +691,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		account := expiredGrokOAuthAccountForCredentialTest(708)
 		repo := &tokenRefreshAccountRepo{}
 		repo.accountsByID = map[int64]*Account{account.ID: account}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 			err: infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_TOKEN_REFRESH_FAILED", "token refresh failed: status 403, body: forbidden"),
@@ -718,7 +718,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		account.Proxy = &Proxy{}
 		repo := &tokenRefreshAccountRepo{}
 		repo.accountsByID = map[int64]*Account{account.ID: account}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		provider := NewGrokTokenProvider(repo, cache)
 		provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 			err: infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_TOKEN_REFRESH_FAILED", "token refresh failed: status 403, body: forbidden"),
@@ -745,7 +745,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		account.Proxy = &Proxy{}
 		repo := &tokenRefreshAccountRepo{}
 		repo.accountsByID = map[int64]*Account{account.ID: account}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		oauthSvc := NewGrokOAuthService(&grokCredentialProxyRepoStub{err: errors.New("database temporarily unavailable")}, &grokOAuthClientStub{})
 		defer oauthSvc.Stop()
 		provider := NewGrokTokenProvider(repo, cache)
@@ -774,7 +774,7 @@ func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testi
 		baseRepo := &tokenRefreshAccountRepo{}
 		baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 		repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-		cache := &grokTokenCacheForProviderTest{lockResult: true}
+		cache := &grokTokenCacheForProviderTest{}
 		oauthSvc := NewGrokOAuthService(&grokCredentialProxyRepoStub{err: ErrProxyNotFound}, &grokOAuthClientStub{})
 		defer oauthSvc.Stop()
 		provider := NewGrokTokenProvider(repo, cache)
@@ -829,7 +829,7 @@ func TestGetRequestCredentialWarmCachedAccessWithMissingConfiguredProxyPermanent
 	baseRepo := &tokenRefreshAccountRepo{}
 	baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 	repo := &grokCredentialPersistingRepo{tokenRefreshAccountRepo: baseRepo}
-	cache := &grokTokenCacheForProviderTest{lockResult: true, token: "valid-access"}
+	cache := &grokTokenCacheForProviderTest{token: "valid-access"}
 	refresher := &grokCredentialCountingRefresher{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), refresher)
@@ -926,7 +926,7 @@ func TestGetRequestCredentialStateMutationFailureStopsAndKeepsRuntimeBlock(t *te
 			account := expiredGrokOAuthAccountForCredentialTest(int64(740 + index))
 			repo := &tokenRefreshAccountRepo{}
 			repo.accountsByID = map[int64]*Account{account.ID: account}
-			cache := &grokTokenCacheForProviderTest{lockResult: true}
+			cache := &grokTokenCacheForProviderTest{}
 			tt.configure(repo, cache)
 			provider := NewGrokTokenProvider(repo, cache)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{err: tt.refreshErr})
@@ -1064,7 +1064,7 @@ func TestGetRequestCredentialBudgetBoundsBlockedConditionalMutation(t *testing.T
 		setErrorStarted:         make(chan struct{}),
 		setTempStarted:          make(chan struct{}),
 	}
-	cache := &grokTokenCacheForProviderTest{lockResult: true}
+	cache := &grokTokenCacheForProviderTest{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 		err: infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_TOKEN_REFRESH_FAILED", "invalid_grant"),
@@ -1088,83 +1088,6 @@ func TestGetRequestCredentialBudgetBoundsBlockedConditionalMutation(t *testing.T
 	require.Zero(t, baseRepo.setTempUnschedCalls)
 	require.Empty(t, cache.deletedKeys)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-}
-
-func TestGetRequestCredentialLockHeldTimeoutDoesNotQuarantineAccount(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	tests := []struct {
-		name       string
-		buildRepo  func(*Account) AccountRepository
-		wantScope  GatewayFailureScope
-		wantReason GatewayFailureReason
-		wantAction NextAccountAction
-	}{
-		{
-			name: "authoritative row unchanged",
-			buildRepo: func(account *Account) AccountRepository {
-				repo := &tokenRefreshAccountRepo{}
-				repo.accountsByID = map[int64]*Account{account.ID: account}
-				return repo
-			},
-			wantScope:  GatewayFailureScopeAccount,
-			wantReason: GrokCredentialReasonAccountChanged,
-			wantAction: NextAccountRetry,
-		},
-		{
-			name: "selected account was deleted",
-			buildRepo: func(account *Account) AccountRepository {
-				base := &tokenRefreshAccountRepo{}
-				base.accountsByID = map[int64]*Account{account.ID: account}
-				return &grokCredentialRereadFailureRepo{tokenRefreshAccountRepo: base}
-			},
-			wantScope:  GatewayFailureScopeAccount,
-			wantReason: GrokCredentialReasonAccountChanged,
-			wantAction: NextAccountRetry,
-		},
-		{
-			name: "shared account store unavailable",
-			buildRepo: func(account *Account) AccountRepository {
-				base := &tokenRefreshAccountRepo{}
-				base.accountsByID = map[int64]*Account{account.ID: account}
-				return &grokCredentialRereadFailureRepo{tokenRefreshAccountRepo: base, err: errors.New("database unavailable")}
-			},
-			wantScope:  GatewayFailureScopeProvider,
-			wantReason: GrokCredentialReasonProviderDown,
-			wantAction: NextAccountStop,
-		},
-	}
-
-	for index, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			account := expiredGrokOAuthAccountForCredentialTest(int64(7400 + index))
-			repo := tt.buildRepo(account)
-			cache := &grokTokenCacheForProviderTest{lockResult: false}
-			provider := NewGrokTokenProvider(repo, cache)
-			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{})
-			svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-
-			startedAt := time.Now()
-			_, _, err := svc.getRequestCredential(context.Background(), c, account)
-
-			var failoverErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &failoverErr)
-			require.Equal(t, tt.wantScope, failoverErr.Scope)
-			require.Equal(t, tt.wantReason, failoverErr.Reason)
-			require.Equal(t, tt.wantAction, failoverErr.NextAccountAction)
-			require.Less(t, time.Since(startedAt), 3*time.Second)
-			switch countingRepo := repo.(type) {
-			case *tokenRefreshAccountRepo:
-				require.Zero(t, countingRepo.setErrorCalls)
-				require.Zero(t, countingRepo.setTempUnschedCalls)
-			case *grokCredentialRereadFailureRepo:
-				require.Zero(t, countingRepo.tokenRefreshAccountRepo.setErrorCalls)
-				require.Zero(t, countingRepo.tokenRefreshAccountRepo.setTempUnschedCalls)
-			}
-			require.Empty(t, cache.deletedKeys)
-			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		})
-	}
 }
 
 func TestGrokCredentialMutationCancellationAmbiguityConfirmsDurableCommit(t *testing.T) {
@@ -1400,7 +1323,7 @@ func TestCredentialFailureConditionalMutationLosesToConcurrentRefresh(t *testing
 				fresh.Credentials["_token_version"] = time.Now().UnixMilli()
 				repo.accountsByID[account.ID] = &fresh
 			}
-			cache := &grokTokenCacheForProviderTest{lockResult: true}
+			cache := &grokTokenCacheForProviderTest{}
 			provider := NewGrokTokenProvider(repo, cache)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{err: tt.refreshErr})
 			svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -1441,7 +1364,7 @@ func TestCredentialFailureConditionalMutationLosesToConcurrentProxyRepair(t *tes
 				fresh.ProxyID = &repairedProxyID
 				repo.accountsByID[account.ID] = &fresh
 			}
-			cache := &grokTokenCacheForProviderTest{lockResult: true}
+			cache := &grokTokenCacheForProviderTest{}
 			provider := NewGrokTokenProvider(repo, cache)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{err: tt.refreshErr})
 			svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
@@ -1471,7 +1394,7 @@ func TestCredentialFailureConditionalMutationLosesToSameIDProxyRestoration(t *te
 	repo.beforeConditionalState = func() {
 		account.Proxy = &Proxy{ID: proxyID}
 	}
-	cache := &grokTokenCacheForProviderTest{lockResult: true}
+	cache := &grokTokenCacheForProviderTest{}
 	provider := NewGrokTokenProvider(repo, cache)
 	svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -1590,7 +1513,7 @@ func TestGetRequestCredentialSharedCredentialPersistenceFailureStopsWithoutAccou
 	account := expiredGrokOAuthAccountForCredentialTest(782)
 	repo := &tokenRefreshAccountRepo{conditionalSuccessErr: errors.New("database unavailable")}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
-	cache := &grokTokenCacheForProviderTest{lockResult: true}
+	cache := &grokTokenCacheForProviderTest{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{credentials: map[string]any{
 		"access_token":  "new-access-token",
@@ -1627,7 +1550,7 @@ func TestGetRequestCredentialRecoversConcurrentRefreshWithoutFailover(t *testing
 	baseRepo := &tokenRefreshAccountRepo{}
 	baseRepo.accountsByID = map[int64]*Account{account.ID: account}
 	repo := &grokCredentialSequencedRepo{tokenRefreshAccountRepo: baseRepo, latest: &latest}
-	cache := &grokTokenCacheForProviderTest{lockResult: true}
+	cache := &grokTokenCacheForProviderTest{}
 	provider := NewGrokTokenProvider(repo, cache)
 	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{
 		err: infraerrors.New(http.StatusForbidden, "GROK_OAUTH_ENTITLEMENT_DENIED", "access_denied"),
@@ -1661,5 +1584,84 @@ func expiredGrokOAuthAccountForCredentialTest(id int64) *Account {
 			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
 			"base_url":      xai.DefaultCLIBaseURL,
 		},
+	}
+}
+
+// A Grok refresh held by another instance must not quarantine this account:
+// the request waits briefly for the rotated credential, then fails over.
+func TestGetRequestCredentialLockHeldTimeoutDoesNotQuarantineAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name       string
+		buildRepo  func(*Account) AccountRepository
+		wantScope  GatewayFailureScope
+		wantReason GatewayFailureReason
+		wantAction NextAccountAction
+	}{
+		{
+			name: "authoritative row unchanged",
+			buildRepo: func(account *Account) AccountRepository {
+				repo := &tokenRefreshAccountRepo{}
+				repo.accountsByID = map[int64]*Account{account.ID: account}
+				return repo
+			},
+			wantScope:  GatewayFailureScopeAccount,
+			wantReason: GrokCredentialReasonAccountChanged,
+			wantAction: NextAccountRetry,
+		},
+		{
+			name: "selected account was deleted",
+			buildRepo: func(account *Account) AccountRepository {
+				base := &tokenRefreshAccountRepo{}
+				base.accountsByID = map[int64]*Account{account.ID: account}
+				return &grokCredentialRereadFailureRepo{tokenRefreshAccountRepo: base}
+			},
+			wantScope:  GatewayFailureScopeAccount,
+			wantReason: GrokCredentialReasonAccountChanged,
+			wantAction: NextAccountRetry,
+		},
+		{
+			name: "shared account store unavailable",
+			buildRepo: func(account *Account) AccountRepository {
+				base := &tokenRefreshAccountRepo{}
+				base.accountsByID = map[int64]*Account{account.ID: account}
+				return &grokCredentialRereadFailureRepo{tokenRefreshAccountRepo: base, err: errors.New("database unavailable")}
+			},
+			wantScope:  GatewayFailureScopeProvider,
+			wantReason: GrokCredentialReasonProviderDown,
+			wantAction: NextAccountStop,
+		},
+	}
+
+	for index, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := expiredGrokOAuthAccountForCredentialTest(int64(7400 + index))
+			repo := tt.buildRepo(account)
+			cache := &grokTokenCacheForProviderTest{lockHeld: true}
+			provider := NewGrokTokenProvider(repo, cache)
+			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), &tokenRefresherStub{})
+			svc := &OpenAIGatewayService{accountRepo: repo, grokTokenProvider: provider}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+			startedAt := time.Now()
+			_, _, err := svc.getRequestCredential(context.Background(), c, account)
+
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, tt.wantScope, failoverErr.Scope)
+			require.Equal(t, tt.wantReason, failoverErr.Reason)
+			require.Equal(t, tt.wantAction, failoverErr.NextAccountAction)
+			require.Less(t, time.Since(startedAt), 3*time.Second)
+			switch countingRepo := repo.(type) {
+			case *tokenRefreshAccountRepo:
+				require.Zero(t, countingRepo.setErrorCalls)
+				require.Zero(t, countingRepo.setTempUnschedCalls)
+			case *grokCredentialRereadFailureRepo:
+				require.Zero(t, countingRepo.tokenRefreshAccountRepo.setErrorCalls)
+				require.Zero(t, countingRepo.tokenRefreshAccountRepo.setTempUnschedCalls)
+			}
+			require.Empty(t, cache.deletedKeys)
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		})
 	}
 }

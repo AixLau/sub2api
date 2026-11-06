@@ -107,6 +107,7 @@ func FullClaudeCodeMimicryBetas() []string {
 		BetaEffort,
 		BetaContextManagement,
 		BetaThinkingBindingControls,
+		BetaMidConversationOutputConfig,
 		BetaExtendedCacheTTL,
 	}
 }

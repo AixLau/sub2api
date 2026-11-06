@@ -87,9 +87,13 @@ func (f *geminiClientCancelFixture) serve(t *testing.T, route, path, body string
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: f.apiKey.UserID, Concurrency: 10})
 		handlerName := "GatewayHandler.GeminiV1BetaModels"
 		protocol := service.ContentModerationProtocolGemini
-		if route == "/v1/chat/completions" {
+		switch route {
+		case "/v1/chat/completions":
 			handlerName = "GatewayHandler.ChatCompletions"
 			protocol = service.ContentModerationProtocolOpenAIChat
+		case "/v1/messages":
+			handlerName = "GatewayHandler.Messages"
+			protocol = service.ContentModerationProtocolAnthropicMessages
 		}
 		meta := moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
 			Method: http.MethodPost, Path: route, Handler: handlerName,

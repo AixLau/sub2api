@@ -172,8 +172,23 @@ type openAIFastPolicyForwardingSettingRepo struct {
 	value string
 }
 
-func (r *openAIFastPolicyForwardingSettingRepo) GetValue(context.Context, string) (string, error) {
+// The stub only holds the OpenAI fast policy; every other setting is unset so
+// the gateway falls back to its defaults (e.g. the Codex client version and UA).
+func (r *openAIFastPolicyForwardingSettingRepo) GetValue(_ context.Context, key string) (string, error) {
+	if key != service.SettingKeyOpenAIFastPolicySettings {
+		return "", service.ErrSettingNotFound
+	}
 	return r.value, nil
+}
+
+func (r *openAIFastPolicyForwardingSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	values := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, err := r.GetValue(ctx, key); err == nil {
+			values[key] = value
+		}
+	}
+	return values, nil
 }
 
 type openAIFastPolicyForwardingHTTPUpstream struct {

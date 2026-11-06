@@ -205,11 +205,15 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		gate := &fakeBatchImageModerationGate{}
 		svc.Moderation = gate
 
-		got, err := svc.Submit(ctx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
+		req := validBatchImageSubmitRequest()
+		got, err := svc.Submit(ctx, testBatchImageOwner(), req, "")
 
 		require.NoError(t, err)
-		require.Len(t, gate.inputs, 1)
-		require.Equal(t, got.ID, gate.inputs[0].RequestID)
+		// Every item's prompt is moderated, all under the batch's request identity.
+		require.Len(t, gate.inputs, len(req.Items))
+		for _, input := range gate.inputs {
+			require.Equal(t, got.ID, input.RequestID)
+		}
 	})
 
 	t.Run("prefers request id from context for moderation identity", func(t *testing.T) {
@@ -218,11 +222,14 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		svc.Moderation = gate
 		requestCtx := context.WithValue(ctx, ctxkey.RequestID, "batch-http-request")
 
-		_, err := svc.Submit(requestCtx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
+		req := validBatchImageSubmitRequest()
+		_, err := svc.Submit(requestCtx, testBatchImageOwner(), req, "")
 
 		require.NoError(t, err)
-		require.Len(t, gate.inputs, 1)
-		require.Equal(t, "batch-http-request", gate.inputs[0].RequestID)
+		require.Len(t, gate.inputs, len(req.Items))
+		for _, input := range gate.inputs {
+			require.Equal(t, "batch-http-request", input.RequestID)
+		}
 	})
 
 	t.Run("group batch image disabled rejects before provider submit", func(t *testing.T) {

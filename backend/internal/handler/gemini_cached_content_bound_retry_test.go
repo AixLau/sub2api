@@ -79,7 +79,10 @@ func newBoundRetryEnv(t *testing.T, upstream *boundRetryUpstream, retryCodes ...
 func (e *cachedBillingEnv) generateWithCache() *httptest.ResponseRecorder {
 	return e.serve(http.MethodPost, "/v1beta/models/gemini-2.5-pro:generateContent",
 		`{"cachedContent":"cachedContents/abc","contents":[{"role":"user","parts":[{"text":"hi"}]}]}`,
-		gin.Params{{Key: "modelAction", Value: "/gemini-2.5-pro:generateContent"}}, e.h.GeminiV1BetaModels)
+		gin.Params{{Key: "modelAction", Value: "/gemini-2.5-pro:generateContent"}}, func(c *gin.Context) {
+			attachGatewayRouteForTest(c)
+			e.h.GeminiV1BetaModels(c)
+		})
 }
 
 func TestGeminiV1BetaModels_BoundCachePoolModeRetriesUpstream429(t *testing.T) {

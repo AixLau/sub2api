@@ -26,6 +26,19 @@ func (s *SettingService) IsRegistrationEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+// IsAccountTestPresetPromptEnabled 检查账号测试是否注入预设提示词。
+// 默认开启：设置缺失或查询出错时保持原有行为（注入预设提示词）。
+func (s *SettingService) IsAccountTestPresetPromptEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return true
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAccountTestPresetPromptEnabled)
+	if err != nil {
+		return true
+	}
+	return !isFalseSettingValue(value)
+}
+
 // IsEmailVerifyEnabled 检查是否开启邮件验证
 func (s *SettingService) IsEmailVerifyEnabled(ctx context.Context) bool {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyEmailVerifyEnabled)

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -119,6 +120,22 @@ func runCompatStreamUsageHandler(t *testing.T, endpoint, upstreamStream string, 
 	apiKey := &service.APIKey{ID: 9302, UserID: 9303, GroupID: &groupID, Group: group, User: &service.User{ID: 9303, Balance: 100}}
 	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 9303})
+	// The production router attaches this route metadata; the Gateway
+	// pre-forward pipeline refuses to bill, route or forward without it.
+	routeMeta := moderationcoverage.Entry{
+		Method: http.MethodPost, Path: "/v1/responses", Handler: "GatewayHandler.Responses",
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	}
+	if endpoint == "chat/completions" {
+		routeMeta.Path, routeMeta.Handler = "/v1/chat/completions", "GatewayHandler.ChatCompletions"
+		routeMeta.Protocol = service.ContentModerationProtocolOpenAIChat
+	}
+	routeMeta.Upstream, routeMeta.ModerationRequired = true, true
+	routeMeta.Status = moderationcoverage.StatusCovered
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(routeMeta))
+	// Moderation runs in the route-level pre-forward pipeline (not mounted here);
+	// simulate its allow receipt.
+	markForwardableModerationReceipt(c, routeMeta.Protocol)
 
 	if endpoint == "chat/completions" {
 		h.ChatCompletions(c)

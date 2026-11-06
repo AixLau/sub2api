@@ -25,6 +25,13 @@ type alphaSearchAccountStateRepo struct {
 	lastError     string
 }
 
+// GetByID backs the Codex client-restriction lookup: the forwarding boundary
+// reads the account's codex_cli_only flag and fails closed when it is unknown.
+// These tests use plain (unrestricted) OpenAI OAuth accounts.
+func (r *alphaSearchAccountStateRepo) GetByID(_ context.Context, id int64) (*Account, error) {
+	return &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, nil
+}
+
 func (r *alphaSearchAccountStateRepo) SetError(_ context.Context, _ int64, errorMsg string) error {
 	r.setErrorCalls++
 	r.lastError = errorMsg
@@ -369,7 +376,8 @@ func TestForwardAlphaSearchSetupToken429CarriesSameAccountRetryWindow(t *testing
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.True(t, failoverErr.RetryableOnSameAccount)
-	require.Equal(t, time.Second, failoverErr.SameAccountRetryDelay)
+	// Retry-After: 1 is clamped to the fork's same-account retry ceiling.
+	require.Equal(t, openAIOAuth429MaxRetryDelay, failoverErr.SameAccountRetryDelay)
 	require.WithinDuration(t, startedAt.Add(openAIOAuth429RetryWindow), failoverErr.SameAccountRetryDeadline, time.Second)
 	require.Equal(t, "req_alpha_oauth_429", failoverErr.ResponseHeaders.Get("x-request-id"))
 	require.False(t, c.Writer.Written())

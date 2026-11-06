@@ -82,7 +82,9 @@ func TestGPT61TerraAccountDiscoveryPreservesCatalog(t *testing.T) {
 		} else {
 			require.Len(t, models, 1)
 			require.Equal(t, "gpt-6.1-terra", models[0].ID)
-			require.Equal(t, "GPT-6.1 Terra", models[0].DisplayName)
+			// The picker labels upstream-discovered models by ID unless the upstream
+			// supplies a display name (see TestFetchOpenAIAccountModels*).
+			require.Equal(t, "gpt-6.1-terra", models[0].DisplayName)
 		}
 		after, err := gateway.FetchOpenAIModelsList(context.Background(), account)
 		require.NoError(t, err)

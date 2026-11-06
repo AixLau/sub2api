@@ -77,10 +77,29 @@ var instructionsGPT52 string
 //go:embed instructions_gpt5_5.txt
 var instructionsGPT55 string
 
-// Source: openai/codex codex-rs/models-manager/models.json at 121f91fd5d9d.
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
 //
 //go:embed instructions_gpt6_astra.txt
 var instructionsGPT6Astra string
+
+// GPT-6 Sol / Luna 的真实 Codex base prompt（instructions_template 原文，未做任何替换；
+// Codex 同样按字面发送模板，见 codex-rs/prompts/src/model_instructions.rs）。
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
+//
+//go:embed instructions_gpt6_sol.txt
+var instructionsGPT6Sol string
+
+//go:embed instructions_gpt6_luna.txt
+var instructionsGPT6Luna string
+
+// GPT-5.6 Sol / Terra / Luna 共用同一份官方模板；GPT-6.1 Terra 为其专用模板。
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
+//
+//go:embed instructions_gpt5_6.txt
+var instructionsGPT56 string
+
+//go:embed instructions_gpt6_1_terra.txt
+var instructionsGPT61Terra string
 
 // CodexGPT61SolMetadata is the complete official descriptor from openai/codex
 // b1e72963c3b71a9265a551e54beff078384efed9, codex-rs/models-manager/models.json.
@@ -140,6 +159,9 @@ func CanonicalizeOpenAIModelAliasSpelling(model string) string {
 
 // CodexBaseInstructionsForModel 按模型返回最匹配的真实 Codex base instructions：
 //   - gpt-6 / gpt-6-astra（含供应商前缀与日期变体）→ GPT-6 Astra prompt
+//   - gpt-6-sol / gpt-6-luna（含 effort / compact 后缀）→ 各自的 GPT-6 Sol / Luna prompt
+//   - gpt-6.1-terra（含 effort / compact 后缀）→ GPT-6.1 Terra prompt
+//   - gpt-5.6 / gpt-5.6-sol / -terra / -luna（含 effort / 日期 / compact 后缀）→ GPT-5.6 prompt
 //   - 含 "codex" 的模型（gpt-5-codex / gpt-5.x-codex / codex-max / spark 等）→ GPT-5-Codex prompt
 //   - gpt-5.5 系非 codex 模型 → GPT-5.5 prompt
 //   - gpt-5.2 系非 codex 模型 → GPT-5.2 prompt
@@ -160,6 +182,22 @@ func CodexBaseInstructionsForModel(model string) string {
 			panic(err)
 		}
 		return metadata.ModelMessages.InstructionsTemplate
+	case IsGPT61TerraModelSpelling(canonical):
+		if v := strings.TrimSpace(instructionsGPT61Terra); v != "" {
+			return instructionsGPT61Terra
+		}
+	case isGPT56FamilyModelSpelling(canonical):
+		if v := strings.TrimSpace(instructionsGPT56); v != "" {
+			return instructionsGPT56
+		}
+	case IsGPT6SolOrLunaModelSpelling(canonical):
+		instructions := instructionsGPT6Luna
+		if strings.HasPrefix(canonical, "gpt-6-sol") {
+			instructions = instructionsGPT6Sol
+		}
+		if strings.TrimSpace(instructions) != "" {
+			return instructions
+		}
 	case canonical == "gpt-6" || canonical == "gpt-6-astra" || strings.HasPrefix(canonical, "gpt-6-astra-"):
 		if v := strings.TrimSpace(instructionsGPT6Astra); v != "" {
 			return instructionsGPT6Astra
@@ -178,6 +216,39 @@ func CodexBaseInstructionsForModel(model string) string {
 		}
 	}
 	return latestCodexInstructions()
+}
+
+// isGPT56FamilyModelSpelling recognizes the GPT-5.6 family (bare gpt-5.6 = Sol,
+// sol / terra / luna) with effort, date or compact suffixes. Codex-named variants
+// keep the GPT-5-Codex prompt, so arbitrary suffixes are not accepted.
+func isGPT56FamilyModelSpelling(canonical string) bool {
+	isKnownSuffix := func(suffix string) bool {
+		switch suffix {
+		case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
+			return true
+		}
+		parts := strings.Split(suffix, "-")
+		if len(parts) != 3 || len(parts[0]) != 4 || len(parts[1]) != 2 || len(parts[2]) != 2 {
+			return false
+		}
+		for _, part := range parts {
+			for _, r := range part {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for _, base := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6"} {
+		if canonical == base {
+			return true
+		}
+		if suffix, ok := strings.CutPrefix(canonical, base+"-"); ok && isKnownSuffix(suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsGPT6SolOrLunaModelSpelling recognizes official IDs and existing local effort/compact suffixes.

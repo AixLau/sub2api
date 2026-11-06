@@ -247,7 +247,7 @@ func TestOpenAIWindowStartDueAtPreservesRandomDelayForExpiredRows(t *testing.T) 
 func TestCreateOpenAITestPayloadHasProbeInputAndInstructions(t *testing.T) {
 	t.Parallel()
 
-	payload := createOpenAITestPayload("gpt-5.4", true, "")
+	payload := createOpenAITestPayload("gpt-5.4", true, "", true)
 	input, ok := payload["input"].([]map[string]any)
 	if !ok || len(input) != 1 {
 		t.Fatalf("probe input = %#v, want one input message", payload["input"])
