@@ -377,7 +377,12 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 				zap.Error(err),
 			)
-			return
+			if result == nil {
+				return
+			}
+			// 已向客户端写出内容后的流式失败（空闲超时、读错误、缺终止事件等）会随错误
+			// 返回携带已观测 usage 的结果：照常计费一次，与 /v1/messages 处理
+			// BillableStreamUsageError 一致。流内 upstream error 事件不返回结果，不计费。
 		}
 
 		// 6. Record usage
