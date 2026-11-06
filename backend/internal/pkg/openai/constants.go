@@ -77,7 +77,7 @@ var instructionsGPT52 string
 //go:embed instructions_gpt5_5.txt
 var instructionsGPT55 string
 
-// Source: openai/codex codex-rs/models-manager/models.json at 121f91fd5d9d.
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
 //
 //go:embed instructions_gpt6_astra.txt
 var instructionsGPT6Astra string
