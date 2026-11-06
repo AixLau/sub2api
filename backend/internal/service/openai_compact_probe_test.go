@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 func TestNormalizeAccountTestMode(t *testing.T) {
@@ -134,7 +136,7 @@ func TestBuildOpenAICompactProbeExtraUpdates_2xxWithoutCompactionItemMarksUnsupp
 }
 
 func TestCreateOpenAICompactProbePayload_NativeV2Shape(t *testing.T) {
-	payload := createOpenAICompactProbePayload("gpt-5.6-sol", true)
+	payload := createOpenAICompactProbePayload("gpt-5.6-sol", true, true)
 	if payload["stream"] != true {
 		t.Fatalf("v2 probe payload must be streaming")
 	}
@@ -150,9 +152,33 @@ func TestCreateOpenAICompactProbePayload_NativeV2Shape(t *testing.T) {
 		t.Fatalf("last input item must be compaction_trigger, got %v", input[len(input)-1])
 	}
 
-	apiKeyPayload := createOpenAICompactProbePayload("gpt-5.6-sol", false)
+	apiKeyPayload := createOpenAICompactProbePayload("gpt-5.6-sol", false, true)
 	if _, has := apiKeyPayload["store"]; has {
 		t.Fatalf("API-key probe payload must not force store")
+	}
+}
+
+// compact 探测与普通账号测试一样按模型选用 Codex base prompt，并遵循预设提示词开关。
+func TestCreateOpenAICompactProbePayload_ModelAwareInstructions(t *testing.T) {
+	for _, model := range []string{"gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol", "gpt-5.3-codex", "gpt-5.4"} {
+		for _, isOAuth := range []bool{true, false} {
+			payload := createOpenAICompactProbePayload(model, isOAuth, true)
+			if got, want := payload["instructions"], openai.CodexBaseInstructionsForModel(model); got != want {
+				t.Fatalf("model %q oauth=%v: instructions not model-aware", model, isOAuth)
+			}
+		}
+	}
+	if createOpenAICompactProbePayload("gpt-6-sol", true, true)["instructions"] == createOpenAICompactProbePayload("gpt-5.3-codex", true, true)["instructions"] {
+		t.Fatal("different model families must get different instructions")
+	}
+
+	oauth := createOpenAICompactProbePayload("gpt-5.4", true, false)
+	if got, ok := oauth["instructions"].(string); !ok || got != "" {
+		t.Fatalf("preset off: OAuth must send empty instructions, got %#v", oauth["instructions"])
+	}
+	apiKey := createOpenAICompactProbePayload("gpt-5.4", false, false)
+	if _, has := apiKey["instructions"]; has {
+		t.Fatal("preset off: API-key probe must omit instructions")
 	}
 }
 
