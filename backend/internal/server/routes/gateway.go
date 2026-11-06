@@ -243,6 +243,11 @@ func RegisterGatewayRoutes(
 			"GatewayHandler.Models",
 			"Model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
 		), modelsHandler)
+		moderatedGateway.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+			"/v1/models/:model",
+			"GatewayHandler.Models",
+			"Model retrieval returns one entry of the visible model listing and does not submit model-visible user content.",
+		), modelsHandler)
 		moderatedGateway.GETNoAudit("/usage", intentionalNoAuditRoute(
 			"/v1/usage",
 			"GatewayHandler.Usage",
@@ -712,6 +717,11 @@ func RegisterGatewayRoutes(
 		"/models",
 		"GatewayHandler.Models",
 		"Root model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	moderatedRoot.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+		"/models/:model",
+		"GatewayHandler.Models",
+		"Root model retrieval returns one entry of the visible model listing and does not submit model-visible user content.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
 	moderatedRoot.POST("/messages/count_tokens", coveredModeratedRoute(
 		"/messages/count_tokens",

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -18,8 +20,12 @@ func (h *GatewayHandler) pinnedOpenAIModels(c *gin.Context, group *service.Group
 		return
 	}
 	c.Request = c.Request.WithContext(service.WithCodexRestrictionRequest(c.Request.Context(), c, nil))
+	etag := c.GetHeader("If-None-Match")
+	if c.Param("model") != "" {
+		etag = "" // A collection ETag cannot validate a single-model representation.
+	}
 	response, account, err := h.openAIGatewayService.FetchPinnedOpenAIModelsList(
-		c.Request.Context(), group, h.maxAccountSwitches, c.GetHeader("If-None-Match"),
+		c.Request.Context(), group, h.maxAccountSwitches, etag,
 	)
 	if c.Request.Context().Err() != nil {
 		return
@@ -41,6 +47,10 @@ func writeOpenAIModelsError(c *gin.Context, status int, errorType, message strin
 }
 
 func writeOpenAIModelsResponse(c *gin.Context, manifest *service.OpenAIModelsResponse) {
+	if c.Param("model") != "" {
+		writeRetrievedModel(c, manifest.Body)
+		return
+	}
 	if manifest.ETag != "" {
 		c.Header("ETag", manifest.ETag)
 	}
@@ -50,4 +60,54 @@ func writeOpenAIModelsResponse(c *gin.Context, manifest *service.OpenAIModelsRes
 		return
 	}
 	c.Data(http.StatusOK, "application/json", manifest.Body)
+}
+
+// writeModelsListResponse writes a model catalogue. GET /v1/models/:model
+// (and its root alias) reuses the same final catalogue, after group/platform
+// selection and allowlist filtering, and returns the exact matching entry.
+func writeModelsListResponse(c *gin.Context, models any) {
+	response := gin.H{"object": "list", "data": models}
+	if c.Param("model") == "" {
+		c.JSON(http.StatusOK, response)
+		return
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		writeOpenAIModelsError(c, http.StatusInternalServerError, "api_error", "Failed to encode model catalogue")
+		return
+	}
+	writeRetrievedModel(c, body)
+}
+
+// writeRetrievedModel returns the catalogue entry whose id equals the :model path
+// parameter, preserving every field; 404 model_not_found when it is not visible.
+func writeRetrievedModel(c *gin.Context, body []byte) {
+	var catalog struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &catalog); err != nil {
+		writeOpenAIModelsError(c, http.StatusBadGateway, "upstream_error", "Invalid model catalogue")
+		return
+	}
+	modelID := c.Param("model")
+	for _, raw := range catalog.Data {
+		var model map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &model); err != nil {
+			writeOpenAIModelsError(c, http.StatusBadGateway, "upstream_error", "Invalid model catalogue entry")
+			return
+		}
+		var id string
+		if err := json.Unmarshal(model["id"], &id); err != nil {
+			writeOpenAIModelsError(c, http.StatusBadGateway, "upstream_error", "Invalid model catalogue ID")
+			return
+		}
+		if id == modelID {
+			c.Data(http.StatusOK, "application/json", raw)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": gin.H{
+		"type": "invalid_request_error", "code": "model_not_found", "param": "model",
+		"message": fmt.Sprintf("Model %q does not exist or is not available for this group", modelID),
+	}})
 }
