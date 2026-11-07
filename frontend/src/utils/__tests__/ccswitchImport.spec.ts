@@ -48,6 +48,33 @@ describe('ccswitchImport utils', () => {
     expect(params.get('endpoint')).toBe(endpoint)
     expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
     expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
+    const bytes = Uint8Array.from(atob(params.get('config') || ''), (char) => char.charCodeAt(0))
+    const toml = new TextDecoder().decode(bytes)
+    expect(params.get('configFormat')).toBe('toml')
+    expect(toml).toContain(`base_url = "${endpoint}"`)
+    expect(toml).toContain(`model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"`)
+    expect(toml.split('[model_providers.')[0]).toContain('web_search = "live"')
+    expect(toml).toContain('requires_openai_auth = false')
+    expect(toml).toContain('experimental_bearer_token = "sk-test"')
+    expect(toml).toContain('"x-openai-actor-authorization" = "local-image-extension"')
+    // Global feature choices are preserved by CC Switch, not imported per provider.
+    expect(toml).not.toContain('[features]')
+  })
+
+  it('encodes embedded Codex configuration as UTF-8 and escapes TOML strings', () => {
+    const apiKey = 'sk-"test\\key'
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
+      ...baseInput,
+      apiKey,
+      baseUrl: 'https://example.com/网关',
+      platform: 'openai',
+      clientType: 'claude'
+    }))
+    const bytes = Uint8Array.from(atob(params.get('config') || ''), (char) => char.charCodeAt(0))
+    const toml = new TextDecoder().decode(bytes)
+    expect(toml).toContain('base_url = "https://example.com/网关/v1"')
+    expect(toml).toContain(`experimental_bearer_token = ${JSON.stringify(apiKey)}`)
+    expect(params.get('apiKey')).toBe(apiKey)
   })
 
   it.each([
@@ -68,6 +95,7 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('grokbuild')
     expect(params.get('endpoint')).toBe('https://api.example.com/v1')
     expect(params.get('model')).toBe(GROK_CC_SWITCH_MODEL)
+    expect(params.has('config')).toBe(false)
   })
 
   it.each([
@@ -85,6 +113,8 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe(app)
     expect(params.get('endpoint')).toBe(baseInput.baseUrl)
     expect(params.has('model')).toBe(false)
+    // Claude imports embed the local long-context settings.json fragment.
+    expect(params.has('config')).toBe(app === 'claude')
   })
 
   it('keeps Antigravity imports on the selected client endpoint without a model parameter', () => {
@@ -99,6 +129,7 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('gemini')
     expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
     expect(params.has('model')).toBe(false)
+    expect(params.has('config')).toBe(false)
   })
 })
 

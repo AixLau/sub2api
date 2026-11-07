@@ -758,19 +758,22 @@ func (h *OpenAIGatewayHandler) openAIHTTPRoutingStageFromRouteDescriptor(c *gin.
 }
 
 type OpenAIHTTPRoutingStage struct {
-	Handler                    *OpenAIGatewayHandler
-	RequestContext             context.Context
-	ReqLog                     *zap.Logger
-	APIKey                     *service.APIKey
-	SubjectUserID              int64
-	RequestedModel             string
-	DisplayModel               string
-	SessionHash                *string
-	PreviousResponseID         string
-	FailedAccountIDs           map[int64]struct{}
-	RequiredTransport          service.OpenAIUpstreamTransport
-	RequiredCapability         service.OpenAIEndpointCapability
-	RequiredImageCapability    service.OpenAIImagesCapability
+	Handler                 *OpenAIGatewayHandler
+	RequestContext          context.Context
+	ReqLog                  *zap.Logger
+	APIKey                  *service.APIKey
+	SubjectUserID           int64
+	RequestedModel          string
+	DisplayModel            string
+	SessionHash             *string
+	PreviousResponseID      string
+	FailedAccountIDs        map[int64]struct{}
+	RequiredTransport       service.OpenAIUpstreamTransport
+	RequiredCapability      service.OpenAIEndpointCapability
+	RequiredImageCapability service.OpenAIImagesCapability
+	// ImageSize is the requested image size; when set, a first-attempt
+	// selection failure reports an unsupported size tier explicitly.
+	ImageSize                  string
 	RequireCompact             bool
 	PreviousResponseCanMove    bool
 	AccountBoundState          bool
@@ -1028,6 +1031,13 @@ func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Con
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 			s.writeOpenAIHTTPRoutingError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact")
 			return ExecutableStageResult{Stop: true, Err: err}
+		}
+		if s.ImageSize != "" {
+			if tier, unsupported := s.Handler.gatewayService.OpenAIImageSizeTierUnsupported(c.Request.Context(), s.APIKey.GroupID, requestedModel, s.ImageSize, s.RequiredCapability, s.RequiredImageCapability); unsupported {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+				s.writeOpenAIHTTPRoutingError(c, http.StatusBadRequest, "invalid_request_error", service.OpenAIImageSizeTierUnsupportedMessage(s.ImageSize, tier))
+				return ExecutableStageResult{Stop: true, Err: err}
+			}
 		}
 		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, requestedModel, displayModel)
 		cls = classifySelectionFailureError(err, cls)

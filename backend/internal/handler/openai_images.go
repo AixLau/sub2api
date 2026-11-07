@@ -59,12 +59,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		var err error
 		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
-			if maxErr, ok := extractMaxBytesError(err); ok {
-				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			if handleRequestBodyReadError(c, reqLog, err) {
 				return
 			}
-			markOpsRequestBodyReadError(c, err)
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+			status, message := requestBodyReadFailureWithOps(c, reqLog, err)
+			h.errorResponse(c, status, "invalid_request_error", message)
 			return
 		}
 		if len(body) == 0 {
@@ -172,7 +171,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	defer inflightDone()
 
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
-	requestCtx := service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
+	requestCtx := service.WithOpenAIImageSizeRouting(service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context())), parsed.Size)
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
@@ -203,6 +202,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			SessionHash:                &sessionHash,
 			FailedAccountIDs:           failedAccountIDs,
 			RequiredImageCapability:    parsed.RequiredCapabilityForModel(channelMapping.MappedModel),
+			ImageSize:                  parsed.Size,
 			Stream:                     parsed.Stream,
 			StreamStarted:              &streamStarted,
 			MaxAccountSwitches:         maxAccountSwitches,
