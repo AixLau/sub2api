@@ -52,6 +52,7 @@ type Handlers struct {
 	PublicTransit    *PublicTransitHandler
 	Auth             *AuthHandler
 	User             *UserHandler
+	MCPOAuth         *MCPOAuthHandler
 	APIKey           *APIKeyHandler
 	ClientSetup      *ClientSetupHandler
 	Usage            *UsageHandler

@@ -3,6 +3,7 @@ import {
   buildClaudeCodeEnv,
   codexLongContextTomlLines
 } from '@/utils/claudeCodeConfig'
+import { buildCodexApiKeyAuthConfig } from '@/utils/codexAuthConfig'
 import { PROVIDER_DISPLAY_NAME, PROVIDER_ICON_URL } from '@/utils/providerBrand'
 
 export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-6.1-sol'
@@ -83,17 +84,20 @@ function escapeTomlBasicString(value: string): string {
  * provider id is always rewritten to `custom`, and global tables such as
  * `[desktop]` or `[features]` are dropped, so only provider-scoped keys go here.
  */
-function buildCodexImportToml(endpoint: string): string {
+function buildCodexImportToml(endpoint: string, apiKey: string): string {
+  // CC Switch's embedded-config import preserves provider auth and headers.
+  // It deliberately leaves global [features] settings to the user.
   return `model_provider = "sub2api"
 model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
 review_model = "${OPENAI_CC_SWITCH_CODEX_MODEL}"
 model_reasoning_effort = "high"
+web_search = "live"
 ${codexLongContextTomlLines()}
 [model_providers.sub2api]
 name = "${escapeTomlBasicString(PROVIDER_DISPLAY_NAME)}"
 base_url = "${escapeTomlBasicString(endpoint)}"
 wire_api = "responses"
-requires_openai_auth = true
+${buildCodexApiKeyAuthConfig(apiKey)}
 `
 }
 
@@ -155,7 +159,7 @@ export function resolveCcSwitchImportConfig(
 export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput): string {
   const config = resolveCcSwitchImportConfig(input.platform, input.clientType, input.baseUrl)
   if (config.app === 'codex') {
-    config.config = buildCodexImportToml(config.endpoint)
+    config.config = buildCodexImportToml(config.endpoint, input.apiKey)
     config.configFormat = 'toml'
   }
   if (config.app === 'claude') {

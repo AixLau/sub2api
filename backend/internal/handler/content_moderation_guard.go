@@ -300,12 +300,11 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 			zap.Int64("request_body_read_ms", bodyReadMs),
 			zap.Error(err),
 		)
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		if handleRequestBodyReadError(c, reqLog, err) {
 			return nil, "", false, nil, nil, false
 		}
-		markOpsRequestBodyReadError(c, err)
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		status, message := requestBodyReadFailureWithOps(c, reqLog, err)
+		h.errorResponse(c, status, "invalid_request_error", message)
 		return nil, "", false, nil, nil, false
 	}
 	reqLog.Debug("openai.request_body_read_done",
