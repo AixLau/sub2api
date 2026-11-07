@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,6 +18,12 @@ import (
 // openAITransportErrorTempUnschedDuration is how long an account is temporarily
 // unscheduled after a durable transport failure (matches tokenRefreshTempUnschedDuration).
 const openAITransportErrorTempUnschedDuration = 10 * time.Minute
+
+// openAIProxyAuthFailureThreshold is how many consecutive "407 Proxy Authentication
+// Required" failures (no successful request in between) an account must see
+// before it is temporarily unscheduled. A single 407 is often a proxy-side blip,
+// so it only fails over to another account.
+const openAIProxyAuthFailureThreshold = 3
 
 // openAITransportFailoverBody is the OpenAI-format error body attached to the
 // failover error for a transport-level failure. Kept identical to the legacy
@@ -33,6 +40,11 @@ type upstreamTransportErrorClass struct {
 	// or DNS/routing failure. Such accounts should be temporarily unscheduled
 	// (and alerted on) instead of being repeatedly scheduled into hard failures.
 	Persistent bool
+
+	// ProxyAuthRequired marks an HTTP proxy 407. It is not Persistent on its own:
+	// the account is only unscheduled after openAIProxyAuthFailureThreshold
+	// consecutive occurrences (see recordOpenAIProxyAuthFailure).
+	ProxyAuthRequired bool
 }
 
 // persistentUpstreamTransportErrorMarkers are substrings (matched case-insensitively
@@ -41,9 +53,8 @@ type upstreamTransportErrorClass struct {
 // (e.g. we match "connection refused", not "proxyconnect") so that a transient
 // failure of the same operation (a proxy timeout) is NOT misclassified as durable.
 var persistentUpstreamTransportErrorMarkers = []string{
-	"authentication failed",         // SOCKS5 RFC1929 / proxy credentials rejected (expired account)
-	"proxy authentication required", // HTTP proxy 407
-	"connection refused",            // proxy/upstream endpoint down
+	"authentication failed", // SOCKS5 RFC1929 / proxy credentials rejected (expired account)
+	"connection refused",    // proxy/upstream endpoint down
 	"no route to host",
 	"network is unreachable",
 	"no such host", // DNS resolution failure (bad/expired proxy hostname)
@@ -86,6 +97,9 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 
 	// — String-marker fallback ————————————————————————————————————————————————
 	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "proxy authentication required") { // HTTP proxy 407
+		return upstreamTransportErrorClass{ProxyAuthRequired: true}
+	}
 	for _, marker := range persistentUpstreamTransportErrorMarkers {
 		if strings.Contains(msg, marker) {
 			return upstreamTransportErrorClass{Persistent: true}
@@ -153,7 +167,11 @@ func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Co
 		return err
 	}
 
-	if classifyUpstreamTransportError(err).Persistent {
+	class := classifyUpstreamTransportError(err)
+	if class.Persistent {
+		s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
+	} else if class.ProxyAuthRequired && s.recordOpenAIProxyAuthFailure(account.ID) >= openAIProxyAuthFailureThreshold {
+		s.resetOpenAIProxyAuthFailures(account.ID)
 		s.tempUnscheduleOpenAITransportError(ctx, account, safeErr)
 	}
 
@@ -220,4 +238,23 @@ func (s *OpenAIGatewayService) tempUnscheduleOpenAITransportError(ctx context.Co
 		zap.Time("until", until),
 		zap.String("reason", reason),
 	)
+}
+
+// recordOpenAIProxyAuthFailure bumps the account's consecutive proxy-407 counter
+// and returns the new value. The counter is process-local and cleared by any
+// successful request (see resetOpenAIProxyAuthFailures).
+func (s *OpenAIGatewayService) recordOpenAIProxyAuthFailure(accountID int64) int32 {
+	if s == nil {
+		return 0
+	}
+	value, _ := s.openaiProxyAuthFailures.LoadOrStore(accountID, new(atomic.Int32))
+	return value.(*atomic.Int32).Add(1)
+}
+
+// resetOpenAIProxyAuthFailures clears the consecutive proxy-407 counter.
+func (s *OpenAIGatewayService) resetOpenAIProxyAuthFailures(accountID int64) {
+	if s == nil {
+		return
+	}
+	s.openaiProxyAuthFailures.Delete(accountID)
 }

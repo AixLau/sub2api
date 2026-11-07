@@ -30,6 +30,9 @@ func TestClassifyUpstreamTransportError(t *testing.T) {
 		{"dns resolution failure", errors.New(`dial tcp: lookup proxy.example.com: no such host`), true},
 		{"network unreachable", errors.New(`dial tcp 1.2.3.4:443: connect: network is unreachable`), true},
 
+		// 407 is not persistent by itself; it needs consecutive failures (see below).
+		{"proxy 407 alone", errors.New(`Post "https://chatgpt.com/backend-api/codex/responses": Proxy Authentication Required`), false},
+
 		// Transient — a temporary blip. Fail over, but do NOT evict the account.
 		{"client timeout", errors.New(`Post "https://chatgpt.com/...": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`), false},
 		{"i/o timeout", errors.New(`dial tcp 1.2.3.4:443: i/o timeout`), false},
@@ -89,4 +92,49 @@ func errString(err error) string {
 		return "<nil>"
 	}
 	return err.Error()
+}
+
+func TestClassifyUpstreamTransportError_ProxyAuthRequired(t *testing.T) {
+	got := classifyUpstreamTransportError(errors.New(`Post "https://chatgpt.com/x": Proxy Authentication Required`))
+	if got.Persistent || !got.ProxyAuthRequired {
+		t.Fatalf("407 class = %+v, want ProxyAuthRequired only", got)
+	}
+}
+
+// 407 只有连续 3 次（中间无成功）才临时下线账号；成功会清零。
+func TestHandleOpenAIUpstreamTransportError_ProxyAuthNeedsConsecutiveFailures(t *testing.T) {
+	err407 := errors.New(`Post "https://chatgpt.com/x": Proxy Authentication Required`)
+	account := &Account{ID: 494, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc := &OpenAIGatewayService{}
+	until := func() bool { _, ok := svc.openaiProxyAuthFailures.Load(account.ID); return !ok }
+
+	for i := 1; i < openAIProxyAuthFailureThreshold; i++ {
+		var failover *UpstreamFailoverError
+		if e := svc.handleOpenAIUpstreamTransportError(context.Background(), newTransportErrorTestGin(t), account, err407, false); !errors.As(e, &failover) {
+			t.Fatalf("attempt %d: want failover error, got %v", i, e)
+		}
+		if until() {
+			t.Fatalf("attempt %d: counter should be kept", i)
+		}
+	}
+	if svc.isOpenAIAccountRuntimeBlocked(account) {
+		t.Fatal("account must stay schedulable before threshold")
+	}
+
+	// 成功请求清零。
+	svc.ReportOpenAIAccountScheduleResult(account, "gpt-5", true, nil)
+	if !until() {
+		t.Fatal("success must reset the 407 counter")
+	}
+
+	// 重新累计到阈值：第 3 次触发下线并清零计数。
+	for i := 1; i <= openAIProxyAuthFailureThreshold; i++ {
+		_ = svc.handleOpenAIUpstreamTransportError(context.Background(), newTransportErrorTestGin(t), account, err407, false)
+	}
+	if !until() {
+		t.Fatal("counter must be cleared after unscheduling")
+	}
+	if !svc.isOpenAIAccountRuntimeBlocked(account) {
+		t.Fatal("account must be blocked after consecutive 407 threshold")
+	}
 }
