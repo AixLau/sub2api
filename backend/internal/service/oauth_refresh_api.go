@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // OAuthRefreshExecutor 各平台实现的 OAuth 刷新执行器
@@ -96,6 +99,49 @@ type OAuthRefreshAPI struct {
 	accountRepo AccountRepository
 	tokenCache  GeminiTokenCache // 可选，仅用于 access-token 缓存
 	localLocks  sync.Map         // key: cacheKey string -> value: *contextMutex
+
+	// 跨实例互斥：按账号串行化刷新。两者均为 nil 时退化为仅进程内互斥（单实例）。
+	lockCache LeaderLockCache
+	lockDB    *sql.DB
+}
+
+// 跨实例刷新锁参数。refresh_token 通常一次性轮换，两个实例并发刷新同一账号会让后到者
+// 触发 refresh_token_reused，账号需要重新授权，所以对端持锁时等待而不是并发刷新。
+// TTL 只是持锁实例崩溃时的兜底，需大于单次刷新的最坏耗时。
+var (
+	oauthRefreshLockTTL          = 90 * time.Second
+	oauthRefreshLockMaxWait      = 20 * time.Second
+	oauthRefreshLockPollInterval = 250 * time.Millisecond
+)
+
+// SetLeaderLock 注入跨实例锁后端（Redis 优先，失败时退回 PG advisory lock）。
+func (api *OAuthRefreshAPI) SetLeaderLock(cache LeaderLockCache, db *sql.DB) {
+	api.lockCache = cache
+	api.lockDB = db
+}
+
+// acquireCrossInstanceLock 等待并获取指定账号的跨实例刷新锁。
+// 返回 false 表示等待超时或 ctx 结束，调用方不得执行刷新。
+func (api *OAuthRefreshAPI) acquireCrossInstanceLock(ctx context.Context, accountID int64) (func(), bool) {
+	if api.lockCache == nil && api.lockDB == nil {
+		return func() {}, true
+	}
+	key := "oauth_refresh:account:" + strconv.FormatInt(accountID, 10)
+	owner := uuid.NewString()
+	timeout := time.NewTimer(oauthRefreshLockMaxWait)
+	defer timeout.Stop()
+	for {
+		if release, ok := tryAcquireSingletonLeaderLock(ctx, api.lockCache, api.lockDB, key, owner, oauthRefreshLockTTL); ok {
+			return release, true
+		}
+		select {
+		case <-ctx.Done():
+			return nil, false
+		case <-timeout.C:
+			return nil, false
+		case <-time.After(oauthRefreshLockPollInterval):
+		}
+	}
 }
 
 // NewOAuthRefreshAPI 创建统一刷新 API
@@ -149,6 +195,31 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return nil, fmt.Errorf("oauth refresh local lock: %w", err)
 	}
 	defer localMu.Unlock()
+
+	// 0.5 跨实例互斥：对端正在刷新同一账号时等待其完成，之后的 DB 重读会拿到对端写入的新凭据。
+	releaseLock, locked := api.acquireCrossInstanceLock(ctx, account.ID)
+	if !locked {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		// 等待超时：宁可不刷新也不并发刷新，返回 DB 中的最新状态，由调用方按现有 token 继续或 failover。
+		slog.Warn("oauth_refresh_cross_instance_lock_timeout",
+			"account_id", account.ID,
+			"platform", account.Platform,
+		)
+		latest, getErr := api.accountRepo.GetByID(ctx, account.ID)
+		if getErr != nil || latest == nil {
+			if getErr == nil {
+				getErr = errors.New("account not found")
+			}
+			if requestPath {
+				return nil, fmt.Errorf("%w: %v", errOAuthRefreshAccountRereadFailed, getErr)
+			}
+			return nil, &oauthRefreshStateUnavailableError{err: getErr}
+		}
+		return &OAuthRefreshResult{Account: latest}, nil
+	}
+	defer releaseLock()
 
 	// 1. 从 DB 重读最新 account，确保使用最新的 refresh_token。
 	freshAccount, err := api.accountRepo.GetByID(ctx, account.ID)

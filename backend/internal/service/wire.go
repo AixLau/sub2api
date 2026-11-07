@@ -93,9 +93,11 @@ func ProvideAuthService(
 	return svc
 }
 
-// ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
-func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
-	return NewOAuthRefreshAPI(accountRepo, tokenCache)
+// ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the cross-instance per-account refresh lock.
+func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache, lockCache LeaderLockCache, db *sql.DB) *OAuthRefreshAPI {
+	api := NewOAuthRefreshAPI(accountRepo, tokenCache)
+	api.SetLeaderLock(lockCache, db)
+	return api
 }
 
 func ProvideBatchImageModelPricingResolver(resolver *ModelPricingResolver) *BatchImageModelPricingResolver {
