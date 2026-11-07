@@ -64,6 +64,7 @@
             :show-source-toggle="true"
             :show-metric-toggle="true"
             :title="t('usage.endpointDistribution')"
+            fill-height
             :start-date="startDate"
             :end-date="endDate"
             :filters="breakdownFilters"
@@ -72,7 +73,7 @@
             cost-metric="account"
             :trend-data="trendData"
             :loading="chartsLoading"
-            chart-height-class="h-80"
+            chart-height-class="h-[176px]"
             show-cost
           />
         </div>
