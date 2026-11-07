@@ -201,6 +201,9 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 		Protocol:           service.ContentModerationProtocolOpenAIImages,
 		Status:             moderationcoverage.StatusCovered,
 	}))
+	// The route-level OpenAI HTTP pipeline (which issues the moderation receipt)
+	// is not mounted in this handler-level test; simulate its allow receipt.
+	markForwardableModerationReceipt(c, service.ContentModerationProtocolOpenAIImages)
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,

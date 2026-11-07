@@ -65,4 +65,33 @@ describe('EndpointDistributionChart', () => {
     expect(options.cutout).toBe('72%')
     expect(options.animation.duration).toBe(700)
   })
+
+  it('keeps the fixed 192px table by default and fills the row height when fillHeight is set', () => {
+    const mountChart = (fillHeight?: boolean) => mount(EndpointDistributionChart, {
+      props: {
+        endpointStats: [
+          { endpoint: '/v1/messages', requests: 8, total_tokens: 1200, actual_cost: 0.8, cost: 1.2 },
+        ],
+        ...(fillHeight === undefined ? {} : { fillHeight }),
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+          UserBreakdownSubTable: true,
+        },
+      },
+    })
+
+    const fixed = mountChart()
+    const fixedArea = fixed.get('[data-testid="endpoint-table-area"]')
+    expect(fixedArea.classes()).toEqual(expect.arrayContaining(['max-h-48', 'overflow-auto']))
+    expect(fixed.classes()).not.toContain('flex-col')
+
+    const filled = mountChart(true)
+    expect(filled.classes()).toEqual(expect.arrayContaining(['flex', 'flex-col']))
+    const filledArea = filled.get('[data-testid="endpoint-table-area"]')
+    expect(filledArea.classes()).toEqual(expect.arrayContaining(['relative', 'min-h-48', 'self-stretch']))
+    expect(filledArea.classes()).not.toContain('max-h-48')
+    expect(filledArea.get('div').classes()).toEqual(expect.arrayContaining(['absolute', 'inset-0', 'overflow-auto']))
+  })
 })

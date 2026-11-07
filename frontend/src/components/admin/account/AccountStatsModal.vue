@@ -402,9 +402,23 @@
 
         <!-- Usage Trend Chart -->
         <div class="card p-4">
-          <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.accounts.stats.usageTrend') }}
-          </h3>
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.accounts.stats.usageTrend') }}
+            </h3>
+            <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>{{ t('admin.accounts.stats.timeRange') }}</span>
+              <select
+                v-model="statsRange"
+                class="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 outline-none transition-colors focus:border-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200"
+                :aria-label="t('admin.accounts.stats.timeRange')"
+              >
+                <option v-for="option in statsRangeOptions" :key="option.range" :value="option.range">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          </div>
           <div class="h-64">
             <Line v-if="trendChartData" :data="trendChartData" :options="lineChartOptions" />
             <div
@@ -490,6 +504,7 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
+import type { AccountStatsRange } from '@/api/admin/accounts'
 import {
   chartSeriesColors,
   colorWithAlpha,
@@ -522,6 +537,15 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
+const trendStats = ref<AccountUsageStatsResponse | null>(null)
+const statsRange = ref<AccountStatsRange>('24h')
+let summaryRequestSeq = 0
+let trendRequestSeq = 0
+const statsRangeOptions = computed(() => [
+  { range: '24h' as const, label: t('admin.accounts.stats.last24Hours') },
+  { range: '7d' as const, label: t('admin.accounts.stats.last7Days') },
+  { range: '30d' as const, label: t('admin.accounts.stats.last30Days') }
+])
 
 // The account stats response is already scoped to the selected account and
 // its 30-day range. Reuse the dates represented by that response when a chart
@@ -544,14 +568,14 @@ const chartColors = computed(() => getChartTheme(isDarkMode.value))
 
 // Line chart data
 const trendChartData = computed(() => {
-  if (!stats.value?.history?.length) return null
+  if (!trendStats.value?.history?.length) return null
 
   return {
-    labels: stats.value.history.map((h) => h.label),
+    labels: trendStats.value.history.map((h) => h.label),
     datasets: [
       {
         label: t('usage.accountBilled') + ' (USD)',
-        data: stats.value.history.map((h) => h.actual_cost),
+        data: trendStats.value.history.map((h) => h.actual_cost),
         borderColor: chartSeriesColors.primary,
         backgroundColor: colorWithAlpha(chartSeriesColors.primary, 0.1),
         fill: true,
@@ -560,7 +584,7 @@ const trendChartData = computed(() => {
       },
       {
         label: t('usage.userBilled') + ' (USD)',
-        data: stats.value.history.map((h) => h.user_cost),
+        data: trendStats.value.history.map((h) => h.user_cost),
         borderColor: chartSeriesColors.success,
         backgroundColor: colorWithAlpha(chartSeriesColors.success, 0.08),
         fill: false,
@@ -570,7 +594,7 @@ const trendChartData = computed(() => {
       },
       {
         label: t('admin.accounts.stats.requests'),
-        data: stats.value.history.map((h) => h.requests),
+        data: trendStats.value.history.map((h) => h.requests),
         borderColor: chartSeriesColors.warning,
         backgroundColor: colorWithAlpha(chartSeriesColors.warning, 0.1),
         fill: false,
@@ -579,7 +603,7 @@ const trendChartData = computed(() => {
       },
       {
         label: t('admin.accounts.stats.tokenUsage'),
-        data: stats.value.history.map((h) => h.tokens),
+        data: trendStats.value.history.map((h) => h.tokens),
         borderColor: chartSeriesColors.contrast,
         backgroundColor: colorWithAlpha(chartSeriesColors.contrast, 0.08),
         fill: false,
@@ -588,7 +612,7 @@ const trendChartData = computed(() => {
       },
       {
         label: t('admin.accounts.stats.cacheHitRate'),
-        data: stats.value.history.map((h) =>
+        data: trendStats.value.history.map((h) =>
           calculateCacheHitRate(h.input_tokens, h.cache_creation_tokens, h.cache_read_tokens)
         ),
         borderColor: chartSeriesColors.pink,
@@ -688,6 +712,7 @@ const lineChartOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
+        display: false,
         color: chartSeriesColors.warning,
         font: {
           size: 10
@@ -712,6 +737,7 @@ const lineChartOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
+        display: false,
         color: chartSeriesColors.contrast,
         font: {
           size: 10
@@ -738,6 +764,7 @@ const lineChartOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
+        display: false,
         color: chartSeriesColors.pink,
         font: {
           size: 10
@@ -761,24 +788,59 @@ watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.account) {
+      statsRange.value = '24h'
       await loadStats()
     } else {
+      summaryRequestSeq += 1
+      trendRequestSeq += 1
       stats.value = null
+      trendStats.value = null
     }
   }
 )
 
+watch(statsRange, async () => {
+  if (props.show && props.account) {
+    await loadTrendStats()
+  }
+})
+
 const loadStats = async () => {
   if (!props.account) return
 
+  const summarySeq = ++summaryRequestSeq
+  const trendSeq = ++trendRequestSeq
+  const accountId = props.account.id
   loading.value = true
   try {
-    stats.value = await adminAPI.accounts.getStats(props.account.id, 30)
+    const [summaryStats, rangeStats] = await Promise.all([
+      adminAPI.accounts.getStats(accountId, '30d'),
+      adminAPI.accounts.getStats(accountId, statsRange.value)
+    ])
+    if (summarySeq === summaryRequestSeq) stats.value = summaryStats
+    if (trendSeq === trendRequestSeq) trendStats.value = rangeStats
   } catch (error) {
     console.error('Failed to load account stats:', error)
-    stats.value = null
+    if (summarySeq === summaryRequestSeq) stats.value = null
+    if (trendSeq === trendRequestSeq) trendStats.value = null
   } finally {
-    loading.value = false
+    if (summarySeq === summaryRequestSeq) loading.value = false
+  }
+}
+
+const loadTrendStats = async () => {
+  if (!props.account) return
+
+  const seq = ++trendRequestSeq
+  const accountId = props.account.id
+  try {
+    const nextTrendStats = await adminAPI.accounts.getStats(accountId, statsRange.value)
+    if (seq !== trendRequestSeq) return
+    trendStats.value = nextTrendStats
+  } catch (error) {
+    if (seq !== trendRequestSeq) return
+    console.error('Failed to load account trend stats:', error)
+    trendStats.value = null
   }
 }
 

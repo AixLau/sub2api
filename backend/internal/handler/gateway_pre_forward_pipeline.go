@@ -222,12 +222,11 @@ func (h *GatewayHandler) readGatewayGeminiPreForwardRequest(c *gin.Context) ([]b
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
+		if handleRequestBodyReadError(c, nil, err) {
 			return nil, "", false, false
 		}
-		markOpsRequestBodyReadError(c, err)
-		googleError(c, http.StatusBadRequest, "Failed to read request body")
+		status, message := requestBodyReadFailureWithOps(c, nil, err)
+		googleError(c, status, message)
 		return nil, "", false, false
 	}
 	if len(body) == 0 {
@@ -244,12 +243,11 @@ func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
 ) ([]byte, string, bool, bool) {
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			writeError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		if handleRequestBodyReadError(c, reqLog, err) {
 			return nil, "", false, false
 		}
-		markOpsRequestBodyReadError(c, err)
-		writeError(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		status, message := requestBodyReadFailureWithOps(c, reqLog, err)
+		writeError(c, status, "invalid_request_error", message)
 		return nil, "", false, false
 	}
 	if len(body) == 0 {
@@ -292,12 +290,11 @@ func gatewayPreForwardErrorFormatForHandler(handlerName string) gatewayPreForwar
 func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context, reqLog *zap.Logger) ([]byte, *service.ParsedRequest, bool) {
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		if handleRequestBodyReadError(c, reqLog, err) {
 			return nil, nil, false
 		}
-		markOpsRequestBodyReadError(c, err)
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		status, message := requestBodyReadFailureWithOps(c, reqLog, err)
+		h.errorResponse(c, status, "invalid_request_error", message)
 		return nil, nil, false
 	}
 	if len(body) == 0 {
@@ -972,15 +969,8 @@ func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) 
 		pipeline = newGatewayPreForwardPipeline(nil)
 	}
 	input := ctx.input
-	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
-		decision := ctx.handler.checkSecurityAudit(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
-		if decision != nil && !decision.AllowNextStage {
-			ctx.handler.writeGatewayPreForwardPromptAuditError(ctx.c, input.ErrorFormat, decision)
-			return gatewayPreForwardStageResult{Blocked: true}
-		}
-		return gatewayPreForwardStageResult{}
-	}
 
+	// Content moderation runs once, through the pipeline's moderation guard.
 	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
 		APIKey:   input.APIKey,
 		Subject:  input.Subject,
@@ -988,13 +978,23 @@ func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) 
 		Model:    input.Model,
 		Body:     input.Body,
 	})
-	if decision == nil || !decision.Blocked {
-		return gatewayPreForwardStageResult{}
+	if decision != nil && decision.Blocked {
+		if ctx.handler != nil {
+			ctx.handler.writeGatewayPreForwardModerationError(ctx.c, input.ErrorFormat, decision)
+		}
+		return gatewayPreForwardStageResult{Blocked: true}
 	}
-	if ctx.handler != nil {
-		ctx.handler.writeGatewayPreForwardModerationError(ctx.c, input.ErrorFormat, decision)
+
+	// The security audit coordinator then reuses that moderation decision for
+	// prompt auditing instead of running legacy moderation a second time.
+	if ctx.handler != nil && ctx.handler.securityAuditCoordinator != nil {
+		auditDecision := ctx.handler.checkSecurityAuditWithLegacy(ctx.c, ctx.reqLog, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body, decision)
+		if auditDecision != nil && !auditDecision.AllowNextStage {
+			ctx.handler.writeGatewayPreForwardPromptAuditError(ctx.c, input.ErrorFormat, auditDecision)
+			return gatewayPreForwardStageResult{Blocked: true}
+		}
 	}
-	return gatewayPreForwardStageResult{Blocked: true}
+	return gatewayPreForwardStageResult{}
 }
 
 func (p *GatewayPreForwardPipeline) Run(h *GatewayHandler, c *gin.Context, reqLog *zap.Logger, input gatewayPreForwardPipelineInput) gatewayPreForwardPipelineResult {

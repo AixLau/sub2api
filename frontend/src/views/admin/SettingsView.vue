@@ -49,14 +49,6 @@
           </nav>
         </div>
 
-        <div class="card flex items-center justify-between gap-4 p-6">
-          <div>
-            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">OpenAI OAuth 非 Plus/Team 账号显示 5h 用量</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">默认关闭。开启后允许 Pro 等没有原生 5 小时窗口的账号显示 5h 数据。</p>
-          </div>
-          <input v-model="form.show_openai_non_plus_5h_usage" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-        </div>
-
         <!-- Tab: Security — Admin API Key -->
         <div v-show="activeTab === 'security'" class="space-y-6">
           <AdminAccessKeysSettings />
@@ -1525,6 +1517,9 @@
                   v-model="form.registration_email_domain_quota_enabled"
                 />
               </div>
+
+              <!-- Exact Email Blacklist -->
+              <RegistrationEmailBlacklistEditor />
 
               <!-- Promo Code -->
               <div
@@ -4723,6 +4718,50 @@
                     {{ t("admin.settings.gatewayForwarding.codexAddRow") }}
                   </button>
                 </div>
+            </div>
+          </div>
+
+          <!-- Account Testing & Usage Display -->
+          <div class="card" data-testid="account-test-usage-display-settings">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.accountTestUsage.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.accountTestUsage.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.accountTestUsage.presetPrompt") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.accountTestUsage.presetPromptHint") }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.account_test_preset_prompt_enabled"
+                  :aria-label="t('admin.settings.accountTestUsage.presetPrompt')"
+                  data-testid="account-test-preset-prompt-toggle"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.accountTestUsage.openaiNonPlus5hUsage") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.accountTestUsage.openaiNonPlus5hUsageHint") }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.show_openai_non_plus_5h_usage"
+                  :aria-label="t('admin.settings.accountTestUsage.openaiNonPlus5hUsage')"
+                  data-testid="openai-non-plus-5h-usage-toggle"
+                />
+              </div>
             </div>
           </div>
 
@@ -9121,6 +9160,7 @@ import {
   type RechargeBonusMode,
   type RechargeBonusTierDraft,
 } from "@/utils/rechargeBonus";
+import RegistrationEmailBlacklistEditor from "@/components/admin/settings/RegistrationEmailBlacklistEditor.vue";
 import OpenAIFastPolicyUserSelector from "@/views/admin/settings/OpenAIFastPolicyUserSelector.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import {
@@ -10142,6 +10182,7 @@ const form = reactive<SettingsForm>({
   // Ops monitoring (vNext)
   ops_monitoring_enabled: true,
   show_openai_non_plus_5h_usage: false,
+  account_test_preset_prompt_enabled: true,
   ops_realtime_monitoring_enabled: true,
   ops_query_mode_default: "auto",
   ops_metrics_interval_seconds: 60,
@@ -11645,6 +11686,8 @@ async function saveSettings() {
 
     const payload: UpdateSettingsRequest = {
       show_openai_non_plus_5h_usage: form.show_openai_non_plus_5h_usage,
+      account_test_preset_prompt_enabled:
+        form.account_test_preset_prompt_enabled,
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:

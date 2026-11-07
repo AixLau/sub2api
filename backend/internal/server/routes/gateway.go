@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
@@ -31,8 +30,9 @@ func RegisterGatewayRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 ) {
-	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
-	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
+	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize, bodyMemoryBudget)
+	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize, bodyMemoryBudget)
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
@@ -242,6 +242,11 @@ func RegisterGatewayRoutes(
 			"/v1/models",
 			"GatewayHandler.Models",
 			"Model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), modelsHandler)
+		moderatedGateway.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+			"/v1/models/:model",
+			"GatewayHandler.Models",
+			"Model retrieval returns one entry of the visible model listing and does not submit model-visible user content.",
 		), modelsHandler)
 		moderatedGateway.GETNoAudit("/usage", intentionalNoAuditRoute(
 			"/v1/usage",
@@ -713,6 +718,11 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.Models",
 		"Root model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	moderatedRoot.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+		"/models/:model",
+		"GatewayHandler.Models",
+		"Root model retrieval returns one entry of the visible model listing and does not submit model-visible user content.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
 	moderatedRoot.POST("/messages/count_tokens", coveredModeratedRoute(
 		"/messages/count_tokens",
 		"GatewayHandler.CountTokens",
@@ -1132,15 +1142,10 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
-			status := http.StatusBadRequest
-			message := "Failed to read request body"
-			var maxErr *http.MaxBytesError
-			if errors.As(err, &maxErr) {
-				status = http.StatusRequestEntityTooLarge
-				message = "Request body is too large"
+			if middleware.RejectRequestBodyReadError(c, "middleware.composite_route", err) {
+				return
 			}
-			c.JSON(status, gin.H{"error": gin.H{"type": "invalid_request_error", "message": message}})
-			c.Abort()
+			middleware.AbortWithRequestBodyReadFailure(c, "middleware.composite_route", err)
 			return
 		}
 

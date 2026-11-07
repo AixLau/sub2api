@@ -768,6 +768,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	}
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
+	scanner.Split(newBoundedSSESplit(s.cfg, maxLineSize, nil))
 
 	type scanEvent struct {
 		line string
@@ -776,11 +777,16 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	// 独立 goroutine 读取上游，避免读取阻塞导致超时/keepalive无法处理
 	events := make(chan scanEvent, 16)
 	done := make(chan struct{})
+	queueBudget := newSSEQueueBudget(s.cfg)
 	sendEvent := func(ev scanEvent) bool {
+		if !queueBudget.acquire(len(ev.line), done) {
+			return false
+		}
 		select {
 		case events <- ev:
 			return true
 		case <-done:
+			queueBudget.release(len(ev.line))
 			return false
 		}
 	}
@@ -882,7 +888,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	pendingEventLines := make([]string, 0, 4)
 
-	writeClientBlocks := func(blocks []string) {
+	// markActivity=false 用于写出首包缓冲：这些事件到达上游时已计入 keepalive 时钟，
+	// 延迟写出不应再次推迟 keepalive（否则首个 keepalive 会被推迟到约 2× 间隔）。
+	writeClientBlocks := func(blocks []string, markActivity bool) {
 		if clientDisconnected || len(blocks) == 0 {
 			return
 		}
@@ -898,8 +906,10 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			}
 		}
 		flusher.Flush()
-		lastDataAt = time.Now()
-		resetKeepaliveTimer()
+		if markActivity {
+			lastDataAt = time.Now()
+			resetKeepaliveTimer()
+		}
 	}
 
 	// 首包缓冲：message_start / ping / content_block_start 等前导事件先暂存，
@@ -925,7 +935,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		preludeTimer.Stop()
 		blocks := preludeBlocks
 		preludeBlocks = nil
-		writeClientBlocks(blocks)
+		writeClientBlocks(blocks, false)
 	}
 
 	processSSEEvent := func(lines []string) ([]string, string, *sseUsagePatch, error) {
@@ -1092,6 +1102,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	for {
 		select {
 		case ev, ok := <-events:
+			if ok {
+				queueBudget.release(len(ev.line))
+			}
 			if !ok {
 				// 上游完成，返回结果
 				releasePrelude()
@@ -1155,6 +1168,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				}
 
 				outputBlocks, data, usagePatch, err := processSSEEvent(pendingEventLines)
+				clear(pendingEventLines)
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
 					if preludeHolding {
@@ -1175,11 +1189,14 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 					if preludeHolding {
 						preludeBlocks = append(preludeBlocks, block)
 						preludeBytes += len(block)
+						// keepalive 时钟按上游到达时间计，与未缓冲时「到达即写出」的节奏一致。
+						lastDataAt = time.Now()
+						resetKeepaliveTimer()
 						if !isAnthropicStreamPreludeEvent(data) || preludeBytes > streamPreludeHoldbackMaxBytes {
 							releasePrelude()
 						}
 					} else {
-						writeClientBlocks([]string{block})
+						writeClientBlocks([]string{block}, true)
 					}
 					if data != "" {
 						if firstTokenMs == nil && data != "[DONE]" {

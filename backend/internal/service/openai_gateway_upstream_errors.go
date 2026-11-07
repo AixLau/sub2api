@@ -878,16 +878,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		}
 		return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
 	}
-	if hit, _, refusalMsg := detectOpenAIExplicitRefusal(body); hit {
-		// A structured content refusal is terminal for this request. Preserve
-		// the upstream envelope and never enter account failover/health logic.
-		if refusalMsg == "" {
-			refusalMsg = "Request was refused by the upstream safety system"
-		}
-		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Data(resp.StatusCode, "application/json", body)
-		return nil, fmt.Errorf("openai refusal: %s", refusalMsg)
-	}
+	// Grok 内容策略拒绝先于通用 refusal 透传：平台专用归一化（403 invalid_request_error）优先。
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(resp.StatusCode, body) {
 		clientMsg := grokContentPolicyClientMessage(body)
 		setOpsUpstreamError(c, resp.StatusCode, clientMsg, truncateString(string(body), 2048))
@@ -900,6 +891,16 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			},
 		})
 		return nil, fmt.Errorf("grok content policy rejection: %s", clientMsg)
+	}
+	if hit, _, refusalMsg := detectOpenAIExplicitRefusal(body); hit {
+		// A structured content refusal is terminal for this request. Preserve
+		// the upstream envelope and never enter account failover/health logic.
+		if refusalMsg == "" {
+			refusalMsg = "Request was refused by the upstream safety system"
+		}
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Data(resp.StatusCode, "application/json", body)
+		return nil, fmt.Errorf("openai refusal: %s", refusalMsg)
 	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
@@ -1147,19 +1148,19 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		}
 		return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
 	}
-	if hit, _, refusalMsg := detectOpenAIExplicitRefusal(body); hit {
-		if refusalMsg == "" {
-			refusalMsg = "Request was refused by the upstream safety system"
-		}
-		writeError(c, resp.StatusCode, "invalid_request_error", refusalMsg)
-		return nil, fmt.Errorf("openai refusal: %s", refusalMsg)
-	}
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(resp.StatusCode, body) {
 		clientMsg := grokContentPolicyClientMessage(body)
 		setOpsUpstreamError(c, resp.StatusCode, clientMsg, truncateString(string(body), 2048))
 		MarkResponseCommitted(c)
 		writeError(c, http.StatusForbidden, "invalid_request_error", clientMsg)
 		return nil, fmt.Errorf("grok content policy rejection: %s", clientMsg)
+	}
+	if hit, _, refusalMsg := detectOpenAIExplicitRefusal(body); hit {
+		if refusalMsg == "" {
+			refusalMsg = "Request was refused by the upstream safety system"
+		}
+		writeError(c, resp.StatusCode, "invalid_request_error", refusalMsg)
+		return nil, fmt.Errorf("openai refusal: %s", refusalMsg)
 	}
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))

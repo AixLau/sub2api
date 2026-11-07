@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -21,6 +22,22 @@ import (
 )
 
 const maxLoggedDataURLLengths = 128
+
+// handleRequestBodyReadError handles cancellation and temporary capacity errors
+// before callers classify malformed or oversized request bodies.
+//
+// A read deadline on HTTP/1 also cancels the request context, so a body read
+// timeout is left to requestBodyReadFailure (408) instead of being reported as
+// a client that went away (499).
+func handleRequestBodyReadError(c *gin.Context, reqLog *zap.Logger, err error) bool {
+	if err != nil && !pkghttputil.IsRequestBodyReadTimeout(err) && failoverClientGone(c) {
+		markOpsRequestBodyReadError(c, err)
+		logRequestBodyReadFailure(reqLog, pkghttputil.DescribeRequestBodyReadFailure(c.Request, err))
+		c.Abort()
+		return true
+	}
+	return middleware2.RejectRequestBodyMemoryOverload(c, err)
+}
 
 func extractMaxBytesError(err error) (*http.MaxBytesError, bool) {
 	var maxErr *http.MaxBytesError
@@ -217,4 +234,18 @@ func gatewayMaxBodySize(cfg *config.Config) int64 {
 		return 0
 	}
 	return cfg.Gateway.MaxBodySize
+}
+
+// requestBodyReadFailureWithOps records the local ops diagnostic for read
+// failures other than the configured size limit, then maps the error to the
+// upstream response status and message.
+func requestBodyReadFailureWithOps(c *gin.Context, reqLog *zap.Logger, err error) (int, string) {
+	if _, tooLarge := extractMaxBytesError(err); !tooLarge {
+		markOpsRequestBodyReadError(c, err)
+	}
+	var req *http.Request
+	if c != nil {
+		req = c.Request
+	}
+	return requestBodyReadFailure(reqLog, req, err)
 }

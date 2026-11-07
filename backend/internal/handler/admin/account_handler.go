@@ -1725,22 +1725,39 @@ func (h *AccountHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	// Parse days parameter (default 30)
-	days := 30
+	// Range-based chart requests can use a rolling 24-hour window. Longer ranges
+	// use local calendar-day boundaries so their totals and breakdowns remain
+	// comparable with the existing account statistics.
+	now := timezone.Now()
+	var startTime, endTime time.Time
+	// Keep the established days query usable for existing callers. New callers
+	// use range to select a rolling window explicitly.
 	if daysStr := c.Query("days"); daysStr != "" {
-		if d, err := strconv.Atoi(daysStr); err == nil && d > 0 && d <= 90 {
+		days := 30
+		if d, parseErr := strconv.Atoi(daysStr); parseErr == nil && d > 0 && d <= 90 {
 			days = d
+		}
+		endTime = timezone.StartOfDay(now.AddDate(0, 0, 1))
+		startTime = timezone.StartOfDay(now.AddDate(0, 0, -days+1))
+	} else {
+		rangeKey := c.DefaultQuery("range", "30d")
+		switch rangeKey {
+		case "7d", "30d":
+			days := 7
+			if rangeKey == "30d" {
+				days = 30
+			}
+			endTime = timezone.StartOfDay(now.AddDate(0, 0, 1))
+			startTime = timezone.StartOfDay(now.AddDate(0, 0, -days+1))
+		default:
+			endTime = now
+			startTime = now.Add(-24 * time.Hour)
 		}
 	}
 
-	// Calculate time range
-	now := timezone.Now()
-	endTime := timezone.StartOfDay(now.AddDate(0, 0, 1))
-	startTime := timezone.StartOfDay(now.AddDate(0, 0, -days+1))
-
 	stats, err := h.accountUsageService.GetAccountUsageStats(c.Request.Context(), accountID, startTime, endTime)
 	if err != nil {
-		response.ErrorFrom(c, err)
+		scopedOpenAIError(c, err)
 		return
 	}
 

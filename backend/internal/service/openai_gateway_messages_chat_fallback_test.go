@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -128,13 +129,10 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			require.NotNil(t, result)
 			require.Equal(t, tt.mapped, gjson.GetBytes(upstream.lastBody, "model").String())
 			require.Equal(t, tt.wantEffort, gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
-			if tt.wantEffort == "none" {
-				// The product records disabled thinking as an absent billing effort.
-				require.Nil(t, result.ReasoningEffort)
-			} else {
-				require.NotNil(t, result.ReasoningEffort)
-				require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
-			}
+			// Disabled thinking is forwarded as "none" and recorded as such, so a
+			// per-effort "none" billing multiplier can apply to it.
+			require.NotNil(t, result.ReasoningEffort)
+			require.Equal(t, tt.wantEffort, *result.ReasoningEffort)
 		})
 	}
 }
@@ -490,9 +488,10 @@ func TestForwardAsAnthropic_ResponsesSupportedAccountStillUsesResponsesEndpoint(
 	require.NotNil(t, result.ReasoningEffort)
 	require.Equal(t, "medium", *result.ReasoningEffort)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
-	require.Equal(t, "third-party-client/1.0.0", upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "opencode", upstream.lastReq.Header.Get("originator"))
-	require.Empty(t, upstream.lastReq.Header.Get("version"))
+	// OpenAI 账号（含 API Key）统一使用全局出口身份，客户端自报的 UA / originator 不透传。
+	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "content.0.text").String())
 }

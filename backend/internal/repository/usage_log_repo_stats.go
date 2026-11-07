@@ -1062,19 +1062,27 @@ func (r *usageLogRepository) GetUpstreamEndpointStatsWithFilters(ctx context.Con
 
 // GetAccountUsageStats returns comprehensive usage statistics for an account over a time range
 func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (resp *AccountUsageStatsResponse, err error) {
-	// The handler supplies a left-closed, right-open range whose endpoints are
-	// local midnights (for example, [30 days ago, tomorrow) for a 30-day view).
-	// Count the covered calendar days directly; adding one here made that range
-	// report 31 days and distorted the "days active" denominator in the UI.
+	// The handler supplies a left-closed, right-open range. Calendar ranges use
+	// local midnights; the default trend range is rolling, so count covered
+	// calendar days directly instead of deriving a 31-day denominator.
 	daysCount := accountUsageDaysCount(startTime, endTime)
 	if daysCount <= 0 {
 		daysCount = 30
 	}
 	tzName := resolveUsageStatsTimezone()
 
-	query := `
+	// Only the rolling short range is hourly. Direct repository callers often
+	// request a one-day calendar range at midnight and must retain daily rows.
+	localStart := startTime.In(timezone.Location())
+	hourly := endTime.Sub(startTime) <= 48*time.Hour &&
+		(localStart.Hour() != 0 || localStart.Minute() != 0 || localStart.Second() != 0 || localStart.Nanosecond() != 0)
+	bucketExpr := "TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD')"
+	if hourly {
+		bucketExpr = "TO_CHAR(date_trunc('hour', created_at AT TIME ZONE $4), 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+	}
+	query := fmt.Sprintf(`
 		SELECT
-			TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD') as date,
+			%s as date,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens), 0) as input_tokens,
 			COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
@@ -1087,7 +1095,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
 		GROUP BY date
 		ORDER BY date ASC
-	`
+	`, bucketExpr)
 
 	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime, tzName)
 	if err != nil {
@@ -1116,10 +1124,16 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		if err = rows.Scan(&date, &requests, &inputTokens, &cacheCreationTokens, &cacheReadTokens, &tokens, &cost, &actualCost, &userCost); err != nil {
 			return nil, err
 		}
-		t, _ := time.Parse("2006-01-02", date)
+		parseLayout := "2006-01-02"
+		labelLayout := "01/02"
+		if hourly {
+			parseLayout = "2006-01-02T15:04:05"
+			labelLayout = "01/02 15:04"
+		}
+		t, _ := time.Parse(parseLayout, date)
 		history = append(history, AccountUsageHistory{
 			Date:                date,
-			Label:               t.Format("01/02"),
+			Label:               t.Format(labelLayout),
 			Requests:            requests,
 			InputTokens:         inputTokens,
 			CacheCreationTokens: cacheCreationTokens,
@@ -1158,6 +1172,15 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 	}
 
 	actualDaysUsed := len(history)
+	if hourly {
+		usedDates := make(map[string]struct{}, len(history))
+		for _, h := range history {
+			if len(h.Date) >= len("2006-01-02") {
+				usedDates[h.Date[:len("2006-01-02")]] = struct{}{}
+			}
+		}
+		actualDaysUsed = len(usedDates)
+	}
 	if actualDaysUsed == 0 {
 		actualDaysUsed = 1
 	}
@@ -1194,22 +1217,29 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 	}
 
 	todayStr := timezone.Now().Format("2006-01-02")
+	var todayCost, todayUserCost float64
+	var todayRequests, todayTokens int64
 	for i := range history {
-		if history[i].Date == todayStr {
-			summary.Today = &struct {
-				Date     string  `json:"date"`
-				Cost     float64 `json:"cost"`
-				UserCost float64 `json:"user_cost"`
-				Requests int64   `json:"requests"`
-				Tokens   int64   `json:"tokens"`
-			}{
-				Date:     history[i].Date,
-				Cost:     history[i].ActualCost,
-				UserCost: history[i].UserCost,
-				Requests: history[i].Requests,
-				Tokens:   history[i].Tokens,
-			}
-			break
+		if strings.HasPrefix(history[i].Date, todayStr) {
+			todayCost += history[i].ActualCost
+			todayUserCost += history[i].UserCost
+			todayRequests += history[i].Requests
+			todayTokens += history[i].Tokens
+		}
+	}
+	if todayRequests > 0 || todayTokens > 0 || todayCost != 0 || todayUserCost != 0 {
+		summary.Today = &struct {
+			Date     string  `json:"date"`
+			Cost     float64 `json:"cost"`
+			UserCost float64 `json:"user_cost"`
+			Requests int64   `json:"requests"`
+			Tokens   int64   `json:"tokens"`
+		}{
+			Date:     todayStr,
+			Cost:     todayCost,
+			UserCost: todayUserCost,
+			Requests: todayRequests,
+			Tokens:   todayTokens,
 		}
 	}
 

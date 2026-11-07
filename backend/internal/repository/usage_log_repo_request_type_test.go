@@ -587,7 +587,8 @@ func TestUsageLogRepositoryGetUsageTrendWithFiltersRequestTypePriority(t *testin
 
 	trend, err := repo.GetUsageTrendWithFilters(context.Background(), start, end, "day", 0, 0, 0, 0, "", &requestType, &stream, nil)
 	require.NoError(t, err)
-	require.Empty(t, trend)
+	// fillTrendGaps makes every requested bucket explicit: no rows -> one zero day.
+	require.Equal(t, []TrendDataPoint{{Date: "2025-01-01"}}, trend)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -608,7 +609,8 @@ func TestUsageLogRepositoryGetUsageTrendWithUsageFiltersRequestedModelSource(t *
 
 	trend, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", filters)
 	require.NoError(t, err)
-	require.Empty(t, trend)
+	// fillTrendGaps makes every requested bucket explicit: no rows -> one zero day.
+	require.Equal(t, []TrendDataPoint{{Date: "2025-01-01"}}, trend)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

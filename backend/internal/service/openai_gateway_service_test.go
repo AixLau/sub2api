@@ -3590,8 +3590,8 @@ func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 强制统一出口：请求端自报身份不参与构造；账号级官方 UA 作为管理员配置保留
-	// 客户端与指纹，版本段跟随网关规范版本重建（issue #3901）。
+	// 强制统一出口：请求端与账号级身份都不参与构造，统一为全局 CLI 身份
+	// （codex-tui 会被归一为 CLI），版本段跟随网关规范版本重建（issue #3901）。
 	tests := []struct {
 		name              string
 		accountUserAgent  string
@@ -3600,17 +3600,17 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 		wantOriginator    string
 		wantUA            string
 	}{
-		{name: "global identity overrides account ua", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "codex-tui", wantUA: codexCLIUserAgent},
+		{name: "global identity overrides account ua", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: openai.CodexDefaultOriginator, wantUA: codexCLIUserAgent},
 		{
 			name:              "account and request identities cannot override global ua",
 			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
 			requestUserAgent:  "codex_cli_rs/0.144.1",
 			requestOriginator: "codex_cli_rs",
-			wantOriginator:    "codex-tui",
+			wantOriginator:    openai.CodexDefaultOriginator,
 			wantUA:            codexCLIUserAgent,
 		},
-		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
-		{name: "third-party account ua masked to default identity", accountUserAgent: "luna/1.2.0", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
+		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: openai.CodexDefaultOriginator, wantUA: DefaultOpenAICodexUserAgent},
+		{name: "third-party account ua masked to default identity", accountUserAgent: "luna/1.2.0", wantOriginator: openai.CodexDefaultOriginator, wantUA: DefaultOpenAICodexUserAgent},
 	}
 
 	for _, tt := range tests {

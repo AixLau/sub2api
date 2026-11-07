@@ -18,7 +18,9 @@ type grokTokenCacheForProviderTest struct {
 	setKey      string
 	setToken    string
 	setTTL      time.Duration
-	lockResult  bool // retained for credential-failure fixtures; refresh locks are no longer called
+	lockHeld    bool // the cross-instance refresh lock is held by another instance
+	lockOwners  []string
+	released    []string
 	deletedKeys []string
 	deleteErr   error
 	getCalls    int
@@ -40,6 +42,23 @@ func (r *grokCredentialRaceRepo) setAccount(account *Account) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.accountsByID[account.ID] = account
+}
+
+func (c *grokTokenCacheForProviderTest) AcquireRefreshLock(_ context.Context, _ string, owner string, _ time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lockHeld {
+		return false, nil
+	}
+	c.lockOwners = append(c.lockOwners, owner)
+	return true, nil
+}
+
+func (c *grokTokenCacheForProviderTest) ReleaseRefreshLock(_ context.Context, _ string, owner string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.released = append(c.released, owner)
+	return nil
 }
 
 func (c *grokTokenCacheForProviderTest) GetAccessToken(context.Context, string) (string, error) {
@@ -332,4 +351,43 @@ func TestGrokTokenProviderRejectsIneligibleSelectedAccountBeforeWarmCache(t *tes
 			require.Zero(t, cache.getCalls, "an ineligible selected account must be rejected before cache lookup")
 		})
 	}
+}
+
+// The cross-instance lock is taken only for Grok OAuth, released by its owner,
+// and a held lock skips the refresh instead of reusing the same refresh token.
+func TestOAuthRefreshAPIGrokCrossInstanceLock(t *testing.T) {
+	account := expiredGrokOAuthAccountForCredentialTest(7601)
+	repo := &tokenRefreshAccountRepo{}
+	repo.accountsByID = map[int64]*Account{account.ID: account}
+	executor := &grokRefreshLockExecutorStub{}
+
+	held := &grokTokenCacheForProviderTest{lockHeld: true}
+	result, err := NewOAuthRefreshAPI(repo, held).RefreshIfNeeded(context.Background(), account, executor, grokTokenRefreshSkew)
+	require.NoError(t, err)
+	require.True(t, result.LockHeld)
+	require.Zero(t, executor.refreshCalls, "a held lock must not refresh with the same refresh token")
+
+	free := &grokTokenCacheForProviderTest{}
+	_, _ = NewOAuthRefreshAPI(repo, free).RefreshIfNeeded(context.Background(), account, executor, grokTokenRefreshSkew)
+	require.Equal(t, 1, executor.refreshCalls)
+	require.Len(t, free.lockOwners, 1)
+	require.Equal(t, free.lockOwners, free.released, "the lock must be released by its owner")
+
+	nonGrok := &Account{ID: 7602, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	repo.accountsByID[nonGrok.ID] = nonGrok
+	other := &grokTokenCacheForProviderTest{lockHeld: true}
+	result, _ = NewOAuthRefreshAPI(repo, other).RefreshIfNeeded(context.Background(), nonGrok, executor, time.Minute)
+	require.False(t, result != nil && result.LockHeld, "only Grok OAuth uses the cross-instance lock")
+	require.Equal(t, 2, executor.refreshCalls, "non-Grok refresh proceeds without the shared lock")
+	require.Empty(t, other.lockOwners)
+}
+
+type grokRefreshLockExecutorStub struct{ refreshCalls int }
+
+func (e *grokRefreshLockExecutorStub) CanRefresh(*Account) bool                  { return true }
+func (e *grokRefreshLockExecutorStub) NeedsRefresh(*Account, time.Duration) bool { return true }
+func (e *grokRefreshLockExecutorStub) CacheKey(a *Account) string                { return GrokTokenCacheKey(a) }
+func (e *grokRefreshLockExecutorStub) Refresh(context.Context, *Account) (map[string]any, error) {
+	e.refreshCalls++
+	return nil, errors.New("stub refresh")
 }

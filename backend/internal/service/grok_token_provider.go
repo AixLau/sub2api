@@ -3,14 +3,17 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	grokTokenCacheSkew        = 5 * time.Minute
-	grokRequestRefreshTimeout = 8 * time.Second
+	grokTokenCacheSkew          = 5 * time.Minute
+	grokRequestRefreshTimeout   = 8 * time.Second
+	grokRefreshLockWaitTimeout  = 2 * time.Second
+	grokRefreshLockPollInterval = 25 * time.Millisecond
 )
 
 var (
@@ -99,6 +102,11 @@ func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account
 			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
 				return "", err
 			}
+		} else if result != nil && result.LockHeld {
+			// Another instance is refreshing this account: wait briefly for its
+			// rotated credential instead of racing it with the same refresh token.
+			token, waitErr := p.waitForRefreshedToken(refreshCtx, account, cacheKey)
+			return token, withGrokCredentialFailureSnapshot(waitErr, account)
 		} else if result != nil && result.Account != nil {
 			if eligibilityErr := grokOAuthRequestAccountEligibilityError(result.Account); eligibilityErr != nil {
 				return "", withGrokCredentialFailureSnapshot(eligibilityErr, result.Account)
@@ -207,6 +215,12 @@ func (p *GrokTokenProvider) GetAccessTokenForManualTest(ctx context.Context, acc
 		}
 		return "", err
 	}
+	if result != nil && result.LockHeld {
+		if tokenValid {
+			return accessToken, nil
+		}
+		return "", errors.New("token refresh is already in progress on another worker; retry in a few seconds")
+	}
 	if result != nil && result.Account != nil {
 		account = result.Account
 	}
@@ -219,6 +233,81 @@ func (p *GrokTokenProvider) GetAccessTokenForManualTest(ctx context.Context, acc
 		return "", errGrokOAuthAccessTokenExpired
 	}
 	return accessToken, nil
+}
+
+// waitForRefreshedToken waits for the instance holding the cross-instance
+// refresh lock to persist a rotated credential. The versioned DB row is
+// authoritative; a stale cache entry is repaired best-effort.
+func (p *GrokTokenProvider) waitForRefreshedToken(ctx context.Context, account *Account, cacheKey string) (string, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, grokRefreshLockWaitTimeout)
+	defer cancel()
+
+	initialToken := strings.TrimSpace(account.GetGrokAccessToken())
+	initialVersion := account.GetCredentialAsInt64("_token_version")
+	selectedProxyID := cloneGrokProxyID(account.ProxyID)
+	sawAuthoritativeState := false
+	var lastAccountReadErr error
+	ticker := time.NewTicker(grokRefreshLockPollInterval)
+	defer ticker.Stop()
+
+	for {
+		cachedToken := ""
+		if p.tokenCache != nil {
+			if token, err := p.tokenCache.GetAccessToken(waitCtx, cacheKey); err == nil {
+				cachedToken = strings.TrimSpace(token)
+			}
+		}
+
+		if p.accountRepo != nil {
+			latest, err := p.accountRepo.GetByID(waitCtx, account.ID)
+			if err != nil {
+				lastAccountReadErr = err
+			} else if latest == nil {
+				return "", errOAuthRefreshAccountStateChanged
+			} else {
+				sawAuthoritativeState = true
+				if eligibilityErr := grokOAuthRequestAccountEligibilityError(latest); eligibilityErr != nil {
+					return "", withGrokCredentialFailureSnapshot(eligibilityErr, latest)
+				}
+				if !grokCredentialProxyIDsEqual(latest.ProxyID, selectedProxyID) {
+					return "", withGrokCredentialFailureSnapshot(errOAuthRefreshAccountStateChanged, latest)
+				}
+				token := strings.TrimSpace(latest.GetGrokAccessToken())
+				version := latest.GetCredentialAsInt64("_token_version")
+				expiresAt := latest.GetCredentialAsTime("expires_at")
+				changed := token != initialToken || (version > 0 && version > initialVersion)
+				valid := expiresAt != nil && time.Now().Before(*expiresAt)
+				if token != "" && changed && valid {
+					if p.tokenCache != nil && cachedToken != "" && cachedToken != token {
+						ttl := time.Until(*expiresAt)
+						if ttl > grokTokenCacheSkew {
+							ttl -= grokTokenCacheSkew
+						}
+						_ = p.tokenCache.SetAccessToken(waitCtx, cacheKey, token, ttl)
+					}
+					return token, nil
+				}
+			}
+		}
+
+		select {
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			if !sawAuthoritativeState {
+				if lastAccountReadErr == nil {
+					lastAccountReadErr = waitCtx.Err()
+				}
+				return "", fmt.Errorf("%w: %v", errOAuthRefreshAccountRereadFailed, lastAccountReadErr)
+			}
+			// Another worker still owns the refresh and the authoritative row is
+			// unchanged. Do not quarantine the old credential: its refresh may
+			// commit immediately after this bounded wait.
+			return "", errOAuthRefreshAccountStateChanged
+		case <-ticker.C:
+		}
+	}
 }
 
 func grokOAuthRequestAccountEligibilityError(account *Account) error {

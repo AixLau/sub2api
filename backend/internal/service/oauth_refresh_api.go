@@ -39,6 +39,10 @@ type GrokOAuthRefreshSuccessRepository interface {
 
 const (
 	defaultRefreshPostPersistCleanupTimeout = 2 * time.Second
+	// Grok OAuth 跨实例刷新锁：refresh token 轮换，多实例并发刷新会让其中一方的
+	// refresh token 失效，因此刷新期间在共享缓存上持锁。
+	defaultRefreshLockTTL            = 60 * time.Second
+	defaultRefreshLockReleaseTimeout = 2 * time.Second
 )
 
 var (
@@ -78,6 +82,7 @@ type OAuthRefreshResult struct {
 	Refreshed      bool           // 实际执行了刷新
 	NewCredentials map[string]any // 刷新后的 credentials（nil 表示未刷新）
 	Account        *Account       // 成功时为最新 account；刷新错误时为实际尝试的凭据快照
+	LockHeld       bool           // 跨实例刷新锁被其他实例持有（未执行刷新）
 }
 
 func snapshotOAuthRefreshAccount(account *Account) *Account {
@@ -97,7 +102,7 @@ func snapshotOAuthRefreshAccount(account *Account) *Account {
 // 封装进程内互斥锁、DB 重读、已刷新检查、竞争恢复等通用逻辑
 type OAuthRefreshAPI struct {
 	accountRepo AccountRepository
-	tokenCache  GeminiTokenCache // 可选，仅用于 access-token 缓存
+	tokenCache  GeminiTokenCache // 可选：access-token 缓存；实现 OAuthRefreshLockCache 时为 Grok OAuth 提供跨实例刷新锁
 	localLocks  sync.Map         // key: cacheKey string -> value: *contextMutex
 
 	// 跨实例互斥：按账号串行化刷新。两者均为 nil 时退化为仅进程内互斥（单实例）。
@@ -166,7 +171,7 @@ func (api *OAuthRefreshAPI) getLocalLock(cacheKey string) *contextMutex {
 // RefreshIfNeeded 在进程内互斥保护下按需刷新 OAuth token
 //
 // 流程:
-//  1. 获取进程内互斥锁
+//  1. 获取进程内互斥锁（Grok OAuth 另取跨实例刷新锁，被占用时返回 LockHeld）
 //  2. 从 DB 重读最新 account（防止使用过时的 refresh_token）
 //  3. 二次检查是否仍需刷新
 //  4. 调用 executor.Refresh() 执行平台特定刷新逻辑
@@ -196,30 +201,49 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	}
 	defer localMu.Unlock()
 
-	// 0.5 跨实例互斥：对端正在刷新同一账号时等待其完成，之后的 DB 重读会拿到对端写入的新凭据。
-	releaseLock, locked := api.acquireCrossInstanceLock(ctx, account.ID)
-	if !locked {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, ctxErr
-		}
-		// 等待超时：宁可不刷新也不并发刷新，返回 DB 中的最新状态，由调用方按现有 token 继续或 failover。
-		slog.Warn("oauth_refresh_cross_instance_lock_timeout",
-			"account_id", account.ID,
-			"platform", account.Platform,
-		)
-		latest, getErr := api.accountRepo.GetByID(ctx, account.ID)
-		if getErr != nil || latest == nil {
-			if getErr == nil {
-				getErr = errors.New("account not found")
+	// 0.5 Grok OAuth：获取跨实例刷新锁。锁被其他实例持有时不刷新，交由调用方
+	// 等待对方写回的新凭据；共享缓存不可用时降级为仅进程内互斥。
+	if account.IsGrokOAuth() {
+		if lockCache, ok := api.tokenCache.(OAuthRefreshLockCache); ok && lockCache != nil {
+			owner := uuid.NewString()
+			acquired, lockErr := lockCache.AcquireRefreshLock(ctx, cacheKey, owner, defaultRefreshLockTTL)
+			switch {
+			case lockErr != nil:
+				slog.Warn("oauth_refresh_lock_failed_degraded", "account_id", account.ID, "cache_key", cacheKey, "error", lockErr)
+			case !acquired:
+				return &OAuthRefreshResult{LockHeld: true}, nil
+			default:
+				defer releaseOAuthRefreshLock(ctx, lockCache, cacheKey, owner)
 			}
-			if requestPath {
-				return nil, fmt.Errorf("%w: %v", errOAuthRefreshAccountRereadFailed, getErr)
-			}
-			return nil, &oauthRefreshStateUnavailableError{err: getErr}
 		}
-		return &OAuthRefreshResult{Account: latest}, nil
 	}
-	defer releaseLock()
+
+	// 0.6 其他平台的跨实例互斥（Grok OAuth 已在上面使用自己的刷新锁，此处跳过避免双重加锁）：对端正在刷新同一账号时等待其完成，之后的 DB 重读会拿到对端写入的新凭据。
+	if !account.IsGrokOAuth() {
+		releaseLock, locked := api.acquireCrossInstanceLock(ctx, account.ID)
+		if !locked {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			// 等待超时：宁可不刷新也不并发刷新，返回 DB 中的最新状态，由调用方按现有 token 继续或 failover。
+			slog.Warn("oauth_refresh_cross_instance_lock_timeout",
+				"account_id", account.ID,
+				"platform", account.Platform,
+			)
+			latest, getErr := api.accountRepo.GetByID(ctx, account.ID)
+			if getErr != nil || latest == nil {
+				if getErr == nil {
+					getErr = errors.New("account not found")
+				}
+				if requestPath {
+					return nil, fmt.Errorf("%w: %v", errOAuthRefreshAccountRereadFailed, getErr)
+				}
+				return nil, &oauthRefreshStateUnavailableError{err: getErr}
+			}
+			return &OAuthRefreshResult{Account: latest}, nil
+		}
+		defer releaseLock()
+	}
 
 	// 1. 从 DB 重读最新 account，确保使用最新的 refresh_token。
 	freshAccount, err := api.accountRepo.GetByID(ctx, account.ID)
@@ -465,4 +489,16 @@ func BuildClaudeAccountCredentials(tokenInfo *TokenInfo) map[string]any {
 		creds["scope"] = tokenInfo.Scope
 	}
 	return creds
+}
+
+func releaseOAuthRefreshLock(parent context.Context, lockCache OAuthRefreshLockCache, cacheKey, owner string) {
+	cleanupParent := context.Background()
+	if parent != nil {
+		cleanupParent = context.WithoutCancel(parent)
+	}
+	ctx, cancel := context.WithTimeout(cleanupParent, defaultRefreshLockReleaseTimeout)
+	defer cancel()
+	if err := lockCache.ReleaseRefreshLock(ctx, cacheKey, owner); err != nil {
+		slog.Warn("oauth_refresh_lock_release_failed", "cache_key", cacheKey, "error", err)
+	}
 }

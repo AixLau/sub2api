@@ -189,11 +189,13 @@ type SystemSettings struct {
 	IdentityPatchPrompt string `json:"identity_patch_prompt"`
 
 	// Ops monitoring (vNext)
-	OpsMonitoringEnabled         bool   `json:"ops_monitoring_enabled"`
-	ShowOpenAINonPlus5hUsage     bool   `json:"show_openai_non_plus_5h_usage"`
-	OpsRealtimeMonitoringEnabled bool   `json:"ops_realtime_monitoring_enabled"`
-	OpsQueryModeDefault          string `json:"ops_query_mode_default"`
-	OpsMetricsIntervalSeconds    int    `json:"ops_metrics_interval_seconds"`
+	OpsMonitoringEnabled     bool `json:"ops_monitoring_enabled"`
+	ShowOpenAINonPlus5hUsage bool `json:"show_openai_non_plus_5h_usage"`
+	// AccountTestPresetPromptEnabled 账号测试是否注入预设提示词
+	AccountTestPresetPromptEnabled bool   `json:"account_test_preset_prompt_enabled"`
+	OpsRealtimeMonitoringEnabled   bool   `json:"ops_realtime_monitoring_enabled"`
+	OpsQueryModeDefault            string `json:"ops_query_mode_default"`
+	OpsMetricsIntervalSeconds      int    `json:"ops_metrics_interval_seconds"`
 
 	MinClaudeCodeVersion string `json:"min_claude_code_version"`
 	MaxClaudeCodeVersion string `json:"max_claude_code_version"`
@@ -427,6 +429,7 @@ type PublicSettings struct {
 	GitHubOAuthEnabled                  bool                     `json:"github_oauth_enabled"`
 	GoogleOAuthEnabled                  bool                     `json:"google_oauth_enabled"`
 	BackendModeEnabled                  bool                     `json:"backend_mode_enabled"`
+	MCPEnabled                          bool                     `json:"mcp_enabled"`
 	PaymentEnabled                      bool                     `json:"payment_enabled"`
 	PaymentBalanceRechargeMultiplier    float64                  `json:"payment_balance_recharge_multiplier"`
 	Version                             string                   `json:"version"`

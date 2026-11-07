@@ -847,6 +847,10 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 			}
 			if refreshErr != nil {
 				err = refreshErr
+			} else if result.LockHeld {
+				// 另一实例持有 Grok 跨实例刷新锁并正在刷新：本轮跳过，不重复刷新同一 refresh token。
+				err = s.refreshPolicy.handleAlreadyRefreshed()
+				shortCircuit = true
 			} else if !result.Refreshed {
 				// 已被其他路径刷新，由调用侧策略决定如何计数
 				err = s.refreshPolicy.handleAlreadyRefreshed()

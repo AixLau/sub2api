@@ -109,6 +109,7 @@ func TestOpenAIChatCompletions_ChecksModerationGuardBeforeCyberSessionBlock(t *t
 type openAIChatModerationGuardCyberCache struct {
 	blocked map[string]bool
 	scopes  map[string]bool
+	lengths map[int64][]int
 }
 
 var _ service.GatewayCache = (*openAIChatModerationGuardCyberCache)(nil)
@@ -162,24 +163,31 @@ func (c *openAIChatModerationGuardCyberCache) ReleaseGrokVideoBilled(context.Con
 	return nil
 }
 
-func (c *openAIChatModerationGuardCyberCache) SetCyberSessionBlocked(_ context.Context, scopeKey string, keys []string, _ time.Duration) error {
+func (c *openAIChatModerationGuardCyberCache) SetCyberSessionBlocked(_ context.Context, block service.CyberSessionBlock, _ time.Duration) error {
 	if c.blocked == nil {
 		c.blocked = map[string]bool{}
 	}
-	for _, key := range keys {
+	for _, key := range block.Keys {
 		c.blocked[key] = true
 	}
-	if scopeKey != "" {
+	if block.ScopeKey != "" {
 		if c.scopes == nil {
 			c.scopes = map[string]bool{}
 		}
-		c.scopes[scopeKey] = true
+		if c.lengths == nil {
+			c.lengths = map[int64][]int{}
+		}
+		c.scopes[block.ScopeKey] = true
+		c.lengths[block.APIKeyID] = append(c.lengths[block.APIKeyID], block.TranscriptLengths...)
 	}
 	return nil
 }
 
-func (c *openAIChatModerationGuardCyberCache) IsCyberSessionScopeActive(_ context.Context, scopeKey string) (bool, error) {
-	return c.scopes[scopeKey], nil
+func (c *openAIChatModerationGuardCyberCache) CyberSessionTranscriptLengths(_ context.Context, apiKeyID int64, scopeKey string) ([]int, error) {
+	if !c.scopes[scopeKey] {
+		return nil, nil
+	}
+	return c.lengths[apiKeyID], nil
 }
 
 func (c *openAIChatModerationGuardCyberCache) FindCyberSessionBlocked(_ context.Context, keys []string) (string, error) {

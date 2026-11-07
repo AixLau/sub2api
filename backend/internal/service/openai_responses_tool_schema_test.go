@@ -580,6 +580,22 @@ func buildToolSchemaNullTypeBody(t *testing.T, hits int) []byte {
 	return body
 }
 
+// minAllocsPerRun 返回 runs 次独立采样中的最小单次分配数。
+//
+// testing.AllocsPerRun 读取的是进程级 Mallocs，同包其他测试遗留的后台 goroutine
+// （日志、ticker、异步刷新等）会在采样窗口内额外分配，使单次读数偏高。噪声只会
+// 增加分配、不会减少，因此多次采样取最小值即可得到被测函数自身的分配数，
+// 不受同包测试执行顺序与调度影响。
+func minAllocsPerRun(runs int, f func()) float64 {
+	best := testing.AllocsPerRun(1, f)
+	for i := 1; i < runs; i++ {
+		if allocs := testing.AllocsPerRun(1, f); allocs < best {
+			best = allocs
+		}
+	}
+	return best
+}
+
 // 复杂度守卫：重写次数必须与命中数无关。
 //
 // 逐个 sjson.SetBytes 的写法每命中一处就重扫并全量拷贝一次文档，命中 N 处即 N 次
@@ -590,16 +606,15 @@ func TestSanitizeOpenAIResponsesToolParameterTypes_RewriteCountIndependentOfHits
 	small := buildToolSchemaNullTypeBody(t, 4)
 	large := buildToolSchemaNullTypeBody(t, 2000)
 
-	smallAllocs := testing.AllocsPerRun(2, func() {
+	smallAllocs := minAllocsPerRun(10, func() {
 		_, _, _ = sanitizeOpenAIResponsesToolParameterTypes(small)
 	})
-	largeAllocs := testing.AllocsPerRun(2, func() {
+	largeAllocs := minAllocsPerRun(10, func() {
 		_, _, _ = sanitizeOpenAIResponsesToolParameterTypes(large)
 	})
 
-	// 命中切片扩容是对数级，留出充裕余量；线性写法在这里会是 2000 量级。
-	// 干净环境实测 large 约 17 allocs，200 是 10 倍余量，同时容忍 CI 慢 pod 上
-	// 包内后台 goroutine（日志/ticker）对进程级 Mallocs 的噪声污染。
+	// 命中切片扩容是对数级，留出充裕余量；线性写法在这里会是 2000 量级，
+	// 且每个样本都如此，取最小值不会掩盖退化。干净环境实测 large 约 17 allocs。
 	require.Less(t, largeAllocs, 200.0,
 		"分配次数随命中数线性增长，说明退回了逐路径全量重写 (small=%v large=%v)", smallAllocs, largeAllocs)
 

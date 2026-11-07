@@ -107,6 +107,7 @@ func TestMessagesAnthropicGroupDoesNotReadAntigravityBucket(t *testing.T) {
 	}
 	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
+	attachGatewayRouteForTest(c)
 
 	h.Messages(c)
 

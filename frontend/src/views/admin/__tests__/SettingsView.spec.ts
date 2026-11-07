@@ -116,6 +116,7 @@ vi.mock("@/api", () => ({
       getStreamTimeoutSettings,
       getRectifierSettings,
       getBetaPolicySettings,
+      getRegistrationEmailBlacklist: vi.fn().mockResolvedValue({ emails: [], max: 20000 }),
     },
     accounts: {
       getUpstreamBillingProbeSettings,
@@ -1671,6 +1672,38 @@ describe("admin SettingsView payment visible method controls", () => {
     const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(payload.grok_default_text_model).toBe("grok-custom-text");
     expect(payload.grok_cross_client_model_map_enabled).toBe(false);
+  });
+
+  it("shows account test / 5h usage toggles only in the gateway tab and saves them", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      account_test_preset_prompt_enabled: true,
+      show_openai_non_plus_5h_usage: false,
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    expect(
+      wrapper.findAll('[data-testid="openai-non-plus-5h-usage-toggle"]'),
+    ).toHaveLength(1);
+
+    await openGatewayTab(wrapper);
+    const card = wrapper.get('[data-testid="account-test-usage-display-settings"]');
+    expect(card.isVisible()).toBe(true);
+
+    const presetToggle = card.get('[data-testid="account-test-preset-prompt-toggle"]');
+    const usageToggle = card.get('[data-testid="openai-non-plus-5h-usage-toggle"]');
+    expect((presetToggle.element as HTMLInputElement).checked).toBe(true);
+    expect((usageToggle.element as HTMLInputElement).checked).toBe(false);
+
+    await presetToggle.setValue(false);
+    await usageToggle.setValue(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.account_test_preset_prompt_enabled).toBe(false);
+    expect(payload.show_openai_non_plus_5h_usage).toBe(true);
   });
 
   it("loads and saves the OpenAI Responses first-token metric mode", async () => {

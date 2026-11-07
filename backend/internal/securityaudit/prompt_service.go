@@ -504,3 +504,13 @@ func (s *PromptService) RequiresSelectedAccount() bool {
 	cfg, ok := s.config.Active()
 	return ok && cfg.SelectedAccounts
 }
+
+// AuditsSelectedAccount reports whether the active selected-account scope
+// covers the account attached to req.
+func (s *PromptService) AuditsSelectedAccount(req Request) bool {
+	if s == nil || s.config == nil {
+		return false
+	}
+	cfg, ok := s.config.Active()
+	return ok && cfg.SelectedAccounts && cfg.IncludesAccount(req)
+}

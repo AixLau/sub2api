@@ -138,13 +138,15 @@ func TestGatewayService_Forward_StreamReadErrorAfterOutputPreservesPartialUsage(
 	parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
 	require.NoError(t, err)
 
-	// message_start 已写出（含 usage），随后上游连接异常中断。
+	// message_start（含 usage）与首个内容 delta 已写出，随后上游连接异常中断。
+	// 仅有前导事件时它们仍在首包缓冲中，读错误会走 failover（见 gateway_streaming_test.go 的 StreamReadErrorAfterPreludeOnly 用例）。
 	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: &streamReadCloser{
-			payload: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"cache_creation_input_tokens\":4}}}\n\n"),
-			err:     io.ErrUnexpectedEOF,
+			payload: []byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":9,\"cache_creation_input_tokens\":4}}}\n\n" +
+				"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n"),
+			err: io.ErrUnexpectedEOF,
 		},
 	}}
 	svc := newForwardPartialUsageServiceForTest(upstream)
@@ -156,6 +158,7 @@ func TestGatewayService_Forward_StreamReadErrorAfterOutputPreservesPartialUsage(
 	require.NotNil(t, result, "已写出内容后的读错误必须保留部分 usage")
 	require.Equal(t, 9, result.Usage.InputTokens)
 	require.Equal(t, 4, result.Usage.CacheCreationInputTokens)
+	require.Contains(t, rec.Body.String(), "message_start")
 }
 
 func TestGatewayService_Forward_StreamErrorWithoutUsageReturnsNilResult(t *testing.T) {

@@ -248,3 +248,26 @@ func TestCoordinatorAsyncEnqueueFailuresNeverChangeResponseOrDownstreamDispatch(
 		require.Zero(t, prompt.evaluates.Load())
 	}
 }
+
+type scopedFakePromptEngine struct {
+	fakePromptEngine
+	inScope bool
+}
+
+func (*scopedFakePromptEngine) RequiresSelectedAccount() bool        { return true }
+func (f *scopedFakePromptEngine) AuditsSelectedAccount(Request) bool { return f.inScope }
+
+func TestCoordinatorSelectedAccountSkipsOutOfScopeAccount(t *testing.T) {
+	prompt := &scopedFakePromptEngine{fakePromptEngine: fakePromptEngine{mode: ModeBlocking, decision: &PromptDecision{Kind: DecisionBlock}}}
+	coordinator := NewCoordinator(nil, prompt)
+
+	require.False(t, coordinator.SelectedAccountAuditApplies(Request{AccountID: 1}))
+	require.Nil(t, coordinator.CheckSelectedAccount(context.Background(), Request{AccountID: 1}))
+	require.Zero(t, prompt.evaluates.Load())
+
+	prompt.inScope = true
+	decision := coordinator.CheckSelectedAccount(context.Background(), Request{AccountID: 1})
+	require.NotNil(t, decision)
+	require.Equal(t, DecisionBlock, decision.Kind)
+	require.Equal(t, int64(1), prompt.evaluates.Load())
+}

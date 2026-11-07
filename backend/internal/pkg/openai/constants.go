@@ -28,7 +28,7 @@ var DefaultModels = []Model{
 	{ID: "gpt-5.6", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 (Sol)"},
 	{ID: "gpt-5.6-terra", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Terra"},
 	{ID: "gpt-5.6-luna", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Luna"},
-	{ID: "gpt-6.1-terra", Object: "model", Created: 1704067200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
+	{ID: "gpt-6.1-terra", Object: "model", Created: 1792972800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-5.5", Object: "model", Created: 1776873600, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.5"},
 	{ID: "gpt-5.4", Object: "model", Created: 1738368000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.4"},
@@ -41,6 +41,8 @@ var DefaultModels = []Model{
 	{ID: "gpt-image-2", Object: "model", Created: 1738368000, OwnedBy: "openai", Type: "model", DisplayName: "GPT Image 2"},
 	{ID: "gpt-image-2.5-flare", Object: "model", Created: 1788825600, OwnedBy: "openai", Type: "model", DisplayName: "GPT Image 2.5 Flare"},
 	{ID: "gpt-image-2.5-sunburst", Object: "model", Created: 1788825600, OwnedBy: "openai", Type: "model", DisplayName: "GPT Image 2.5 Sunburst"},
+	{ID: "gpt-image-2.6-flare", Object: "model", Created: 1793750400, OwnedBy: "openai", Type: "model", DisplayName: "GPT Image 2.6 Flare"},
+	{ID: "gpt-image-2.6-sunburst", Object: "model", Created: 1793750400, OwnedBy: "openai", Type: "model", DisplayName: "GPT Image 2.6 Sunburst"},
 }
 
 // DefaultModelIDs returns the default model ID list
@@ -77,16 +79,55 @@ var instructionsGPT52 string
 //go:embed instructions_gpt5_5.txt
 var instructionsGPT55 string
 
-// Source: openai/codex codex-rs/models-manager/models.json at 121f91fd5d9d.
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
 //
 //go:embed instructions_gpt6_astra.txt
 var instructionsGPT6Astra string
+
+// GPT-6 Sol / Luna 的真实 Codex base prompt（instructions_template 原文，未做任何替换；
+// Codex 同样按字面发送模板，见 codex-rs/prompts/src/model_instructions.rs）。
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
+//
+//go:embed instructions_gpt6_sol.txt
+var instructionsGPT6Sol string
+
+//go:embed instructions_gpt6_luna.txt
+var instructionsGPT6Luna string
+
+// GPT-5.6 Sol / Terra / Luna 共用同一份官方模板；GPT-6.1 Terra 为其专用模板。
+// Source: openai/codex codex-rs/models-manager/models.json at 55b1c642f5d1.
+//
+//go:embed instructions_gpt5_6.txt
+var instructionsGPT56 string
+
+//go:embed instructions_gpt6_1_terra.txt
+var instructionsGPT61Terra string
 
 // CodexGPT61SolMetadata is the complete official descriptor from openai/codex
 // b1e72963c3b71a9265a551e54beff078384efed9, codex-rs/models-manager/models.json.
 //
 //go:embed codex_gpt61_sol.json
 var CodexGPT61SolMetadata []byte
+
+// CodexGPT61TerraMetadata is the complete official descriptor from openai/codex
+// 126a0ee92ed2c5e73cd8a8f7e37563e8527552d7, codex-rs/models-manager/models.json.
+//
+//go:embed codex_gpt61_terra.json
+var CodexGPT61TerraMetadata []byte
+
+// codexInstructionsTemplate returns the base prompt bundled in an official
+// Codex model descriptor.
+func codexInstructionsTemplate(descriptor []byte) string {
+	var metadata struct {
+		ModelMessages struct {
+			InstructionsTemplate string `json:"instructions_template"`
+		} `json:"model_messages"`
+	}
+	if err := json.Unmarshal(descriptor, &metadata); err != nil {
+		panic(err)
+	}
+	return metadata.ModelMessages.InstructionsTemplate
+}
 
 // latestCodexInstructions 返回当前已知最新版本的 Codex base instructions，
 // 当前为 GPT-5.5；若 5.5 prompt 意外为空则回退到 DefaultInstructions 保证非空。
@@ -139,7 +180,11 @@ func CanonicalizeOpenAIModelAliasSpelling(model string) string {
 }
 
 // CodexBaseInstructionsForModel 按模型返回最匹配的真实 Codex base instructions：
+//   - gpt-6.1-sol / gpt-6.1-terra → 各自官方 Codex 描述中的 instructions_template
 //   - gpt-6 / gpt-6-astra（含供应商前缀与日期变体）→ GPT-6 Astra prompt
+//   - gpt-6-sol / gpt-6-luna（含 effort / compact 后缀）→ 各自的 GPT-6 Sol / Luna prompt
+//   - gpt-6.1-terra（含 effort / compact 后缀）→ GPT-6.1 Terra prompt
+//   - gpt-5.6 / gpt-5.6-sol / -terra / -luna（含 effort / 日期 / compact 后缀）→ GPT-5.6 prompt
 //   - 含 "codex" 的模型（gpt-5-codex / gpt-5.x-codex / codex-max / spark 等）→ GPT-5-Codex prompt
 //   - gpt-5.5 系非 codex 模型 → GPT-5.5 prompt
 //   - gpt-5.2 系非 codex 模型 → GPT-5.2 prompt
@@ -151,15 +196,21 @@ func CodexBaseInstructionsForModel(model string) string {
 	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
 	switch {
 	case IsGPT61SolModelSpelling(canonical):
-		var metadata struct {
-			ModelMessages struct {
-				InstructionsTemplate string `json:"instructions_template"`
-			} `json:"model_messages"`
+		return codexInstructionsTemplate(CodexGPT61SolMetadata)
+	case IsGPT61TerraModelSpelling(canonical):
+		return codexInstructionsTemplate(CodexGPT61TerraMetadata)
+	case isGPT56FamilyModelSpelling(canonical):
+		if v := strings.TrimSpace(instructionsGPT56); v != "" {
+			return instructionsGPT56
 		}
-		if err := json.Unmarshal(CodexGPT61SolMetadata, &metadata); err != nil {
-			panic(err)
+	case IsGPT6SolOrLunaModelSpelling(canonical):
+		instructions := instructionsGPT6Luna
+		if strings.HasPrefix(canonical, "gpt-6-sol") {
+			instructions = instructionsGPT6Sol
 		}
-		return metadata.ModelMessages.InstructionsTemplate
+		if strings.TrimSpace(instructions) != "" {
+			return instructions
+		}
 	case canonical == "gpt-6" || canonical == "gpt-6-astra" || strings.HasPrefix(canonical, "gpt-6-astra-"):
 		if v := strings.TrimSpace(instructionsGPT6Astra); v != "" {
 			return instructionsGPT6Astra
@@ -178,6 +229,39 @@ func CodexBaseInstructionsForModel(model string) string {
 		}
 	}
 	return latestCodexInstructions()
+}
+
+// isGPT56FamilyModelSpelling recognizes the GPT-5.6 family (bare gpt-5.6 = Sol,
+// sol / terra / luna) with effort, date or compact suffixes. Codex-named variants
+// keep the GPT-5-Codex prompt, so arbitrary suffixes are not accepted.
+func isGPT56FamilyModelSpelling(canonical string) bool {
+	isKnownSuffix := func(suffix string) bool {
+		switch suffix {
+		case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
+			return true
+		}
+		parts := strings.Split(suffix, "-")
+		if len(parts) != 3 || len(parts[0]) != 4 || len(parts[1]) != 2 || len(parts[2]) != 2 {
+			return false
+		}
+		for _, part := range parts {
+			for _, r := range part {
+				if r < '0' || r > '9' {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for _, base := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6"} {
+		if canonical == base {
+			return true
+		}
+		if suffix, ok := strings.CutPrefix(canonical, base+"-"); ok && isKnownSuffix(suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsGPT6SolOrLunaModelSpelling recognizes official IDs and existing local effort/compact suffixes.
@@ -217,6 +301,8 @@ func IsGPT61SolModelSpelling(model string) bool {
 	}
 }
 
+// IsGPT61TerraModelSpelling recognizes the published model and local effort/compact
+// spellings. Invalid effort suffixes remain identifiable for request validation.
 func IsGPT61TerraModelSpelling(model string) bool {
 	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
 	if canonical == "gpt-6.1-terra" {
@@ -227,13 +313,15 @@ func IsGPT61TerraModelSpelling(model string) bool {
 		return false
 	}
 	switch suffix {
-	case "none", "low", "medium", "high", "xhigh", "max", "openai-compact":
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
 		return true
 	default:
 		return false
 	}
 }
 
+// RequiresResponsesForToolCalls reports models whose tool calls are only
+// available through the Responses API.
 func RequiresResponsesForToolCalls(model string) bool {
 	return IsGPT61SolModelSpelling(model) || IsGPT61TerraModelSpelling(model)
 }
@@ -248,4 +336,22 @@ func ValidateGPT61SolReasoningEffort(model, effort string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateGPT61TerraReasoningEffort rejects the unpublished minimal level;
+// GPT-6.1 Terra accepts none through max.
+func ValidateGPT61TerraReasoningEffort(model, effort string) error {
+	if IsGPT61TerraModelSpelling(model) && strings.EqualFold(strings.TrimSpace(effort), "minimal") {
+		return fmt.Errorf("gpt-6.1-terra does not support reasoning effort %q; use none, low, medium, high, xhigh or max", effort)
+	}
+	return nil
+}
+
+// ValidateGPT61ReasoningEffort applies the published effort scale of each
+// GPT-6.1 model.
+func ValidateGPT61ReasoningEffort(model, effort string) error {
+	if err := ValidateGPT61SolReasoningEffort(model, effort); err != nil {
+		return err
+	}
+	return ValidateGPT61TerraReasoningEffort(model, effort)
 }
