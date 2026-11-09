@@ -238,6 +238,8 @@ describe('TokenUsageTrend', () => {
 
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).toContain('消费: $4.58')
+    // Consumption is listed once, in the footer summary, not as a token row too.
+    expect(tooltipHtml.match(/消费/g)).toHaveLength(1)
     expect(tooltipHtml).not.toContain('实际消费')
     expect(tooltipHtml).not.toContain('Standard')
     expect(tooltipHtml).not.toContain('标准')

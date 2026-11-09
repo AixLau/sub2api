@@ -271,10 +271,7 @@ const buildTooltipHtml = (title: unknown): string => {
     { label: tokenLabels.value.output, value: formatTokens(data.output_tokens), color: chartColors.value.output },
     { label: tokenLabels.value.cacheCreation, value: formatTokens(data.cache_creation_tokens), color: chartColors.value.cacheCreation },
     { label: tokenLabels.value.cacheRead, value: formatTokens(data.cache_read_tokens), color: chartColors.value.cacheRead },
-    { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate },
-    ...(shouldShowConsumptionTrend.value
-      ? [{ label: t('usage.trend.consumption'), value: `$${formatCost(data.actual_cost)}`, color: consumptionColor }]
-      : [])
+    { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate }
   ]
 
   const cost = props.costMetric === 'account' ? data.account_cost : data.cost

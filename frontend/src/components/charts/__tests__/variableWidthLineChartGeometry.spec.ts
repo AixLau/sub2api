@@ -127,6 +127,36 @@ describe('tooltip placement', () => {
     }).left).toBe(12)
   })
 
+  it('lets a tall tooltip extend into the allowed space around a short chart', () => {
+    const placement = placeTooltip({
+      bodyWidth: 600,
+      bodyHeight: 176,
+      anchorX: 100,
+      anchorY: 88,
+      tooltipWidth: 220,
+      tooltipHeight: 260,
+      overflowTop: 300,
+      overflowBottom: 400,
+    })
+    expect(placement.maxHeight).toBe(860)
+    expect(placement.top).toBe(-42)
+    expect(placement.top + 260).toBeGreaterThan(176)
+  })
+
+  it('keeps the tooltip inside the allowed overflow at the viewport edges', () => {
+    const placement = placeTooltip({
+      bodyWidth: 600,
+      bodyHeight: 176,
+      anchorX: 100,
+      anchorY: 10,
+      tooltipWidth: 220,
+      tooltipHeight: 260,
+      overflowTop: 20,
+      overflowBottom: 400,
+    })
+    expect(placement.top).toBe(-12)
+  })
+
   it('hides the tooltip when the inset leaves no available area', () => {
     expect(placeTooltip({
       bodyWidth: 16,

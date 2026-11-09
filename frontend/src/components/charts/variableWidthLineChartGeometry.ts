@@ -203,6 +203,13 @@ export type TooltipPlacementInput = {
   anchorY: number
   tooltipWidth: number
   tooltipHeight: number
+  /**
+   * Extra vertical room (px) above / below the chart body that the tooltip may
+   * use, e.g. the visible viewport space outside a short chart. Defaults to 0,
+   * which keeps the tooltip inside the body.
+   */
+  overflowTop?: number
+  overflowBottom?: number
 }
 
 export type TooltipPlacement = {
@@ -226,9 +233,13 @@ export const placeTooltip = ({
   anchorY,
   tooltipWidth,
   tooltipHeight,
+  overflowTop = 0,
+  overflowBottom = 0,
 }: TooltipPlacementInput): TooltipPlacement => {
+  const extraTop = Math.max(0, overflowTop)
+  const extraBottom = Math.max(0, overflowBottom)
   const maxWidth = Math.max(0, bodyWidth - EDGE_INSET * 2)
-  const maxHeight = Math.max(0, bodyHeight - EDGE_INSET * 2)
+  const maxHeight = Math.max(0, bodyHeight + extraTop + extraBottom - EDGE_INSET * 2)
 
   if (maxWidth <= 0 || maxHeight <= 0) {
     return { visible: false, left: 0, top: 0, maxWidth, maxHeight }
@@ -246,12 +257,13 @@ export const placeTooltip = ({
         ? anchorX + ANCHOR_GAP
         : anchorX - ANCHOR_GAP - safeTooltipWidth
   const maxLeft = Math.max(EDGE_INSET, bodyWidth - EDGE_INSET - safeTooltipWidth)
-  const maxTop = Math.max(EDGE_INSET, bodyHeight - EDGE_INSET - safeTooltipHeight)
+  const minTop = EDGE_INSET - extraTop
+  const maxTop = Math.max(minTop, bodyHeight + extraBottom - EDGE_INSET - safeTooltipHeight)
 
   return {
     visible: true,
     left: clamp(preferredLeft, EDGE_INSET, maxLeft),
-    top: clamp(anchorY - safeTooltipHeight / 2, EDGE_INSET, maxTop),
+    top: clamp(anchorY - safeTooltipHeight / 2, minTop, maxTop),
     maxWidth,
     maxHeight,
   }

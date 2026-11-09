@@ -573,6 +573,9 @@ const positionTooltip = async (ticket: number, bodyRect: DOMRect) => {
     anchorY: tooltipState.value.top,
     tooltipWidth: tooltipRect.width || tooltipRef.value.offsetWidth,
     tooltipHeight: tooltipRect.height || tooltipRef.value.offsetHeight,
+    // Short charts cannot fit the full tooltip; let it extend over the
+    // visible page around the chart instead of clipping its summary rows.
+    ...tooltipViewportOverflow(bodyRect),
   })
 
   if (ticket !== tooltipTicket) return
@@ -584,6 +587,15 @@ const positionTooltip = async (ticket: number, bodyRect: DOMRect) => {
     top: placement.top,
     maxWidth: placement.maxWidth,
     maxHeight: placement.maxHeight,
+  }
+}
+
+const tooltipViewportOverflow = (bodyRect: DOMRect) => {
+  const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight
+  if (!viewportHeight) return { overflowTop: 0, overflowBottom: 0 }
+  return {
+    overflowTop: Math.max(0, bodyRect.top),
+    overflowBottom: Math.max(0, viewportHeight - bodyRect.bottom),
   }
 }
 
@@ -611,6 +623,7 @@ const handleTooltipMove = (event: PointerEvent) => {
     getXPositionPercent(model, title) / 100
   ) * layout.plotWidth
   const ticket = ++tooltipTicket
+  const overflow = tooltipViewportOverflow(rect)
 
   tooltipState.value = {
     ...tooltipState.value,
@@ -619,7 +632,7 @@ const handleTooltipMove = (event: PointerEvent) => {
     left: snappedX + 12,
     top: localY,
     maxWidth: Math.max(0, rect.width - 16),
-    maxHeight: Math.max(0, rect.height - 16),
+    maxHeight: Math.max(0, rect.height + overflow.overflowTop + overflow.overflowBottom - 16),
     title,
   }
 
