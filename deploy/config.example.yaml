@@ -866,6 +866,17 @@ dashboard_aggregation:
     daily_days: 730
 
 # =============================================================================
+# Database Backup (per instance)
+# 数据库备份（实例级配置，重启生效；备份计划在后台设置，所有实例共享）
+# =============================================================================
+backup:
+  # Whether this instance runs the scheduled backup. In multi-instance setups keep
+  # it true on one instance (ideally the DB host) and false elsewhere.
+  # 本实例是否执行定时备份。多实例时只在一台（建议数据库所在机器）保留 true，其余设为 false。
+  # 环境变量：BACKUP_SCHEDULER_ENABLED
+  scheduler_enabled: true
+
+# =============================================================================
 # Usage Cleanup Task Configuration
 # 使用记录清理任务配置（重启生效）
 # =============================================================================

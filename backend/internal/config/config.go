@@ -99,6 +99,7 @@ type Config struct {
 	Dashboard               DashboardCacheConfig          `mapstructure:"dashboard_cache"`
 	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
 	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
+	Backup                  BackupConfig                  `mapstructure:"backup"`
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
 	SimpleMode              SimpleModeConfig              `mapstructure:"simple_mode" yaml:"simple_mode"`
@@ -1923,6 +1924,13 @@ type DashboardAggregationRetentionConfig struct {
 	DailyDays             int `mapstructure:"daily_days"`
 }
 
+// BackupConfig 数据库备份的实例级配置（备份计划本身存在数据库设置里，所有实例共享）
+type BackupConfig struct {
+	// SchedulerEnabled: 本实例是否参与定时备份。多实例部署时只在一台（通常是数据库所在机器）
+	// 保持 true，其余设为 false，定时备份就固定由该实例执行。手动备份不受影响。
+	SchedulerEnabled bool `mapstructure:"scheduler_enabled"`
+}
+
 // UsageCleanupConfig 使用记录清理任务配置
 type UsageCleanupConfig struct {
 	// Enabled: 是否启用清理任务执行器
@@ -2552,6 +2560,9 @@ func setDefaults() {
 	viper.SetDefault("dashboard_aggregation.retention.hourly_days", 180)
 	viper.SetDefault("dashboard_aggregation.retention.daily_days", 730)
 	viper.SetDefault("dashboard_aggregation.recompute_days", 2)
+
+	// Backup: 默认每个实例都参与定时备份（单实例部署行为不变）
+	viper.SetDefault("backup.scheduler_enabled", true)
 
 	// Usage cleanup task
 	viper.SetDefault("usage_cleanup.enabled", true)

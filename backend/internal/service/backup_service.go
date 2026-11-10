@@ -179,6 +179,11 @@ type BackupService struct {
 	cronMu      sync.Mutex
 	cronSched   *cron.Cron
 	cronEntryID cron.EntryID
+	cronExpr    string // 当前已注册的定时表达式，用于和数据库里的计划比对
+
+	// schedulerEnabled 对应 backup.scheduler_enabled：false 时本实例不注册定时备份，
+	// 多实例部署可借此把定时备份固定到某一台。手动备份不受影响。
+	schedulerEnabled bool
 
 	// lockCache/db elect a single leader for the scheduled backup across
 	// instances; instanceID identifies this process as the lock owner. Injected
@@ -214,6 +219,7 @@ func NewBackupService(
 		bgCancel:                bgCancel,
 		partSizeBytes:           defaultBackupPartSizeBytes,
 		instanceID:              uuid.NewString(),
+		schedulerEnabled:        cfg.Backup.SchedulerEnabled,
 	}
 }
 
@@ -234,23 +240,46 @@ func (s *BackupService) Start() {
 	// A recently interrupted job may still belong to a live peer. Revisit it
 	// after the maximum execution window rather than deleting it at startup.
 	_, _ = s.cronSched.AddFunc("@every 5m", s.recoverStaleRecords)
+	if s.schedulerEnabled {
+		// 备份计划存在共享的数据库设置里，可能由任意实例修改；定期重读，
+		// 让本实例的定时任务跟上最新计划，而不必等重启。
+		_, _ = s.cronSched.AddFunc("@every 1m", s.syncCronScheduleFromStore)
+	} else {
+		logger.LegacyPrintf("service.backup", "[Backup] 本实例未启用定时备份 (backup.scheduler_enabled=false)")
+	}
 	s.cronSched.Start()
 
 	// 清理重启后孤立的 running 记录
 	s.recoverStaleRecords()
 
 	// 加载已有的定时配置
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	s.syncCronScheduleFromStore()
+}
+
+// syncCronScheduleFromStore 从数据库读取最新备份计划，并让本实例的定时任务与之一致。
+func (s *BackupService) syncCronScheduleFromStore() {
+	if !s.schedulerEnabled {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.bgCtx, 10*time.Second)
 	defer cancel()
 	schedule, err := s.GetSchedule(ctx)
 	if err != nil {
 		logger.LegacyPrintf("service.backup", "[Backup] 加载定时备份配置失败: %v", err)
 		return
 	}
-	if schedule.Enabled && schedule.CronExpr != "" {
-		if err := s.applyCronSchedule(schedule); err != nil {
-			logger.LegacyPrintf("service.backup", "[Backup] 应用定时备份配置失败: %v", err)
-		}
+	if !schedule.Enabled || schedule.CronExpr == "" {
+		s.removeCronSchedule()
+		return
+	}
+	s.cronMu.Lock()
+	unchanged := s.cronEntryID != 0 && s.cronExpr == schedule.CronExpr
+	s.cronMu.Unlock()
+	if unchanged {
+		return
+	}
+	if err := s.applyCronSchedule(schedule); err != nil {
+		logger.LegacyPrintf("service.backup", "[Backup] 应用定时备份配置失败: %v", err)
 	}
 }
 
@@ -496,8 +525,8 @@ func (s *BackupService) UpdateSchedule(ctx context.Context, cfg BackupScheduleCo
 		return nil, fmt.Errorf("save schedule config: %w", err)
 	}
 
-	// 应用或停止定时任务
-	if cfg.Enabled {
+	// 应用或停止定时任务（未启用定时备份的实例只保存计划，由启用的实例同步执行）
+	if cfg.Enabled && s.schedulerEnabled {
 		if err := s.applyCronSchedule(&cfg); err != nil {
 			return nil, err
 		}
@@ -529,6 +558,7 @@ func (s *BackupService) applyCronSchedule(cfg *BackupScheduleConfig) error {
 		return infraerrors.BadRequest("INVALID_CRON", fmt.Sprintf("failed to schedule: %v", err))
 	}
 	s.cronEntryID = entryID
+	s.cronExpr = cfg.CronExpr
 	logger.LegacyPrintf("service.backup", "[Backup] 定时备份已启用: %s", cfg.CronExpr)
 	return nil
 }
@@ -539,6 +569,7 @@ func (s *BackupService) removeCronSchedule() {
 	if s.cronSched != nil && s.cronEntryID != 0 {
 		s.cronSched.Remove(s.cronEntryID)
 		s.cronEntryID = 0
+		s.cronExpr = ""
 		logger.LegacyPrintf("service.backup", "[Backup] 定时备份已停用")
 	}
 }
