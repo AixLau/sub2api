@@ -227,7 +227,8 @@ func TestSchedulerCacheSnapshotMemoSecondReadOnlyFetchesTagsAndLastUsed(t *testi
 	recorder.reset()
 	first := memoRead(t, cache, bucket)
 	require.Equal(t, 1, recorder.countPrefix("zrange "))
-	require.Equal(t, 1, recorder.countPrefix("mget "+schedulerAccountMetaPrefix))
+	require.Equal(t, 1, recorder.countPrefix("evalsha "+schedulerFetchIfChangedScript.Hash()))
+	require.Zero(t, recorder.countPrefix("mget "+schedulerAccountMetaPrefix))
 
 	recorder.reset()
 	second := memoRead(t, cache, bucket)
@@ -563,7 +564,13 @@ func TestSchedulerCacheSnapshotMemoWriteAccountIDsAdvancesRevision(t *testing.T)
 		require.Len(t, first, schedulerAccountMetaRevisionBytes*2)
 		require.Len(t, memoRevision(t, cache, geminiRevisionKey), schedulerAccountMetaRevisionBytes*2)
 
+		recorder.reset()
 		_, err = cache.writeAccountIDs(ctx, accounts[:1])
+		require.NoError(t, err)
+		require.Equal(t, first, memoRevision(t, cache, memoAnthropicRevisionKey), "an identical rewrite keeps the revision")
+		require.Zero(t, recorder.countPrefix("set "), "an identical rewrite sends no record")
+
+		_, err = cache.writeAccountIDs(ctx, []service.Account{memoTestAccount(131, "renamed")})
 		require.NoError(t, err)
 		require.NotEqual(t, first, memoRevision(t, cache, memoAnthropicRevisionKey))
 	})
@@ -587,7 +594,7 @@ func TestSchedulerCacheSnapshotMemoWriteAccountIDsAdvancesRevision(t *testing.T)
 			"set " + schedulerAccountMetaKey("144"),
 			"set " + memoAnthropicRevisionKey,
 		}, batches[1])
-		require.Len(t, recorder.recorded(), 9, "every command travels inside the two pipelines")
+		require.Equal(t, 9, recorder.countPrefix("set "), "every write travels inside the two pipelines")
 	})
 
 	t.Run("failure in a later chunk advances the global revision", func(t *testing.T) {

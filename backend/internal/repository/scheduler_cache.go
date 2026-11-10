@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // 仅作内容指纹，须与 Redis 脚本内的 redis.sha1hex 一致，不用于安全用途
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -54,6 +55,9 @@ const (
 	// 已退休分组的条目不会长期驻留。
 	schedulerSnapshotCacheEvictAge = 10 * schedulerSnapshotCacheMaxAge
 
+	// schedulerAccountPayloadMemoMaxBytes 是进程内整账号原文缓存（见 GetAccount）的字节上限。
+	schedulerAccountPayloadMemoMaxBytes = 64 << 20
+
 	schedulerAccountMetaRevisionBytes        = 16
 	schedulerAccountMetaRevisionWriteTimeout = 3 * time.Second
 )
@@ -81,6 +85,49 @@ for index = 1, #ARGV do
 end
 return updated
 `)
+
+// 账号记录（整账号 sched:acc:<id> 约数十 KiB，精简记录 sched:meta:<id> 数 KiB）的读写都先在 Redis 内
+// 用 redis.sha1hex 比对内容指纹，只有内容确实不同才在网络上传输记录本身：
+//   - 写入方：重建快照时账号多数未变，未变的记录不再重写，也不推进修订号；
+//   - 读取方：进程内留有上次读到的记录，指纹一致时 Redis 只回一个标记。
+//
+// 指纹每次都取自 Redis 中当前实际存放的值，不依赖任何额外保存的摘要键，
+// 因此与不做比对的旧版本实例混跑、键被删除或被其它写入方覆盖时结论仍然正确。
+var (
+	// schedulerUnchangedScript 逐键判断 Redis 中的现值是否与调用方准备写入的内容相同。
+	// KEYS[i] 的现值指纹等于 ARGV[i] 时返回 1，键不存在、不是字符串类型或内容不同时返回 0；
+	// 类型不对的键留给随后的 SET 报错，与不做比对时的行为相同。
+	schedulerUnchangedScript = redis.NewScript(`
+local out = {}
+for i = 1, #KEYS do
+    local value = redis.pcall('GET', KEYS[i])
+    if type(value) == 'string' and redis.sha1hex(value) == ARGV[i] then
+        out[i] = 1
+    else
+        out[i] = 0
+    end
+end
+return out
+`)
+
+	// schedulerFetchIfChangedScript 逐键读取，调用方已持有相同内容时不回传内容。
+	// 返回值逐键为：0 键不存在或不是字符串类型（与 MGET 对这类键返回空值一致）；1 现值指纹等于 ARGV[i]（ARGV[i] 为空串表示调用方没有缓存）；否则为现值本身。
+	// 用整数而不用 false 表示缺失：RESP3 下 Lua false 会被转换成布尔应答而不是空值。
+	schedulerFetchIfChangedScript = redis.NewScript(`
+local out = {}
+for i = 1, #KEYS do
+    local value = redis.pcall('GET', KEYS[i])
+    if type(value) ~= 'string' then
+        out[i] = 0
+    elseif ARGV[i] ~= '' and redis.sha1hex(value) == ARGV[i] then
+        out[i] = 1
+    else
+        out[i] = value
+    end
+end
+return out
+`)
+)
 
 var (
 	// epoch 标识 bucket writer 的代际，retired key 是持久退休标记。
@@ -251,6 +298,14 @@ type schedulerCache struct {
 	snapshotMu      sync.RWMutex
 	snapshotEntries map[string]*schedulerSnapshotEntry
 
+	// metaMemo 按账号 ID 保存最近读到的精简记录（指纹 + 已解码母本），跨 bucket 共用；
+	// payloadMemo 按账号 ID 保存最近读到的整账号原文。两者都只在 Redis 确认指纹一致后才复用。
+	memoMu           sync.Mutex
+	metaMemo         map[string]*schedulerMetaMemoEntry
+	metaMemoPrunedAt time.Time
+	payloadMemo      map[string]*schedulerPayloadMemoEntry
+	payloadMemoBytes int
+
 	// globalRevisionPending 与 globalRevisionWriting 合并写入出错后的后台全局修订号写入，见 scheduleGlobalAccountMetaRevision。
 	globalRevisionPending atomic.Bool
 	globalRevisionWriting atomic.Bool
@@ -266,6 +321,18 @@ type schedulerSnapshotEntry struct {
 	loadedAt     time.Time
 	accounts     []*service.Account
 	lastUsedKeys []string
+}
+
+// schedulerMetaMemoEntry 的 account 与快照条目中的母本同样只读、指针不外泄。
+type schedulerMetaMemoEntry struct {
+	digest   string
+	account  *service.Account
+	lastSeen time.Time
+}
+
+type schedulerPayloadMemoEntry struct {
+	digest  string
+	payload []byte
 }
 
 func NewSchedulerCache(rdb *redis.Client) service.SchedulerCache {
@@ -285,12 +352,15 @@ func newSchedulerCacheWithChunkSizes(rdb *redis.Client, mgetChunkSize, writeChun
 		writeChunkSize:  writeChunkSize,
 		now:             time.Now,
 		snapshotEntries: make(map[string]*schedulerSnapshotEntry),
+		metaMemo:        make(map[string]*schedulerMetaMemoEntry),
+		payloadMemo:     make(map[string]*schedulerPayloadMemoEntry),
 	}
 }
 
 // GetSnapshot 读取 bucket 的激活快照。解码后的精简记录按 bucket 常驻进程内存，
 // 只有 ready、active 版本、全局修订号与该 bucket 所涉平台的修订号都与 Redis 一致且未超过最长复用时长时才复用；
-// 否则重新从 Redis 加载。last_used 每次都从 Redis 读取。
+// 否则重新从 Redis 加载；重新加载时内容未变的精简记录由 Redis 按指纹确认后复用进程内的母本，不再传输。
+// last_used 每次都从 Redis 读取。
 // 返回的账号对象由本次调用独占，可以修改其顶层字段；map、切片底层数组与指针指向的值与其它调用共享，不得原地修改。
 func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.SchedulerBucket) ([]*service.Account, bool, error) {
 	bucketKey := bucket.String()
@@ -344,32 +414,17 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 		return nil, false, nil
 	}
 
-	keys := make([]string, 0, len(ids))
 	lastUsedKeys := make([]string, 0, len(ids))
 	for _, id := range ids {
-		keys = append(keys, schedulerAccountMetaKey(id))
 		lastUsedKeys = append(lastUsedKeys, schedulerLastUsedKey(id))
 	}
-	values, err := c.mgetChunked(ctx, keys)
+	masters, complete, err := c.loadSnapshotMasters(ctx, ids, now)
 	if err != nil {
 		return nil, false, err
 	}
-
-	masters := make([]*service.Account, 0, len(values))
-	for _, val := range values {
-		if val == nil {
-			c.dropSnapshotEntry(bucketKey)
-			return nil, false, nil
-		}
-		account, err := decodeCachedAccount(val)
-		if err != nil {
-			return nil, false, err
-		}
-		masters = append(masters, account)
-	}
-	// 母本发布进缓存前由本 goroutine 完成预处理，发布后只读。
-	for _, master := range masters {
-		master.PrepareSharedSnapshot()
+	if !complete {
+		c.dropSnapshotEntry(bucketKey)
+		return nil, false, nil
 	}
 
 	// 条目记录的是加载前读到的 (active, 修订号) 与当时的时钟：精简记录读取晚于这组取值，
@@ -388,6 +443,94 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 		return nil, false, err
 	}
 	return accounts, true, nil
+}
+
+// loadSnapshotMasters 按快照顺序取得各账号的精简记录母本。
+// 进程内已有的记录把指纹交给 Redis 比对，一致时直接复用，不一致或没有时才取回并解码。
+// 任一记录缺失时 complete 为 false。
+func (c *schedulerCache) loadSnapshotMasters(ctx context.Context, ids []string, now time.Time) (masters []*service.Account, complete bool, err error) {
+	masters = make([]*service.Account, len(ids))
+	chunkSize := c.mgetChunkSize
+	if chunkSize <= 0 {
+		chunkSize = defaultSchedulerSnapshotMGetChunkSize
+	}
+	for start := 0; start < len(ids); start += chunkSize {
+		end := min(start+chunkSize, len(ids))
+		chunk := ids[start:end]
+		keys := make([]string, len(chunk))
+		digests := make([]any, len(chunk))
+		known := make([]*schedulerMetaMemoEntry, len(chunk))
+		c.memoMu.Lock()
+		for i, id := range chunk {
+			keys[i] = schedulerAccountMetaKey(id)
+			digests[i] = ""
+			if entry := c.metaMemo[id]; entry != nil {
+				known[i] = entry
+				digests[i] = entry.digest
+				entry.lastSeen = now
+			}
+		}
+		c.memoMu.Unlock()
+
+		values, err := schedulerFetchIfChangedScript.Run(ctx, c.rdb, keys, digests...).Slice()
+		if err != nil {
+			return nil, false, err
+		}
+		if len(values) != len(chunk) {
+			return nil, false, fmt.Errorf("unexpected scheduler metadata value count: got %d, want %d", len(values), len(chunk))
+		}
+		for i, value := range values {
+			switch typed := value.(type) {
+			case int64:
+				if typed == 0 {
+					return nil, false, nil
+				}
+				if known[i] == nil {
+					return nil, false, fmt.Errorf("scheduler metadata reported unchanged without a cached copy: id=%s", chunk[i])
+				}
+				masters[start+i] = known[i].account
+			case string:
+				account, err := decodeCachedAccount(typed)
+				if err != nil {
+					return nil, false, err
+				}
+				// 母本发布进缓存前由本 goroutine 完成预处理，发布后只读。
+				account.PrepareSharedSnapshot()
+				masters[start+i] = account
+				c.memoMu.Lock()
+				c.metaMemo[chunk[i]] = &schedulerMetaMemoEntry{
+					digest:   schedulerPayloadDigest([]byte(typed)),
+					account:  account,
+					lastSeen: now,
+				}
+				c.memoMu.Unlock()
+			default:
+				return nil, false, fmt.Errorf("unexpected scheduler metadata value type: %T", value)
+			}
+		}
+	}
+	c.pruneMetaMemo(now)
+	return masters, true, nil
+}
+
+// pruneMetaMemo 清除长期未被任何快照引用的精简记录，已删除账号的记录不会长期驻留。
+func (c *schedulerCache) pruneMetaMemo(now time.Time) {
+	c.memoMu.Lock()
+	defer c.memoMu.Unlock()
+	if age := now.Sub(c.metaMemoPrunedAt); age >= 0 && age < schedulerSnapshotCacheEvictAge {
+		return
+	}
+	c.metaMemoPrunedAt = now
+	for id, entry := range c.metaMemo {
+		if now.Sub(entry.lastSeen) > schedulerSnapshotCacheEvictAge {
+			delete(c.metaMemo, id)
+		}
+	}
+}
+
+func schedulerPayloadDigest(payload []byte) string {
+	sum := sha1.Sum(payload) //nolint:gosec // 内容指纹，见 import 处说明
+	return hex.EncodeToString(sum[:])
 }
 
 func (e *schedulerSnapshotEntry) matches(active string, revisions []string, now time.Time) bool {
@@ -748,23 +891,91 @@ func schedulerBucketWriteResultError(result int64, bucket service.SchedulerBucke
 	}
 }
 
+// GetAccount 读取整账号。进程内留有上次读到的原文，Redis 确认指纹一致时不再回传原文；
+// 每次调用都从原文重新解码，返回的账号对象由调用方独占。
 func (c *schedulerCache) GetAccount(ctx context.Context, accountID int64) (*service.Account, error) {
 	id := strconv.FormatInt(accountID, 10)
-	values, err := c.rdb.MGet(ctx, schedulerAccountKey(id), schedulerLastUsedKey(id)).Result()
+	c.memoMu.Lock()
+	known := c.payloadMemo[id]
+	c.memoMu.Unlock()
+	digest := ""
+	if known != nil {
+		digest = known.digest
+	}
+	values, err := schedulerFetchIfChangedScript.Run(ctx, c.rdb,
+		[]string{schedulerAccountKey(id), schedulerLastUsedKey(id)}, digest, "").Slice()
 	if err != nil {
 		return nil, err
 	}
-	if len(values) != 2 || values[0] == nil {
-		return nil, nil
+	if len(values) != 2 {
+		return nil, fmt.Errorf("unexpected scheduler account value count: got %d, want 2", len(values))
 	}
-	account, err := decodeCachedAccount(values[0])
+
+	var payload []byte
+	switch typed := values[0].(type) {
+	case int64:
+		if typed == 0 {
+			c.forgetAccountPayload(id)
+			return nil, nil
+		}
+		if known == nil {
+			return nil, fmt.Errorf("scheduler account reported unchanged without a cached copy: id=%s", id)
+		}
+		payload = known.payload
+	case string:
+		payload = []byte(typed)
+		c.rememberAccountPayload(id, payload)
+	default:
+		return nil, fmt.Errorf("unexpected account cache type: %T", values[0])
+	}
+	account, err := decodeCachedAccount(payload)
 	if err != nil {
 		return nil, err
 	}
-	if err := applySchedulerLastUsed(account, values[1]); err != nil {
-		return nil, err
+	// last_used 缺失时脚本返回整数 0。
+	if lastUsed, ok := values[1].(string); ok {
+		if err := applySchedulerLastUsed(account, lastUsed); err != nil {
+			return nil, err
+		}
+	} else if _, ok := values[1].(int64); !ok {
+		return nil, fmt.Errorf("unexpected last_used cache type: %T", values[1])
 	}
 	return account, nil
+}
+
+// rememberAccountPayload 保存整账号原文；总字节数超过上限时任意淘汰其它条目。
+func (c *schedulerCache) rememberAccountPayload(id string, payload []byte) {
+	if len(payload) > schedulerAccountPayloadMemoMaxBytes {
+		c.forgetAccountPayload(id)
+		return
+	}
+	entry := &schedulerPayloadMemoEntry{digest: schedulerPayloadDigest(payload), payload: payload}
+	c.memoMu.Lock()
+	defer c.memoMu.Unlock()
+	if previous := c.payloadMemo[id]; previous != nil {
+		c.payloadMemoBytes -= len(previous.payload)
+	}
+	c.payloadMemo[id] = entry
+	c.payloadMemoBytes += len(payload)
+	for other, victim := range c.payloadMemo {
+		if c.payloadMemoBytes <= schedulerAccountPayloadMemoMaxBytes {
+			break
+		}
+		if other == id {
+			continue
+		}
+		c.payloadMemoBytes -= len(victim.payload)
+		delete(c.payloadMemo, other)
+	}
+}
+
+func (c *schedulerCache) forgetAccountPayload(id string) {
+	c.memoMu.Lock()
+	defer c.memoMu.Unlock()
+	if previous := c.payloadMemo[id]; previous != nil {
+		c.payloadMemoBytes -= len(previous.payload)
+		delete(c.payloadMemo, id)
+	}
 }
 
 func (c *schedulerCache) SetAccount(ctx context.Context, account *service.Account) error {
@@ -970,9 +1181,13 @@ func decodeCachedAccount(val any) (*service.Account, error) {
 	return &account, nil
 }
 
-// writeAccountIDs 分块写入整账号与精简记录，返回成功编码并写入的有序账号 ID。
-// 每块在追加下一个账号前才执行，最后一块总是非空；所涉平台的修订号追加在最后一块末尾，
-// 与最后一批精简记录同一次往返发出，且排在全部精简记录写入之后。
+// writeAccountIDs 分块写入整账号与精简记录，返回成功编码的有序账号 ID。
+// 每块先由 Redis 比对内容指纹（见 schedulerUnchangedScript），只写入内容确实不同的记录：
+// 快照重建时绝大多数账号没有变化，逐个重写既浪费流量，也会让所有实例的进程内快照无谓失效。
+// 比对与写入之间若有其它写入方改写了同一条记录，结果等同于本次写入发生在比对时刻、对方写入在后，
+// 与原先“后写者覆盖”的语义一致。
+// 每块在追加下一个账号前才执行；实际改写过精简记录的平台，其修订号追加在最后一块末尾，
+// 排在全部精简记录写入之后。没有任何精简记录被改写时不推进修订号。
 // 精简记录用 SET ... GET 写入并取回旧值：旧值的平台与新平台不同时，旧平台 bucket 中可能仍缓存着该账号，
 // 全部写入完成后另行写入全局修订号。该检测尽力而为（客户端在 pipeline 内部重试时取回的可能已是本次写入的值），
 // 漏检由进程内快照缓存的最长复用时长兜底。
@@ -982,15 +1197,19 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 		return nil, nil
 	}
 
+	type pendingAccount struct {
+		id       string
+		platform string
+		full     []byte
+		meta     []byte
+	}
 	type metaWrite struct {
 		platform string
 		previous *redis.StatusCmd
 	}
-	pipe := c.rdb.Pipeline()
 	accountIDs := make([]int64, 0, len(accounts))
-	platforms := make([]string, 0, 1)
-	writes := make([]metaWrite, 0, min(len(accounts), c.writeChunkSize))
-	pending := 0
+	changedPlatforms := make([]string, 0, 1)
+	chunk := make([]pendingAccount, 0, min(len(accounts), c.writeChunkSize))
 	execFailed := false
 	platformChanged := false
 	defer func() {
@@ -998,7 +1217,52 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 			c.scheduleGlobalAccountMetaRevision(ctx)
 		}
 	}()
-	exec := func() error {
+	flush := func(final bool) error {
+		pipe := c.rdb.Pipeline()
+		writes := make([]metaWrite, 0, len(chunk))
+		if len(chunk) > 0 {
+			keys := make([]string, 0, len(chunk)*2)
+			digests := make([]any, 0, len(chunk)*2)
+			for _, item := range chunk {
+				keys = append(keys, schedulerAccountKey(item.id), schedulerAccountMetaKey(item.id))
+				digests = append(digests, schedulerPayloadDigest(item.full), schedulerPayloadDigest(item.meta))
+			}
+			unchanged, err := schedulerUnchangedScript.Run(ctx, c.rdb, keys, digests...).Int64Slice()
+			if err != nil {
+				// 本块尚未写入；此前的块若改写过精简记录，其修订号还没有推进。
+				execFailed = len(changedPlatforms) > 0
+				return err
+			}
+			if len(unchanged) != len(keys) {
+				execFailed = len(changedPlatforms) > 0
+				return fmt.Errorf("unexpected scheduler account comparison count: got %d, want %d", len(unchanged), len(keys))
+			}
+			for i, item := range chunk {
+				if unchanged[i*2] != 1 {
+					pipe.Set(ctx, schedulerAccountKey(item.id), item.full, 0)
+				}
+				// Keep the hot LastUsedAt side key untouched: a lagging snapshot rebuild
+				// must not overwrite a newer scheduler update.
+				if unchanged[i*2+1] != 1 {
+					writes = append(writes, metaWrite{
+						platform: item.platform,
+						previous: pipe.SetArgs(ctx, schedulerAccountMetaKey(item.id), item.meta, redis.SetArgs{Get: true}),
+					})
+					if !slices.Contains(changedPlatforms, item.platform) {
+						changedPlatforms = append(changedPlatforms, item.platform)
+					}
+				}
+			}
+			chunk = chunk[:0]
+		}
+		if final {
+			for _, platform := range changedPlatforms {
+				pipe.Set(ctx, schedulerAccountMetaRevisionKeyForPlatform(platform), newSchedulerAccountMetaRevision(), 0)
+			}
+		}
+		if pipe.Len() == 0 {
+			return nil
+		}
 		cmds, err := pipe.Exec(ctx)
 		if err != nil && !errors.Is(err, redis.Nil) {
 			execFailed = true
@@ -1016,9 +1280,6 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 				platformChanged = true
 			}
 		}
-		writes = writes[:0]
-		pipe = c.rdb.Pipeline()
-		pending = 0
 		return nil
 	}
 
@@ -1031,34 +1292,21 @@ func (c *schedulerCache) writeAccountIDs(ctx context.Context, accounts []service
 			)
 			continue
 		}
-		if pending >= c.writeChunkSize {
-			if err := exec(); err != nil {
+		if len(chunk) >= c.writeChunkSize {
+			if err := flush(false); err != nil {
 				return nil, err
 			}
 		}
-
-		id := strconv.FormatInt(account.ID, 10)
-		pipe.Set(ctx, schedulerAccountKey(id), fullPayload, 0)
-		writes = append(writes, metaWrite{
+		chunk = append(chunk, pendingAccount{
+			id:       strconv.FormatInt(account.ID, 10),
 			platform: account.Platform,
-			previous: pipe.SetArgs(ctx, schedulerAccountMetaKey(id), metaPayload, redis.SetArgs{Get: true}),
+			full:     fullPayload,
+			meta:     metaPayload,
 		})
-		// Keep the hot LastUsedAt side key untouched: a lagging snapshot rebuild
-		// must not overwrite a newer scheduler update.
 		accountIDs = append(accountIDs, account.ID)
-		if !slices.Contains(platforms, account.Platform) {
-			platforms = append(platforms, account.Platform)
-		}
-		pending++
 	}
 
-	if pending == 0 {
-		return accountIDs, nil
-	}
-	for _, platform := range platforms {
-		pipe.Set(ctx, schedulerAccountMetaRevisionKeyForPlatform(platform), newSchedulerAccountMetaRevision(), 0)
-	}
-	if err := exec(); err != nil {
+	if err := flush(true); err != nil {
 		return nil, err
 	}
 	if platformChanged {
