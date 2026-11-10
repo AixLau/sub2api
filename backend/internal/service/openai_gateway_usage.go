@@ -1088,6 +1088,13 @@ func codexResetAtRFC3339(base time.Time, resetAfterSeconds *int) *string {
 	return &resetAt
 }
 
+// BuildCodexUsageExtraUpdates 暴露 Codex 用量快照写入 Extra 的完整键集合，
+// 供 repository 包的契约测试校验：这些键都必须在调度器中立键列表里，
+// 否则每次快照更新都会向 scheduler_outbox 入队 account_changed 并触发整桶重建。
+func BuildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow time.Time) map[string]any {
+	return buildCodexUsageExtraUpdates(snapshot, fallbackNow)
+}
+
 func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow time.Time) map[string]any {
 	if snapshot == nil {
 		return nil
