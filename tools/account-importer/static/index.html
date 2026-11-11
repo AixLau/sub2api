@@ -17,7 +17,7 @@
   </header>
   <main class="shell">
     <section class="intro">
-      <div><h1>导入账号</h1><p>持续监控账号状态。账号资料导入遇错自动授权，失败后最多重试 3 次；JSON 方式可填写 RT 或重新上传。</p></div>
+      <div><h1>导入账号</h1><p>支持 JSON、邮箱密码导入和邮箱注册；注册会自动绑定 2FA 并导入监控。账号资料导入遇错自动授权，失败后最多重试 3 次；JSON 方式可填写 RT 或重新上传。</p></div>
       <div class="window-note"><span>监控方式</span><strong>持续监控</strong></div>
     </section>
     <section class="import-section" aria-label="导入方式">
@@ -26,6 +26,7 @@
       <div class="segmented" role="tablist" aria-label="导入方式">
         <button id="tab-file" type="button" role="tab" aria-selected="true" aria-controls="panel-file">上传 Sub2API JSON</button>
         <button id="tab-account" type="button" role="tab" aria-selected="false" aria-controls="panel-account">邮箱 · 密码 · 2FA</button>
+        <button id="tab-register" type="button" role="tab" aria-selected="false" aria-controls="panel-register">邮箱注册</button>
       </div>
       <form id="panel-file" class="import-form" role="tabpanel" aria-labelledby="tab-file">
         <div class="field wide"><label for="import-json">Sub2API JSON 文件</label><input id="import-json" name="file" type="file" accept=".json,application/json" required><small>支持 1–50 个 OpenAI OAuth 账号，最大 2 MB</small></div>
@@ -38,6 +39,16 @@
         <div class="field wide"><label for="account-plugin">加入已启用插件（可选）</label><select id="account-plugin" disabled><option value="">不添加到插件</option></select><small id="account-plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-account-plugins" class="text-button" type="button">刷新插件列表</button></div>
         <div class="field"><label for="account-group">导入分组</label><select id="account-group"><option value="">使用所选配置的分组</option></select><small>首次导入资料加密保存在独立 Redis 数据库中，重启后仍可一键授权</small></div>
         <div class="form-action"><button class="primary" type="submit">登录并导入</button></div>
+      </form>
+      <form id="panel-register" class="import-form" role="tabpanel" aria-labelledby="tab-register" hidden>
+        <div class="field wide">
+          <label for="register-lines">注册邮箱资料</label>
+          <textarea id="register-lines" name="registration_lines" rows="4" autocomplete="off" spellcheck="false" placeholder="邮箱----收信 API 地址，每行一个" required></textarea>
+          <small>每行一个，最多 10 个。密码自动生成并绑定 2FA，成功后自动导入、启用调度并持续监控。收信 API 可返回 JSON、纯文本或 HTML，需包含 6 位验证码。</small>
+        </div>
+        <div class="field wide"><label for="register-plugin">加入已启用插件（可选）</label><select id="register-plugin" disabled><option value="">不添加到插件</option></select><small id="register-plugin-hint">正在读取 Sub2API 插件…</small><button id="refresh-register-plugins" class="text-button" type="button">刷新插件列表</button></div>
+        <div class="field"><label for="register-group">导入分组</label><select id="register-group"><option value="">使用所选配置的分组</option></select><small>注册资料加密保存；密码、2FA 和收信 API 不会在任务列表中返回</small></div>
+        <div class="form-action"><button class="primary" type="submit">注册并导入</button></div>
       </form>
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>

@@ -13,6 +13,7 @@ from typing import Callable
 from default_profile import DEFAULT_PROFILE_ID, default_import_profile
 from job_store import JobStore, StorageError
 from import_payload import validate_bundle
+from local_register import RegistrationIncomplete, parse_registration_line, register_payload
 from local_relogin import parse_account_line, relogin_payload
 from model_restrictions import MODEL_SETTING_KEYS, model_settings
 from proxy_pool import ProxyChoice, select_5x_proxy
@@ -55,6 +56,18 @@ def _parse_time(value: object) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+def _redact_line_secrets(value: str, line: str | None) -> str:
+    """Remove password/TOTP fields from an error message before exposing it."""
+    text = str(value or "")
+    if not line:
+        return text
+    for part in line.split("----")[1:]:
+        part = part.strip()
+        if part:
+            text = text.replace(part, "[REDACTED]")
+    return text
 
 
 def _account_state(account: dict) -> tuple[str, str]:
@@ -177,12 +190,14 @@ class Job:
     created_at: datetime = field(default_factory=_now)
     last_checked_at: datetime | None = None
     credential_line: str | None = field(default=None, repr=False)
+    registration_line: str | None = field(default=None, repr=False)
     login_proxy: str | None = field(default=None, repr=False)
     next_relogin: datetime | None = field(default=None, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
     manual_pending: bool = field(default=False, repr=False)
     retired: bool = False
     profile_account_id: int | None = None
+    two_factor_bound: bool | None = None
 
     def stored(self) -> dict:
         record = {item.name: getattr(self, item.name) for item in fields(self)
@@ -206,6 +221,11 @@ class Job:
         return {
             "id": self.id, "name": self.name, "mode": self.mode,
             "has_saved_credentials": bool(self.credential_line), "retired": self.retired,
+            "can_retry_registration": bool(
+                self.mode == "register" and self.registration_line
+                and self.account_id is None and not self.retired
+            ),
+            "two_factor_bound": self.two_factor_bound,
             "state": self.state, "account_id": self.account_id,
             "proxy_id": self.proxy_id,
             "plugin_id": self.plugin_id, "plugin_name": self.plugin_name,
@@ -227,13 +247,14 @@ class JobManager:
     def __init__(
         self, client: Sub2APIClient, *, store: JobStore,
         poll_seconds: float = POLL_SECONDS, retry_seconds: int = RETRY_SECONDS,
-        login: Callable = relogin_payload,
+        login: Callable = relogin_payload, register: Callable = register_payload,
     ) -> None:
         self.client = client
         self.store = store
         self.poll_seconds = poll_seconds
         self.retry_seconds = retry_seconds
         self.login = login
+        self.register = register
         self.jobs: dict[str, Job] = {}
         self._import_lock = asyncio.Lock()
         self._login_lock = asyncio.Lock()
@@ -251,10 +272,13 @@ class JobManager:
                 continue
             if job.account_id:
                 job.state, job.message = "monitoring", "持续监控已恢复"
+                if job.mode == "register":
+                    # The mailbox URL is only needed until the account exists.
+                    job.registration_line = None
                 await self._save(job)
                 self._resume_watch(job)
-            elif job.state in {"importing", "reauthorizing"}:
-                job.state, job.message = "attention", "服务重启前的导入未确认完成，请手动重新授权"
+            elif job.state in {"importing", "reauthorizing", "registering"}:
+                job.state, job.message = "attention", "服务重启前的注册或导入未确认完成，请手动重试"
                 await self._save(job)
 
     async def _save(self, job: Job) -> None:
@@ -406,6 +430,7 @@ class JobManager:
                     pass
             previous.credential_line = None
             previous.login_proxy = None
+            previous.registration_line = None
             previous.state, previous.message = "completed", "已由新上传文件接管监控"
             await self._save(previous)
 
@@ -437,12 +462,34 @@ class JobManager:
         job.task = asyncio.create_task(self._login_and_import(job, profile_account_id, choice))
         return job.public()
 
+    async def register_credentials(self, registration_line: str, group_ids: list[int] | None = None, profile_account_id: int | None = DEFAULT_PROFILE_ID, plugin_id: int | None = None) -> dict:
+        email, _ = parse_registration_line(registration_line)
+        await self.import_profile(profile_account_id)
+        if group_ids and any(isinstance(i, bool) or not isinstance(i, int) or i <= 0 for i in group_ids):
+            raise ValueError("请选择有效分组")
+        plugin = await self.client.get_enabled_plugin(plugin_id) if plugin_id is not None else None
+        choice = select_5x_proxy(await self.client.list_active_proxies())
+        job = Job(
+            name=email, mode="register", group_ids=list(group_ids or []),
+            profile_account_id=profile_account_id,
+            registration_line=registration_line,
+            plugin_id=plugin_id,
+            plugin_name=str(plugin.get("name") or plugin_id) if plugin is not None else "",
+            plugin_status="pending" if plugin is not None else "",
+            proxy_id=choice.id,
+            login_proxy=choice.url,
+        )
+        job.state, job.message = "registering", "正在注册并导入"
+        await self._save(job)
+        self.jobs[job.id] = job
+        job.task = asyncio.create_task(self._register_and_import(job, profile_account_id, choice))
+        return job.public()
+
     async def _login_and_import(self, job: Job, profile_account_id: int | None, choice: ProxyChoice) -> None:
         try:
             async with self._import_lock:
                 remote = await self.client.find_account(job.name)
                 profile = await self.import_profile(profile_account_id)
-                restrictions = profile["credentials"]
                 if not job.group_ids:
                     job.group_ids = list((remote.get("group_ids") or []) if remote else profile["group_ids"])
                 async with self._login_lock:
@@ -455,33 +502,11 @@ class JobManager:
                 if remote_name.casefold() != job.name.casefold():
                     raise ValueError("登录账号与提交账号不匹配")
                 job.name = remote_name
-                remote = await self.client.find_account(remote_name)
-                if remote:
-                    job.account_id = int(remote["id"])
-                    await self._retire_previous(job.account_id, job.id)
-                    await self.client.apply_oauth(job.account_id, payload["accounts"][0])
-                    await self.client.set_model_restrictions(job.account_id, restrictions)
-                    job.model_restrictions = deepcopy(restrictions)
-                    settings = {**_proxy_settings(job.proxy_id), "status": "active"}
-                    if job.group_ids and job.group_ids != (remote.get("group_ids") or []):
-                        settings["group_ids"] = job.group_ids
-                    await self.client.update_settings(job.account_id, settings)
-                    await self.client.set_schedulable(job.account_id, True)
-                    await self._bind_plugin_jobs(job.plugin_id, [job])
-                    await self._start_watch(job)
-                    return
-                payload["accounts"][0] = _prepared_new_account(payload["accounts"][0], profile, job.group_ids)
-                payload["accounts"][0].update(_import_proxy_settings(choice))
-                payload["proxies"] = []
-                await self.client.import_data(payload)
-                remote = await self.client.find_account(remote_name)
-                if not remote:
-                    job.state, job.message = "failed", "服务器未创建此账号"
-                    return
-                job.account_id = int(remote["id"])
-                await self._apply_new_settings(job, profile)
-                await self._bind_plugin_jobs(job.plugin_id, [job])
-                await self._start_watch(job)
+                await self._apply_oauth_payload(job, payload, profile, choice)
+                if job.account_id is not None and job.mode == "register":
+                    job.registration_line = None
+                    if job.credential_line:
+                        job.two_factor_bound = True
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -489,7 +514,7 @@ class JobManager:
             # local_relogin removes the submitted password and TOTP seed before
             # raising. This is essential for distinguishing network/bootstrap
             # failures from bad credentials.
-            reason = str(exc).strip()
+            reason = _redact_line_secrets(str(exc).strip(), job.credential_line)
             job.state, job.message = "failed", reason[:320] or "登录或导入失败；请核查账号、网络和 Sub2API 状态"
         finally:
             job.manual_pending = False
@@ -498,6 +523,89 @@ class JobManager:
                 job.plugin_message = "账号登录或导入未完成，未加入插件"
             await self._save(job)
             self._resume_watch(job)
+
+    async def _register_and_import(self, job: Job, profile_account_id: int | None, choice: ProxyChoice) -> None:
+        try:
+            async with self._import_lock:
+                profile = await self.import_profile(profile_account_id)
+                if not job.group_ids:
+                    job.group_ids = list(profile["group_ids"])
+                async with self._login_lock:
+                    payload, credential_line = await asyncio.to_thread(
+                        self.register, job.registration_line, "sub2api",
+                        group_ids=job.group_ids, proxy=job.login_proxy,
+                    )
+                validate_bundle(payload)
+                remote_name = payload["accounts"][0]["name"]
+                if remote_name.casefold() != job.name.casefold():
+                    raise ValueError("注册账号与提交邮箱不匹配")
+                job.name = remote_name
+                job.two_factor_bound = credential_line is not None
+                # A new successful registration is authoritative: clear a stale
+                # credential line from an earlier failed attempt when 2FA was
+                # not bound this time.
+                job.credential_line = credential_line
+                await self._apply_oauth_payload(job, payload, profile, choice)
+                if job.account_id is not None:
+                    # The mail API URL is no longer needed once the account is
+                    # imported and a password/2FA credential line is available.
+                    job.registration_line = None
+        except asyncio.CancelledError:
+            raise
+        except RegistrationIncomplete as exc:
+            reason = str(exc).strip()
+            if exc.credential_line:
+                # The OpenAI account exists and 2FA is bound, but the Codex
+                # token exchange did not produce a full Sub2API bundle.  Keep
+                # the generated password/TOTP so the operator can log in and
+                # import it instead of losing the account.
+                job.credential_line = exc.credential_line
+                job.two_factor_bound = exc.two_factor_bound
+                job.registration_line = None
+                job.state, job.message = "attention", reason[:320] or "注册已创建账号，但未取得完整令牌；请用已保存资料导入"
+            else:
+                job.state, job.message = "failed", reason[:320] or "注册或导入失败；请核查邮箱接口、代理和 Sub2API 状态"
+        except Exception as exc:
+            reason = str(exc).strip()
+            job.state, job.message = "failed", reason[:320] or "注册或导入失败；请核查邮箱接口、代理和 Sub2API 状态"
+        finally:
+            job.manual_pending = False
+            if job.state in {"failed", "attention"} and job.plugin_id is not None:
+                job.plugin_status = "skipped"
+                job.plugin_message = "账号注册或导入未完成，未加入插件"
+            await self._save(job)
+            self._resume_watch(job)
+
+    async def _apply_oauth_payload(self, job: Job, payload: dict, profile: dict, choice: ProxyChoice) -> None:
+        account = payload["accounts"][0]
+        remote = await self.client.find_account(job.name)
+        if remote:
+            job.account_id = int(remote["id"])
+            await self._retire_previous(job.account_id, job.id)
+            await self.client.apply_oauth(job.account_id, account)
+            await self.client.set_model_restrictions(job.account_id, profile["credentials"])
+            job.model_restrictions = deepcopy(profile["credentials"])
+            settings = {**_proxy_settings(job.proxy_id), "status": "active"}
+            if job.group_ids and job.group_ids != (remote.get("group_ids") or []):
+                settings["group_ids"] = job.group_ids
+            await self.client.update_settings(job.account_id, settings)
+            await self.client.set_schedulable(job.account_id, True)
+            await self._bind_plugin_jobs(job.plugin_id, [job])
+            await self._start_watch(job)
+            return
+        payload["accounts"][0] = _prepared_new_account(account, profile, job.group_ids)
+        payload["accounts"][0].update(_import_proxy_settings(choice))
+        payload["proxies"] = []
+        await self.client.import_data(payload)
+        remote = await self.client.find_account(job.name)
+        if not remote:
+            job.state, job.message = "failed", "服务器未创建此账号"
+            return
+        job.account_id = int(remote["id"])
+        await self._apply_new_settings(job, profile)
+        await self._bind_plugin_jobs(job.plugin_id, [job])
+        await self._start_watch(job)
+
 
     def _resume_watch(self, job: Job) -> None:
         if self._closing or not job.account_id or job.retired or job.state == "removed":
@@ -527,13 +635,15 @@ class JobManager:
                 state, message = _account_state(account)
                 job.state, job.message = state, message
                 account_error = state == "invalid" or job.remote_status.lower() == "error"
-                if account_error and job.mode == "credentials":
+                if account_error and job.mode in {"credentials", "register"} and job.credential_line:
                     await self._retry_relogin(job)
                 elif state == "monitoring":
                     # A confirmed healthy poll starts a fresh retry budget for the next incident.
                     job.attempts, job.next_relogin = 0, None
                     if not job.model_restrictions.get("model_mapping"):
                         job.state, job.message = "attention", "未设置模型限制，请选择已配置的参考账号重新导入；持续监控中"
+                    elif job.mode == "register" and not job.credential_line:
+                        job.state, job.message = "attention", "注册账号缺少自动授权资料（2FA 或密码不可用）；可使用 RT/JSON 重新授权；持续监控中"
             except asyncio.CancelledError:
                 raise
             except AdminAPIError as exc:
@@ -590,9 +700,9 @@ class JobManager:
             await self._save(job)
 
     async def _begin_manual(self, job: Job, mode: str) -> None:
-        if job.mode != mode or (mode == "file" and job.account_id is None) or job.retired or job.state == "removed":
+        if job.mode != mode or job.retired or job.state == "removed":
             raise ValueError("此任务不能执行该重新授权操作，请使用最新导入任务")
-        if job.manual_pending or job.state in {"importing", "reauthorizing"}:
+        if job.manual_pending or job.state in {"importing", "reauthorizing", "registering"}:
             raise ValueError("此账号正在授权，请等待当前操作完成")
         job.manual_pending = True
         line, proxy = job.credential_line, job.login_proxy
@@ -612,8 +722,25 @@ class JobManager:
             job.state, job.message = "attention", "授权未启动，请稍后重试"
             raise
 
+    async def retry_registration(self, job_id: str) -> dict:
+        job = self.get_job(job_id)
+        if job.mode != "register" or not job.registration_line or job.account_id is not None:
+            raise ValueError("此任务不能重试注册，请使用最新注册任务或重新授权")
+        choice = select_5x_proxy(await self.client.list_active_proxies())
+        await self._begin_manual(job, "register")
+        job.proxy_id, job.login_proxy = choice.id, choice.url
+        job.state, job.message = "registering", "正在重新注册并导入"
+        await self._save(job)
+        job.task = asyncio.create_task(self._register_and_import(job, job.profile_account_id, choice))
+        return job.public()
+
     async def reauthorize_credentials(self, job_id: str) -> dict:
         job = self.get_job(job_id)
+        mode = job.mode
+        if mode not in {"credentials", "register"}:
+            raise ValueError("此任务不能执行账号资料重新授权")
+        if mode == "register" and job.account_id is None and not job.credential_line:
+            raise ValueError("注册尚未完成，请使用重试注册")
         line = job.credential_line
         if not line:
             raise ValueError("此任务没有首次导入的账号资料，请使用原始账号资料导入任务")
@@ -621,7 +748,7 @@ class JobManager:
         if email.casefold() != job.name.casefold():
             raise ValueError("重新授权资料必须属于当前账号")
         choice = select_5x_proxy(await self.client.list_active_proxies()) if job.account_id is None else None
-        await self._begin_manual(job, "credentials")
+        await self._begin_manual(job, mode)
         job.credential_line = line
         if choice is not None:
             job.proxy_id, job.login_proxy = choice.id, choice.url
@@ -662,7 +789,9 @@ class JobManager:
         if not token or len(token) > 16384:
             raise ValueError("请填写有效的 RT")
         job = self.get_job(job_id)
-        await self._begin_manual(job, "file")
+        if job.mode not in {"file", "register"} or job.account_id is None:
+            raise ValueError("此任务不能执行 RT 重新授权")
+        await self._begin_manual(job, job.mode)
         job.task = asyncio.create_task(self._manual_rt(job, token))
         return job.public()
 
@@ -684,10 +813,12 @@ class JobManager:
 
     async def reauthorize_file(self, job_id: str, payload: dict) -> dict:
         job = self.get_job(job_id)
+        if job.mode not in {"file", "register"} or job.account_id is None:
+            raise ValueError("此任务不能执行文件重新授权")
         accounts = validate_bundle(payload)["accounts"]
         if len(accounts) != 1 or accounts[0]["name"].casefold() != job.name.casefold():
             raise ValueError("重新授权文件必须只包含同名账号")
-        await self._begin_manual(job, "file")
+        await self._begin_manual(job, job.mode)
         try:
             async with self._import_lock:
                 choice = select_5x_proxy(await self.client.list_active_proxies())
@@ -715,6 +846,6 @@ class JobManager:
                 await self._save(job)
         finally:
             for job in self.jobs.values():
-                job.credential_line = job.login_proxy = None
+                job.credential_line = job.login_proxy = job.registration_line = None
             await self.store.close()
             await self.client.close()

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "local.sub2api.openai-bps-local",
+  "name": "Sub2API BPS Local Bridge",
+  "version": "0.1.0",
+  "description": "移植自 bps-local：把已绑定 OpenAI OAuth 账号的 Responses 请求经 WebSocket（或 SSE）转发到 Basis Points 上游。",
+  "author": "Sub2API",
+  "requires": {
+    "sub2api": ">=0.2.8 <0.3.0",
+    "recommended_sub2api_version": "0.2.8",
+    "tested_sub2api_versions": [],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1
+  },
+  "capabilities": [
+    {
+      "id": "openai.oauth.outbound_transport.v1",
+      "platform": "openai",
+      "account_type": "oauth"
+    }
+  ],
+  "ui": { "entrypoint": "ui/index.html" }
+}

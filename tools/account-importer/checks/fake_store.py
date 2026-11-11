@@ -17,5 +17,5 @@ class FakeStore:
 async def wait_for_operation(job):
     import asyncio
     async with asyncio.timeout(3):
-        while job.state in {"importing", "reauthorizing"} or job.manual_pending:
+        while job.state in {"importing", "reauthorizing", "registering"} or job.manual_pending:
             await asyncio.sleep(0.005)

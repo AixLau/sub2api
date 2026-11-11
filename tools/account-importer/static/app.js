@@ -1,7 +1,7 @@
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const feedback = document.getElementById('feedback');
 const tableBody = document.getElementById('jobs-body');
-const labels = { importing: '导入中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '已结束', removed: '账号已删除' };
+const labels = { importing: '导入中', registering: '注册中', monitoring: '监控中', invalid: '授权失效', reauthorizing: '重新授权中', attention: '需关注', failed: '失败', completed: '已结束', removed: '账号已删除' };
 let reauthJob = null;
 
 function setFeedback(message, error = false) {
@@ -21,7 +21,7 @@ function submitOptions(body) {
 }
 
 function tab(mode) {
-  for (const name of ['file', 'account']) {
+  for (const name of ['file', 'account', 'register']) {
     const active = name === mode;
     document.getElementById('tab-' + name).setAttribute('aria-selected', String(active));
     document.getElementById('panel-' + name).hidden = !active;
@@ -31,6 +31,7 @@ function tab(mode) {
 
 document.getElementById('tab-file').addEventListener('click', () => tab('file'));
 document.getElementById('tab-account').addEventListener('click', () => tab('account'));
+document.getElementById('tab-register').addEventListener('click', () => tab('register'));
 document.getElementById('show-account').addEventListener('change', event => {
   document.getElementById('account-line').type = event.target.checked ? 'text' : 'password';
 });
@@ -105,7 +106,7 @@ async function loadConfig() {
     await loadReferenceModels();
     for (const group of config.groups) {
       if (group.platform && group.platform !== 'openai') continue;
-      for (const id of ['file-group', 'account-group']) {
+      for (const id of ['file-group', 'account-group', 'register-group']) {
         const option = document.createElement('option');
         option.value = String(group.id);
         option.textContent = group.name + ' · #' + group.id;
@@ -138,6 +139,7 @@ async function loadPlugins() {
   const controls = [
     ['file-plugin', 'refresh-plugins', 'plugin-hint'],
     ['account-plugin', 'refresh-account-plugins', 'account-plugin-hint'],
+    ['register-plugin', 'refresh-register-plugins', 'register-plugin-hint'],
   ].map(ids => {
     const [select, refresh, hint] = ids.map(id => document.getElementById(id));
     const previous = select.value;
@@ -260,7 +262,7 @@ async function loadJobs() {
         calls.append(last);
       }
       addSevenDayUsage(row, job.seven_day_usage);
-      addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : '账号资料');
+      addCell(row, job.mode === 'file' ? 'JSON 文件' : job.mode === 'reference' ? '参考账号' : job.mode === 'register' ? '邮箱注册' : '账号资料');
       const monitor = addCell(row, job.monitoring_enabled ? '持续监控' : job.retired ? '已由新任务接管' : job.state === 'removed' ? '已停止' : '等待导入');
       if (job.last_checked_at) {
         const checked = document.createElement('small');
@@ -268,28 +270,39 @@ async function loadJobs() {
         monitor.append(checked);
       }
       const action = row.insertCell();
-      if (!job.retired && job.state !== 'removed' && ((job.mode === 'file' && job.account_id) || (job.mode === 'credentials' && job.has_saved_credentials))) {
+      const busy = ['importing', 'reauthorizing', 'registering'].includes(job.state);
+      const canRetryRegister = job.mode === 'register' && job.can_retry_registration;
+      const canFileReauth = Boolean(job.account_id) && (job.mode === 'file' || job.mode === 'register');
+      const canCredentialReauth = job.has_saved_credentials && (job.mode === 'credentials' || job.mode === 'register');
+      if (!job.retired && job.state !== 'removed' && (canRetryRegister || canFileReauth || canCredentialReauth)) {
         action.className = 'job-actions';
-        const busy = ['importing', 'reauthorizing'].includes(job.state);
-        const button = document.createElement('button');
-        button.className = 'text-button';
-        button.type = 'button';
-        button.disabled = busy;
-        button.textContent = job.mode === 'file' ? 'RT 重新授权' : '手动重新授权';
-        button.addEventListener('click', async () => {
-          if (job.mode === 'file') { openAuthorization(job); return; }
-          button.disabled = true;
-          setFeedback('正在使用首次导入的账号资料重新授权…');
-          try {
-            await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/credentials', {
-              method: 'POST', headers: { 'X-CSRF-Token': csrf },
-            });
-            setFeedback('已使用首次导入的资料启动授权，结果会在下方更新。');
-            await loadJobs();
-          } catch (error) { setFeedback(error.message, true); button.disabled = false; }
-        });
-        action.append(button);
-        if (job.mode === 'file') {
+        if (canRetryRegister) {
+          const retry = document.createElement('button');
+          retry.className = 'text-button';
+          retry.type = 'button';
+          retry.disabled = busy;
+          retry.textContent = '重试注册';
+          retry.addEventListener('click', async () => {
+            retry.disabled = true;
+            setFeedback('正在重新启动注册任务…');
+            try {
+              await request('api/jobs/' + encodeURIComponent(job.id) + '/retry-registration', {
+                method: 'POST', headers: { 'X-CSRF-Token': csrf },
+              });
+              setFeedback('注册任务已重新启动，结果会在下方更新。');
+              await loadJobs();
+            } catch (error) { setFeedback(error.message, true); retry.disabled = false; }
+          });
+          action.append(retry);
+        }
+        if (canFileReauth) {
+          const rt = document.createElement('button');
+          rt.className = 'text-button';
+          rt.type = 'button';
+          rt.disabled = busy;
+          rt.textContent = 'RT 重新授权';
+          rt.addEventListener('click', () => openAuthorization(job));
+          action.append(rt);
           const upload = document.createElement('button');
           upload.className = 'text-button';
           upload.type = 'button';
@@ -297,7 +310,27 @@ async function loadJobs() {
           upload.textContent = '重新上传 JSON';
           upload.addEventListener('click', () => { reauthJob = job.id; document.getElementById('reauth-json').click(); });
           action.append(upload);
-        } else if (job.attempts) {
+        }
+        if (canCredentialReauth) {
+          const button = document.createElement('button');
+          button.className = 'text-button';
+          button.type = 'button';
+          button.disabled = busy;
+          button.textContent = job.account_id ? '手动重新授权' : '用已保存资料导入';
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            setFeedback('正在使用首次导入的账号资料重新授权…');
+            try {
+              await request('api/jobs/' + encodeURIComponent(job.id) + '/reauthorize/credentials', {
+                method: 'POST', headers: { 'X-CSRF-Token': csrf },
+              });
+              setFeedback('已使用首次导入的资料启动授权，结果会在下方更新。');
+              await loadJobs();
+            } catch (error) { setFeedback(error.message, true); button.disabled = false; }
+          });
+          action.append(button);
+        }
+        if (job.attempts && (job.mode === 'credentials' || job.mode === 'register')) {
           const attempts = document.createElement('small');
           attempts.textContent = '本轮自动授权 ' + job.attempts + '/' + job.max_authorization_attempts + ' 次（含首次）';
           action.append(attempts);
@@ -351,6 +384,36 @@ document.getElementById('panel-account').addEventListener('submit', async event 
     await request('api/import/account?profile_account_id=' + encodeURIComponent(document.getElementById('reference-account').value), { method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' }, body: JSON.stringify({ account_line: line, group_ids: group ? [Number(group)] : [], plugin_id: plugin ? Number(plugin) : null }) });
     document.getElementById('account-line').value = '';
     setFeedback('登录任务已创建，结果会在下方更新。');
+    await loadJobs();
+  } catch (error) { setFeedback(error.message, true); }
+  finally { button.disabled = false; }
+});
+
+document.getElementById('panel-register').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!document.getElementById('reference-account').reportValidity()) return;
+  if (!await requireReferenceModels()) return;
+  const lines = document.getElementById('register-lines').value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (!lines.length) { setFeedback('请输入注册邮箱资料。', true); return; }
+  if (lines.length > 10) { setFeedback('一次最多提交 10 个注册邮箱。', true); return; }
+  const group = document.getElementById('register-group').value;
+  const plugin = document.getElementById('register-plugin').value;
+  const button = form.querySelector('button[type=submit]');
+  button.disabled = true;
+  setFeedback('正在创建注册任务…');
+  try {
+    const jobs = await request('api/register?profile_account_id=' + encodeURIComponent(document.getElementById('reference-account').value), {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        registration_lines: lines,
+        group_ids: group ? [Number(group)] : [],
+        plugin_id: plugin ? Number(plugin) : null,
+      }),
+    });
+    document.getElementById('register-lines').value = '';
+    setFeedback('已创建 ' + jobs.length + ' 个注册任务，注册和导入结果会在下方更新。');
     await loadJobs();
   } catch (error) { setFeedback(error.message, true); }
   finally { button.disabled = false; }
@@ -417,6 +480,7 @@ authorizationForm.addEventListener('submit', async event => {
 document.getElementById('refresh').addEventListener('click', loadJobs);
 document.getElementById('refresh-plugins').addEventListener('click', loadPlugins);
 document.getElementById('refresh-account-plugins').addEventListener('click', loadPlugins);
+document.getElementById('refresh-register-plugins').addEventListener('click', loadPlugins);
 loadPlugins();
 loadConfig();
 loadJobs();

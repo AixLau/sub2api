@@ -24,6 +24,8 @@ services:
       ACCOUNT_IMPORT_REDIS_DB: ${ACCOUNT_IMPORT_REDIS_DB:?Select an unused Redis database}
       SUB2API_REDIS_DB: ${SUB2API_REDIS_DB:?Set the gateway Redis database}
       ACCOUNT_IMPORT_ENCRYPTION_KEY_FILE: /run/secrets/importer_encryption_key
+      ACCOUNT_IMPORT_REGISTRATION_OTP_TIMEOUT: ${ACCOUNT_IMPORT_REGISTRATION_OTP_TIMEOUT:-180}
+      ACCOUNT_IMPORT_MAIL_API_PROXY: ${ACCOUNT_IMPORT_MAIL_API_PROXY:-}
     secrets:
       - admin_api_key
       - importer_encryption_key

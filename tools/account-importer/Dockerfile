@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py ./
 COPY static ./static
 RUN python -c 'from local_relogin import _load_upstream, DEFAULT_SOURCE_DIR; _load_upstream(DEFAULT_SOURCE_DIR)' \
+    && python -c 'from local_register import _load_upstream, DEFAULT_SOURCE_DIR; _load_upstream(DEFAULT_SOURCE_DIR)' \
     && node --version
 USER 10001:10001
 CMD ["python", "web_service.py"]

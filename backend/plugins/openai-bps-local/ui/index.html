@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BPS Local Bridge</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header>
+        <h1>BPS Local 桥接</h1>
+        <p>移植自 bps-local。只对在插件管理页“绑定账号”中选中的 OpenAI OAuth 账号生效，未绑定账号继续走原生通道。凭据由宿主按账号提供并刷新，插件不保存。</p>
+      </header>
+
+      <form id="config-form">
+        <label>
+          <span>BPS 上游地址</span>
+          <input id="upstream_url" name="upstream_url" type="url" required />
+          <small>默认 https://bps.openai.com/basispoints/api/responses；WebSocket 模式会自动换成 wss。不要在 URL 里填 Token。</small>
+        </label>
+
+        <div class="grid">
+          <label>
+            <span>上游传输</span>
+            <select id="upstream_transport" name="upstream_transport">
+              <option value="ws">WebSocket（bps-local 默认）</option>
+              <option value="sse">HTTP SSE（旧兼容）</option>
+            </select>
+          </label>
+          <label>
+            <span>代理模式</span>
+            <select id="proxy_mode" name="proxy_mode">
+              <option value="account">使用账号代理</option>
+              <option value="disabled">直连</option>
+            </select>
+          </label>
+          <label>
+            <span>WebSocket 空闲超时（秒）</span>
+            <input id="ws_idle_timeout_seconds" type="number" min="5" max="3600" />
+          </label>
+        </div>
+
+        <label>
+          <span>工具版本 ID（可选）</span>
+          <input id="tools_version" name="tools_version" type="text" spellcheck="false" />
+          <small>写入 metadata.bps_tools_version_id；留空表示由服务端决定。</small>
+        </label>
+
+        <label class="checkbox"><input id="native_passthrough" type="checkbox" /> <span>非 POST /responses 的请求（如 /responses/compact）原样走原生通道</span></label>
+        <label class="checkbox"><input id="arc_text_session" type="checkbox" /> <span>实验：纯文本请求启用 ARC 会话（开启后带客户端工具的请求会被拒绝）</span></label>
+
+        <label>
+          <span>额外请求头（JSON 对象）</span>
+          <textarea id="extra_headers" rows="4" spellcheck="false">{}</textarea>
+          <small>Authorization、账号 ID、Origin、X-OpenAI-* 等身份或协议头由插件管理，不能在这里覆盖。</small>
+        </label>
+
+        <div class="actions">
+          <button id="save" type="submit">保存配置</button>
+          <button id="test" type="button" class="secondary">校验配置</button>
+          <span id="message" role="status"></span>
+        </div>
+      </form>
+
+      <section class="status">
+        <strong>运行状态</strong>
+        <span id="status">加载中…</span>
+      </section>
+      <p id="status-detail" aria-live="polite"></p>
+    </main>
+    <script src="assets/bridge-v1.js"></script>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

@@ -21,6 +21,7 @@ from default_profile import DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME
 from import_payload import MAX_UPLOAD_BYTES, parse_bundle
 from job_store import JobStore, RedisJobStore, StorageError
 from job_manager import JobManager
+from local_register import parse_registration_line, register_payload
 from local_relogin import DEFAULT_SOURCE_DIR, relogin_payload
 from sub2api_client import AdminAPIError, Sub2APIClient
 
@@ -37,14 +38,20 @@ class RefreshTokenInput(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=16384)
 
 
+class RegistrationInput(BaseModel):
+    registration_lines: list[str] = Field(min_length=1, max_length=10)
+    group_ids: list[int] = Field(default_factory=list, max_length=20)
+    plugin_id: int | None = Field(default=None, gt=0, strict=True)
+
+
 async def _bundle(file: UploadFile) -> dict:
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     await file.close()
     return parse_bundle(raw)
 
 
-def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, poll_seconds=30) -> FastAPI:
-    manager = JobManager(client, store=store, login=login, poll_seconds=poll_seconds)
+def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload, register=register_payload, poll_seconds=30) -> FastAPI:
+    manager = JobManager(client, store=store, login=login, register=register, poll_seconds=poll_seconds)
     csrf_token = secrets.token_urlsafe(32)
 
     @asynccontextmanager
@@ -172,6 +179,23 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
         except AdminAPIError:
             raise HTTPException(status_code=502, detail="Sub2API 管理员接口不可用") from None
 
+    @app.post("/api/register", status_code=202)
+    async def register_accounts(body: RegistrationInput, profile_account_id: int | None = DEFAULT_PROFILE_ID, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            # Validate every line before creating jobs so a typo does not leave
+            # a partially submitted batch behind.
+            for line in body.registration_lines:
+                parse_registration_line(line)
+            jobs = []
+            for line in body.registration_lines:
+                jobs.append(await manager.register_credentials(line, body.group_ids, profile_account_id, body.plugin_id))
+            return jobs
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except AdminAPIError:
+            raise HTTPException(status_code=502, detail="Sub2API 管理员接口不可用") from None
+
     @app.post("/api/jobs/{job_id}/reauthorize")
     async def reauthorize(job_id: str, file: UploadFile = File(...), x_csrf_token: str | None = Header(None)):
         require_csrf(x_csrf_token)
@@ -187,6 +211,16 @@ def create_app(client: Sub2APIClient, *, store: JobStore, login=relogin_payload,
             return await manager.reauthorize_credentials(job_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    @app.post("/api/jobs/{job_id}/retry-registration", status_code=202)
+    async def retry_registration(job_id: str, x_csrf_token: str | None = Header(None)):
+        require_csrf(x_csrf_token)
+        try:
+            return await manager.retry_registration(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except AdminAPIError:
+            raise HTTPException(status_code=502, detail="Sub2API 管理员接口不可用") from None
 
     @app.post("/api/jobs/{job_id}/reauthorize/refresh-token", status_code=202)
     async def reauthorize_rt(job_id: str, body: RefreshTokenInput, x_csrf_token: str | None = Header(None)):
@@ -220,7 +254,12 @@ def main() -> None:
         parser.error("必须设置 SUB2API_BASE_URL")
     client = Sub2APIClient(base_url, key)
     login = partial(relogin_payload, source_dir=args.source_dir)
-    uvicorn.run(create_app(client, store=RedisJobStore.from_env(), login=login), host=args.host, port=args.port, access_log=False, proxy_headers=False)
+    try:
+        otp_timeout = int(os.getenv("ACCOUNT_IMPORT_REGISTRATION_OTP_TIMEOUT", "180"))
+    except ValueError:
+        otp_timeout = 180
+    register = partial(register_payload, source_dir=args.source_dir, otp_timeout=otp_timeout)
+    uvicorn.run(create_app(client, store=RedisJobStore.from_env(), login=login, register=register), host=args.host, port=args.port, access_log=False, proxy_headers=False)
 
 
 if __name__ == "__main__":

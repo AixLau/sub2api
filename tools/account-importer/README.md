@@ -1,7 +1,9 @@
 # Sub2API account importer
 
 An independent administrator tool for importing OpenAI OAuth accounts from
-Sub2API JSON or one email----password----TOTP-secret line. It can append
+Sub2API JSON or one email----password----TOTP-secret line. It can also register
+new accounts from email----mail-API-URL lines, bind TOTP 2FA during registration,
+and import them into the same monitoring flow. It can append
 successfully imported accounts to a selected, already enabled plugin, preserving
 its current account scope. Failed plugin updates remain visible separately from
 account import status. Existing accounts are reauthorized without duplication.
@@ -57,6 +59,56 @@ cleanup, password/TOTP processing, and the refresh-only completion path offline.
 No third-party login service is used. Account login may still require mailbox
 verification or fail according to the upstream authentication response.
 
+## Email registration
+
+The same Web page has a 邮箱注册 tab. Each line is one fixed mailbox:
+
+~~~text
+email@example.com----https://mail.example/api/key=REDACTED
+~~~
+
+Both ---- and ==== separators are accepted. The mail endpoint is polled and may
+return JSON, plain text, or HTML; a six-digit code is extracted from structured
+code/otp/verification_code fields, nested JSON, or the message body. A cache-busting
+query parameter and a short settle window avoid returning a cached code while a
+newer one is arriving. When the response contains a timestamp, codes older than
+the current send are ignored. The URL usually contains an API key and is treated
+as a secret.
+
+The registration flow generates a 16-character password and binds 2FA during
+the same session. On success the account is imported with the selected
+profile, groups, 5x proxy, model restrictions, and plugin binding, then enabled,
+scheduled, and monitored like any other imported account. The resulting
+email----password----TOTP line is encrypted in the existing job store and used
+for automatic and one-click reauthorization.
+
+Failed registration keeps the encrypted mailbox line so the operator can use
+重试注册. The task list never returns the mail API URL, password, or TOTP secret.
+If the password or TOTP secret is unavailable, the account is still imported and
+monitored, but the task is marked 需关注 and automatic reauthorization stays
+disabled; RT/JSON reauthorization remains available.
+
+If OpenAI creates the account and binds 2FA but the Codex token exchange does
+not return a refresh token, the generated password and TOTP secret are kept and
+the task is marked 需关注. Use 用已保存资料导入 to log in again and import the
+account; do not register the same address a second time.
+
+A free account can complete registration and 2FA without producing a Codex
+refresh token; a paid Plus subscription is required for RT. Such a free account
+is kept with its saved password/TOTP for a later upgrade, and the task should
+not be re-registered just to retry the token exchange.
+
+`ACCOUNT_IMPORT_REGISTRATION_OTP_TIMEOUT` (default 180 seconds) controls each
+mailbox wait. `ACCOUNT_IMPORT_MAIL_API_PROXY` can route mailbox polling through a
+dedicated proxy without reusing the OpenAI login proxy. The registration engine
+is the pinned any-auto-register `platforms/chatgpt/registration_engine.py`; no
+additional registration service is deployed. Keep the mail endpoint reachable
+only from trusted networks and out of logs.
+
+The importer does not configure an SMS provider. If OpenAI requires add-phone
+for the current network, registration fails with the upstream reason; email
+registration does not bypass phone verification.
+
 ## Container deployment
 
 Build only this tool, without rebuilding the gateway or running unrelated tests:
@@ -82,6 +134,9 @@ SUB2API_REDIS_DB=0
 ACCOUNT_IMPORT_REDIS_HOST=redis
 ACCOUNT_IMPORT_REDIS_PORT=6379
 ACCOUNT_IMPORT_REDIS_DB=1
+ACCOUNT_IMPORT_REGISTRATION_OTP_TIMEOUT=180
+# Optional: route mailbox polling through a dedicated proxy
+# ACCOUNT_IMPORT_MAIL_API_PROXY=http://127.0.0.1:7897
 ~~~
 
 ~~~sh
