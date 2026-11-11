@@ -103,6 +103,8 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
+			log.CacheCreation30mTokens,
+			log.CacheCreation12hTokens,
 			createdAt,
 			sqlmock.AnyArg(), // user_queue_wait_ms
 			sqlmock.AnyArg(), // account_queue_wait_ms
@@ -204,6 +206,8 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
+			log.CacheCreation30mTokens,
+			log.CacheCreation12hTokens,
 			createdAt,
 			sqlmock.AnyArg(), // user_queue_wait_ms
 			sqlmock.AnyArg(), // account_queue_wait_ms
@@ -270,7 +274,7 @@ func TestExecUsageLogInsertNoResult_PersistsRequestedModel(t *testing.T) {
 		CreatedAt:      time.Date(2025, 1, 4, 12, 0, 0, 0, time.UTC),
 	})
 
-	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$68\s*\)`).
+	mock.ExpectExec(fmt.Sprintf(`(?s)INSERT INTO usage_logs.*\$%d\s*\)`, len(usageLogInsertArgTypes))).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -294,6 +298,30 @@ func TestPrepareUsageLogInsert_ArgCountMatchesTypes(t *testing.T) {
 	placeholders := usageLogInsertPlaceholders()
 	require.Equal(t, len(prepared.args), strings.Count(placeholders, "$"))
 	require.True(t, strings.HasSuffix(placeholders, fmt.Sprintf("$%d", len(prepared.args))))
+}
+
+func TestPrepareUsageLogInsert_PersistsNativeCompactionV2WithoutChangingRequestType(t *testing.T) {
+	log := &service.UsageLog{
+		UserID:             1,
+		APIKeyID:           2,
+		AccountID:          3,
+		RequestID:          "req-native-compaction-v2",
+		Model:              "gpt-5",
+		RequestedModel:     "gpt-5",
+		RequestType:        service.RequestTypeStream,
+		NativeCompactionV2: true,
+		CreatedAt:          time.Date(2025, 1, 5, 13, 0, 0, 0, time.UTC),
+	}
+
+	prepared := prepareUsageLogInsert(log)
+
+	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-10])
+	require.Equal(t, true, prepared.args[len(prepared.args)-10])
+	require.Equal(t, int16(service.RequestTypeStream), prepared.args[30])
+	require.Equal(t, service.RequestTypeStream, log.RequestType)
+	require.True(t, log.Stream)
+	require.False(t, log.OpenAIWSMode)
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
@@ -1022,7 +1050,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{},
 			string(service.UsageSourceAccountTest),
 			sql.NullString{},
-			false,
+			false, // native_compaction_v2
+			0,     // cache_creation_30m_tokens
+			0,     // cache_creation_12h_tokens
 			now,
 			sql.NullInt64{},
 			sql.NullInt64{},
@@ -1112,6 +1142,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
+			0,                // cache_creation_30m_tokens
+			0,                // cache_creation_12h_tokens
 			now,
 			sql.NullInt64{},  // user_queue_wait_ms
 			sql.NullInt64{},  // account_queue_wait_ms
@@ -1180,7 +1212,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
-			false,            // native_compaction_v2
+			true,             // native_compaction_v2
+			0,                // cache_creation_30m_tokens
+			0,                // cache_creation_12h_tokens
 			now,
 			sql.NullInt64{},  // user_queue_wait_ms
 			sql.NullInt64{},  // account_queue_wait_ms
@@ -1250,6 +1284,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
+			0,                // cache_creation_30m_tokens
+			0,                // cache_creation_12h_tokens
 			now,
 			sql.NullInt64{},  // user_queue_wait_ms
 			sql.NullInt64{},  // account_queue_wait_ms
