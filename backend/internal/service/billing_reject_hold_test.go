@@ -178,3 +178,65 @@ func TestHandleBillingRejectHoldReleaseMessage(t *testing.T) {
 	}
 	require.True(t, svc.handleBillingRejectHoldRelease(billingRejectHoldReleasePrefix+"not-a-number"))
 }
+
+func TestBillingRejectHoldWakeAllAfterSubscriberReconnect(t *testing.T) {
+	now := time.Now()
+	l := newTestBillingRejectHoldLimiter(&now)
+	l.threshold = 0
+	l.now = time.Now
+	svc := &APIKeyService{billingRejectHold: l}
+
+	holdA, holdB := l.begin(1), l.begin(2)
+	require.NotNil(t, holdA)
+	require.NotNil(t, holdB)
+	// 没有挂起请求的用户不计入。
+	l.threshold = 5
+	require.Nil(t, l.begin(3))
+
+	events := make(chan BillingRejectHoldEvent, 2)
+	for _, hold := range []*BillingRejectHold{holdA, holdB} {
+		go func(h *BillingRejectHold) { events <- h.Wait(context.Background()) }(hold)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	require.Equal(t, 2, l.wakeAll())
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-events:
+			require.Equal(t, BillingRejectHoldProbe, event)
+		case <-time.After(time.Second):
+			t.Fatal("wakeAll did not wake every held request")
+		}
+	}
+	holdA.Done(BillingRejectHoldProbe)
+	holdB.Done(BillingRejectHoldProbe)
+	require.Equal(t, 0, l.wakeAll())
+	svc.wakeAllBillingRejectHolds() // 无挂起时为空操作
+}
+
+type flakyReleasePublishCache struct {
+	APIKeyCache
+	failures int
+	messages []string
+}
+
+func (c *flakyReleasePublishCache) PublishAuthCacheInvalidation(_ context.Context, cacheKey string) error {
+	c.messages = append(c.messages, cacheKey)
+	if len(c.messages) <= c.failures {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func TestBillingRejectHoldReleasePublishRetries(t *testing.T) {
+	cache := &flakyReleasePublishCache{failures: 2}
+	svc := &APIKeyService{cache: cache}
+	svc.publishBillingRejectHoldRelease(9)
+	require.Equal(t, []string{"billing-hold-release:9", "billing-hold-release:9", "billing-hold-release:9"}, cache.messages)
+
+	// 一直失败时在固定次数后放弃。
+	cache = &flakyReleasePublishCache{failures: 100}
+	svc = &APIKeyService{cache: cache}
+	svc.publishBillingRejectHoldRelease(9)
+	require.Len(t, cache.messages, billingRejectHoldPublishAttempts)
+}

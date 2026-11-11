@@ -112,6 +112,7 @@ func (s *APIKeyService) StartAuthCacheInvalidationSubscriber(ctx context.Context
 		subscriberCtx, cancel := context.WithCancel(ctx)
 		subscriberCtx = withAuthCacheSubscriptionReady(subscriberCtx, func() {
 			s.authInvalidationConnected.Store(true)
+			s.wakeAllBillingRejectHolds()
 		})
 		s.authInvalidationCancel = cancel
 		s.authInvalidationWG.Add(1)

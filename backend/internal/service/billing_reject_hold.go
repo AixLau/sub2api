@@ -22,9 +22,11 @@ import (
 // 被唤醒的请求重跑一次计费检查，通过就按正常请求继续处理。
 
 const (
-	billingRejectHoldSweepInterval  = time.Minute
-	billingRejectHoldReleasePrefix  = "billing-hold-release:"
-	billingRejectHoldPublishTimeout = 2 * time.Second
+	billingRejectHoldSweepInterval     = time.Minute
+	billingRejectHoldReleasePrefix     = "billing-hold-release:"
+	billingRejectHoldPublishTimeout    = 2 * time.Second
+	billingRejectHoldPublishAttempts   = 3
+	billingRejectHoldPublishRetryDelay = 200 * time.Millisecond
 )
 
 // 解除消息可能先于本机订阅缓存过期（L1 TTL 约 10 秒）到达，唤醒后若计费检查
@@ -154,13 +156,37 @@ func (s *APIKeyService) ReleaseBillingRejectHold(userID int64) {
 	if s.cache == nil || s.cfg == nil || !s.cfg.APIKeyAuth.BillingRejectHold.Enabled {
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), billingRejectHoldPublishTimeout)
-		defer cancel()
-		if err := s.cache.PublishAuthCacheInvalidation(ctx, billingRejectHoldReleasePrefix+strconv.FormatInt(userID, 10)); err != nil {
-			slog.Warn("publish billing reject hold release failed", "user_id", userID, "error", err)
+	go s.publishBillingRejectHoldRelease(userID)
+}
+
+// publishBillingRejectHoldRelease 把解除消息广播给其他实例。Pub/Sub 不保证送达，
+// 发布失败就短间隔重试几次；订阅端断线漏掉的消息由重连后的 WakeAll 兜底。
+func (s *APIKeyService) publishBillingRejectHoldRelease(userID int64) {
+	message := billingRejectHoldReleasePrefix + strconv.FormatInt(userID, 10)
+	var err error
+	for attempt := 0; attempt < billingRejectHoldPublishAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(billingRejectHoldPublishRetryDelay * time.Duration(attempt))
 		}
-	}()
+		ctx, cancel := context.WithTimeout(context.Background(), billingRejectHoldPublishTimeout)
+		err = s.cache.PublishAuthCacheInvalidation(ctx, message)
+		cancel()
+		if err == nil {
+			return
+		}
+	}
+	slog.Warn("publish billing reject hold release failed", "user_id", userID, "attempts", billingRejectHoldPublishAttempts, "error", err)
+}
+
+// wakeAllBillingRejectHolds 在 Pub/Sub 订阅（重新）建立后调用：断线期间可能漏掉
+// 解除消息，让本机所有挂起中的请求各重跑一次计费检查。
+func (s *APIKeyService) wakeAllBillingRejectHolds() {
+	if s == nil || s.billingRejectHold == nil {
+		return
+	}
+	if woken := s.billingRejectHold.wakeAll(); woken > 0 {
+		slog.Info("billing reject hold: rechecking held requests after subscriber reconnect", "users", woken)
+	}
 }
 
 // handleBillingRejectHoldRelease 处理来自 Pub/Sub 的消息；返回 true 表示这是一条
@@ -292,6 +318,23 @@ func (l *billingRejectHoldLimiter) wake(userID int64) {
 		entry.signalLocked()
 	}
 	l.mu.Unlock()
+}
+
+// wakeAll 唤醒所有有挂起请求的用户，返回被唤醒的用户数。
+func (l *billingRejectHoldLimiter) wakeAll() int {
+	if l.heldTotal.Load() == 0 {
+		return 0
+	}
+	woken := 0
+	l.mu.Lock()
+	for _, entry := range l.entries {
+		if entry.held > 0 {
+			entry.signalLocked()
+			woken++
+		}
+	}
+	l.mu.Unlock()
+	return woken
 }
 
 func (e *billingRejectHoldEntry) signalLocked() {
