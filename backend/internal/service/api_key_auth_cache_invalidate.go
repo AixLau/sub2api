@@ -16,6 +16,8 @@ func (s *APIKeyService) InvalidateAuthCacheByUserID(ctx context.Context, userID 
 	if userID <= 0 {
 		return
 	}
+	// 余额、订阅等变更都会走到这里：先失效缓存，再唤醒因余额不足被挂起的请求。
+	defer s.ReleaseBillingRejectHold(userID)
 	keys, err := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
 	if err != nil {
 		return

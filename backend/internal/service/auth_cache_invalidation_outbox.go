@@ -66,6 +66,7 @@ type OpsAuthCacheInvalidationHealth struct {
 	Subscriber   AuthCacheInvalidationSubscriberHealth `json:"subscriber"`
 	Lookup       APIKeyAuthLookupMetrics               `json:"lookup"`
 	InvalidAbuse InvalidAuthAbuseHealth                `json:"invalid_abuse"`
+	BillingHold  BillingRejectHoldHealth               `json:"billing_reject_hold"`
 }
 
 func (s *OpsService) GetAuthCacheInvalidationHealth(ctx context.Context) OpsAuthCacheInvalidationHealth {
@@ -80,6 +81,7 @@ func (s *OpsService) GetAuthCacheInvalidationHealth(ctx context.Context) OpsAuth
 		health.Subscriber = s.apiKeyService.AuthCacheInvalidationSubscriberHealth()
 		health.Lookup = s.apiKeyService.AuthLookupMetrics()
 		health.InvalidAbuse = s.apiKeyService.InvalidAuthAbuseHealth()
+		health.BillingHold = s.apiKeyService.BillingRejectHoldHealth()
 	}
 	return health
 }

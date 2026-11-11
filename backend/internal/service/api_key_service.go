@@ -308,6 +308,7 @@ type APIKeyService struct {
 	authLookupRejected        atomic.Uint64
 	authLookupInFlight        atomic.Int64
 	invalidAuthAbuse          *invalidAuthAbuseLimiter
+	billingRejectHold         *billingRejectHoldLimiter
 	authInvalidationStart     sync.Once
 	authInvalidationStop      sync.Once
 	authInvalidationCancel    context.CancelFunc
@@ -365,6 +366,7 @@ func NewAPIKeyService(
 	}
 	svc.authLookupSlots = make(chan struct{}, lookupConcurrency)
 	svc.invalidAuthAbuse = newInvalidAuthAbuseLimiter(cfg)
+	svc.billingRejectHold = newBillingRejectHoldLimiter(cfg)
 	return svc
 }
 

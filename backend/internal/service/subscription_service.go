@@ -79,6 +79,20 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 	return svc
 }
 
+// BillingRejectHoldReleaser 唤醒因余额不足被挂起的请求（见 billing_reject_hold.go）。
+type BillingRejectHoldReleaser interface {
+	ReleaseBillingRejectHold(userID int64)
+}
+
+func (s *SubscriptionService) releaseBillingRejectHold(userID int64) {
+	if s == nil || s.authCacheInvalidator == nil {
+		return
+	}
+	if releaser, ok := s.authCacheInvalidator.(BillingRejectHoldReleaser); ok {
+		releaser.ReleaseBillingRejectHold(userID)
+	}
+}
+
 func (s *SubscriptionService) SetRenewalAuthCacheInvalidator(invalidator APIKeyAuthCacheInvalidator) {
 	s.authCacheInvalidator = invalidator
 }
@@ -169,6 +183,8 @@ func (s *SubscriptionService) jitteredTTL(ttl time.Duration) time.Duration {
 
 // InvalidateSubCache 失效指定用户+分组的订阅 L1 缓存
 func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
+	// 订阅新增/续期/重置后，唤醒该用户因余额不足被挂起的请求。
+	defer s.releaseBillingRejectHold(userID)
 	if s.subCacheL1 == nil {
 		return
 	}
@@ -178,6 +194,7 @@ func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
 
 // InvalidateSubCacheSync 失效订阅 L1 缓存并等待 Ristretto 删除操作生效。
 func (s *SubscriptionService) InvalidateSubCacheSync(userID, groupID int64) {
+	defer s.releaseBillingRejectHold(userID)
 	s.invalidateSubCacheKeySync(subCacheKey(userID, groupID))
 }
 

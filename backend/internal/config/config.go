@@ -1864,14 +1864,15 @@ type RateLimitConfig struct {
 
 // APIKeyAuthCacheConfig API Key 认证缓存配置
 type APIKeyAuthCacheConfig struct {
-	L1Size             int                    `mapstructure:"l1_size"`
-	L1TTLSeconds       int                    `mapstructure:"l1_ttl_seconds"`
-	L2TTLSeconds       int                    `mapstructure:"l2_ttl_seconds"`
-	NegativeTTLSeconds int                    `mapstructure:"negative_ttl_seconds"`
-	JitterPercent      int                    `mapstructure:"jitter_percent"`
-	Singleflight       bool                   `mapstructure:"singleflight"`
-	LookupConcurrency  int                    `mapstructure:"lookup_concurrency"`
-	InvalidAbuse       InvalidAuthAbuseConfig `mapstructure:"invalid_abuse"`
+	L1Size             int                     `mapstructure:"l1_size"`
+	L1TTLSeconds       int                     `mapstructure:"l1_ttl_seconds"`
+	L2TTLSeconds       int                     `mapstructure:"l2_ttl_seconds"`
+	NegativeTTLSeconds int                     `mapstructure:"negative_ttl_seconds"`
+	JitterPercent      int                     `mapstructure:"jitter_percent"`
+	Singleflight       bool                    `mapstructure:"singleflight"`
+	LookupConcurrency  int                     `mapstructure:"lookup_concurrency"`
+	InvalidAbuse       InvalidAuthAbuseConfig  `mapstructure:"invalid_abuse"`
+	BillingRejectHold  BillingRejectHoldConfig `mapstructure:"billing_reject_hold"`
 }
 
 // APIKeyCreateConfig 用户创建 API Key 的防滥用限制（0 表示不限制）
@@ -1888,6 +1889,21 @@ type InvalidAuthAbuseConfig struct {
 	WindowSeconds int  `mapstructure:"window_seconds"`
 	BlockSeconds  int  `mapstructure:"block_seconds"`
 	Capacity      int  `mapstructure:"capacity"`
+}
+
+// BillingRejectHoldConfig 余额不足后持续重试的请求挂起策略。
+// 同一用户在 WindowSeconds 内被拒绝超过 Threshold 次后，后续请求先挂起再拒绝；
+// 挂起时长从 InitialHoldSeconds 起随持续重试的时间加长，上限 MaxHoldSeconds。
+type BillingRejectHoldConfig struct {
+	Enabled            bool `mapstructure:"enabled"`
+	Threshold          int  `mapstructure:"threshold"`
+	WindowSeconds      int  `mapstructure:"window_seconds"`
+	InitialHoldSeconds int  `mapstructure:"initial_hold_seconds"`
+	MaxHoldSeconds     int  `mapstructure:"max_hold_seconds"`
+	IdleResetSeconds   int  `mapstructure:"idle_reset_seconds"`
+	MaxHeldPerUser     int  `mapstructure:"max_held_per_user"`
+	MaxHeldTotal       int  `mapstructure:"max_held_total"`
+	Capacity           int  `mapstructure:"capacity"`
 }
 
 // SubscriptionCacheConfig 订阅认证 L1 缓存配置
@@ -2563,6 +2579,15 @@ func setDefaults() {
 	viper.SetDefault("api_key_auth_cache.invalid_abuse.window_seconds", 60)
 	viper.SetDefault("api_key_auth_cache.invalid_abuse.block_seconds", 60)
 	viper.SetDefault("api_key_auth_cache.invalid_abuse.capacity", 16384)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.enabled", true)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.threshold", 10)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.window_seconds", 60)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.initial_hold_seconds", 30)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.max_hold_seconds", 600)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.idle_reset_seconds", 1800)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.max_held_per_user", 200)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.max_held_total", 2000)
+	viper.SetDefault("api_key_auth_cache.billing_reject_hold.capacity", 16384)
 	viper.SetDefault("api_key_create.max_active_per_user", 200)
 	viper.SetDefault("api_key_create.max_per_user_per_hour", 60)
 
@@ -2988,6 +3013,26 @@ func (c *Config) Validate() error {
 		}
 		if c.APIKeyAuth.InvalidAbuse.Capacity < 256 || c.APIKeyAuth.InvalidAbuse.Capacity > 1_000_000 {
 			return fmt.Errorf("api_key_auth_cache.invalid_abuse.capacity must be between 256 and 1000000")
+		}
+	}
+	if h := c.APIKeyAuth.BillingRejectHold; h.Enabled {
+		if h.Threshold < 1 {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold.threshold must be at least 1")
+		}
+		if h.WindowSeconds < 1 || h.WindowSeconds > 3600 {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold.window_seconds must be between 1 and 3600")
+		}
+		if h.InitialHoldSeconds < 1 || h.MaxHoldSeconds < h.InitialHoldSeconds || h.MaxHoldSeconds > 3600 {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold requires 1 <= initial_hold_seconds <= max_hold_seconds <= 3600")
+		}
+		if h.IdleResetSeconds <= h.MaxHoldSeconds {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold.idle_reset_seconds must exceed max_hold_seconds")
+		}
+		if h.MaxHeldPerUser < 1 || h.MaxHeldTotal < h.MaxHeldPerUser || h.MaxHeldTotal > 100_000 {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold requires 1 <= max_held_per_user <= max_held_total <= 100000")
+		}
+		if h.Capacity < 256 || h.Capacity > 1_000_000 {
+			return fmt.Errorf("api_key_auth_cache.billing_reject_hold.capacity must be between 256 and 1000000")
 		}
 	}
 	jwtSecret := strings.TrimSpace(c.JWT.Secret)

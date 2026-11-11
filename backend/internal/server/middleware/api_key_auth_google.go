@@ -23,7 +23,7 @@ func APIKeyAuthGoogle(apiKeyService *service.APIKeyService, cfg *config.Config) 
 //
 // It is intended for Gemini native endpoints (/v1beta) to match Gemini SDK expectations.
 func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
+	auth := func(c *gin.Context) {
 		if rejectInvalidAuthAbuse(c, apiKeyService) {
 			abortWithGoogleError(c, 429, "Too many invalid authentication attempts; retry later")
 			return
@@ -250,9 +250,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				return
 			}
 			markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
+			if holdBillingReject(c, apiKeyService, apiKey.User.ID) {
+				return
+			}
 			abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
 			return
 		}
+		billingRejectHoldPassed(c, apiKeyService, apiKey.User.ID)
 
 		if subscription != nil {
 			c.Set(string(ContextKeySubscription), subscription)
@@ -268,6 +272,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		c.Next()
 	}
+	return withBillingRejectHold(auth, func(c *gin.Context) {
+		abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
+	})
 }
 
 // extractAPIKeyForGoogle extracts API key for Google/Gemini endpoints.

@@ -796,6 +796,36 @@ api_key_auth_cache:
     # Maximum tracked client identities per process; memory remains bounded.
     # 每进程最多跟踪的客户端身份数量，确保内存有界。
     capacity: 16384
+  # Hold (delay) requests from users who keep retrying after an insufficient-balance
+  # rejection. Each rejected request still uploads its whole body, so slowing the
+  # retry loop is what saves inbound traffic. Keyed by user, not IP: the website,
+  # login and top-up are never affected. No polling: top-up, redeem, admin
+  # balance changes and subscription grants publish a release that wakes the held
+  # requests on every instance, and they proceed as normal requests.
+  # 余额不足后仍持续重试的请求挂起策略：按用户生效，不影响网站登录和充值；
+  # 不做轮询，充值、兑换、管理员调余额、分配订阅时发布解除消息，各实例立即放行。
+  billing_reject_hold:
+    enabled: true
+    # Immediate rejections allowed per user per window before holding starts.
+    # 每个用户在窗口内允许的立即拒绝次数，超过后开始挂起。
+    threshold: 10
+    window_seconds: 60
+    # Hold grows from initial to max the longer the user keeps retrying.
+    # 挂起时长随持续重试的时间从 initial 加长到 max。
+    # Keep max below the reverse proxy's upstream read/write timeout (Caddy
+    # transport read_timeout/write_timeout): a hold that outlives it is counted
+    # as an upstream failure and can trip failover.
+    # max 必须小于反向代理的上游读写超时，否则会被计为上游故障并触发故障转移。
+    initial_hold_seconds: 30
+    max_hold_seconds: 600
+    # Forget a user after this long without a rejected request (must exceed max_hold_seconds).
+    # 用户这么久没有再被拒绝就重新计数（必须大于 max_hold_seconds）。
+    idle_reset_seconds: 1800
+    # Requests beyond these caps are rejected immediately instead of held.
+    # 超出上限的请求立即拒绝，不再挂起。
+    max_held_per_user: 200
+    max_held_total: 2000
+    capacity: 16384
 
 # =============================================================================
 # API Key Creation Limits
