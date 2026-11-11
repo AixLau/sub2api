@@ -192,7 +192,7 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
-import { normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
+import { formatBalanceRechargeMultiplier, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import type {
   SubscriptionPlan,
   CheckoutInfoResponse,
@@ -541,7 +541,7 @@ const oneToOneConfigurationWarning = computed(() =>
   oneToOneConfigured.value
     ? ''
     : t('payment.rechargeUi.oneToOneConfigurationWarning', {
-        multiplier: balanceRechargeMultiplier.value.toFixed(4),
+        multiplier: formatBalanceRechargeMultiplier(balanceRechargeMultiplier.value),
       })
 )
 const rechargeBonusTiers = computed(() => normalizeRechargeBonusTiers(checkout.value.recharge_bonus_tiers))

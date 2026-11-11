@@ -1127,7 +1127,8 @@ func openAIStreamEventIsPreamble(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
 	// Queuing and moderation metadata do not commit model output or disarm the
 	// first-output timeout; a following overload must remain safe to retry.
-	case "response.created", "response.queued", "response.in_progress", "response.metadata", "keepalive":
+	case "response.created", "response.queued", "response.in_progress", "response.metadata",
+		"codex.rate_limits", "codex.response.metadata", "keepalive":
 		return true
 	default:
 		return false
@@ -1330,17 +1331,30 @@ func openAIStreamDataStartsFirstResponse(data, eventType string) bool {
 }
 
 func (s *OpenAIGatewayService) openAITTFTMode(ctx context.Context) string {
+	mode := OpenAITTFTModeSemantic
 	if s != nil && s.settingService != nil {
-		return normalizeOpenAITTFTMode(s.settingService.GetOpenAITTFTMode(ctx))
+		mode = s.settingService.GetOpenAITTFTMode(ctx)
+	} else if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
+		if cached.expiresAt == 0 || time.Now().UnixNano() < cached.expiresAt {
+			mode = cached.openAITTFTMode
+		}
 	}
-	return OpenAITTFTModeSemantic
+	return normalizeOpenAITTFTMode(mode)
 }
 
 func (s *OpenAIGatewayService) openAIStreamDataStartsConfiguredTTFT(ctx context.Context, data, eventType string) bool {
-	if s.openAITTFTMode(ctx) == OpenAITTFTModeVisible {
+	return openAIStreamDataStartsTTFT(data, eventType, false, s.openAITTFTMode(ctx))
+}
+
+// openAIStreamDataStartsTTFT is the shared first-token rule for SSE and
+// WebSocket relays: visible mode waits for visible output, semantic mode uses
+// the first non-terminal upstream response event. forceOutput lets callers
+// that already know output started bypass the semantic check.
+func openAIStreamDataStartsTTFT(data, eventType string, forceOutput bool, mode string) bool {
+	if mode == OpenAITTFTModeVisible {
 		return openAIStreamDataStartsVisibleOutput(data, eventType)
 	}
-	return openAIStreamDataStartsFirstResponse(data, eventType)
+	return forceOutput || openAIStreamDataStartsFirstResponse(data, eventType)
 }
 
 // openAIStreamFailedEventErrorCode 提取流内 failed 事件的错误码（小写），
@@ -1521,6 +1535,36 @@ func openAIStream403AccountFailure(payload []byte, message string) bool {
 	return isOpenAIUpstreamAccessStateError(message, payload) || openAIStreamCredentialAuthFailure(payload)
 }
 
+// openAICapacityShedRuleBody excludes response output and metadata from custom
+// cooldown keyword matching and from the persisted rule reason.
+func openAICapacityShedRuleBody(payload []byte) []byte {
+	if !gjson.ValidBytes(payload) {
+		return payload
+	}
+	errorFields := gjson.GetBytes(payload, "response.error")
+	if !errorFields.IsObject() {
+		errorFields = gjson.GetBytes(payload, "error")
+	}
+	var errorValue any
+	if errorFields.IsObject() {
+		errorValue = json.RawMessage(errorFields.Raw)
+	} else {
+		// Some compatible providers send flat errors instead of an error object.
+		flat := make(map[string]json.RawMessage)
+		for _, key := range []string{"code", "type", "message", "param", "headers"} {
+			if value := gjson.GetBytes(payload, key); value.Exists() {
+				flat[key] = json.RawMessage(value.Raw)
+			}
+		}
+		errorValue = flat
+	}
+	body, err := marshalOpenAIUpstreamJSON(gin.H{"error": errorValue})
+	if err != nil {
+		return nil
+	}
+	return body
+}
+
 func openAIStreamFailedEventPassthroughBody(payload []byte, failedMessage string) []byte {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return payload
@@ -1691,13 +1735,16 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
 	canonicalModel ...string,
 ) (int, bool) {
 	statusCode := openAIStreamFailureStatus(payload, message)
+	if statusCode == http.StatusServiceUnavailable && (account == nil || account.Platform != PlatformOpenAI) {
+		return statusCode, false
+	}
 	switch statusCode {
 	case http.StatusForbidden:
 		if !openAIStream403AccountFailure(payload, message) {
 			return statusCode, false
 		}
 		fallthrough
-	case http.StatusUnauthorized, http.StatusTooManyRequests, 529:
+	case http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable, 529:
 		ctx := context.Background()
 		if c != nil && c.Request != nil {
 			ctx = c.Request.Context()
