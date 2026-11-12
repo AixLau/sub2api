@@ -1645,9 +1645,12 @@ type GatewaySchedulingConfig struct {
 
 	// StickySessionSpilloverEnabled 开启后（OpenAI 兼容调度），粘性账号并发已满而
 	// 同组其他账号有空闲槽位时，请求立即借道到空闲账号，而不是在粘性账号排队。
-	// 借道账号记录为会话的「备用账号」，后续借道优先复用它以保持缓存连续性。
+	// 借道账号记录为会话的「备用账号」，后续借道优先复用它，把会话限制在两个账号之间。
 	StickySessionSpilloverEnabled bool `mapstructure:"sticky_session_spillover_enabled"`
-	// StickySessionSpilloverTTL 备用账号记录的有效期（应接近上游 Prompt Cache 的保留时间）。
+	// StickySessionSpilloverTTL 备用账号记录的有效期，从记录写入时起算。它只决定
+	// 「多久之内优先复用同一个备用账号」，不保证上游 Prompt Cache 仍然命中：上游
+	// 缓存按该账号上次服务此会话后的空闲时间失效。应结合按路由统计的 cached_tokens
+	// 命中率（/admin/ops/openai-scheduling/metrics）调整，不宜明显长于上游保留时间。
 	StickySessionSpilloverTTL time.Duration `mapstructure:"sticky_session_spillover_ttl"`
 	// CapacityWeightedSelection 开启后（OpenAI 兼容调度），新会话/借道选号在同优先级内
 	// 按「空闲槽位数」加权随机，使会话分布与账号容量成正比。

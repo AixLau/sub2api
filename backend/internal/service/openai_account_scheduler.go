@@ -95,8 +95,9 @@ type OpenAIAccountScheduleRequest struct {
 	ExcludedIDs     map[int64]struct{}
 	UserCooldownIDs map[int64]struct{}
 
-	// spillPreferredAccountID is the session's warm secondary account. A sticky
-	// spillover tries it first; see openai_sticky_spillover.go.
+	// spillPreferredAccountID is the session's secondary account (it served
+	// this session within the spillover TTL). A sticky spillover tries it
+	// first; see openai_sticky_spillover.go.
 	spillPreferredAccountID int64
 	// capacityWeighted multiplies the weighted-selection weight by the account's
 	// free slots so placement is proportional to capacity.
@@ -716,7 +717,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		spillEligible := acquireErr == nil && result != nil && !result.Acquired &&
 			!req.PreserveStickyBinding && !req.DisableStickyEscape && s.service.openAIStickySpilloverEnabled()
 		if spillEligible {
-			// 主账号并发已满：同组有空闲账号就立即借道（优先温热的备用账号），
+			// 主账号并发已满：同组有空闲账号就立即借道（优先复用备用账号），
 			// 全部已满才回到主账号的有界等待。
 			if spill := s.trySpillStickySession(ctx, req, account); spill != nil {
 				return spill, false, nil
@@ -786,7 +787,7 @@ func (s *defaultOpenAIAccountScheduler) trySpillStickySession(
 		}
 		return nil
 	}
-	s.service.recordOpenAIStickySpillover(ctx, req.GroupID, req.SessionHash, primary.ID, secondaryID, selection.Account.ID, !gatewayProfitControlGateActive(ctx))
+	selection.spillRoute = s.service.recordOpenAIStickySpillover(ctx, req.GroupID, req.SessionHash, primary.ID, secondaryID, selection.Account.ID, !gatewayProfitControlGateActive(ctx), s.service.openAIWSSessionStickyTTL())
 	return selection
 }
 
@@ -1317,7 +1318,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 	return buildSelectionOrder(plan.candidates)
 }
 
-// preferOpenAISpillAccount moves the session's warm secondary account to the
+// preferOpenAISpillAccount moves the session's secondary account to the
 // front of the selection order, pulling it in from the wider pool when it did
 // not make the top-K cut.
 func preferOpenAISpillAccount(order []openAIAccountCandidateScore, pool []openAIAccountCandidateScore, accountID int64) []openAIAccountCandidateScore {

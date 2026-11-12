@@ -603,6 +603,9 @@ type AccountSelectionResult struct {
 	// can therefore avoid repeating the full refresh immediately before use.
 	RetryFastPathValidated bool
 	stickySessionHit       bool
+	// spillRoute 非空表示本次是粘性借道（主账号已满）：取值为
+	// OpenAISchedulingRouteSpillSecondary / OpenAISchedulingRouteSpillNew。
+	spillRoute string
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。

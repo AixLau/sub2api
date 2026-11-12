@@ -2177,8 +2177,51 @@ const (
 const (
 	openAICapacityReselectEnabledKey   = "openai_capacity_reselect_enabled"
 	openAICapacityWaitDeadlineKey      = "openai_capacity_wait_deadline"
+	openAICapacityWaitAccumulatedKey   = "openai_capacity_wait_accumulated"
+	openAICapacityWaitAccountKey       = "openai_capacity_wait_account_id"
+	openAISchedulingRouteKey           = "openai_scheduling_route"
 	openAICapacityReselectMinRemaining = 200 * time.Millisecond
 )
+
+// addOpenAICapacityWait 累计本请求的账号排队时长。排队可能被拆成多轮（每轮一个
+// 重选间隔），ops 的 account_queue_wait_ms 必须是各轮之和，而不是最后一轮。
+func addOpenAICapacityWait(c *gin.Context, accountID int64, waited time.Duration) time.Duration {
+	if c == nil {
+		return waited
+	}
+	if waited < 0 {
+		waited = 0
+	}
+	total, _ := c.Get(openAICapacityWaitAccumulatedKey)
+	accumulated, _ := total.(time.Duration)
+	accumulated += waited
+	c.Set(openAICapacityWaitAccumulatedKey, accumulated)
+	c.Set(openAICapacityWaitAccountKey, accountID)
+	service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, accumulated.Milliseconds())
+	return accumulated
+}
+
+// settleOpenAICapacityWait 结束本请求当前这一段排队：把累计排队时长写回 ops 上下文
+// 并计入等待时长指标，然后清空累计值与等待截止时间。之后的 failover 重新选号如需
+// 再次排队，会得到一份新的等待预算，而不是沿用已经耗尽的旧截止时间。
+// accountID 是最终拿到槽位的账号（未拿到传 0）。
+func settleOpenAICapacityWait(c *gin.Context, outcome string, accountID int64) {
+	if c == nil {
+		return
+	}
+	total, _ := c.Get(openAICapacityWaitAccumulatedKey)
+	accumulated, _ := total.(time.Duration)
+	if accumulated > 0 {
+		if outcome == service.OpenAIAccountWaitOutcomeAcquired && accountID > 0 && c.GetInt64(openAICapacityWaitAccountKey) != accountID {
+			outcome = service.OpenAIAccountWaitOutcomeAcquiredOtherAccount
+		}
+		service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, accumulated.Milliseconds())
+		service.ObserveOpenAIAccountWait(outcome, accumulated)
+	}
+	c.Set(openAICapacityWaitAccumulatedKey, time.Duration(0))
+	c.Set(openAICapacityWaitAccountKey, int64(0))
+	c.Set(openAICapacityWaitDeadlineKey, time.Time{})
+}
 
 // enableOpenAICapacityReselect 声明本请求的选号循环能处理 openAISlotRetryReselect。
 func enableOpenAICapacityReselect(c *gin.Context) {
@@ -2428,6 +2471,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
+		settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeAcquired, account.ID)
 		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), account, true, openAISlotRetryNone
 	}
 	if selection.WaitPlan == nil {
@@ -2477,6 +2521,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
+		settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeAcquired, account.ID)
 		return wrapReleaseOnDone(ctx, fastReleaseFunc), account, true, openAISlotRetryNone
 	}
 
@@ -2488,6 +2533,8 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
+		service.RecordOpenAIAccountWaitQueueFull()
+		settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeTimeout, 0)
 		return nil, nil, false, openAISlotRetryCapacity
 	}
 
@@ -2513,6 +2560,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	// 总等待仍以 WaitPlan.Timeout 为上限。
 	effectiveTimeout, reselectOnTimeout := openAICapacityWaitSlice(c, selection.WaitPlan, effectiveTimeout, time.Now())
 
+	waitStartedAt := time.Now()
 	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 		c,
 		account.ID,
@@ -2521,15 +2569,23 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 		reqStream,
 		streamStarted,
 	)
+	totalWaited := addOpenAICapacityWait(c, account.ID, time.Since(waitStartedAt))
 	if err != nil {
-		if IsConcurrencyRetryableError(err) && reselectOnTimeout && ctx.Err() == nil {
-			reqLog.Debug("openai.account_slot_wait_reselect", zap.Int64("account_id", account.ID), zap.Duration("waited", effectiveTimeout))
+		// 等待切片的截止时间可能正好落在一次 Redis 抢槽往返中：此时拿到的是
+		// context.DeadlineExceeded 而不是排队超时。只要请求本身仍然存活，就按
+		// 排队超时处理（重选或 429），不能当作内部错误返回给客户端。
+		retryable := IsConcurrencyRetryableError(err) || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil)
+		if retryable && reselectOnTimeout && ctx.Err() == nil {
+			service.RecordOpenAIAccountWaitReselect()
+			reqLog.Debug("openai.account_slot_wait_reselect", zap.Int64("account_id", account.ID), zap.Duration("waited", effectiveTimeout), zap.Duration("total_waited", totalWaited))
 			return nil, nil, false, openAISlotRetryReselect
 		}
-		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-		if IsConcurrencyRetryableError(err) {
+		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Duration("total_waited", totalWaited), zap.Error(err))
+		if retryable {
+			settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeTimeout, 0)
 			return nil, nil, false, openAISlotRetryCapacity
 		}
+		settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeError, 0)
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
 		return nil, nil, false, openAISlotRetryNone
 	}
@@ -2566,6 +2622,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
+	settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeAcquired, account.ID)
 	return wrapReleaseOnDone(ctx, accountReleaseFunc), account, true, openAISlotRetryNone
 }
 

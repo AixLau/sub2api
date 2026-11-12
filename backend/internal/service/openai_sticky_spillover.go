@@ -6,7 +6,7 @@ import (
 	mathrand "math/rand"
 	"sort"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -16,13 +16,20 @@ import (
 //
 //   - 主账号有空闲槽位：始终用主账号（缓存连续性最好）。
 //   - 主账号并发已满、同组有空闲账号：立即借道，不排队。优先借道到备用账号
-//     （它已经服务过该会话，上游 Prompt Cache 是温热的）；没有备用账号或备用
-//     账号也满时，才按容量加权选一个新账号并记为备用账号（一次冷启动）。
-//   - 借道命中温热的备用账号时主备互换：会话的最近上下文已经在备用账号上，
-//     原主账号仍是温热的回退目标。切换只会发生在这两个账号之间，且只在当前
-//     主账号满载时发生，因此不会在多个账号间抖动，也不会产生新的冷启动。
+//     （它在 TTL 内服务过该会话，上游 Prompt Cache 可能仍在）；没有备用账号或
+//     备用账号也满时，才按容量加权选一个新账号并记为备用账号。
+//   - 借道复用备用账号时主备互换：会话的最近上下文已经在备用账号上，原主账号
+//     作为回退目标。切换只会发生在这两个账号之间，且只在当前主账号满载时发生，
+//     因此不会在多个账号间抖动。
+//
+// 注意「复用备用账号」只是账号层面的复用，不等于上游 Prompt Cache 命中：备用
+// 记录的 TTL 从写入时起算，而上游缓存是否仍在取决于该账号上次服务此会话的时间
+// 和上游的保留策略。真实命中率以上游返回的 cached_tokens 为准，见
+// openai_sticky_spillover_metrics.go 中按路由统计的 input/cached token。
 //   - 全部账号都满：回到主账号的有界等待（StickySessionMaxWaiting /
 //     StickySessionWaitTimeout），并按 WaitReselectInterval 周期性重新选号。
+//
+// 主/备绑定的写入是原子的比较并更新（见 updateOpenAIStickySpilloverBinding）。
 //
 // 备用账号只是一个提示：每次使用前都要重新通过与普通候选账号完全相同的资格
 // 校验（分组、模型、健康、限流、利润门等），因此不会绕过任何调度约束。
@@ -30,35 +37,6 @@ import (
 const openAISpilloverSessionKeyPrefix = "openai:spill:"
 
 const defaultOpenAIStickySpilloverTTL = 10 * time.Minute
-
-// OpenAIStickySpilloverMetricsSnapshot 借道相关的进程内累计计数。
-type OpenAIStickySpilloverMetricsSnapshot struct {
-	// WarmHitTotal 借道命中温热备用账号的次数（无缓存冷启动）。
-	WarmHitTotal int64
-	// ColdTotal 借道到新账号的次数（该请求在新账号上缓存冷启动）。
-	ColdTotal int64
-	// SwapTotal 主备互换次数。
-	SwapTotal int64
-	// PrimaryWaitTotal 全部账号已满、回到主账号排队的次数。
-	PrimaryWaitTotal int64
-}
-
-var (
-	openAIStickySpilloverWarmHitTotal     atomic.Int64
-	openAIStickySpilloverColdTotal        atomic.Int64
-	openAIStickySpilloverSwapTotal        atomic.Int64
-	openAIStickySpilloverPrimaryWaitTotal atomic.Int64
-)
-
-// SnapshotOpenAIStickySpilloverMetrics 返回借道计数快照。
-func SnapshotOpenAIStickySpilloverMetrics() OpenAIStickySpilloverMetricsSnapshot {
-	return OpenAIStickySpilloverMetricsSnapshot{
-		WarmHitTotal:     openAIStickySpilloverWarmHitTotal.Load(),
-		ColdTotal:        openAIStickySpilloverColdTotal.Load(),
-		SwapTotal:        openAIStickySpilloverSwapTotal.Load(),
-		PrimaryWaitTotal: openAIStickySpilloverPrimaryWaitTotal.Load(),
-	}
-}
 
 func (s *OpenAIGatewayService) openAIStickySpilloverEnabled() bool {
 	return s != nil && s.cfg != nil && s.cache != nil && s.concurrencyService != nil &&
@@ -120,11 +98,93 @@ func (s *OpenAIGatewayService) setOpenAISpilloverAccountID(ctx context.Context, 
 	_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), key, accountID, s.openAIStickySpilloverTTL())
 }
 
-// recordOpenAIStickySpillover 在借道请求拿到槽位后更新会话的主/备账号。
+// OpenAIStickySpilloverBindingOutcome 是一次主/备绑定更新的结果。
+type OpenAIStickySpilloverBindingOutcome int
+
+const (
+	// OpenAIStickySpilloverBindingConflict：绑定在选号期间已被其他请求改写，本次不写入。
+	OpenAIStickySpilloverBindingConflict OpenAIStickySpilloverBindingOutcome = iota
+	// OpenAIStickySpilloverBindingRecorded：已把本次账号记为备用账号（主绑定不变）。
+	OpenAIStickySpilloverBindingRecorded
+	// OpenAIStickySpilloverBindingSwapped：主备已互换。
+	OpenAIStickySpilloverBindingSwapped
+)
+
+// OpenAIStickySpilloverBindingUpdate 描述一次「比较并更新」：只有当缓存里的主/备
+// 绑定仍与选号时读到的一致，才写入新状态。
+type OpenAIStickySpilloverBindingUpdate struct {
+	PrimaryKey   string
+	SecondaryKey string
+	// ExpectedPrimaryID / ExpectedSecondaryID 是选号时读到的主/备账号（备用可为 0）。
+	ExpectedPrimaryID   int64
+	ExpectedSecondaryID int64
+	// SelectedID 是本次实际拿到槽位的账号。
+	SelectedID int64
+	// Swap 为 true 时把 SelectedID 提升为主账号、原主账号降为备用账号。
+	Swap         bool
+	PrimaryTTL   time.Duration
+	SecondaryTTL time.Duration
+}
+
+// OpenAIStickySpilloverBinder 是 GatewayCache 的可选能力：在一次原子操作里完成
+// 主/备绑定的比较并更新。Redis 实现用 Lua 脚本；未实现该接口的缓存（测试桩）
+// 退回进程内加锁的等价逻辑。
+type OpenAIStickySpilloverBinder interface {
+	UpdateStickySpilloverBinding(ctx context.Context, groupID int64, update OpenAIStickySpilloverBindingUpdate) (OpenAIStickySpilloverBindingOutcome, error)
+}
+
+// openAIStickySpilloverFallbackMu 只保护非原子缓存实现上的读-改-写回退路径。
+var openAIStickySpilloverFallbackMu sync.Mutex
+
+// updateOpenAIStickySpilloverBinding 原子地更新主/备绑定。规则（与 Redis 脚本一致）：
+//   - 主绑定已被改成别的账号 → 冲突，不写；
+//   - 备用绑定已被别的请求改成第三个账号 → 冲突，不写；
+//   - 否则 Swap 且主绑定仍在 → 主备互换；其余情况只把 SelectedID 记为备用。
+func (s *OpenAIGatewayService) updateOpenAIStickySpilloverBinding(ctx context.Context, groupID int64, update OpenAIStickySpilloverBindingUpdate) (OpenAIStickySpilloverBindingOutcome, error) {
+	if binder, ok := s.cache.(OpenAIStickySpilloverBinder); ok {
+		return binder.UpdateStickySpilloverBinding(ctx, groupID, update)
+	}
+	openAIStickySpilloverFallbackMu.Lock()
+	defer openAIStickySpilloverFallbackMu.Unlock()
+	currentPrimary, err := s.cache.GetSessionAccountID(ctx, groupID, update.PrimaryKey)
+	if err != nil {
+		currentPrimary = 0
+	}
+	if currentPrimary > 0 && currentPrimary != update.ExpectedPrimaryID {
+		return OpenAIStickySpilloverBindingConflict, nil
+	}
+	currentSecondary, err := s.cache.GetSessionAccountID(ctx, groupID, update.SecondaryKey)
+	if err != nil || currentSecondary == update.ExpectedPrimaryID {
+		currentSecondary = 0
+	}
+	if currentSecondary > 0 && currentSecondary != update.ExpectedSecondaryID && currentSecondary != update.SelectedID {
+		return OpenAIStickySpilloverBindingConflict, nil
+	}
+	if update.Swap && currentPrimary > 0 {
+		if err := s.cache.SetSessionAccountID(ctx, groupID, update.PrimaryKey, update.SelectedID, update.PrimaryTTL); err != nil {
+			return OpenAIStickySpilloverBindingConflict, err
+		}
+		if err := s.cache.SetSessionAccountID(ctx, groupID, update.SecondaryKey, update.ExpectedPrimaryID, update.SecondaryTTL); err != nil {
+			return OpenAIStickySpilloverBindingSwapped, err
+		}
+		return OpenAIStickySpilloverBindingSwapped, nil
+	}
+	if err := s.cache.SetSessionAccountID(ctx, groupID, update.SecondaryKey, update.SelectedID, update.SecondaryTTL); err != nil {
+		return OpenAIStickySpilloverBindingConflict, err
+	}
+	return OpenAIStickySpilloverBindingRecorded, nil
+}
+
+// recordOpenAIStickySpillover 在借道请求拿到槽位后更新会话的主/备账号，并返回本次
+// 请求的调度路由（复用备用账号 / 借道到新账号）。
 //
 // primaryID 是借道前的主账号，previousSpillID 是选号前读到的备用账号（可为 0），
 // selectedID 是本次实际拿到槽位的账号。allowRebind=false（利润门生效或要求
-// 保留绑定）时只记录备用账号，不改写主绑定。
+// 保留绑定）时只记录备用账号，不改写主绑定。primaryTTL 是互换时写主绑定的 TTL。
+//
+// 同一会话的并发借道可能落到不同账号：请求本身照常用各自拿到的账号服务，但绑定
+// 只接受与当前缓存状态一致的那次更新（先到先得），其余记为冲突并丢弃，保证主/备
+// 始终是一对自洽的账号，不会被过期视图覆盖成第三个账号。
 func (s *OpenAIGatewayService) recordOpenAIStickySpillover(
 	ctx context.Context,
 	groupID *int64,
@@ -133,38 +193,47 @@ func (s *OpenAIGatewayService) recordOpenAIStickySpillover(
 	previousSpillID int64,
 	selectedID int64,
 	allowRebind bool,
-) {
-	if s == nil || strings.TrimSpace(sessionHash) == "" || selectedID <= 0 || selectedID == primaryID {
-		return
+	primaryTTL time.Duration,
+) string {
+	if s == nil || s.cache == nil || strings.TrimSpace(sessionHash) == "" || selectedID <= 0 || selectedID == primaryID {
+		return ""
 	}
-	warm := previousSpillID > 0 && previousSpillID == selectedID
-	swapped := false
-	if warm && allowRebind && primaryID > 0 {
-		// 主备互换：两个账号都服务过该会话，互换不会产生冷启动。先写主绑定，
-		// 中途失败最多留下「备用 == 主」的无效提示，读取时会被忽略。
-		if err := s.setStickySessionAccountID(ctx, groupID, sessionHash, selectedID, openaiStickySessionTTL); err == nil {
-			s.setOpenAISpilloverAccountID(ctx, groupID, sessionHash, primaryID)
-			swapped = true
+	secondaryReused := previousSpillID > 0 && previousSpillID == selectedID
+	route := OpenAISchedulingRouteSpillNew
+	if secondaryReused {
+		route = OpenAISchedulingRouteSpillSecondary
+	}
+	if primaryTTL <= 0 {
+		primaryTTL = openaiStickySessionTTL
+	}
+	outcome, err := s.updateOpenAIStickySpilloverBinding(ctx, derefGroupID(groupID), OpenAIStickySpilloverBindingUpdate{
+		PrimaryKey:          s.openAISessionCacheKey(sessionHash),
+		SecondaryKey:        openAISpilloverSessionKey(sessionHash),
+		ExpectedPrimaryID:   primaryID,
+		ExpectedSecondaryID: previousSpillID,
+		SelectedID:          selectedID,
+		Swap:                secondaryReused && allowRebind && primaryID > 0,
+		PrimaryTTL:          primaryTTL,
+		SecondaryTTL:        s.openAIStickySpilloverTTL(),
+	})
+	swapped := err == nil && outcome == OpenAIStickySpilloverBindingSwapped
+	if swapped && s.openAISessionHashDualWriteOldEnabled() {
+		// 与 setStickySessionAccountID 一致：迁移期旧 key 跟随主绑定（尽力而为）。
+		if legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash); legacyKey != "" {
+			_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), legacyKey, selectedID, s.openAIStickyLegacyTTL(primaryTTL))
 		}
 	}
-	if !swapped {
-		s.setOpenAISpilloverAccountID(ctx, groupID, sessionHash, selectedID)
-	}
-	if warm {
-		openAIStickySpilloverWarmHitTotal.Add(1)
-	} else {
-		openAIStickySpilloverColdTotal.Add(1)
-	}
-	if swapped {
-		openAIStickySpilloverSwapTotal.Add(1)
-	}
+	conflict := err == nil && outcome == OpenAIStickySpilloverBindingConflict
+	recordOpenAIStickySpilloverEvent(secondaryReused, swapped, conflict)
 	slog.Info("openai.sticky_spillover",
 		"group_id", derefGroupID(groupID),
 		"primary_account_id", primaryID,
 		"selected_account_id", selectedID,
-		"warm", warm,
+		"secondary_reused", secondaryReused,
 		"swapped", swapped,
+		"binding_conflict", conflict,
 	)
+	return route
 }
 
 // openAIAccountFreeSlots 估算账号的空闲槽位数（并发上限 - 在途 - 排队）。
@@ -248,6 +317,21 @@ func moveOpenAIAccountToFront(order []accountWithLoad, accountID int64) {
 	}
 	for i := range order {
 		if order[i].account != nil && order[i].account.ID == accountID {
+			item := order[i]
+			copy(order[1:i+1], order[:i])
+			order[0] = item
+			return
+		}
+	}
+}
+
+// moveOpenAIAccountPointerToFront 是 moveOpenAIAccountToFront 的 []*Account 版本。
+func moveOpenAIAccountPointerToFront(order []*Account, accountID int64) {
+	if accountID <= 0 {
+		return
+	}
+	for i := range order {
+		if order[i] != nil && order[i].ID == accountID {
 			item := order[i]
 			copy(order[1:i+1], order[:i])
 			order[0] = item

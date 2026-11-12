@@ -394,13 +394,14 @@ func TestOpenAIStickySpillover_RecordDoesNotRebindWhenNotAllowed(t *testing.T) {
 	ctx := context.Background()
 	env.sessions.bind(env.groupID, "s", 1)
 
-	// Warm hit but rebinding is not allowed (profit gate defers binding).
-	env.svc.recordOpenAIStickySpillover(ctx, &env.groupID, "s", 1, 2, 2, false)
+	// Secondary reused but rebinding is not allowed (profit gate defers binding).
+	env.svc.setOpenAISpilloverAccountID(ctx, &env.groupID, "s", 2)
+	env.svc.recordOpenAIStickySpillover(ctx, &env.groupID, "s", 1, 2, 2, false, time.Hour)
 	require.Equal(t, int64(1), env.sessions.primary(env.groupID, "s"))
 	require.Equal(t, int64(2), env.sessions.secondary(env.groupID, "s"))
 
 	// Selecting the primary itself is not a spill.
-	env.svc.recordOpenAIStickySpillover(ctx, &env.groupID, "s", 1, 2, 1, true)
+	env.svc.recordOpenAIStickySpillover(ctx, &env.groupID, "s", 1, 2, 1, true, time.Hour)
 	require.Equal(t, int64(1), env.sessions.primary(env.groupID, "s"))
 	require.Equal(t, int64(2), env.sessions.secondary(env.groupID, "s"))
 }
@@ -618,7 +619,7 @@ type spillSimResult struct {
 	waitTicks     int // total ticks spent queued
 	maxWaitTicks  int
 	timedOut      int
-	cacheHits     int // served by an account that already served the session
+	accountReuse  int // served by an account that already served the session
 	perAccount    map[int64]int
 	peakInUse     map[int64]int
 	idleWhileWait int // ticks where a request queued although a peer had a free slot
@@ -662,7 +663,7 @@ func runSpillSimulation(t *testing.T, enabled bool) spillSimResult {
 			served[session] = map[int64]bool{}
 		}
 		if served[session][id] {
-			result.cacheHits++
+			result.accountReuse++
 		}
 		served[session][id] = true
 		result.perAccount[id]++
@@ -780,9 +781,9 @@ func TestOpenAIStickySpillover_SimulationBeforeAfter(t *testing.T) {
 	before := runSpillSimulation(t, false)
 	after := runSpillSimulation(t, true)
 	report := func(name string, r spillSimResult) {
-		t.Logf("%-6s requests=%d queued=%d (%.1f%%) wait_ticks=%d max_wait=%d timed_out=%d queued_while_peer_idle_ticks=%d cache_hit=%.1f%% per_account=%v peak_in_use=%v",
+		t.Logf("%-6s requests=%d queued=%d (%.1f%%) wait_ticks=%d max_wait=%d timed_out=%d queued_while_peer_idle_ticks=%d account_reuse=%.1f%% per_account=%v peak_in_use=%v",
 			name, r.requests, r.queued, 100*float64(r.queued)/float64(r.requests), r.waitTicks, r.maxWaitTicks,
-			r.timedOut, r.idleWhileWait, 100*float64(r.cacheHits)/float64(r.requests), r.perAccount, r.peakInUse)
+			r.timedOut, r.idleWhileWait, 100*float64(r.accountReuse)/float64(r.requests), r.perAccount, r.peakInUse)
 	}
 	report("before", before)
 	report("after", after)
@@ -794,10 +795,10 @@ func TestOpenAIStickySpillover_SimulationBeforeAfter(t *testing.T) {
 	require.Zero(t, after.waitTicks)
 	require.Zero(t, after.queued, "group capacity is sufficient, so nothing should queue")
 	require.Zero(t, after.timedOut)
-	// Continuity must not be sacrificed: warm-account hit rate stays close to
+	// Continuity must not be sacrificed: account reuse rate (not the upstream cache hit rate) stays close to
 	// the legacy behaviour.
-	beforeHit := float64(before.cacheHits) / float64(before.requests)
-	afterHit := float64(after.cacheHits) / float64(after.requests)
+	beforeHit := float64(before.accountReuse) / float64(before.requests)
+	afterHit := float64(after.accountReuse) / float64(after.requests)
 	require.Greater(t, afterHit, beforeHit-0.03)
 	for id, limit := range map[int64]int{473: 10, 487: 50, 493: 50} {
 		require.LessOrEqual(t, after.peakInUse[id], limit)

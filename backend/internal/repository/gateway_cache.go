@@ -67,6 +67,66 @@ func (c *gatewayCache) SetSessionAccountID(ctx context.Context, groupID int64, s
 	return c.rdb.Set(ctx, key, accountID, ttl).Err()
 }
 
+// updateStickySpilloverBindingScript 原子地「比较并更新」会话的主/备账号绑定。
+// KEYS[1]=主绑定 KEYS[2]=备用绑定
+// ARGV: 1=期望主账号 2=期望备用账号(无则 "0") 3=本次账号 4=是否互换("1")
+//
+//	5=主绑定 TTL(ms) 6=备用绑定 TTL(ms)
+//
+// 返回 0=状态已变未写入 1=已记为备用账号 2=主备已互换。
+var updateStickySpilloverBindingScript = redis.NewScript(`
+local primary = redis.call('GET', KEYS[1])
+local secondary = redis.call('GET', KEYS[2])
+if primary and primary ~= ARGV[1] then
+  return 0
+end
+if secondary == ARGV[1] then
+  secondary = false
+end
+if secondary and secondary ~= ARGV[2] and secondary ~= ARGV[3] then
+  return 0
+end
+if ARGV[4] == '1' and primary then
+  redis.call('SET', KEYS[1], ARGV[3], 'PX', ARGV[5])
+  redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[6])
+  return 2
+end
+redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[6])
+return 1
+`)
+
+// UpdateStickySpilloverBinding implements service.OpenAIStickySpilloverBinder.
+func (c *gatewayCache) UpdateStickySpilloverBinding(ctx context.Context, groupID int64, update service.OpenAIStickySpilloverBindingUpdate) (service.OpenAIStickySpilloverBindingOutcome, error) {
+	if update.PrimaryKey == "" || update.SecondaryKey == "" || update.SelectedID <= 0 ||
+		update.PrimaryTTL < time.Millisecond || update.SecondaryTTL < time.Millisecond {
+		return service.OpenAIStickySpilloverBindingConflict, errors.New("invalid sticky spillover binding update")
+	}
+	swap := "0"
+	if update.Swap {
+		swap = "1"
+	}
+	result, err := updateStickySpilloverBindingScript.Run(ctx, c.rdb,
+		[]string{buildSessionKey(groupID, update.PrimaryKey), buildSessionKey(groupID, update.SecondaryKey)},
+		strconv.FormatInt(update.ExpectedPrimaryID, 10),
+		strconv.FormatInt(update.ExpectedSecondaryID, 10),
+		strconv.FormatInt(update.SelectedID, 10),
+		swap,
+		update.PrimaryTTL.Milliseconds(),
+		update.SecondaryTTL.Milliseconds(),
+	).Int()
+	if err != nil {
+		return service.OpenAIStickySpilloverBindingConflict, err
+	}
+	switch result {
+	case 1:
+		return service.OpenAIStickySpilloverBindingRecorded, nil
+	case 2:
+		return service.OpenAIStickySpilloverBindingSwapped, nil
+	default:
+		return service.OpenAIStickySpilloverBindingConflict, nil
+	}
+}
+
 func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, sessionHash string, ttl time.Duration) error {
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Expire(ctx, key, ttl).Err()

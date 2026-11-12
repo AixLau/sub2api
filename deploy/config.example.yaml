@@ -625,12 +625,15 @@ gateway:
     # OpenAI-compatible scheduling: when the sticky account is at its concurrency
     # limit and a peer account in the group has a free slot, borrow the peer right
     # away instead of queueing. The borrowed account is remembered as the session's
-    # secondary account so later overflow reuses its warm prompt cache.
+    # secondary account so later overflow reuses it (two accounts per session at most).
     # OpenAI 调度：粘性账号并发已满且同组有空闲账号时立即借道，不在粘性账号排队；
-    # 借道账号记为会话「备用账号」，后续溢出优先复用（缓存保持温热）。
+    # 借道账号记为会话「备用账号」，后续溢出优先复用（会话只在两个账号之间移动）。
     sticky_session_spillover_enabled: true
-    # How long the secondary account is remembered (keep close to upstream prompt cache retention)
-    # 备用账号记录有效期（建议接近上游 Prompt Cache 保留时间）
+    # How long the secondary account is remembered, counted from when it was recorded.
+    # Reusing it is NOT a guaranteed upstream prompt-cache hit; tune this against the
+    # per-route cached_tokens ratio at /api/v1/admin/ops/openai-scheduling/metrics.
+    # 备用账号记录有效期（从写入时起算）。复用备用账号不等于上游 Prompt Cache 命中，
+    # 请结合 /api/v1/admin/ops/openai-scheduling/metrics 的按路由 cached_tokens 命中率调整。
     sticky_session_spillover_ttl: 10m
     # Place new sessions / overflow by free-slot-weighted random within a priority tier
     # 新会话与借道在同优先级内按空闲槽位数加权随机，使会话分布与账号容量成正比

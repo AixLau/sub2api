@@ -921,6 +921,9 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	reqLog.Debug(logPrefix+".account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	// Remembered for the usage stage, which reports the upstream cached tokens
+	// per scheduling route (primary / reused secondary / new account).
+	c.Set(openAISchedulingRouteKey, service.OpenAISchedulingRouteOf(selection, scheduleDecision))
 
 	streamStarted := false
 	streamStartedPtr := &streamStarted
@@ -1507,6 +1510,9 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	}
 	if s.Result == nil {
 		return ExecutableStageResult{}
+	}
+	if !failedUpstreamUsage {
+		service.ObserveOpenAISchedulingRouteUsage(c.GetString(openAISchedulingRouteKey), s.Result.Usage.InputTokens, s.Result.Usage.CacheReadInputTokens)
 	}
 	quotaPlatform := s.QuotaPlatform
 	if quotaPlatform == "" {

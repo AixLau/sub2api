@@ -64,3 +64,50 @@ func TestOpenAICapacityWaitSlice(t *testing.T) {
 		require.False(t, reselect)
 	})
 }
+
+// Queueing is split into reselect slices; ops must see the sum, and a wait
+// that ended (slot acquired) must not leak its deadline into a later failover.
+func TestOpenAICapacityWaitAccountingAcrossReselects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	enableOpenAICapacityReselect(c)
+	plan := &service.AccountWaitPlan{AccountID: 1, Timeout: 10 * time.Second, ReselectAfter: 3 * time.Second}
+	start := time.Now()
+
+	// Three slices on account 1, each followed by a reselect.
+	for i := 0; i < 3; i++ {
+		slice, reselect := openAICapacityWaitSlice(c, plan, 10*time.Second, start.Add(time.Duration(i)*3*time.Second))
+		require.Equal(t, 3*time.Second, slice)
+		require.True(t, reselect)
+		// setOpsSelectedAccount zeroes the ops value on every (re)selection.
+		service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, 0)
+		total := addOpenAICapacityWait(c, 1, slice)
+		require.Equal(t, time.Duration(i+1)*3*time.Second, total)
+	}
+	waited := service.OpsLatencyMs(c, service.OpsAccountQueueWaitMsKey)
+	require.NotNil(t, waited)
+	require.Equal(t, 9000, *waited, "ops wait must be the sum of all slices, not the last one")
+
+	// The budget is shared: only 1s is left, and it is the final slice.
+	slice, reselect := openAICapacityWaitSlice(c, plan, 10*time.Second, start.Add(9*time.Second))
+	require.Equal(t, time.Second, slice)
+	require.False(t, reselect)
+
+	// A reselect then acquires a slot on another account without waiting.
+	service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, 0)
+	settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeAcquired, 2)
+	waited = service.OpsLatencyMs(c, service.OpsAccountQueueWaitMsKey)
+	require.NotNil(t, waited)
+	require.Equal(t, 9000, *waited, "the queueing that preceded a spill must still be reported")
+
+	// A later failover that has to queue again gets a fresh budget.
+	slice, reselect = openAICapacityWaitSlice(c, plan, 10*time.Second, start.Add(60*time.Second))
+	require.Equal(t, 3*time.Second, slice, "an exhausted deadline must not carry over once a slot was acquired")
+	require.True(t, reselect)
+	require.Equal(t, time.Second, addOpenAICapacityWait(c, 1, time.Second), "accumulated wait restarts after settle")
+
+	// Settling with no accumulated wait reports nothing and is safe.
+	settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeTimeout, 0)
+	settleOpenAICapacityWait(c, service.OpenAIAccountWaitOutcomeTimeout, 0)
+	settleOpenAICapacityWait(nil, service.OpenAIAccountWaitOutcomeTimeout, 0)
+}
