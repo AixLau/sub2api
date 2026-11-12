@@ -85,18 +85,68 @@ func TestSettingService_GetPublicSettings_ExposesTablePreferences(t *testing.T) 
 }
 
 func TestSettingService_GetPublicSettings_ExposesSupportGroupQRCodes(t *testing.T) {
+	const qqDataURI = "data:image/png;base64,iVBORw0KGgo="
 	repo := &settingPublicRepoStub{
 		values: map[string]string{
-			SettingKeySupportQQGroupQRCode:     "data:image/png;base64,qq",
-			SettingKeySupportWeChatGroupQRCode: "data:image/png;base64,wechat",
+			SettingKeySupportQQGroupQRCode:     qqDataURI,
+			SettingKeySupportWeChatGroupQRCode: "https://cdn.example.com/wechat.png",
 		},
 	}
 	svc := NewSettingService(repo, &config.Config{})
 
 	settings, err := svc.GetPublicSettings(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "data:image/png;base64,qq", settings.SupportQQGroupQRCode)
-	require.Equal(t, "data:image/png;base64,wechat", settings.SupportWeChatGroupQRCode)
+	// data URI 不再内嵌，换成带内容版本号的同源图片地址
+	require.Equal(t, "/api/v1/settings/public/support-qr/qq?v="+supportQRCodeVersion(qqDataURI), settings.SupportQQGroupQRCode)
+	// 外部图片地址原样下发
+	require.Equal(t, "https://cdn.example.com/wechat.png", settings.SupportWeChatGroupQRCode)
+
+	injected, err := svc.GetPublicSettingsForInjection(context.Background())
+	require.NoError(t, err)
+	payload, err := json.Marshal(injected)
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "base64")
+}
+
+func TestSettingService_GetSupportQRCodeImage(t *testing.T) {
+	const qqDataURI = "data:image/png;base64,iVBORw0KGgo="
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeySupportQQGroupQRCode:     qqDataURI,
+			SettingKeySupportWeChatGroupQRCode: "https://cdn.example.com/wechat.png",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	img, err := svc.GetSupportQRCodeImage(context.Background(), SupportQRCodeKindQQ)
+	require.NoError(t, err)
+	require.Equal(t, "image/png", img.ContentType)
+	require.Equal(t, []byte("\x89PNG\r\n\x1a\n"), img.Data)
+	require.Equal(t, supportQRCodeVersion(qqDataURI), img.Version)
+
+	_, err = svc.GetSupportQRCodeImage(context.Background(), SupportQRCodeKindWeChat)
+	require.ErrorIs(t, err, ErrSupportQRCodeNotFound)
+
+	_, err = svc.GetSupportQRCodeImage(context.Background(), "../etc")
+	require.ErrorIs(t, err, ErrSupportQRCodeNotFound)
+}
+
+func TestDecodeImageDataURI(t *testing.T) {
+	ct, data, ok := decodeImageDataURI(" data:image/JPG;base64,/9j/ ")
+	require.True(t, ok)
+	require.Equal(t, "image/jpeg", ct)
+	require.Equal(t, []byte{0xff, 0xd8, 0xff}, data)
+
+	for _, raw := range []string{
+		"",
+		"https://example.com/a.png",
+		"data:text/html;base64,PGgxPg==",
+		"data:image/png,notbase64",
+		"data:image/png;base64,***",
+	} {
+		_, _, ok := decodeImageDataURI(raw)
+		require.False(t, ok, raw)
+	}
 }
 
 func TestSettingService_GetPublicSettings_ExposesCompactHomeEnabled(t *testing.T) {

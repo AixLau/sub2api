@@ -156,3 +156,53 @@ func TestSettingHandler_GetPublicSettings_ExposesWeChatOAuthModeCapabilities(t *
 	require.True(t, resp.Data.WeChatOAuthOpenEnabled)
 	require.True(t, resp.Data.WeChatOAuthMPEnabled)
 }
+
+func TestSettingHandler_GetSupportQRCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerPublicRepoStub{
+		values: map[string]string{
+			service.SettingKeySupportQQGroupQRCode: "data:image/png;base64,iVBORw0KGgo=",
+		},
+	}
+	h := NewSettingHandler(service.NewSettingService(repo, &config.Config{}), "test-version")
+
+	// 先从公开设置里拿到带版本号的地址
+	settings, err := service.NewSettingService(repo, &config.Config{}).GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	qrURL := settings.SupportQQGroupQRCode
+	require.Contains(t, qrURL, "/api/v1/settings/public/support-qr/qq?v=")
+
+	serve := func(target string, header http.Header) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, target, nil)
+		for k, v := range header {
+			c.Request.Header[k] = v
+		}
+		c.Params = gin.Params{{Key: "kind", Value: "qq"}}
+		h.GetSupportQRCode(c)
+		return recorder
+	}
+
+	rec := serve(qrURL, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+	require.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
+	require.Equal(t, []byte("\x89PNG\r\n\x1a\n"), rec.Body.Bytes())
+
+	// 版本号不匹配只短缓存，避免旧地址长期命中旧图
+	stale := serve("/api/v1/settings/public/support-qr/qq?v=old", nil)
+	require.Equal(t, http.StatusOK, stale.Code)
+	require.Equal(t, "public, max-age=300", stale.Header().Get("Cache-Control"))
+
+	notModified := serve(qrURL, http.Header{"If-None-Match": {rec.Header().Get("ETag")}})
+	require.Equal(t, http.StatusNotModified, notModified.Code)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/public/support-qr/wechat", nil)
+	c.Params = gin.Params{{Key: "kind", Value: "wechat"}}
+	h.GetSupportQRCode(c)
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+}

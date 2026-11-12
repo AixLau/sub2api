@@ -34,6 +34,33 @@ func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *s
 	h.notificationEmailService = notificationEmailService
 }
 
+// GetSupportQRCode 返回用户群二维码图片
+// GET /api/v1/settings/public/support-qr/:kind?v=<version>
+// 地址里的 v 与当前内容版本一致时按不可变资源长缓存；不一致（旧链接或未带版本）只短缓存。
+func (h *SettingHandler) GetSupportQRCode(c *gin.Context) {
+	img, err := h.settingService.GetSupportQRCodeImage(c.Request.Context(), c.Param("kind"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	etag := `"` + img.Version + `"`
+	if c.Query("v") == img.Version {
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		c.Header("Cache-Control", "public, max-age=300")
+	}
+	c.Header("ETag", etag)
+	c.Header("X-Content-Type-Options", "nosniff")
+	// 允许管理员上传 SVG：禁止其中的脚本在直接打开图片地址时执行。
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	if match := c.GetHeader("If-None-Match"); match != "" && strings.Contains(match, etag) {
+		c.AbortWithStatus(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, img.ContentType, img.Data)
+}
+
 // GetPublicSettings 获取公开设置
 // GET /api/v1/settings/public
 func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
