@@ -23,8 +23,8 @@ import (
 //     因此不会在多个账号间抖动。
 //
 // 注意「复用备用账号」只是账号层面的复用，不等于上游 Prompt Cache 命中：备用
-// 记录的 TTL 从写入时起算，而上游缓存是否仍在取决于该账号上次服务此会话的时间
-// 和上游的保留策略。真实命中率以上游返回的 cached_tokens 为准，见
+// 关联的 TTL 是会话空闲过期（每次会话被服务都会续期），而上游缓存是否仍在取决于
+// 该账号上次服务此会话的时间和上游的保留策略，两者是独立的生命周期。真实命中率以上游返回的 cached_tokens 为准，见
 // openai_sticky_spillover_metrics.go 中按路由统计的 input/cached token。
 //   - 全部账号都满：回到主账号的有界等待（StickySessionMaxWaiting /
 //     StickySessionWaitTimeout），并按 WaitReselectInterval 周期性重新选号。
@@ -38,9 +38,24 @@ const openAISpilloverSessionKeyPrefix = "openai:spill:"
 
 const defaultOpenAIStickySpilloverTTL = 10 * time.Minute
 
-func (s *OpenAIGatewayService) openAIStickySpilloverEnabled() bool {
-	return s != nil && s.cfg != nil && s.cache != nil && s.concurrencyService != nil &&
-		s.cfg.Gateway.Scheduling.StickySessionSpilloverEnabled
+// openAIStickySpilloverEnabled 报告该分组是否启用粘性借道。
+// sticky_session_spillover_group_ids 非空时只对列出的分组生效（灰度），为空表示全部分组。
+func (s *OpenAIGatewayService) openAIStickySpilloverEnabled(groupID *int64) bool {
+	if s == nil || s.cfg == nil || s.cache == nil || s.concurrencyService == nil ||
+		!s.cfg.Gateway.Scheduling.StickySessionSpilloverEnabled {
+		return false
+	}
+	allowed := s.cfg.Gateway.Scheduling.StickySessionSpilloverGroupIDs
+	if len(allowed) == 0 {
+		return true
+	}
+	target := derefGroupID(groupID)
+	for _, id := range allowed {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) openAICapacityWeightedSelectionEnabled() bool {
@@ -85,6 +100,23 @@ func (s *OpenAIGatewayService) getOpenAISpilloverAccountID(ctx context.Context, 
 		return 0
 	}
 	return accountID
+}
+
+// refreshOpenAISpilloverTTL 在会话被主账号正常服务时续期备用账号关联。
+//
+// 备用关联的 TTL 是「会话空闲过期」：只要会话仍在活动，关联就保留，持续活跃的
+// 会话不会因为固定时长到期而在下一次溢出时被换到第三个账号。它与上游 Prompt
+// Cache 的生命周期无关——后者取决于备用账号上次服务该会话的时间，只能通过上游
+// 返回的 cached_tokens 观察。
+func (s *OpenAIGatewayService) refreshOpenAISpilloverTTL(ctx context.Context, groupID *int64, sessionHash string) {
+	if !s.openAIStickySpilloverEnabled(groupID) {
+		return
+	}
+	key := openAISpilloverSessionKey(sessionHash)
+	if key == "" {
+		return
+	}
+	_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), key, s.openAIStickySpilloverTTL())
 }
 
 func (s *OpenAIGatewayService) setOpenAISpilloverAccountID(ctx context.Context, groupID *int64, sessionHash string, accountID int64) {

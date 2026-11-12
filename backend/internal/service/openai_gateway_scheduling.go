@@ -1179,11 +1179,14 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
 		if err == nil && result != nil && result.Acquired {
+			if stickyHit {
+				s.refreshOpenAISpilloverTTL(ctx, groupID, sessionHash)
+			}
 			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 			return markStickySessionHit(selection, stickyHit), selectErr
 		}
 		stickyFull := stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil
-		if stickyFull && err == nil && s.openAIStickySpilloverEnabled() {
+		if stickyFull && err == nil && s.openAIStickySpilloverEnabled(groupID) {
 			// 粘性账号并发已满：不在这里排队，交给分层选号借道到有空闲槽位的账号。
 			loadBatchSkipped = true
 		} else {
@@ -1240,7 +1243,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	// away, preferring the session's secondary account. See
 	// openai_sticky_spillover.go for the primary/secondary model.
 	stickySpillover := false
-	spillEnabled := s.openAIStickySpilloverEnabled()
+	spillEnabled := s.openAIStickySpilloverEnabled(groupID)
 	reselectAfter := s.openAIWaitReselectInterval()
 	var stickyPrimary *Account
 	var spillSecondaryID int64
@@ -1274,6 +1277,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 								return nil, selectErr
 							}
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+							s.refreshOpenAISpilloverTTL(ctx, groupID, sessionHash)
 							return markStickySessionHit(selection, true), nil
 						}
 

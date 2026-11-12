@@ -487,3 +487,100 @@ func TestOpenAISchedulingMetricsHandler_ExposesEveryRequiredSeries(t *testing.T)
 		require.Contains(t, body, series)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Secondary association lifetime: idle expiry, not a fixed lifetime
+// ---------------------------------------------------------------------------
+
+// A session that stays active for far longer than the spillover TTL keeps its
+// secondary: the next overflow reuses it instead of moving to a third account.
+func TestOpenAIStickySpillover_ActiveSessionKeepsSecondaryBeyondTTL(t *testing.T) {
+	for _, mode := range []string{"legacy", "legacy_no_load_batch", "advanced"} {
+		t.Run(mode, func(t *testing.T) {
+			env := newSpillTestEnv(t, true,
+				spillTestAccount(1, 2, 1, 0), spillTestAccount(2, 4, 1, 0), spillTestAccount(3, 500, 1, 0))
+			advanced := mode == "advanced"
+			if advanced {
+				enableAdvancedSpillScheduler(t, env)
+			}
+			if mode == "legacy_no_load_batch" {
+				env.svc.cfg.Gateway.Scheduling.LoadBatchEnabled = false
+			}
+			env.sessions.bind(env.groupID, "s", 1)
+			env.svc.setOpenAISpilloverAccountID(context.Background(), &env.groupID, "s", 2)
+
+			// 30 minutes of traffic served by the primary, one request every 2 minutes.
+			for i := 0; i < 15; i++ {
+				env.sessions.advance(2 * time.Minute)
+				selection := spillSelect(t, env, advanced, "s")
+				require.True(t, selection.Acquired)
+				require.Equal(t, int64(1), selection.Account.ID)
+				selection.ReleaseFunc()
+			}
+			require.Equal(t, int64(2), env.sessions.secondary(env.groupID, "s"),
+				"an active session must not lose its secondary after the 10m TTL")
+
+			// The overflow that follows stays on the same two accounts.
+			env.slots.fill(1, 2)
+			selection := spillSelect(t, env, advanced, "s")
+			require.True(t, selection.Acquired)
+			require.Equal(t, int64(2), selection.Account.ID, "no switch to a third account")
+			require.Equal(t, OpenAISchedulingRouteSpillSecondary, selection.spillRoute)
+		})
+	}
+}
+
+// Once the session itself has been idle for longer than the TTL the secondary
+// is forgotten, while the primary binding (1h) is unaffected.
+func TestOpenAIStickySpillover_IdleSessionForgetsSecondaryButKeepsPrimary(t *testing.T) {
+	env := newSpillTestEnv(t, true, spillTestAccount(1, 2, 1, 0), spillTestAccount(2, 4, 1, 0))
+	env.sessions.bind(env.groupID, "s", 1)
+	env.svc.setOpenAISpilloverAccountID(context.Background(), &env.groupID, "s", 2)
+
+	env.sessions.advance(9 * time.Minute)
+	require.Equal(t, int64(2), env.sessions.secondary(env.groupID, "s"))
+	env.sessions.advance(2 * time.Minute)
+	require.Zero(t, env.sessions.secondary(env.groupID, "s"))
+	require.Equal(t, int64(1), env.sessions.primary(env.groupID, "s"))
+}
+
+// ---------------------------------------------------------------------------
+// Staged rollout
+// ---------------------------------------------------------------------------
+
+func TestOpenAIStickySpillover_GroupAllowlistLimitsRollout(t *testing.T) {
+	for _, advanced := range []bool{false, true} {
+		t.Run(fmt.Sprintf("advanced=%v", advanced), func(t *testing.T) {
+			env := newSpillTestEnv(t, true, spillTestAccount(1, 2, 1, 0), spillTestAccount(2, 50, 1, 0))
+			if advanced {
+				enableAdvancedSpillScheduler(t, env)
+			}
+			env.sessions.bind(env.groupID, "s", 1)
+			env.slots.fill(1, 2)
+
+			// This group is not in the rollout: it keeps queueing on the sticky account.
+			env.svc.cfg.Gateway.Scheduling.StickySessionSpilloverGroupIDs = []int64{env.groupID + 1}
+			selection := spillSelect(t, env, advanced, "s")
+			if advanced {
+				// Without spillover the advanced scheduler keeps its pre-existing
+				// sticky escape (one-off move to a peer, no secondary recorded).
+				require.Empty(t, selection.spillRoute)
+				if selection.Acquired {
+					selection.ReleaseFunc()
+				}
+			} else {
+				require.False(t, selection.Acquired)
+				require.NotNil(t, selection.WaitPlan)
+				require.Equal(t, int64(1), selection.Account.ID)
+			}
+			require.Zero(t, env.sessions.secondary(env.groupID, "s"))
+			require.Equal(t, int64(1), env.sessions.primary(env.groupID, "s"))
+
+			// Adding the group turns spillover on for it.
+			env.svc.cfg.Gateway.Scheduling.StickySessionSpilloverGroupIDs = []int64{env.groupID + 1, env.groupID}
+			selection = spillSelect(t, env, advanced, "s")
+			require.True(t, selection.Acquired)
+			require.Equal(t, int64(2), selection.Account.ID)
+		})
+	}
+}

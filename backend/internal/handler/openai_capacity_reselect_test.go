@@ -65,6 +65,51 @@ func TestOpenAICapacityWaitSlice(t *testing.T) {
 	})
 }
 
+// Reselecting splits the wait that would have happened anyway; it never makes
+// a request wait longer than it did before the feature existed.
+func TestOpenAICapacityWaitSlice_KeepsFastFailCap(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Unix(1_800_000_000, 0)
+	run := func(legacyTimeouts ...time.Duration) (time.Duration, int) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		enableOpenAICapacityReselect(c)
+		plan := &service.AccountWaitPlan{Timeout: 30 * time.Second, ReselectAfter: 3 * time.Second}
+		clock, total, rounds := now, time.Duration(0), 0
+		for {
+			legacy := legacyTimeouts[len(legacyTimeouts)-1]
+			if rounds < len(legacyTimeouts) {
+				legacy = legacyTimeouts[rounds]
+			}
+			rounds++
+			require.Less(t, rounds, 100)
+			slice, reselect := openAICapacityWaitSlice(c, plan, legacy, clock)
+			total += slice
+			clock = clock.Add(slice)
+			if !reselect {
+				return total, rounds
+			}
+		}
+	}
+
+	// Several candidates: the pre-existing 5s fast-fail cap is the whole budget,
+	// although the plan timeout is 30s. One reselect still happens at 3s.
+	total, rounds := run(5 * time.Second)
+	require.Equal(t, 5*time.Second, total)
+	require.Equal(t, 2, rounds)
+
+	// Single candidate: the plan timeout is the budget, as before.
+	total, rounds = run(30 * time.Second)
+	require.Equal(t, 30*time.Second, total)
+	require.Equal(t, 10, rounds)
+
+	// A later round with a shorter allowance pulls the deadline in...
+	total, _ = run(30*time.Second, 5*time.Second)
+	require.Equal(t, 5*time.Second, total)
+	// ...and one with a longer allowance never pushes it out.
+	total, _ = run(5*time.Second, 120*time.Second)
+	require.Equal(t, 5*time.Second, total)
+}
+
 // Queueing is split into reselect slices; ops must see the sum, and a wait
 // that ended (slot acquired) must not leak its deadline into a later failover.
 func TestOpenAICapacityWaitAccountingAcrossReselects(t *testing.T) {

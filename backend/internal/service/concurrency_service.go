@@ -336,6 +336,24 @@ type UserLoadInfo struct {
 	LoadRate           int // 0-100+ (percent)
 }
 
+// slotAcquireOpTimeout 是单次抢槽 Redis 操作的上限，与调用方的排队截止时间无关。
+const slotAcquireOpTimeout = 3 * time.Second
+
+// releaseUnconfirmedSlot 对一次结果未知的抢槽做补偿释放。先同步释放一次；若抢槽
+// 命令在 Redis 端晚于这次释放才执行（连接上仍有排队的命令），稍后的第二次释放
+// 兜底。两次都按 requestID 精确删除，幂等且不会影响其他请求的槽位。
+func (s *ConcurrencyService) releaseUnconfirmedSlot(release func(context.Context) error) {
+	attempt := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := release(ctx); err != nil {
+			logger.LegacyPrintf("service.concurrency", "Warning: compensating slot release failed: %v", err)
+		}
+	}
+	attempt()
+	time.AfterFunc(slotAcquireOpTimeout+time.Second, attempt)
+}
+
 // AcquireAccountSlot attempts to acquire a concurrency slot for an account.
 // If the account is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
@@ -351,8 +369,22 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 	// Generate unique request ID for this slot
 	requestID := generateRequestID()
 
-	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// 抢槽脚本一旦发出，就必须拿到确定的结果：调用方的截止时间（例如排队的
+	// 一个重选切片）可能正好落在这次 Redis 往返中，若随 ctx 一起放弃，脚本可能
+	// 已在 Redis 端占槽而本端一无所知，槽位要等 TTL 才回收。因此这里脱离调用方
+	// 的取消，只受固定的操作超时约束。
+	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), slotAcquireOpTimeout)
+	acquired, err := s.cache.AcquireAccountSlot(opCtx, accountID, maxConcurrency, requestID)
+	cancel()
 	if err != nil {
+		// 结果未知（Redis 故障或响应丢失）：按 requestID 补偿释放。ZREM 幂等，
+		// 脚本未占槽时是空操作。
+		s.releaseUnconfirmedSlot(func(releaseCtx context.Context) error {
+			return s.cache.ReleaseAccountSlot(releaseCtx, accountID, requestID)
+		})
 		return nil, err
 	}
 
@@ -390,8 +422,17 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 	// Generate unique request ID for this slot
 	requestID := generateRequestID()
 
-	acquired, err := s.cache.AcquireUserSlot(ctx, userID, maxConcurrency, requestID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// 与 AcquireAccountSlot 相同：占槽结果必须可确认，不随调用方截止时间放弃。
+	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), slotAcquireOpTimeout)
+	acquired, err := s.cache.AcquireUserSlot(opCtx, userID, maxConcurrency, requestID)
+	cancel()
 	if err != nil {
+		s.releaseUnconfirmedSlot(func(releaseCtx context.Context) error {
+			return s.cache.ReleaseUserSlot(releaseCtx, userID, requestID)
+		})
 		return nil, err
 	}
 

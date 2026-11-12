@@ -703,6 +703,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if acquireErr == nil && result != nil && result.Acquired {
 		if !req.PreserveStickyBinding {
 			_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
+			s.service.refreshOpenAISpilloverTTL(ctx, req.GroupID, sessionHash)
 		}
 		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account:     account,
@@ -715,7 +716,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
 		spillEligible := acquireErr == nil && result != nil && !result.Acquired &&
-			!req.PreserveStickyBinding && !req.DisableStickyEscape && s.service.openAIStickySpilloverEnabled()
+			!req.PreserveStickyBinding && !req.DisableStickyEscape && s.service.openAIStickySpilloverEnabled(req.GroupID)
 		if spillEligible {
 			// 主账号并发已满：同组有空闲账号就立即借道（优先复用备用账号），
 			// 全部已满才回到主账号的有界等待。

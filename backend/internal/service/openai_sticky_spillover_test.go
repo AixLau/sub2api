@@ -108,18 +108,34 @@ func (c *spillSlotCache) drain(accountID int64) {
 	c.slots[accountID] = map[string]struct{}{}
 }
 
-// spillSessionCache is a goroutine-safe, group-scoped sticky session cache.
+// spillSessionCache is a goroutine-safe, group-scoped sticky session cache
+// that honours TTLs against a manual clock (advance).
 type spillSessionCache struct {
 	stubGatewayCache
 	mu       sync.Mutex
 	bindings map[string]int64
+	expires  map[string]time.Time
+	clock    time.Time
 }
 
 func newSpillSessionCache() *spillSessionCache {
-	return &spillSessionCache{bindings: map[string]int64{}}
+	return &spillSessionCache{bindings: map[string]int64{}, expires: map[string]time.Time{}, clock: time.Unix(1_800_000_000, 0)}
 }
 
 func spillCacheKey(groupID int64, key string) string { return fmt.Sprintf("%d|%s", groupID, key) }
+
+// advance moves the cache clock forward; entries past their TTL disappear.
+func (c *spillSessionCache) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.clock = c.clock.Add(d)
+	for key, at := range c.expires {
+		if !at.After(c.clock) {
+			delete(c.expires, key)
+			delete(c.bindings, key)
+		}
+	}
+}
 
 func (c *spillSessionCache) GetSessionAccountID(_ context.Context, groupID int64, sessionHash string) (int64, error) {
 	c.mu.Lock()
@@ -130,14 +146,25 @@ func (c *spillSessionCache) GetSessionAccountID(_ context.Context, groupID int64
 	return 0, errors.New("not found")
 }
 
-func (c *spillSessionCache) SetSessionAccountID(_ context.Context, groupID int64, sessionHash string, accountID int64, _ time.Duration) error {
+func (c *spillSessionCache) SetSessionAccountID(_ context.Context, groupID int64, sessionHash string, accountID int64, ttl time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.bindings[spillCacheKey(groupID, sessionHash)] = accountID
+	key := spillCacheKey(groupID, sessionHash)
+	c.bindings[key] = accountID
+	delete(c.expires, key)
+	if ttl > 0 {
+		c.expires[key] = c.clock.Add(ttl)
+	}
 	return nil
 }
 
-func (c *spillSessionCache) RefreshSessionTTL(context.Context, int64, string, time.Duration) error {
+func (c *spillSessionCache) RefreshSessionTTL(_ context.Context, groupID int64, sessionHash string, ttl time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := spillCacheKey(groupID, sessionHash)
+	if _, ok := c.bindings[key]; ok && ttl > 0 {
+		c.expires[key] = c.clock.Add(ttl)
+	}
 	return nil
 }
 
@@ -145,6 +172,7 @@ func (c *spillSessionCache) DeleteSessionAccountID(_ context.Context, groupID in
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.bindings, spillCacheKey(groupID, sessionHash))
+	delete(c.expires, spillCacheKey(groupID, sessionHash))
 	return nil
 }
 

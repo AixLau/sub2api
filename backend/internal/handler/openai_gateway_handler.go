@@ -2177,6 +2177,7 @@ const (
 const (
 	openAICapacityReselectEnabledKey   = "openai_capacity_reselect_enabled"
 	openAICapacityWaitDeadlineKey      = "openai_capacity_wait_deadline"
+	openAICapacityWaitStartedKey       = "openai_capacity_wait_started"
 	openAICapacityWaitAccumulatedKey   = "openai_capacity_wait_accumulated"
 	openAICapacityWaitAccountKey       = "openai_capacity_wait_account_id"
 	openAISchedulingRouteKey           = "openai_scheduling_route"
@@ -2221,6 +2222,7 @@ func settleOpenAICapacityWait(c *gin.Context, outcome string, accountID int64) {
 	c.Set(openAICapacityWaitAccumulatedKey, time.Duration(0))
 	c.Set(openAICapacityWaitAccountKey, int64(0))
 	c.Set(openAICapacityWaitDeadlineKey, time.Time{})
+	c.Set(openAICapacityWaitStartedKey, time.Time{})
 }
 
 // enableOpenAICapacityReselect 声明本请求的选号循环能处理 openAISlotRetryReselect。
@@ -2232,19 +2234,27 @@ func enableOpenAICapacityReselect(c *gin.Context) {
 
 // openAICapacityWaitSlice 计算本轮排队时长。
 //
-// 未启用重选时返回 (legacyTimeout, false)，行为与原先一致。启用时整个请求共享
-// 一个等待截止时间（首次排队时按 WaitPlan.Timeout 确定，之后的重选不会延长），
+// 未启用重选时返回 (legacyTimeout, false)，行为与原先一致。启用时重选只是把原有的
+// 等待拆成多轮，不延长总等待：整个请求共享一个等待截止时间，首次排队时按
+// legacyTimeout（即不重选时本会等待的时长，含「多个候选账号时 5 秒」的快速失败
+// 上限）确定；之后的重选只会让它提前（新计划允许的等待更短时），不会延后。
 // 每轮最多等待 ReselectAfter；返回的 bool 表示超时后是否还应重新选号。
 func openAICapacityWaitSlice(c *gin.Context, plan *service.AccountWaitPlan, legacyTimeout time.Duration, now time.Time) (time.Duration, bool) {
 	if c == nil || plan == nil || plan.ReselectAfter <= 0 || !c.GetBool(openAICapacityReselectEnabledKey) {
 		return legacyTimeout, false
 	}
-	deadline, ok := c.Get(openAICapacityWaitDeadlineKey)
+	started, _ := c.Get(openAICapacityWaitStartedKey)
+	startedAt, _ := started.(time.Time)
+	deadline, _ := c.Get(openAICapacityWaitDeadlineKey)
 	deadlineAt, _ := deadline.(time.Time)
-	if !ok || deadlineAt.IsZero() {
-		deadlineAt = now.Add(plan.Timeout)
-		c.Set(openAICapacityWaitDeadlineKey, deadlineAt)
+	if startedAt.IsZero() || deadlineAt.IsZero() {
+		startedAt = now
+		deadlineAt = now.Add(legacyTimeout)
+		c.Set(openAICapacityWaitStartedKey, startedAt)
+	} else if capped := startedAt.Add(legacyTimeout); capped.Before(deadlineAt) {
+		deadlineAt = capped
 	}
+	c.Set(openAICapacityWaitDeadlineKey, deadlineAt)
 	remaining := deadlineAt.Sub(now)
 	if remaining <= openAICapacityReselectMinRemaining {
 		// 预算已用尽：做最后一次极短等待，超时即按容量不足结束。
