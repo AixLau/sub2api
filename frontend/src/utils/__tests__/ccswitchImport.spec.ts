@@ -23,7 +23,6 @@ describe('ccswitchImport utils', () => {
 
   const baseInput = {
     baseUrl: 'https://api.example.com',
-    providerName: 'Sub2API',
     apiKey: 'sk-test',
     usageScript: 'return true'
   }
@@ -136,7 +135,6 @@ describe('ccswitchImport utils', () => {
 describe('CC Switch long-context config', () => {
   const input = {
     baseUrl: 'https://api.example.com',
-    providerName: '站点',
     apiKey: 'sk-test',
     usageScript: 'return true'
   }
@@ -173,6 +171,7 @@ describe('CC Switch long-context config', () => {
     )
     expect(params.get('configFormat')).toBe('toml')
     expect(params.get('iconUrl')).toBe('https://aixlau.me/logo.png')
+    expect(params.get('name')).toBe('星链AI')
     const toml = decode(params.get('config'))
     expect(toml).toContain('model_context_window = 1000000')
     expect(toml).toContain('model_auto_compact_token_limit = 800000')
@@ -180,7 +179,7 @@ describe('CC Switch long-context config', () => {
     expect(toml).not.toContain('disable_response_storage')
     expect(toml).toContain('review_model = "gpt-6.1-sol"')
     expect(toml).toContain('model_reasoning_effort = "high"')
-    expect(toml).toContain('name = "星链 AI"')
+    expect(toml).toContain('name = "星链AI"')
     expect(toml).not.toContain('[desktop]')
     expect(toml).toContain('base_url = "https://api.example.com/v1"')
   })
@@ -205,7 +204,6 @@ describe('CC Switch usage script extractor', () => {
       baseUrl: 'https://api.example.com',
       platform: 'anthropic',
       clientType: 'claude',
-      providerName: 'Sub2API',
       apiKey: 'sk-test',
       usageScript: CC_SWITCH_USAGE_SCRIPT
     })
@@ -247,7 +245,6 @@ describe('CC Switch usage script', () => {
           baseUrl: 'https://api.example.com',
           platform,
           clientType: platform === 'gemini' ? 'gemini' : 'claude',
-          providerName: 'Sub2API',
           apiKey: 'sk-test',
           usageScript: CC_SWITCH_USAGE_SCRIPT
         })
