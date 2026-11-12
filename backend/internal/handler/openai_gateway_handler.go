@@ -2168,7 +2168,50 @@ const (
 	openAISlotRetryCapacity
 	openAISlotRetryAccountUnavailable
 	openAISlotRetryProfitVeto
+	// openAISlotRetryReselect：排队一个重选间隔后仍未拿到槽位、总等待预算未用尽。
+	// 未写响应、未排除任何账号；调用方应直接重新选号（其他账号可能已释放槽位）。
+	// 仅在调用方通过 enableOpenAICapacityReselect 声明支持时返回。
+	openAISlotRetryReselect
 )
+
+const (
+	openAICapacityReselectEnabledKey   = "openai_capacity_reselect_enabled"
+	openAICapacityWaitDeadlineKey      = "openai_capacity_wait_deadline"
+	openAICapacityReselectMinRemaining = 200 * time.Millisecond
+)
+
+// enableOpenAICapacityReselect 声明本请求的选号循环能处理 openAISlotRetryReselect。
+func enableOpenAICapacityReselect(c *gin.Context) {
+	if c != nil {
+		c.Set(openAICapacityReselectEnabledKey, true)
+	}
+}
+
+// openAICapacityWaitSlice 计算本轮排队时长。
+//
+// 未启用重选时返回 (legacyTimeout, false)，行为与原先一致。启用时整个请求共享
+// 一个等待截止时间（首次排队时按 WaitPlan.Timeout 确定，之后的重选不会延长），
+// 每轮最多等待 ReselectAfter；返回的 bool 表示超时后是否还应重新选号。
+func openAICapacityWaitSlice(c *gin.Context, plan *service.AccountWaitPlan, legacyTimeout time.Duration, now time.Time) (time.Duration, bool) {
+	if c == nil || plan == nil || plan.ReselectAfter <= 0 || !c.GetBool(openAICapacityReselectEnabledKey) {
+		return legacyTimeout, false
+	}
+	deadline, ok := c.Get(openAICapacityWaitDeadlineKey)
+	deadlineAt, _ := deadline.(time.Time)
+	if !ok || deadlineAt.IsZero() {
+		deadlineAt = now.Add(plan.Timeout)
+		c.Set(openAICapacityWaitDeadlineKey, deadlineAt)
+	}
+	remaining := deadlineAt.Sub(now)
+	if remaining <= openAICapacityReselectMinRemaining {
+		// 预算已用尽：做最后一次极短等待，超时即按容量不足结束。
+		return openAICapacityReselectMinRemaining, false
+	}
+	if remaining <= plan.ReselectAfter {
+		return remaining, false
+	}
+	return plan.ReselectAfter, true
+}
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
@@ -2466,6 +2509,9 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			zap.Duration("timeout", effectiveTimeout),
 		)
 	}
+	// 重选模式：只等一个重选间隔，超时后回到选号（其他账号可能已释放槽位），
+	// 总等待仍以 WaitPlan.Timeout 为上限。
+	effectiveTimeout, reselectOnTimeout := openAICapacityWaitSlice(c, selection.WaitPlan, effectiveTimeout, time.Now())
 
 	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 		c,
@@ -2476,6 +2522,10 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 		streamStarted,
 	)
 	if err != nil {
+		if IsConcurrencyRetryableError(err) && reselectOnTimeout && ctx.Err() == nil {
+			reqLog.Debug("openai.account_slot_wait_reselect", zap.Int64("account_id", account.ID), zap.Duration("waited", effectiveTimeout))
+			return nil, nil, false, openAISlotRetryReselect
+		}
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		if IsConcurrencyRetryableError(err) {
 			return nil, nil, false, openAISlotRetryCapacity

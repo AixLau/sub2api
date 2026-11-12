@@ -1643,6 +1643,19 @@ type GatewaySchedulingConfig struct {
 	StickySessionMaxWaiting  int           `mapstructure:"sticky_session_max_waiting"`
 	StickySessionWaitTimeout time.Duration `mapstructure:"sticky_session_wait_timeout"`
 
+	// StickySessionSpilloverEnabled 开启后（OpenAI 兼容调度），粘性账号并发已满而
+	// 同组其他账号有空闲槽位时，请求立即借道到空闲账号，而不是在粘性账号排队。
+	// 借道账号记录为会话的「备用账号」，后续借道优先复用它以保持缓存连续性。
+	StickySessionSpilloverEnabled bool `mapstructure:"sticky_session_spillover_enabled"`
+	// StickySessionSpilloverTTL 备用账号记录的有效期（应接近上游 Prompt Cache 的保留时间）。
+	StickySessionSpilloverTTL time.Duration `mapstructure:"sticky_session_spillover_ttl"`
+	// CapacityWeightedSelection 开启后（OpenAI 兼容调度），新会话/借道选号在同优先级内
+	// 按「空闲槽位数」加权随机，使会话分布与账号容量成正比。
+	CapacityWeightedSelection bool `mapstructure:"capacity_weighted_selection"`
+	// WaitReselectInterval 全部账号已满进入排队后，每隔该时长重新选号一次，
+	// 避免死等单个账号而错过其他账号释放的槽位。0 表示关闭（保持单账号等待到超时）。
+	WaitReselectInterval time.Duration `mapstructure:"wait_reselect_interval"`
+
 	// 兜底排队配置
 	FallbackWaitTimeout time.Duration `mapstructure:"fallback_wait_timeout"`
 	FallbackMaxWaiting  int           `mapstructure:"fallback_max_waiting"`
@@ -2783,6 +2796,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.sse_event_max_lines", 4096)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
+	viper.SetDefault("gateway.scheduling.sticky_session_spillover_enabled", true)
+	viper.SetDefault("gateway.scheduling.sticky_session_spillover_ttl", 10*time.Minute)
+	viper.SetDefault("gateway.scheduling.capacity_weighted_selection", true)
+	viper.SetDefault("gateway.scheduling.wait_reselect_interval", 3*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_wait_timeout", 30*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
@@ -3991,6 +4008,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.StickySessionWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_wait_timeout must be positive")
+	}
+	if c.Gateway.Scheduling.StickySessionSpilloverTTL < 0 {
+		return fmt.Errorf("gateway.scheduling.sticky_session_spillover_ttl must be non-negative")
+	}
+	if c.Gateway.Scheduling.WaitReselectInterval < 0 {
+		return fmt.Errorf("gateway.scheduling.wait_reselect_interval must be non-negative")
 	}
 	if c.Gateway.Scheduling.FallbackWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.fallback_wait_timeout must be positive")

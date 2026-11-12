@@ -587,6 +587,9 @@ type AccountWaitPlan struct {
 	MaxConcurrency int
 	Timeout        time.Duration
 	MaxWaiting     int
+	// ReselectAfter > 0 时，调用方每等待这么久仍未拿到槽位就应重新选号（总等待
+	// 仍以 Timeout 为上限），避免死等单个账号而错过其他账号释放的槽位。
+	ReselectAfter time.Duration
 }
 
 type AccountSelectionResult struct {

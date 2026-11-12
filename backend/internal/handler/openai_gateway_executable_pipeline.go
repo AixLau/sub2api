@@ -927,8 +927,15 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	if s.StreamStarted != nil {
 		streamStartedPtr = s.StreamStarted
 	}
+	if s.Retry != nil && !s.AccountBoundState {
+		enableOpenAICapacityReselect(c)
+	}
 	releaseFunc, refreshedAccount, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
+		if retryReason == openAISlotRetryReselect && s.Retry != nil && !s.AccountBoundState {
+			*s.Retry = true
+			return ExecutableStageResult{}
+		}
 		if s.AccountBoundState && retryReason != openAISlotRetryNone {
 			if retryReason == openAISlotRetryCapacity {
 				s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "The original account is temporarily at capacity; this request cannot move to another account")
