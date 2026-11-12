@@ -24,7 +24,6 @@ export interface CcSwitchImportDeeplinkInput {
   baseUrl: string
   platform?: GroupPlatform | null
   clientType: CcSwitchClientType
-  providerName: string
   apiKey: string
   usageScript: string
 }
@@ -169,7 +168,7 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
   const entries: [string, string][] = [
     ['resource', 'provider'],
     ['app', config.app],
-    ['name', input.providerName],
+    ['name', PROVIDER_DISPLAY_NAME],
     ['homepage', input.baseUrl],
     ['endpoint', config.endpoint],
     ['iconUrl', PROVIDER_ICON_URL],

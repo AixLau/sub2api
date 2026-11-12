@@ -94,6 +94,14 @@ type OpenAIAccountScheduleRequest struct {
 	RequireCompact  bool
 	ExcludedIDs     map[int64]struct{}
 	UserCooldownIDs map[int64]struct{}
+
+	// spillPreferredAccountID is the session's secondary account (it served
+	// this session within the spillover TTL). A sticky spillover tries it
+	// first; see openai_sticky_spillover.go.
+	spillPreferredAccountID int64
+	// capacityWeighted multiplies the weighted-selection weight by the account's
+	// free slots so placement is proportional to capacity.
+	capacityWeighted bool
 }
 
 type OpenAIAccountScheduleDecision struct {
@@ -476,6 +484,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	if s != nil && s.service != nil && s.service.openAIGroupRequiresPrivacySet(ctx, req.GroupID) {
 		req.RequirePrivacySet = true
 	}
+	if s != nil && s.service != nil {
+		req.capacityWeighted = s.service.openAICapacityWeightedSelectionEnabled()
+	}
 	decision = newOpenAIAccountScheduleDecision(req)
 	ctx = withOpenAIImageSizeStickyAccount(withOpenAIImageSizeStickyAccount(ctx, req.StickyAccountID), req.StickyPreviousAccountID)
 	start := time.Now()
@@ -552,6 +563,11 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		if selection != nil && selection.Account != nil {
 			decision.Layer = openAIAccountScheduleLayerSessionSticky
 			decision.StickySessionHit = true
+			if req.StickyAccountID > 0 && selection.Account.ID != req.StickyAccountID {
+				// Sticky spillover borrowed another account.
+				decision.Layer = openAIAccountScheduleLayerLoadBalance
+				decision.StickySessionHit = false
+			}
 			decision.SelectedAccountID = selection.Account.ID
 			decision.SelectedAccountType = selection.Account.Type
 			return selection, decision, nil
@@ -687,6 +703,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if acquireErr == nil && result != nil && result.Acquired {
 		if !req.PreserveStickyBinding {
 			_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
+			s.service.refreshOpenAISpilloverTTL(ctx, req.GroupID, sessionHash)
 		}
 		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account:     account,
@@ -698,7 +715,17 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
-		if escapeCfg.enabled && !req.DisableStickyEscape && acquireErr == nil && result != nil && !result.Acquired {
+		spillEligible := acquireErr == nil && result != nil && !result.Acquired &&
+			!req.PreserveStickyBinding && !req.DisableStickyEscape && s.service.openAIStickySpilloverEnabled(req.GroupID)
+		if spillEligible {
+			// 主账号并发已满：同组有空闲账号就立即借道（优先复用备用账号），
+			// 全部已满才回到主账号的有界等待。
+			if spill := s.trySpillStickySession(ctx, req, account); spill != nil {
+				return spill, false, nil
+			}
+			openAIStickySpilloverPrimaryWaitTotal.Add(1)
+		}
+		if !spillEligible && escapeCfg.enabled && !req.DisableStickyEscape && acquireErr == nil && result != nil && !result.Acquired {
 			errorRate, ttft, _ := s.stats.snapshot(accountID)
 			slog.Info("sticky_escape_triggered",
 				"account_id", accountID,
@@ -715,10 +742,54 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 				MaxConcurrency: account.Concurrency,
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
+				ReselectAfter:  s.service.openAIWaitReselectInterval(),
 			},
 		}), false, nil
 	}
 	return nil, false, nil
+}
+
+// trySpillStickySession borrows a peer account for a session whose sticky
+// (primary) account is at its concurrency limit. It returns nil when no peer
+// has a free slot, in which case the caller queues on the primary.
+func (s *defaultOpenAIAccountScheduler) trySpillStickySession(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	primary *Account,
+) *AccountSelectionResult {
+	if s == nil || s.service == nil || primary == nil {
+		return nil
+	}
+	secondaryID := s.service.getOpenAISpilloverAccountID(ctx, req.GroupID, req.SessionHash)
+	if secondaryID == primary.ID {
+		secondaryID = 0
+	}
+	spillReq := req
+	spillReq.StickyAccountID = 0
+	// The load-balance layer must not rewrite the primary binding; the
+	// primary/secondary bookkeeping below owns it.
+	spillReq.PreserveStickyBinding = true
+	spillReq.spillPreferredAccountID = secondaryID
+	spillReq.ExcludedIDs = cloneExcludedAccountIDs(req.ExcludedIDs)
+	if spillReq.ExcludedIDs == nil {
+		spillReq.ExcludedIDs = make(map[int64]struct{}, 1)
+	}
+	spillReq.ExcludedIDs[primary.ID] = struct{}{}
+
+	selection, _, _, _, _, err := s.selectByLoadBalance(ctx, spillReq)
+	if err != nil || selection == nil || selection.Account == nil {
+		return nil
+	}
+	if !selection.Acquired {
+		// A wait plan on a peer holds no slot; waiting on the cache-warm
+		// primary is the better queue.
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		return nil
+	}
+	selection.spillRoute = s.service.recordOpenAIStickySpillover(ctx, req.GroupID, req.SessionHash, primary.ID, secondaryID, selection.Account.ID, !gatewayProfitControlGateActive(ctx), s.service.openAIWSSessionStickyTTL())
+	return selection
 }
 
 func openAIStickyAccountMatchesGroup(account *Account, groupID *int64) bool {
@@ -931,6 +1002,14 @@ func buildOpenAIWeightedSelectionOrder(
 		weight := (pool[i].score - minScore) + 1.0
 		if math.IsNaN(weight) || math.IsInf(weight, 0) || weight <= 0 {
 			weight = 1.0
+		}
+		if req.capacityWeighted && pool[i].account != nil {
+			// 按空闲槽位放大权重：会话分布与账号容量成正比，而不是在 top-K 内近似均分。
+			loadInfo := pool[i].loadInfo
+			if !pool[i].loadKnown {
+				loadInfo = nil
+			}
+			weight *= openAIFreeCapacityWeight(openAIAccountFreeSlots(pool[i].account, loadInfo))
 		}
 		weights[i] = weight
 	}
@@ -1194,6 +1273,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 		if len(primary) == 0 {
 			primary = buildOpenAIWeightedSelectionOrder(ranked, req)
 		}
+		if req.spillPreferredAccountID > 0 {
+			primary = preferOpenAISpillAccount(primary, pool, req.spillPreferredAccountID)
+		}
 		if !plan.includeOverflowFallback || groupTopK >= len(pool) {
 			return primary
 		}
@@ -1235,6 +1317,28 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 	}
 
 	return buildSelectionOrder(plan.candidates)
+}
+
+// preferOpenAISpillAccount moves the session's secondary account to the
+// front of the selection order, pulling it in from the wider pool when it did
+// not make the top-K cut.
+func preferOpenAISpillAccount(order []openAIAccountCandidateScore, pool []openAIAccountCandidateScore, accountID int64) []openAIAccountCandidateScore {
+	for i, candidate := range order {
+		if candidate.account != nil && candidate.account.ID == accountID {
+			out := make([]openAIAccountCandidateScore, 0, len(order))
+			out = append(out, candidate)
+			out = append(out, order[:i]...)
+			return append(out, order[i+1:]...)
+		}
+	}
+	for _, candidate := range pool {
+		if candidate.account != nil && candidate.account.ID == accountID {
+			out := make([]openAIAccountCandidateScore, 0, len(order)+1)
+			out = append(out, candidate)
+			return append(out, order...)
+		}
+	}
+	return order
 }
 
 func sortOpenAICompactRetryCandidates(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
@@ -1907,6 +2011,7 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 					MaxConcurrency: fresh.Concurrency,
 					Timeout:        cfg.FallbackWaitTimeout,
 					MaxWaiting:     cfg.FallbackMaxWaiting,
+					ReselectAfter:  s.service.openAIWaitReselectInterval(),
 				},
 			}), candidateCount, topK, loadSkew, nil
 		}

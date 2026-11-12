@@ -1168,6 +1168,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 	}
 	ctx = withOpenAIImageSizeStickyAccount(ctx, stickyAccountID)
+	// loadBatchSkipped：load_batch_enabled=false 但需要借道时，沿用下面的分层选号，
+	// 只是不查询批量负载（按优先级 + LRU 逐个抢槽），保证借道/排队重选在该兼容
+	// 分支下同样生效。
+	loadBatchSkipped := false
 	if s.concurrencyService == nil || !cfg.LoadBatchEnabled {
 		account, stickyHit, err := s.selectAccountForModelWithExclusionsStickyHit(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, stickyAccountID, requiredCapability, preferLowUpstreamRate)
 		if err != nil {
@@ -1175,28 +1179,40 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
 		if err == nil && result != nil && result.Acquired {
+			if stickyHit {
+				s.refreshOpenAISpilloverTTL(ctx, groupID, sessionHash)
+			}
 			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 			return markStickySessionHit(selection, stickyHit), selectErr
 		}
-		if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
-			waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
-			if waitingCount < cfg.StickySessionMaxWaiting {
-				selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-					AccountID:      account.ID,
-					MaxConcurrency: account.Concurrency,
-					Timeout:        cfg.StickySessionWaitTimeout,
-					MaxWaiting:     cfg.StickySessionMaxWaiting,
-				})
-				return markStickySessionHit(selection, stickyHit), selectErr
+		stickyFull := stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil
+		if stickyFull && err == nil && s.openAIStickySpilloverEnabled(groupID) {
+			// 粘性账号并发已满：不在这里排队，交给分层选号借道到有空闲槽位的账号。
+			loadBatchSkipped = true
+		} else {
+			compatReselectAfter := s.openAIWaitReselectInterval()
+			if stickyFull {
+				waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
+				if waitingCount < cfg.StickySessionMaxWaiting {
+					selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+						AccountID:      account.ID,
+						MaxConcurrency: account.Concurrency,
+						Timeout:        cfg.StickySessionWaitTimeout,
+						MaxWaiting:     cfg.StickySessionMaxWaiting,
+						ReselectAfter:  compatReselectAfter,
+					})
+					return markStickySessionHit(selection, stickyHit), selectErr
+				}
 			}
+			selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+				AccountID:      account.ID,
+				MaxConcurrency: account.Concurrency,
+				Timeout:        cfg.FallbackWaitTimeout,
+				MaxWaiting:     cfg.FallbackMaxWaiting,
+				ReselectAfter:  compatReselectAfter,
+			})
+			return markStickySessionHit(selection, stickyHit), selectErr
 		}
-		selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-			AccountID:      account.ID,
-			MaxConcurrency: account.Concurrency,
-			Timeout:        cfg.FallbackWaitTimeout,
-			MaxWaiting:     cfg.FallbackMaxWaiting,
-		})
-		return markStickySessionHit(selection, stickyHit), selectErr
 	}
 
 	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
@@ -1221,7 +1237,16 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	// one-request capacity spillover in Layer 2. Keep that spillover temporary:
 	// rewriting the durable binding here would make a short burst migrate the
 	// whole conversation to a cache-cold account.
+	//
+	// With sticky_session_spillover_enabled the full sticky account ("primary")
+	// is not queued on while a peer has a free slot: Layer 2 borrows a peer right
+	// away, preferring the session's secondary account. See
+	// openai_sticky_spillover.go for the primary/secondary model.
 	stickySpillover := false
+	spillEnabled := s.openAIStickySpilloverEnabled(groupID)
+	reselectAfter := s.openAIWaitReselectInterval()
+	var stickyPrimary *Account
+	var spillSecondaryID int64
 	if sessionHash != "" {
 		accountID := stickyAccountID
 		if accountID > 0 && !isExcluded(accountID) {
@@ -1252,18 +1277,27 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 								return nil, selectErr
 							}
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+							s.refreshOpenAISpilloverTTL(ctx, groupID, sessionHash)
 							return markStickySessionHit(selection, true), nil
 						}
 
-						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-						if waitingCount < cfg.StickySessionMaxWaiting {
-							selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
-							return markStickySessionHit(selection, true), selectErr
+						if spillEnabled {
+							stickyPrimary = account
+							if secondaryID := s.getOpenAISpilloverAccountID(ctx, groupID, sessionHash); secondaryID != accountID {
+								spillSecondaryID = secondaryID
+							}
+						} else {
+							waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
+							if waitingCount < cfg.StickySessionMaxWaiting {
+								selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+									AccountID:      accountID,
+									MaxConcurrency: account.Concurrency,
+									Timeout:        cfg.StickySessionWaitTimeout,
+									MaxWaiting:     cfg.StickySessionMaxWaiting,
+									ReselectAfter:  reselectAfter,
+								})
+								return markStickySessionHit(selection, true), selectErr
+							}
 						}
 						stickySpillover = true
 					}
@@ -1353,6 +1387,24 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		})
 	}
 
+	// bindSelected records the session → account relation once a slot is held.
+	// A spillover never rewrites the primary binding directly: it records (or
+	// reuses) the secondary account, see recordOpenAIStickySpillover.
+	bindSelected := func(selection *AccountSelectionResult, selectedID int64) {
+		if sessionHash == "" {
+			return
+		}
+		gateActive := gatewayProfitControlGateActive(ctx)
+		if stickyPrimary != nil {
+			selection.spillRoute = s.recordOpenAIStickySpillover(ctx, groupID, sessionHash, stickyPrimary.ID, spillSecondaryID, selectedID, !gateActive, openaiStickySessionTTL)
+			return
+		}
+		if !stickySpillover && !gateActive {
+			_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, selectedID, openaiStickySessionTTL)
+		}
+	}
+	capacityWeighted := s.openAICapacityWeightedSelectionEnabled()
+
 	tryAcquireFromLoadMap := func(loadMap map[int64]*AccountLoadInfo) (*AccountSelectionResult, bool, error) {
 		var available []accountWithLoad
 		for _, acc := range candidates {
@@ -1372,26 +1424,32 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			return nil, false, nil
 		}
 
-		sort.SliceStable(available, func(i, j int) bool {
-			a, b := available[i], available[j]
-			if a.account.Priority != b.account.Priority {
-				return a.account.Priority < b.account.Priority
-			}
-			if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-				return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-			}
-			switch {
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-				return true
-			case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-				return false
-			case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-				return false
-			default:
-				return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-			}
-		})
-		shuffleWithinSortGroups(available)
+		if capacityWeighted {
+			// Priority first, then free-slot-weighted random: session placement
+			// becomes proportional to account capacity instead of LRU-uniform.
+			orderOpenAIAccountsByFreeCapacity(available, nil)
+		} else {
+			sort.SliceStable(available, func(i, j int) bool {
+				a, b := available[i], available[j]
+				if a.account.Priority != b.account.Priority {
+					return a.account.Priority < b.account.Priority
+				}
+				if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
+					return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+				}
+				switch {
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
+					return true
+				case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
+					return false
+				case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
+					return false
+				default:
+					return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
+				}
+			})
+			shuffleWithinSortGroups(available)
+		}
 		if rateOrder.enabled {
 			sort.SliceStable(available, func(i, j int) bool {
 				return rateOrder.compare(available[i].account, available[j].account) < 0
@@ -1416,6 +1474,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		} else {
 			selectionOrder = append(selectionOrder, available...)
 		}
+		if stickyPrimary != nil {
+			// The secondary served this session within the spillover TTL, so its
+			// upstream prompt cache may still be warm: try it first.
+			moveOpenAIAccountToFront(selectionOrder, spillSecondaryID)
+		}
 
 		for _, item := range selectionOrder {
 			fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, item.account, platform, requestedModel, false, requiredCapability)
@@ -1435,17 +1498,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, true, selectErr
 				}
-				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) {
-					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
-				}
+				bindSelected(selection, fresh.ID)
 				return selection, true, nil
 			}
 		}
 		return nil, true, nil
 	}
 
-	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
-	if err != nil {
+	var loadMap map[int64]*AccountLoadInfo
+	if !loadBatchSkipped {
+		loadMap, err = s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
+	}
+	if loadBatchSkipped || err != nil {
 		ordered := append([]*Account(nil), candidates...)
 		sortAccountsByPriorityAndLastUsed(ordered, false)
 		if rateOrder.enabled {
@@ -1455,6 +1519,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		if requireCompact {
 			ordered = prioritizeOpenAICompactAccounts(ordered)
+		}
+		if stickyPrimary != nil {
+			// Same preference as the load-map path: reuse the session's secondary first.
+			moveOpenAIAccountPointerToFront(ordered, spillSecondaryID)
 		}
 		for _, acc := range ordered {
 			fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, platform, requestedModel, false, requiredCapability)
@@ -1474,9 +1542,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, selectErr
 				}
-				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) {
-					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
-				}
+				bindSelected(selection, fresh.ID)
 				return selection, nil
 			}
 		}
@@ -1497,6 +1563,23 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
+	// Every compatible account is full. A spilling session goes back to its
+	// primary's bounded queue (the most recently used account) before falling back to a
+	// generic wait; the wait is re-evaluated every reselectAfter.
+	if stickyPrimary != nil {
+		waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyPrimary.ID)
+		if waitingCount < cfg.StickySessionMaxWaiting {
+			openAIStickySpilloverPrimaryWaitTotal.Add(1)
+			selection, selectErr := s.newSelectionResult(ctx, stickyPrimary, false, nil, &AccountWaitPlan{
+				AccountID:      stickyPrimary.ID,
+				MaxConcurrency: stickyPrimary.Concurrency,
+				Timeout:        cfg.StickySessionWaitTimeout,
+				MaxWaiting:     cfg.StickySessionMaxWaiting,
+				ReselectAfter:  reselectAfter,
+			})
+			return markStickySessionHit(selection, true), selectErr
+		}
+	}
 	sortAccountsByPriorityAndLastUsed(candidates, false)
 	if rateOrder.enabled {
 		sort.SliceStable(candidates, func(i, j int) bool {
@@ -1523,6 +1606,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			MaxConcurrency: fresh.Concurrency,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
+			ReselectAfter:  reselectAfter,
 		})
 	}
 
