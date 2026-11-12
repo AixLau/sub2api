@@ -921,14 +921,24 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	reqLog.Debug(logPrefix+".account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	// Remembered for the usage stage, which reports the upstream cached tokens
+	// per scheduling route (primary / reused secondary / new account).
+	c.Set(openAISchedulingRouteKey, service.OpenAISchedulingRouteOf(selection, scheduleDecision))
 
 	streamStarted := false
 	streamStartedPtr := &streamStarted
 	if s.StreamStarted != nil {
 		streamStartedPtr = s.StreamStarted
 	}
+	if s.Retry != nil && !s.AccountBoundState {
+		enableOpenAICapacityReselect(c)
+	}
 	releaseFunc, refreshedAccount, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
+		if retryReason == openAISlotRetryReselect && s.Retry != nil && !s.AccountBoundState {
+			*s.Retry = true
+			return ExecutableStageResult{}
+		}
 		if s.AccountBoundState && retryReason != openAISlotRetryNone {
 			if retryReason == openAISlotRetryCapacity {
 				s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "The original account is temporarily at capacity; this request cannot move to another account")
@@ -1500,6 +1510,9 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	}
 	if s.Result == nil {
 		return ExecutableStageResult{}
+	}
+	if !failedUpstreamUsage {
+		service.ObserveOpenAISchedulingRouteUsage(c.GetString(openAISchedulingRouteKey), s.Result.Usage.InputTokens, s.Result.Usage.CacheReadInputTokens)
 	}
 	quotaPlatform := s.QuotaPlatform
 	if quotaPlatform == "" {

@@ -1643,6 +1643,29 @@ type GatewaySchedulingConfig struct {
 	StickySessionMaxWaiting  int           `mapstructure:"sticky_session_max_waiting"`
 	StickySessionWaitTimeout time.Duration `mapstructure:"sticky_session_wait_timeout"`
 
+	// StickySessionSpilloverEnabled 开启后（OpenAI 兼容调度），粘性账号并发已满而
+	// 同组其他账号有空闲槽位时，请求立即借道到空闲账号，而不是在粘性账号排队。
+	// 借道账号记录为会话的「备用账号」，后续借道优先复用它，把会话限制在两个账号之间。
+	StickySessionSpilloverEnabled bool `mapstructure:"sticky_session_spillover_enabled"`
+	// StickySessionSpilloverGroupIDs 非空时借道只对这些分组生效（用于灰度）；为空表示
+	// 对全部分组生效。
+	StickySessionSpilloverGroupIDs []int64 `mapstructure:"sticky_session_spillover_group_ids"`
+	// StickySessionSpilloverTTL 备用账号关联的空闲过期时间：会话每次被服务（主账号命中
+	// 或借道）都会续期，会话空闲超过该时长后关联才失效。这是 Redis 里「会话—备用账号」
+	// 关系的生命周期，不是上游 Prompt Cache 的生命周期：复用备用账号时上游缓存是否
+	// 命中，取决于该账号上次服务此会话的时间，只能由按路由统计的 cached_tokens 观察
+	// （/api/v1/admin/ops/openai-scheduling/metrics）。
+	StickySessionSpilloverTTL time.Duration `mapstructure:"sticky_session_spillover_ttl"`
+	// CapacityWeightedSelection 开启后（OpenAI 兼容调度），新会话/借道选号在同优先级内
+	// 按「空闲槽位数」加权随机，使会话分布与账号容量成正比。
+	CapacityWeightedSelection bool `mapstructure:"capacity_weighted_selection"`
+	// WaitReselectInterval 全部账号已满进入排队后，每隔该时长重新选号一次，
+	// 避免死等单个账号而错过其他账号释放的槽位。0 表示关闭（保持单账号等待到超时）。
+	// 重选只是把原有的等待拆成多轮，不延长总等待：上限仍是关闭重选时的等待时长
+	// （粘性 sticky_session_wait_timeout、兜底 fallback_wait_timeout，以及高级调度器
+	// 在存在多个候选账号时的 5 秒快速失败）。
+	WaitReselectInterval time.Duration `mapstructure:"wait_reselect_interval"`
+
 	// 兜底排队配置
 	FallbackWaitTimeout time.Duration `mapstructure:"fallback_wait_timeout"`
 	FallbackMaxWaiting  int           `mapstructure:"fallback_max_waiting"`
@@ -2783,6 +2806,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.sse_event_max_lines", 4096)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
+	viper.SetDefault("gateway.scheduling.sticky_session_spillover_enabled", true)
+	viper.SetDefault("gateway.scheduling.sticky_session_spillover_ttl", 10*time.Minute)
+	viper.SetDefault("gateway.scheduling.sticky_session_spillover_group_ids", []int64{})
+	viper.SetDefault("gateway.scheduling.capacity_weighted_selection", true)
+	viper.SetDefault("gateway.scheduling.wait_reselect_interval", 3*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_wait_timeout", 30*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
@@ -3991,6 +4019,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.StickySessionWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_wait_timeout must be positive")
+	}
+	if c.Gateway.Scheduling.StickySessionSpilloverTTL < 0 {
+		return fmt.Errorf("gateway.scheduling.sticky_session_spillover_ttl must be non-negative")
+	}
+	if c.Gateway.Scheduling.WaitReselectInterval < 0 {
+		return fmt.Errorf("gateway.scheduling.wait_reselect_interval must be non-negative")
 	}
 	if c.Gateway.Scheduling.FallbackWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.fallback_wait_timeout must be positive")
