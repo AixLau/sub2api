@@ -85,6 +85,24 @@ type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }
 
+// AccountWindowStatsQuery describes the two rolling windows needed by an
+// OpenAI usage cell. The starts differ per account, so this cannot reuse the
+// same-start today-stats batch query.
+type AccountWindowStatsQuery struct {
+	AccountID     int64      `json:"account_id"`
+	FiveHourStart *time.Time `json:"five_hour_start,omitempty"`
+	SevenDayStart *time.Time `json:"seven_day_start,omitempty"`
+}
+
+type AccountWindowStatsBatch struct {
+	FiveHour *usagestats.AccountStats
+	SevenDay *usagestats.AccountStats
+}
+
+type accountWindowStatsByWindowsBatchReader interface {
+	GetAccountWindowStatsByWindowsBatch(ctx context.Context, queries []AccountWindowStatsQuery) (map[int64]AccountWindowStatsBatch, error)
+}
+
 type openAIRateLimitRecoveryCandidateLister interface {
 	ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int, resetAfter time.Time) ([]int64, error)
 }
@@ -363,6 +381,8 @@ type AccountUsageService struct {
 	// reset triggered when one account observes an early upstream reset.
 	openAIEarlyResetBroadcastAt atomic.Int64
 	openAISummaryFlight         singleflight.Group
+	openAISummaryCacheMu        sync.Mutex
+	openAISummaryCache          *openAISummaryCacheEntry
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -830,6 +850,10 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 			var usageErr error
 			if supportsAnthropicPassiveUsage(account) {
 				usage, usageErr = s.getPassiveUsageForAccount(gctx, account)
+			} else if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth {
+				// Attach all OpenAI local window statistics in one query after the
+				// per-account usage snapshots have been collected.
+				usage, usageErr = s.getOpenAIUsage(gctx, account, force, false)
 			} else {
 				usage, usageErr = s.getUsageForAccount(gctx, account, force)
 			}
@@ -849,7 +873,81 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 		return nil, nil, err
 	}
 
+	s.enrichOpenAIUsageBatch(gctx, accountsByID, usageByAccount)
+
 	return usageByAccount, errorsByAccount, nil
+}
+
+func (s *AccountUsageService) enrichOpenAIUsageBatch(
+	ctx context.Context,
+	accountsByID map[int64]*Account,
+	usageByAccount map[int64]*UsageInfo,
+) {
+	queries := make([]AccountWindowStatsQuery, 0, len(usageByAccount))
+	for accountID, usage := range usageByAccount {
+		account := accountsByID[accountID]
+		if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth || usage == nil {
+			continue
+		}
+		query := AccountWindowStatsQuery{AccountID: accountID}
+		now := time.Now()
+		fiveHourStart := codexWindowStatsStart(usage.FiveHour, 5*time.Hour, now)
+		sevenDayStart := codexWindowStatsStart(usage.SevenDay, 7*24*time.Hour, now)
+		query.FiveHourStart = &fiveHourStart
+		query.SevenDayStart = &sevenDayStart
+		queries = append(queries, query)
+	}
+	if len(queries) == 0 {
+		return
+	}
+
+	if reader, ok := s.usageLogRepo.(accountWindowStatsByWindowsBatchReader); ok {
+		if stats, err := reader.GetAccountWindowStatsByWindowsBatch(ctx, queries); err == nil {
+			for accountID, batch := range stats {
+				applyOpenAIWindowStats(usageByAccount[accountID], batch)
+			}
+			return
+		}
+	}
+
+	// Keep alternate UsageLogRepository implementations correct while the
+	// production repository uses the single batched query above.
+	for _, query := range queries {
+		usage := usageByAccount[query.AccountID]
+		if usage == nil {
+			continue
+		}
+		batch := AccountWindowStatsBatch{}
+		if query.FiveHourStart != nil {
+			if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, query.AccountID, *query.FiveHourStart); err == nil {
+				batch.FiveHour = stats
+			}
+		}
+		if query.SevenDayStart != nil {
+			if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, query.AccountID, *query.SevenDayStart); err == nil {
+				batch.SevenDay = stats
+			}
+		}
+		applyOpenAIWindowStats(usage, batch)
+	}
+}
+
+func applyOpenAIWindowStats(usage *UsageInfo, stats AccountWindowStatsBatch) {
+	if usage == nil {
+		return
+	}
+	if stats.FiveHour != nil {
+		if usage.FiveHour == nil {
+			usage.FiveHour = &UsageProgress{Utilization: 0}
+		}
+		usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats.FiveHour)
+	}
+	if stats.SevenDay != nil {
+		if usage.SevenDay == nil {
+			usage.SevenDay = &UsageProgress{Utilization: 0}
+		}
+		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats.SevenDay)
+	}
 }
 
 // GetPassiveUsage 从 Account.Extra 中的被动采样数据构建 UsageInfo，不调用外部 API。
@@ -978,7 +1076,7 @@ func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID
 	}
 }
 
-func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Account, force bool) (*UsageInfo, error) {
+func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Account, force bool, includeWindowStats ...bool) (*UsageInfo, error) {
 	now := time.Now()
 	usage := &UsageInfo{UpdatedAt: &now}
 
@@ -1014,7 +1112,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 		}
 	}
 
-	if s.usageLogRepo == nil {
+	if s.usageLogRepo == nil || (len(includeWindowStats) > 0 && !includeWindowStats[0]) {
 		return usage, nil
 	}
 

@@ -76,6 +76,89 @@ func (r *usageLogRepository) GetOpenAIWindowCostsBatch(
 	return result, nil
 }
 
+// GetAccountWindowStatsByWindowsBatch aggregates both rolling windows for all
+// requested accounts in one scan. Each account may have a different window
+// start, so the input is represented as a JSON recordset just like the OpenAI
+// pool summary query.
+func (r *usageLogRepository) GetAccountWindowStatsByWindowsBatch(
+	ctx context.Context,
+	queries []service.AccountWindowStatsQuery,
+) (map[int64]service.AccountWindowStatsBatch, error) {
+	result := make(map[int64]service.AccountWindowStatsBatch, len(queries))
+	if len(queries) == 0 {
+		return result, nil
+	}
+	payload, err := json.Marshal(queries)
+	if err != nil {
+		return nil, fmt.Errorf("marshal account window stats queries: %w", err)
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		WITH windows AS (
+			SELECT *
+			FROM jsonb_to_recordset($1::jsonb) AS w(
+				account_id bigint,
+				five_hour_start timestamptz,
+				seven_day_start timestamptz
+			)
+		)
+		SELECT
+			w.account_id,
+			COUNT(*) FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start),
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens)
+				FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start), 0),
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+				FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start), 0),
+			COALESCE(SUM(ul.total_cost) FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start), 0),
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start), 0),
+			COUNT(*) FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start),
+			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens)
+				FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start), 0),
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+				FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start), 0),
+			COALESCE(SUM(ul.total_cost) FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start), 0),
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start), 0)
+		FROM windows w
+		LEFT JOIN usage_logs ul
+			ON ul.account_id = w.account_id
+			AND ul.created_at < NOW()
+			AND (
+				(w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start)
+				OR (w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start)
+			)
+		GROUP BY w.account_id
+	`, payload)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var accountID int64
+		fiveHour := &usagestats.AccountStats{}
+		sevenDay := &usagestats.AccountStats{}
+		if err := rows.Scan(
+			&accountID,
+			&fiveHour.Requests,
+			&fiveHour.Tokens,
+			&fiveHour.Cost,
+			&fiveHour.StandardCost,
+			&fiveHour.UserCost,
+			&sevenDay.Requests,
+			&sevenDay.Tokens,
+			&sevenDay.Cost,
+			&sevenDay.StandardCost,
+			&sevenDay.UserCost,
+		); err != nil {
+			return nil, err
+		}
+		result[accountID] = service.AccountWindowStatsBatch{FiveHour: fiveHour, SevenDay: sevenDay}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // GetUserStatsAggregated returns aggregated usage statistics for a user using database-level aggregation
 func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {
 	query := `

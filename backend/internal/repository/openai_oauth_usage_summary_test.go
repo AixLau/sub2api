@@ -54,6 +54,41 @@ func TestGetOpenAIWindowCostsBatchUsesOneAccountBilledQuery(t *testing.T) {
 	}
 }
 
+func TestGetAccountWindowStatsByWindowsBatchUsesOneQuery(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	fiveStart := now.Add(-5 * time.Hour)
+	sevenStart := now.Add(-7 * 24 * time.Hour)
+
+	mock.ExpectQuery(`(?s)jsonb_to_recordset.*input_tokens.*five_hour_start.*seven_day_start`).
+		WithArgs(jsonArrayLengthMatcher(2)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"account_id", "five_requests", "five_tokens", "five_cost", "five_standard_cost", "five_user_cost",
+			"seven_requests", "seven_tokens", "seven_cost", "seven_standard_cost", "seven_user_cost",
+		}).
+			AddRow(int64(80), int64(3), int64(120), 1.2, 1.0, 0.8, int64(8), int64(320), 3.2, 3.0, 2.4).
+			AddRow(int64(81), int64(0), int64(0), 0.0, 0.0, 0.0, int64(2), int64(40), 0.4, 0.4, 0.3))
+
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	stats, err := repo.GetAccountWindowStatsByWindowsBatch(context.Background(), []service.AccountWindowStatsQuery{
+		{AccountID: 80, FiveHourStart: &fiveStart, SevenDayStart: &sevenStart},
+		{AccountID: 81, FiveHourStart: &fiveStart, SevenDayStart: &sevenStart},
+	})
+	if err != nil {
+		t.Fatalf("get account window stats batch: %v", err)
+	}
+	if stats[80].FiveHour.Requests != 3 || stats[80].SevenDay.Tokens != 320 || stats[81].SevenDay.Cost != 0.4 {
+		t.Fatalf("unexpected account window stats: %+v", stats)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBatchUpdateOpenAICapacityHistoryUsesOneJSONBUpdate(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

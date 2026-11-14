@@ -10,11 +10,13 @@ import (
 
 type openAISummaryAccountRepoStub struct {
 	AccountRepository
-	accounts []Account
-	updates  []OpenAICapacityHistoryUpdate
+	accounts  []Account
+	updates   []OpenAICapacityHistoryUpdate
+	listCalls int
 }
 
 func (r *openAISummaryAccountRepoStub) ListAllWithFilters(context.Context, string, string, string, string, int64, string) ([]Account, error) {
+	r.listCalls++
 	return r.accounts, nil
 }
 
@@ -27,9 +29,11 @@ type openAISummaryUsageRepoStub struct {
 	UsageLogRepository
 	costs   map[int64]OpenAIWindowCosts
 	queries []OpenAIWindowCostQuery
+	calls   int
 }
 
 func (r *openAISummaryUsageRepoStub) GetOpenAIWindowCostsBatch(_ context.Context, queries []OpenAIWindowCostQuery, _ time.Time) (map[int64]OpenAIWindowCosts, error) {
+	r.calls++
 	r.queries = queries
 	return r.costs, nil
 }
@@ -113,6 +117,35 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	}
 	if len(accountRepo.updates) != 1 || accountRepo.updates[0].AccountID != 80 {
 		t.Fatalf("history updates = %+v", accountRepo.updates)
+	}
+}
+
+func TestGetOpenAIOAuthUsageSummaryUsesShortCache(t *testing.T) {
+	now := time.Now().UTC()
+	accountRepo := &openAISummaryAccountRepoStub{accounts: []Account{
+		summaryAccount(90, "active", "plus", map[string]any{
+			"codex_5h_used_percent": 20.0,
+			"codex_5h_reset_at":     now.Add(2 * time.Hour).Format(time.RFC3339),
+			"codex_7d_used_percent": 10.0,
+			"codex_7d_reset_at":     now.Add(6 * 24 * time.Hour).Format(time.RFC3339),
+		}),
+	}}
+	usageRepo := &openAISummaryUsageRepoStub{costs: map[int64]OpenAIWindowCosts{90: {FiveHour: 10, SevenDay: 20}}}
+	svc := &AccountUsageService{accountRepo: accountRepo, usageLogRepo: usageRepo}
+
+	first, err := svc.GetOpenAIOAuthUsageSummary(context.Background())
+	if err != nil {
+		t.Fatalf("first summary: %v", err)
+	}
+	second, err := svc.GetOpenAIOAuthUsageSummary(context.Background())
+	if err != nil {
+		t.Fatalf("second summary: %v", err)
+	}
+	if first != second {
+		t.Fatal("expected the second request to reuse the cached summary")
+	}
+	if accountRepo.listCalls != 1 || usageRepo.calls != 1 {
+		t.Fatalf("expected one summary computation, list=%d costs=%d", accountRepo.listCalls, usageRepo.calls)
 	}
 }
 

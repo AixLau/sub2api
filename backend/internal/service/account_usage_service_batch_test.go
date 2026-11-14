@@ -134,6 +134,23 @@ func (r *usageBatchLogRepoStub) GetDailyStatsAggregated(context.Context, int64, 
 	return nil, nil
 }
 
+type usageWindowStatsBatchRepoStub struct {
+	usageBatchLogRepoStub
+	calls int
+}
+
+func (r *usageWindowStatsBatchRepoStub) GetAccountWindowStatsByWindowsBatch(_ context.Context, queries []AccountWindowStatsQuery) (map[int64]AccountWindowStatsBatch, error) {
+	r.calls++
+	result := make(map[int64]AccountWindowStatsBatch, len(queries))
+	for _, query := range queries {
+		result[query.AccountID] = AccountWindowStatsBatch{
+			FiveHour: &usagestats.AccountStats{Requests: 3, Tokens: 120, Cost: 1.2},
+			SevenDay: &usagestats.AccountStats{Requests: 8, Tokens: 320, Cost: 3.2},
+		}
+	}
+	return result, nil
+}
+
 func TestAccountUsageService_GetUsageBatch_BestEffortByAccount(t *testing.T) {
 	t.Parallel()
 
@@ -193,6 +210,36 @@ func TestAccountUsageService_GetUsageBatch_BestEffortByAccount(t *testing.T) {
 
 	if !strings.Contains(strings.ToLower(errorsByAccount[7003]), "does not support usage query") {
 		t.Fatalf("expected API key account error to be preserved, got %q", errorsByAccount[7003])
+	}
+}
+
+func TestAccountUsageService_GetUsageBatch_BatchesOpenAIWindowStats(t *testing.T) {
+	account := Account{
+		ID:       7010,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra:    map[string]any{},
+	}
+	repo := &usageWindowStatsBatchRepoStub{}
+	svc := &AccountUsageService{
+		accountRepo:  &stubOpenAIAccountRepo{accounts: []Account{account}},
+		usageLogRepo: repo,
+		cache:        NewUsageCache(),
+	}
+
+	usageByAccount, errorsByAccount, err := svc.GetUsageBatch(context.Background(), []int64{account.ID}, false)
+	if err != nil || len(errorsByAccount) != 0 {
+		t.Fatalf("GetUsageBatch() usage=%v errors=%v err=%v", usageByAccount, errorsByAccount, err)
+	}
+	usage := usageByAccount[account.ID]
+	if repo.calls != 1 {
+		t.Fatalf("expected one window stats batch query, got %d", repo.calls)
+	}
+	if usage == nil || usage.FiveHour == nil || usage.FiveHour.WindowStats == nil || usage.FiveHour.WindowStats.Requests != 3 {
+		t.Fatalf("expected batched five-hour stats, got %#v", usage)
+	}
+	if usage.SevenDay == nil || usage.SevenDay.WindowStats == nil || usage.SevenDay.WindowStats.Tokens != 320 {
+		t.Fatalf("expected batched seven-day stats, got %#v", usage)
 	}
 }
 

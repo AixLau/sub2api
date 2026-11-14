@@ -29,6 +29,13 @@ const (
 	openAICapacityOutlierUpperRatio = 2.0
 )
 
+const openAISummaryCacheTTL = 30 * time.Second
+
+type openAISummaryCacheEntry struct {
+	summary   *OpenAIOAuthUsageSummary
+	expiresAt time.Time
+}
+
 var openAICapacityManagedExtraKeys = []string{
 	openAICapacity5hKey,
 	openAICapacity5hUpdatedAtKey,
@@ -147,13 +154,42 @@ func (s *AccountUsageService) GetOpenAIOAuthUsageSummary(ctx context.Context) (*
 	if s == nil || s.accountRepo == nil || s.usageLogRepo == nil {
 		return nil, fmt.Errorf("openai oauth usage summary is not configured")
 	}
+	if cached := s.cachedOpenAIOAuthUsageSummary(time.Now()); cached != nil {
+		return cached, nil
+	}
 	value, err, _ := s.openAISummaryFlight.Do("openai-oauth-usage-summary", func() (any, error) {
-		return s.computeOpenAIOAuthUsageSummary(ctx, time.Now())
+		if cached := s.cachedOpenAIOAuthUsageSummary(time.Now()); cached != nil {
+			return cached, nil
+		}
+		summary, computeErr := s.computeOpenAIOAuthUsageSummary(ctx, time.Now())
+		if computeErr != nil {
+			return nil, computeErr
+		}
+		s.storeOpenAIOAuthUsageSummary(summary, time.Now().Add(openAISummaryCacheTTL))
+		return summary, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return value.(*OpenAIOAuthUsageSummary), nil
+}
+
+func (s *AccountUsageService) cachedOpenAIOAuthUsageSummary(now time.Time) *OpenAIOAuthUsageSummary {
+	s.openAISummaryCacheMu.Lock()
+	defer s.openAISummaryCacheMu.Unlock()
+	if s.openAISummaryCache == nil || s.openAISummaryCache.summary == nil || !now.Before(s.openAISummaryCache.expiresAt) {
+		return nil
+	}
+	return s.openAISummaryCache.summary
+}
+
+func (s *AccountUsageService) storeOpenAIOAuthUsageSummary(summary *OpenAIOAuthUsageSummary, expiresAt time.Time) {
+	if summary == nil {
+		return
+	}
+	s.openAISummaryCacheMu.Lock()
+	s.openAISummaryCache = &openAISummaryCacheEntry{summary: summary, expiresAt: expiresAt}
+	s.openAISummaryCacheMu.Unlock()
 }
 
 func (s *AccountUsageService) computeOpenAIOAuthUsageSummary(ctx context.Context, now time.Time) (*OpenAIOAuthUsageSummary, error) {

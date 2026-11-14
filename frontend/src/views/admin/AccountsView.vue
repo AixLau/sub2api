@@ -872,10 +872,6 @@ const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, e
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
   if (usageBatchByAccountId.value[String(accountID)] === usage) return
   setUsageBatchState(accountID, usage, null)
-  const account = accounts.value.find(item => item.id === accountID)
-  if (account && isOpenAIOAuthSummaryAccount(account)) {
-    scheduleOpenAIUsageSummaryRefresh()
-  }
 }
 
 const flushQueuedUsageBatch = async () => {
@@ -1274,7 +1270,11 @@ const load = async (options: AccountLoadOptions = {}) => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
   requestParams.lite = '1'
-  await Promise.all([baseLoad(), refreshOpenAIUsageSummary()])
+  await baseLoad()
+  // The account table is independent from the global OpenAI summary.  Keep the
+  // summary refresh in the background so a large usage-log aggregation cannot
+  // delay the list or filter result.
+  void refreshOpenAIUsageSummary()
   if (options.refreshTodayStats !== false) await refreshTodayStatsBatch()
 }
 
@@ -1283,7 +1283,10 @@ const reload = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
-  await Promise.all([baseReload(), refreshOpenAIUsageSummary()])
+  await baseReload()
+  // Refresh the summary independently of the account-list request.  Filtering
+  // must not wait for, or trigger, a full-pool usage aggregation.
+  void refreshOpenAIUsageSummary()
   await refreshTodayStatsBatch()
 }
 
