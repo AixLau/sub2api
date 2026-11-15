@@ -685,6 +685,16 @@ gateway:
     outbox_backlog_rebuild_rows: 10000
     # 全量重建周期（秒），0 表示禁用
     full_rebuild_interval_seconds: 300
+    # 后台写入者（全量重建 + outbox 消费）选举：多实例共享同一 Redis 快照，只需一个实例写入
+    # auto：通过 Redis 租约竞争，遇到存活的 preferred 实例时让出（默认）
+    # preferred：指定写入者（建议设在与 Redis 同机房的实例），租约空闲即接手
+    # disabled：本实例从不执行后台写入（与 Redis 跨区、延迟高的实例）
+    # 环境变量：GATEWAY_SCHEDULING_BACKGROUND_WRITER_MODE
+    background_writer_mode: auto
+    # 写入者租约时长（秒），每 1/3 周期续期；写入者失联后最长这么久由其它实例接手
+    background_writer_lease_seconds: 30
+    # 实例标识（可选），用于租约 owner 与日志；为空时使用 hostname
+    instance_id: ""
   # TLS fingerprint simulation / TLS 指纹伪装
   # Default profile "claude_cli_v2" simulates Node.js 20.x
   # 默认模板 "claude_cli_v2" 模拟 Node.js 20.x 指纹
