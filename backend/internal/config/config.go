@@ -1711,6 +1711,16 @@ type GatewaySchedulingConfig struct {
 	// 全量重建周期配置
 	// 全量重建周期（秒），0 表示禁用
 	FullRebuildIntervalSeconds int `mapstructure:"full_rebuild_interval_seconds"`
+
+	// 后台写入者（全量重建 + outbox 消费）选举。多实例共享同一 Redis 快照，只需一个实例写入。
+	// auto：通过 Redis 租约竞争，遇到存活的 preferred 实例时让出；
+	// preferred：指定写入者，租约空闲即接手，auto 实例会让给它；
+	// disabled：本实例从不执行后台写入（如与 Redis 跨区、延迟高的实例）。
+	BackgroundWriterMode string `mapstructure:"background_writer_mode"`
+	// 写入者租约时长（秒），每 1/3 周期续期；写入者失联后最长这么久由其它实例接手
+	BackgroundWriterLeaseSeconds int `mapstructure:"background_writer_lease_seconds"`
+	// 实例标识（可选），用于租约 owner 与日志；为空时使用 hostname
+	InstanceID string `mapstructure:"instance_id"`
 }
 
 func (s *ServerConfig) Address() string {
@@ -2829,6 +2839,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.outbox_lag_rebuild_failures", 3)
 	viper.SetDefault("gateway.scheduling.outbox_backlog_rebuild_rows", 10000)
 	viper.SetDefault("gateway.scheduling.full_rebuild_interval_seconds", 300)
+	viper.SetDefault("gateway.scheduling.background_writer_mode", "auto")
+	viper.SetDefault("gateway.scheduling.background_writer_lease_seconds", 30)
+	viper.SetDefault("gateway.scheduling.instance_id", "")
 	viper.SetDefault("gateway.usage_record.worker_count", 128)
 	viper.SetDefault("gateway.usage_record.queue_size", 16384)
 	viper.SetDefault("gateway.usage_record.task_timeout_seconds", 5)
@@ -4067,6 +4080,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.FullRebuildIntervalSeconds < 0 {
 		return fmt.Errorf("gateway.scheduling.full_rebuild_interval_seconds must be non-negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Gateway.Scheduling.BackgroundWriterMode)) {
+	case "", "auto", "preferred", "disabled":
+	default:
+		return fmt.Errorf("gateway.scheduling.background_writer_mode must be one of auto, preferred, disabled")
+	}
+	if c.Gateway.Scheduling.BackgroundWriterLeaseSeconds < 0 {
+		return fmt.Errorf("gateway.scheduling.background_writer_lease_seconds must be non-negative")
+	}
+	if c.Gateway.Scheduling.BackgroundWriterLeaseSeconds > 0 && c.Gateway.Scheduling.BackgroundWriterLeaseSeconds < 3 {
+		return fmt.Errorf("gateway.scheduling.background_writer_lease_seconds must be >= 3")
 	}
 	if c.Gateway.Scheduling.OutboxLagWarnSeconds > 0 &&
 		c.Gateway.Scheduling.OutboxLagRebuildSeconds > 0 &&

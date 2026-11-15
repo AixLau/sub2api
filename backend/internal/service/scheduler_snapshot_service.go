@@ -144,6 +144,11 @@ type SchedulerSnapshotService struct {
 	fullRebuildRequested uint64
 	fullRebuildCompleted uint64
 	fullRebuildLastErr   error
+
+	// backgroundWriter 为 nil 时（缓存不支持租约）每个实例都执行后台写入，保持旧行为。
+	backgroundWriter         *schedulerBackgroundWriter
+	backgroundWriterDisabled bool
+	writerAcquiredCh         chan struct{}
 }
 
 func NewSchedulerSnapshotService(
@@ -173,11 +178,28 @@ func (s *SchedulerSnapshotService) Start() {
 		return
 	}
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.runInitialRebuild()
-	}()
+	s.setupBackgroundWriter()
+	switch {
+	case s.backgroundWriterDisabled:
+		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] background writer disabled on this instance: full rebuild and outbox polling are left to other instances")
+	case s.backgroundWriter != nil:
+		// 启动时的全量重建改为在获得写入权时执行（含故障转移接手）。
+		s.wg.Add(2)
+		go func() {
+			defer s.wg.Done()
+			s.runWriterAcquiredRebuilds()
+		}()
+		go func() {
+			defer s.wg.Done()
+			s.backgroundWriter.run(s.stopCh)
+		}()
+	default:
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.runInitialRebuild()
+		}()
+	}
 
 	interval := s.outboxPollInterval()
 	if s.outboxRepo != nil && interval > 0 {
@@ -206,6 +228,65 @@ func (s *SchedulerSnapshotService) Stop() {
 		close(s.stopCh)
 	})
 	s.wg.Wait()
+	if s.backgroundWriter != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), schedulerBackgroundWriterOpTimeout)
+		s.backgroundWriter.release(ctx)
+		cancel()
+	}
+}
+
+func (s *SchedulerSnapshotService) setupBackgroundWriter() {
+	mode := schedulerBackgroundWriterMode(s.cfg)
+	if mode == SchedulerBackgroundWriterModeDisabled {
+		s.backgroundWriterDisabled = true
+		return
+	}
+	lease, ok := s.cache.(SchedulerBackgroundWriterLease)
+	if !ok {
+		return
+	}
+	s.writerAcquiredCh = make(chan struct{}, 1)
+	s.backgroundWriter = newSchedulerBackgroundWriter(
+		lease,
+		schedulerBackgroundWriterOwner(s.cfg),
+		mode == SchedulerBackgroundWriterModePreferred,
+		schedulerBackgroundWriterLeaseTTL(s.cfg),
+		func() {
+			select {
+			case s.writerAcquiredCh <- struct{}{}:
+			default:
+			}
+		},
+	)
+}
+
+// isBackgroundWriter 报告本实例当前是否应执行全量重建与 outbox 消费。
+func (s *SchedulerSnapshotService) isBackgroundWriter() bool {
+	if s.backgroundWriterDisabled {
+		return false
+	}
+	if s.backgroundWriter == nil {
+		return true
+	}
+	return s.backgroundWriter.IsWriter()
+}
+
+// runWriterAcquiredRebuilds 在本实例获得写入权后执行一次全量重建，
+// 覆盖启动与接手前其它写入者可能遗留的不一致。
+func (s *SchedulerSnapshotService) runWriterAcquiredRebuilds() {
+	for {
+		select {
+		case <-s.writerAcquiredCh:
+			if !s.isBackgroundWriter() {
+				continue
+			}
+			if err := s.triggerFullRebuild("writer_acquired"); err != nil {
+				logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] writer acquired rebuild failed: %v", err)
+			}
+		case <-s.stopCh:
+			return
+		}
+	}
 }
 
 func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, groupID *int64, platform string, hasForcePlatform bool) ([]Account, bool, error) {
@@ -345,11 +426,16 @@ func (s *SchedulerSnapshotService) runOutboxWorker(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	s.pollOutbox()
+	// outbox 水位线在 Redis 中共享，只由写入者消费，避免多实例重复处理同一批事件。
+	if s.isBackgroundWriter() {
+		s.pollOutbox()
+	}
 	for {
 		select {
 		case <-ticker.C:
-			s.pollOutbox()
+			if s.isBackgroundWriter() {
+				s.pollOutbox()
+			}
 		case <-s.stopCh:
 			return
 		}
@@ -363,6 +449,9 @@ func (s *SchedulerSnapshotService) runFullRebuildWorker(interval time.Duration) 
 	for {
 		select {
 		case <-ticker.C:
+			if !s.isBackgroundWriter() {
+				continue
+			}
 			if err := s.triggerFullRebuild("interval"); err != nil {
 				logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] full rebuild failed: %v", err)
 			}
