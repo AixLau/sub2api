@@ -125,7 +125,7 @@ func TestCodexIdentityAudit_ParentReferenceFollowsFinalThreadAcrossFingerprintMo
 					body["client_metadata"].(map[string]any)["x-codex-parent-thread-id"] = parentID
 				}
 				ids := resolveCodexFingerprintIDsFromRequest(account, headers)
-				applyCodexAccountIdentityClientMetadataMap(body, account, apiKeyID)
+				applyCodexAccountIdentityClientMetadataMap(body, account, apiKeyID, "")
 				if ids != nil {
 					applyCodexFingerprintClientMetadata(body, ids)
 				}

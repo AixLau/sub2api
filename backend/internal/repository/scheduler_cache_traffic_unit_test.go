@@ -143,19 +143,21 @@ func TestSchedulerCacheSnapshotReloadTransfersOnlyChangedMetadata(t *testing.T) 
 	require.NotSame(t, b, masterOf("312"))
 	require.Same(t, c, masterOf("313"))
 
-	// 记录被绕过修订号直接改写（例如旧版本实例或写入出错）：最长复用时长过后仍能读到新值。
+	// 记录被绕过修订号直接改写（例如旧版本实例或写入出错）：最长复用时长与宽限期过后仍能读到新值。
 	raw, err := mr.Get(schedulerAccountMetaKey("313"))
 	require.NoError(t, err)
 	require.NoError(t, mr.Set(schedulerAccountMetaKey("313"), raw+" "))
 	base := time.Now()
-	cache.now = func() time.Time { return base.Add(schedulerSnapshotCacheMaxAge + time.Second) }
+	cache.now = func() time.Time {
+		return base.Add(schedulerSnapshotCacheMaxAge + schedulerSnapshotCacheStaleGrace + time.Second)
+	}
 	got = memoRead(t, cache, bucket)
 	require.Equal(t, "c", got[2].Name)
 	require.NotSame(t, c, masterOf("313"))
 
 	// 记录缺失按未命中处理。
 	mr.Del(schedulerAccountMetaKey("311"))
-	cache.now = func() time.Time { return base.Add(3 * schedulerSnapshotCacheMaxAge) }
+	cache.now = func() time.Time { return base.Add(3 * (schedulerSnapshotCacheMaxAge + schedulerSnapshotCacheStaleGrace)) }
 	memoRequireMiss(t, cache, bucket)
 }
 

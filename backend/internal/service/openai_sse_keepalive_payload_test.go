@@ -162,13 +162,15 @@ func TestCodexKeepaliveDoesNotMaskUpstreamTimeoutOrPreventFailover(t *testing.T)
 			require.Error(t, err)
 			require.Nil(t, result.firstTokenMs)
 			require.Contains(t, rec.Body.String(), openAISSEPingEvent)
+			// Keepalive pings are not model output, so both an upstream stall and
+			// the first-output deadline fail over (bounded by the first-output switch
+			// budget) instead of being masked by the pings.
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.SafeToFailoverAfterWrite)
+			require.NotContains(t, rec.Body.String(), "stream_timeout")
 			if firstOutput {
-				var failoverErr *UpstreamFailoverError
-				require.ErrorAs(t, err, &failoverErr)
-				require.True(t, failoverErr.SafeToFailoverAfterWrite)
 				require.Equal(t, -1, OpenAICompactKeepaliveAdjustedWrittenSize(c))
-			} else {
-				require.Contains(t, rec.Body.String(), "stream_timeout")
 			}
 		})
 	}
