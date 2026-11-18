@@ -105,6 +105,7 @@
                 <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
                 <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
                 <th v-if="showCost" class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
+                <th v-if="showAccountCost" class="pb-2 text-right">{{ t('admin.dashboard.accountCost') }}</th>
                 <th v-if="showStandardCost" class="pb-2 text-right">{{ t('admin.dashboard.standard') }}</th>
               </tr>
             </thead>
@@ -131,6 +132,9 @@
                   <td v-if="showCost" class="py-1.5 text-right text-green-600 dark:text-green-400">
                     ${{ formatCost(item.actual_cost) }}
                   </td>
+                  <td v-if="showAccountCost" class="py-1.5 text-right text-orange-500 dark:text-orange-400">
+                    ${{ formatCost(item.account_cost ?? 0) }}
+                  </td>
                   <td v-if="showStandardCost" class="py-1.5 text-right text-gray-400 dark:text-gray-500">
                     ${{ formatCost(item.cost) }}
                   </td>
@@ -142,6 +146,7 @@
                       :loading="breakdownLoading"
                       :show-cost="showCost"
                       :show-standard-cost="showStandardCost"
+                      :show-account-cost="showAccountCost"
                     />
                   </td>
                 </tr>
@@ -195,6 +200,7 @@ const props = withDefaults(
     enableBreakdown?: boolean
     /** 与同排卡片等高：卡片随网格行拉伸，表格区占满剩余高度（不再固定 192px） */
     fillHeight?: boolean
+    showAccountCost?: boolean
     startDate?: string
     endDate?: string
     filters?: Record<string, any>
@@ -211,7 +217,8 @@ const props = withDefaults(
     showCost: true,
     showStandardCost: true,
     enableBreakdown: true,
-    fillHeight: false
+    fillHeight: false,
+    showAccountCost: true
   }
 )
 
@@ -226,7 +233,7 @@ const breakdownLoading = ref(false)
 const showCost = computed(() => props.showCost)
 const showStandardCost = computed(() => showCost.value && props.showStandardCost)
 const effectiveMetric = computed<DistributionMetric>(() => (showCost.value && props.metric === 'actual_cost') ? 'actual_cost' : 'tokens')
-const distributionColspan = computed(() => 3 + (showCost.value ? 1 : 0) + (showStandardCost.value ? 1 : 0))
+const distributionColspan = computed(() => 3 + (showCost.value ? 1 : 0) + (props.showAccountCost ? 1 : 0) + (showStandardCost.value ? 1 : 0))
 
 const toggleBreakdown = async (endpoint: string) => {
   if (expandedKey.value === endpoint) {

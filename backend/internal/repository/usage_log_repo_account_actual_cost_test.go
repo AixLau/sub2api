@@ -29,7 +29,7 @@ func TestAccountDistributionActualCostUsesUserSpending(t *testing.T) {
 				require.Equal(t, 3.0, rows[0].ActualCost)
 				require.Equal(t, 0.5, rows[0].AccountCost)
 			} else {
-				expectation.WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).AddRow("/v1/responses", 1, 120, 2.0, 3.0))
+				expectation.WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost", "account_cost"}).AddRow("/v1/responses", 1, 120, 2.0, 3.0, 0.5))
 				var rows []EndpointStat
 				var err error
 				switch dimension {

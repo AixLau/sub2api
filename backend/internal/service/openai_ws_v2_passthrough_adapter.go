@@ -762,7 +762,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		}
 	}
 	stageCodexSessionIdentityInputRaw(c, firstClientMessage)
-	accountScopedFirst, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRawWithInput(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), stagedCodexSessionIdentityInput(c))
+	accountScopedFirst, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRawWithInput(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c), stagedCodexSessionIdentityInput(c))
 	if scopeErr != nil {
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 	}
@@ -1030,7 +1030,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			}
 			if isResponseCreate || eventType == "session.update" {
 				stageCodexSessionIdentityInputRaw(c, payload)
-				accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRawWithInput(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), stagedCodexSessionIdentityInput(c))
+				accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRawWithInput(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c), stagedCodexSessionIdentityInput(c))
 				if scopeErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 				}
