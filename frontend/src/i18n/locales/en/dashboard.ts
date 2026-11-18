@@ -210,6 +210,7 @@ export default {
         grokCli: 'Grok CLI',
         systemOne: 'System One',
         opencode: 'OpenCode',
+        workbuddy: 'WorkBuddy',
       },
       typesafe: {
         description: 'Call Jev through the native TypeSafe System One endpoint.',
@@ -282,6 +283,21 @@ export default {
         download: 'Download catalog',
         modelsCount: '{count} models ready to download',
         errorDescription: 'The catalog could not be fetched with this API key.',
+      },
+      workbuddy: {
+        description: 'Add this group\'s models to WorkBuddy as custom models. Requests use the OpenAI Chat Completions API.',
+        hint: 'The file is a single JSON array. If it already lists other models, merge these entries into that array instead of replacing it. Save as UTF-8 without BOM, then restart WorkBuddy.',
+        note: 'Config path: ~/.workbuddy/models.json. Run mkdir -p ~/.workbuddy if it does not exist. After restarting WorkBuddy, pick the models with the 星链AI suffix. The file contains your API key; keep it private.',
+        noteWindows: 'Config path: %USERPROFILE%\\.workbuddy\\models.json (press Win+R and enter %USERPROFILE%\\.workbuddy). After restarting WorkBuddy, pick the models with the 星链AI suffix. The file contains your API key; keep it private.',
+        loading: 'Loading the models available to this group…',
+        error: 'Could not load the model list with this API key. Try again later.',
+        empty: 'This group has no models that WorkBuddy can use.',
+        quickTitle: 'One-sentence setup (recommended)',
+        quickDescription: 'Copy the sentence below and send it in WorkBuddy. It runs the built-in PowerShell (Windows) or Terminal (macOS) to add the GPT-6 / 6.1 / 6.2 models; nothing like Python needs to be installed, and your existing config is backed up first. Pick your OS above first.',
+        quickCopy: 'Copy sentence',
+        quickManual: 'When it finishes, quit and reopen WorkBuddy. You can also edit models.json by hand as shown below.',
+        quickPrompt: 'Please add the GPT models from the 星链API provider to WorkBuddy: run the command below and show me the output. {command}',
+        noKey: 'An API key is required to generate the WorkBuddy config.'
       },
       opencode: {
         title: 'OpenCode Example',

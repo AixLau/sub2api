@@ -173,6 +173,70 @@
         </div>
 
         <section
+          v-if="showWorkBuddy && apiKey"
+          data-testid="workbuddy-quick-setup"
+          class="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20"
+        >
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('keys.useKeyModal.workbuddy.quickTitle') }}
+              </h3>
+              <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                {{ t('keys.useKeyModal.workbuddy.quickDescription') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="workbuddy-quick-copy"
+              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+              @click="copyContent(workBuddyPrompt, WORKBUDDY_PROMPT_COPY_INDEX)"
+            >
+              {{ copiedIndex === WORKBUDDY_PROMPT_COPY_INDEX
+                ? t('keys.useKeyModal.copied')
+                : t('keys.useKeyModal.workbuddy.quickCopy') }}
+            </button>
+          </div>
+          <p
+            data-testid="workbuddy-quick-prompt"
+            class="mt-2 break-all rounded-md bg-white px-3 py-2 font-mono text-xs text-gray-800 dark:bg-dark-900 dark:text-gray-200"
+          >{{ workBuddyPrompt }}</p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('keys.useKeyModal.workbuddy.quickManual') }}
+          </p>
+        </section>
+
+        <div
+          v-if="showWorkBuddy && codexModelManifestState !== 'ready' || showWorkBuddy && workBuddyModelCount === 0"
+          data-testid="workbuddy-model-status"
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-700 dark:bg-dark-800/50 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p
+            :class="codexModelManifestState === 'error'
+              ? 'text-red-700 dark:text-red-300'
+              : 'text-gray-600 dark:text-gray-300'"
+          >
+            {{ !apiKey
+              ? t('keys.useKeyModal.workbuddy.noKey')
+              : codexModelManifestState === 'error'
+                ? t('keys.useKeyModal.workbuddy.error')
+                : codexModelManifestState === 'ready'
+                  ? t('keys.useKeyModal.workbuddy.empty')
+                  : t('keys.useKeyModal.workbuddy.loading') }}
+          </p>
+          <button
+            v-if="apiKey && (codexModelManifestState === 'error' || codexModelManifestState === 'ready' || codexModelManifestState === 'idle')"
+            type="button"
+            data-testid="workbuddy-model-retry"
+            class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+            @click="loadCodexModelManifest"
+          >
+            <Icon name="refresh" size="sm" class="mr-1.5" />
+            {{ t('keys.useKeyModal.codexModelCatalog.retry') }}
+          </button>
+        </div>
+
+        <section
           v-if="showCodexModelCatalog"
           data-testid="codex-model-catalog"
           class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800/50"
@@ -277,6 +341,7 @@ import { buildCodexModelCatalogUrl, fetchCodexModelsManifest } from '@/api/codex
 import type { GroupPlatform } from '@/types'
 import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
 import { buildCodexApiKeyAuthConfig } from '@/utils/codexAuthConfig'
+import { buildWorkBuddyModels } from '@/utils/workbuddyConfig'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
@@ -351,8 +416,12 @@ const codexModelCatalogPath = computed(() => {
 // resolves relative to the config directory, so config.toml always uses ~/.
 const CODEX_MODEL_CATALOG_CONFIG_PATH = '~/.codex/codex-models.json'
 
+// WorkBuddy 的 models.json 由同一份模型目录生成，但不展示 Codex 目录面板。
+const showWorkBuddy = computed(() => props.show && activeClientTab.value === 'workbuddy')
+const needsCodexModelManifest = computed(() => showCodexModelCatalog.value || showWorkBuddy.value)
+
 const codexManifestContext = computed(() => {
-  if (!showCodexModelCatalog.value) return ''
+  if (!needsCodexModelManifest.value) return ''
   return `${props.platform}|${props.baseUrl}|${props.apiKey}`
 })
 
@@ -395,9 +464,16 @@ watch(codexManifestContext, (context, previousContext) => {
   }
 })
 
-// Reset shell tab when client changes
-watch(activeClientTab, () => {
-  activeTab.value = 'unix'
+// WorkBuddy 没有可用的默认模型列表，切到该标签时直接拉取当前分组目录。
+watch(showWorkBuddy, (visible) => {
+  if (visible && props.apiKey && codexModelManifestState.value === 'idle') {
+    void loadCodexModelManifest()
+  }
+}, { immediate: true })
+
+// Reset shell tab when client changes. WorkBuddy 用户多为 Windows，按浏览器系统预选。
+watch(activeClientTab, (tab) => {
+  activeTab.value = tab === 'workbuddy' && /windows/i.test(navigator.userAgent) ? 'windows' : 'unix'
 })
 
 // Icon components
@@ -463,7 +539,7 @@ const SparkleIcon = {
   }
 }
 
-const clientTabs = computed((): TabConfig[] => {
+function baseClientTabs(): TabConfig[] {
   if (!props.platform) return []
   if (props.claudeCodeOnly) {
     return [{ id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon }]
@@ -519,6 +595,15 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
   }
+}
+
+const clientTabs = computed((): TabConfig[] => {
+  const tabs = baseClientTabs()
+  // WorkBuddy 走 OpenAI Chat Completions，只推 GPT-6 系列，所以只在可能含这些模型的分组显示。
+  if (!props.claudeCodeOnly && (props.platform === 'openai' || props.platform === 'composite')) {
+    tabs.push({ id: 'workbuddy', label: t('keys.useKeyModal.cliTabs.workbuddy'), icon: TerminalIcon })
+  }
+  return tabs
 })
 
 // Shell tabs (3 types for environment variable based configs)
@@ -543,13 +628,21 @@ const showCodexAuthMode = computed(() =>
 
 const currentTabs = computed(() => {
   if (!showShellTabs.value) return []
-  if (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws' || activeClientTab.value === 'grok') {
+  if (
+    activeClientTab.value === 'codex' ||
+    activeClientTab.value === 'codex-ws' ||
+    activeClientTab.value === 'grok' ||
+    activeClientTab.value === 'workbuddy'
+  ) {
     return openaiTabs
   }
   return shellTabs
 })
 
 const platformDescription = computed(() => {
+  if (activeClientTab.value === 'workbuddy') {
+    return t('keys.useKeyModal.workbuddy.description')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -596,6 +689,11 @@ const platformDescription = computed(() => {
 })
 
 const platformNote = computed(() => {
+  if (activeClientTab.value === 'workbuddy') {
+    return activeTab.value === 'windows'
+      ? t('keys.useKeyModal.workbuddy.noteWindows')
+      : t('keys.useKeyModal.workbuddy.note')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -667,7 +765,7 @@ function resetCodexModelManifest() {
 }
 
 async function loadCodexModelManifest() {
-  if (!showCodexModelCatalog.value || !props.apiKey) return
+  if (!needsCodexModelManifest.value || !props.apiKey) return
 
   codexModelManifestController?.abort()
   const controller = new AbortController()
@@ -756,6 +854,10 @@ const currentFiles = computed((): FileConfig[] => {
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
 
+  if (activeClientTab.value === 'workbuddy') {
+    return generateWorkBuddyFiles(apiBase, apiKey)
+  }
+
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
@@ -832,6 +934,46 @@ const currentFiles = computed((): FileConfig[] => {
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
+
+const workBuddyModelCount = computed(() => {
+  if (codexModelManifestState.value !== 'ready') return 0
+  return buildWorkBuddyModels(codexModelManifestContent.value, { apiBase: '', apiKey: '' }).length
+})
+
+const WORKBUDDY_PROMPT_COPY_INDEX = -1
+
+// 交给 WorkBuddy 智能体执行的一句话。脚本只依赖系统自带工具：
+// Windows 用自带 PowerShell（setup.ps1），macOS 用 curl + osascript（setup.sh）。
+// 命令在代码里拼好再作为参数传入：文案里直接写 | 会被 vue-i18n 当作复数分隔符。
+const workBuddySetupCommand = computed(() => {
+  const origin = window.location.origin
+  const baseRoot = (props.baseUrl || origin).replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+  const base = `${baseRoot}/v1`
+  const quoteSh = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+  const quotePs = (value: string) => `'${value.replace(/'/g, "''")}'`
+  if (activeTab.value === 'windows') {
+    // 外层双引号让命令在 cmd.exe 和 PowerShell 里都能直接运行。
+    return `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${quotePs(`${origin}/workbuddy/setup.ps1`)}))) -Key ${quotePs(props.apiKey)} -Base ${quotePs(base)}"`
+  }
+  return `curl -fsSL ${quoteSh(`${origin}/workbuddy/setup.sh`)} | bash -s -- --key ${quoteSh(props.apiKey)} --base ${quoteSh(base)}`
+})
+
+const workBuddyPrompt = computed(() =>
+  t('keys.useKeyModal.workbuddy.quickPrompt', { command: workBuddySetupCommand.value })
+)
+
+function generateWorkBuddyFiles(apiBase: string, apiKey: string): FileConfig[] {
+  // 模型列表必须来自当前分组的目录，目录未就绪时不给出可能失效的示例。
+  if (codexModelManifestState.value !== 'ready') return []
+  const models = buildWorkBuddyModels(codexModelManifestContent.value, { apiBase, apiKey })
+  if (models.length === 0) return []
+  const isWindows = activeTab.value === 'windows'
+  return [{
+    path: isWindows ? '%USERPROFILE%\\.workbuddy\\models.json' : '~/.workbuddy/models.json',
+    content: JSON.stringify(models, null, 2),
+    hint: t('keys.useKeyModal.workbuddy.hint')
+  }]
+}
 
 function generateSystemOneCurl(baseUrl: string, apiKey: string): FileConfig {
   const endpoint = `${baseUrl}/v1/systemone`

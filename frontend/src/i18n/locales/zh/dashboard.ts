@@ -210,7 +210,8 @@ export default {
         codexCliWs: 'Codex CLI (WebSocket)',
         grokCli: 'Grok CLI',
         systemOne: 'System One',
-        opencode: 'OpenCode'
+        opencode: 'OpenCode',
+        workbuddy: 'WorkBuddy'
       },
       typesafe: {
         description: '通过 TypeSafe 原生 System One 端点调用 Jev。',
@@ -286,6 +287,21 @@ export default {
         download: '下载目录',
         modelsCount: '已获取 {count} 个模型',
         errorDescription: '无法使用当前 API Key 获取模型目录。'
+      },
+      workbuddy: {
+        description: '把当前分组的模型加入 WorkBuddy 自定义模型，请求走 OpenAI Chat Completions 接口。',
+        hint: '整个文件是一个 JSON 数组。已有其他模型时，把下面的条目合并进原数组，不要整体覆盖；保存为 UTF-8（无 BOM）后重启 WorkBuddy。',
+        note: '配置文件路径：~/.workbuddy/models.json，不存在请先运行 mkdir -p ~/.workbuddy。重启 WorkBuddy 后在模型列表里选择带“星链AI”后缀的模型。文件含 API Key，请勿外传。',
+        noteWindows: '配置文件路径：%USERPROFILE%\\.workbuddy\\models.json（按 Win+R 输入 %USERPROFILE%\\.workbuddy 打开）。重启 WorkBuddy 后在模型列表里选择带“星链AI”后缀的模型。文件含 API Key，请勿外传。',
+        loading: '正在获取当前分组的模型列表…',
+        error: '无法使用当前 API Key 获取模型列表，请稍后重试。',
+        empty: '当前分组没有可用于 WorkBuddy 的模型。',
+        quickTitle: '一句话配置（推荐）',
+        quickDescription: '复制下面这句话，粘贴到 WorkBuddy 对话框发送。它会运行系统自带的 PowerShell（Windows）或终端（macOS），写入 GPT-6 / 6.1 / 6.2 系列模型，无需安装 Python 等环境，原有配置会先备份。请先在上方选对电脑系统。',
+        quickCopy: '复制这句话',
+        quickManual: '完成后完全退出并重新打开 WorkBuddy。也可以按下方说明手动编辑 models.json。',
+        quickPrompt: '请帮我把星链API供应商的GPT模型配置到WorkBuddy：运行下面这条命令，运行完把输出结果告诉我。{command}',
+        noKey: '缺少 API Key，无法生成 WorkBuddy 配置。'
       },
       opencode: {
         title: 'OpenCode 配置示例',

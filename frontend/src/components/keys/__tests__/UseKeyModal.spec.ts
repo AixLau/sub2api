@@ -9,7 +9,8 @@ const { copyToClipboardMock, saveAsMock } = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key
+    // 带 command 参数的文案把命令拼在后面，方便断言 WorkBuddy 一句话里的命令。
+    t: (key: string, params?: { command?: string }) => (params?.command ? `${key} ${params.command}` : key)
   })
 }))
 
@@ -1162,4 +1163,105 @@ describe('UseKeyModal', () => {
       }
     }
   )
+
+  it('generates WorkBuddy models.json from the group model catalog', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        models: [
+          {
+            slug: 'gpt-6.1-terra',
+            display_name: 'GPT-6.1 Terra',
+            context_window: 500000,
+            max_context_window: 872000,
+            input_modalities: ['text', 'image'],
+            default_reasoning_level: 'medium',
+            supported_reasoning_levels: [{ effort: 'none' }, { effort: 'medium' }, { effort: 'high' }]
+          }
+        ]
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-workbuddy-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+
+    const tab = wrapper.findAll('nav[aria-label="Client"] button')
+      .find((button) => button.text().includes('keys.useKeyModal.cliTabs.workbuddy'))
+    expect(tab).toBeDefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="codex-model-catalog"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workbuddy-model-status"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('~/.workbuddy/models.json')
+
+    const unixPrompt = wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()
+    expect(unixPrompt).toBe(
+      `keys.useKeyModal.workbuddy.quickPrompt curl -fsSL '${window.location.origin}/workbuddy/setup.sh' | bash -s -- --key 'sk-workbuddy-test' --base 'https://example.com/v1'`
+    )
+    await wrapper.find('[data-testid="workbuddy-quick-copy"]').trigger('click')
+    expect(copyToClipboardMock).toHaveBeenLastCalledWith(unixPrompt, 'keys.copied')
+
+    const models = JSON.parse(wrapper.find('pre code').text())
+    expect(models).toHaveLength(1)
+    expect(models[0]).toMatchObject({
+      id: 'gpt-6.1-terra',
+      apiKey: 'sk-workbuddy-test',
+      url: 'https://example.com/v1/chat/completions',
+      contextWindow: { defaultLength: 872000, supportedLengths: [500000, 872000] },
+      reasoning: { canDisableThinking: true, defaultEffort: 'medium', supportedEfforts: ['medium', 'high'] }
+    })
+
+    const windowsTab = wrapper.findAll('nav[aria-label="Tabs"] button')
+      .find((button) => button.text().includes('Windows'))
+    await windowsTab!.trigger('click')
+    expect(wrapper.text()).toContain('%USERPROFILE%\\.workbuddy\\models.json')
+    expect(wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()).toBe(
+      `keys.useKeyModal.workbuddy.quickPrompt powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '${window.location.origin}/workbuddy/setup.ps1'))) -Key 'sk-workbuddy-test' -Base 'https://example.com/v1'"`
+    )
+  })
+
+  it('shows a retry action when the WorkBuddy catalog cannot be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => '' }))
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-workbuddy-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+
+    const tab = wrapper.findAll('nav[aria-label="Client"] button')
+      .find((button) => button.text().includes('keys.useKeyModal.cliTabs.workbuddy'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workbuddy-model-status"]').text()).toContain('keys.useKeyModal.workbuddy.error')
+    expect(wrapper.find('[data-testid="workbuddy-model-retry"]').exists()).toBe(true)
+    expect(wrapper.find('pre').exists()).toBe(false)
+  })
 })
