@@ -235,6 +235,7 @@ export default {
         balance: 'Balance --',
         window5h: '5h',
         windowWeekly: '7d',
+        windowMonthly: 'monthly',
         probe: 'Query',
         probeTooltip: 'Query the provider quota endpoint for 5-hour / weekly rolling window usage',
         balanceProbeTooltip: 'Query the provider balance endpoint for the account balance',
