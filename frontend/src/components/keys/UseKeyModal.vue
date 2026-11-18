@@ -133,6 +133,41 @@
           </nav>
         </div>
 
+        <!-- WorkBuddy 一句话配置：放在配置代码之前，命令随上方的系统标签切换 -->
+        <section
+          v-if="showWorkBuddy && apiKey"
+          data-testid="workbuddy-quick-setup"
+          class="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20"
+        >
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('keys.useKeyModal.workbuddy.quickTitle') }}
+              </h3>
+              <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                {{ t('keys.useKeyModal.workbuddy.quickDescription') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="workbuddy-quick-copy"
+              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+              @click="copyContent(workBuddyPrompt, WORKBUDDY_PROMPT_COPY_INDEX)"
+            >
+              {{ copiedIndex === WORKBUDDY_PROMPT_COPY_INDEX
+                ? t('keys.useKeyModal.copied')
+                : t('keys.useKeyModal.workbuddy.quickCopy') }}
+            </button>
+          </div>
+          <p
+            data-testid="workbuddy-quick-prompt"
+            class="mt-2 break-all rounded-md bg-white px-3 py-2 font-mono text-xs text-gray-800 dark:bg-dark-900 dark:text-gray-200"
+          >{{ workBuddyPrompt }}</p>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('keys.useKeyModal.workbuddy.quickManual') }}
+          </p>
+        </section>
+
         <!-- Code Blocks (Stacked for multi-file platforms) -->
         <div class="space-y-4">
           <div
@@ -171,40 +206,6 @@
             </div>
           </div>
         </div>
-
-        <section
-          v-if="showWorkBuddy && apiKey"
-          data-testid="workbuddy-quick-setup"
-          class="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 dark:border-primary-800 dark:bg-primary-900/20"
-        >
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div class="min-w-0">
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white">
-                {{ t('keys.useKeyModal.workbuddy.quickTitle') }}
-              </h3>
-              <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                {{ t('keys.useKeyModal.workbuddy.quickDescription') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              data-testid="workbuddy-quick-copy"
-              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
-              @click="copyContent(workBuddyPrompt, WORKBUDDY_PROMPT_COPY_INDEX)"
-            >
-              {{ copiedIndex === WORKBUDDY_PROMPT_COPY_INDEX
-                ? t('keys.useKeyModal.copied')
-                : t('keys.useKeyModal.workbuddy.quickCopy') }}
-            </button>
-          </div>
-          <p
-            data-testid="workbuddy-quick-prompt"
-            class="mt-2 break-all rounded-md bg-white px-3 py-2 font-mono text-xs text-gray-800 dark:bg-dark-900 dark:text-gray-200"
-          >{{ workBuddyPrompt }}</p>
-          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('keys.useKeyModal.workbuddy.quickManual') }}
-          </p>
-        </section>
 
         <div
           v-if="showWorkBuddy && codexModelManifestState !== 'ready' || showWorkBuddy && workBuddyModelCount === 0"

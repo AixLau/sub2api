@@ -1211,6 +1211,10 @@ describe('UseKeyModal', () => {
     expect(wrapper.find('[data-testid="workbuddy-model-status"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('~/.workbuddy/models.json')
 
+    // 一句话配置是推荐方式，必须排在手动配置的代码块前面。
+    const html = wrapper.html()
+    expect(html.indexOf('data-testid="workbuddy-quick-setup"')).toBeLessThan(html.indexOf('<pre'))
+
     const unixPrompt = wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()
     expect(unixPrompt).toBe(
       `keys.useKeyModal.workbuddy.quickPrompt curl -fsSL '${window.location.origin}/workbuddy/setup.sh' | bash -s -- --key 'sk-workbuddy-test' --base 'https://example.com/v1'`
