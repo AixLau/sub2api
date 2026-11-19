@@ -1003,7 +1003,7 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[data-testid="purchase-hero"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="purchase-balance-ticket"]').text()).toContain('$0.00')
-    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(0, 'CNY'))
+    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(100, 'CNY'))
 
     await wrapper.find('[data-testid="quick-amount-50"]').trigger('click')
 

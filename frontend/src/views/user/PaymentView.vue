@@ -58,6 +58,9 @@
                 :amount-error="amountError"
                 :format-amount="formatSelectedPaymentAmount"
                 :format-credited-amount="formatCreditedPresetAmount"
+                :bonus-tiers="rechargeBonusTiers"
+                :bonus-mode="rechargeBonusMode"
+                :multiplier="balanceRechargeMultiplier"
                 :methods="methodOptions"
                 :selected-method="selectedMethod"
                 :formatted-amount="formatSelectedPaymentAmount(validAmount)"
@@ -423,6 +426,7 @@ function onPaymentDone() {
   const wasSubscription = paymentState.value.orderType === 'subscription'
   resetPayment()
   selectedSubscriptionOptionKey.value = ''
+  if (!wasSubscription) amount.value = defaultRechargeAmount()
   if (wasSubscription) {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
@@ -451,6 +455,13 @@ const checkout = ref<CheckoutInfoResponse>({
 const quickRechargeAmounts = [10, 20, 50, 100, 200, 500, 1000]
 const DEFAULT_MIN_RECHARGE_AMOUNT = 10
 const DEFAULT_MAX_RECHARGE_AMOUNT = 500000
+
+function defaultRechargeAmount(): number {
+  if (100 >= effectiveMinAmount.value && 100 <= effectiveMaxAmount.value) return 100
+  return quickRechargeAmounts.find(amountValue =>
+    amountValue >= effectiveMinAmount.value && amountValue <= effectiveMaxAmount.value,
+  ) ?? Math.min(Math.max(100, effectiveMinAmount.value), effectiveMaxAmount.value)
+}
 
 const tabs = computed(() => {
   const result: Array<{
@@ -1442,6 +1453,7 @@ onMounted(async () => {
         }
       } else {
         removeRecoverySnapshot()
+        amount.value = defaultRechargeAmount()
       }
     }
     await resumeWechatPaymentFromQuery()

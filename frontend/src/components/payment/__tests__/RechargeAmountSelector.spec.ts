@@ -43,6 +43,38 @@ describe('RechargeAmountSelector', () => {
     expect(preset.text()).not.toContain('.00')
   })
 
+  it('links quick amount cards to the configured recharge bonus tiers', () => {
+    const wrapper = mount(RechargeAmountSelector, {
+      props: {
+        modelValue: 100,
+        amounts: [50, 100, 500],
+        min: 10,
+        max: 500000,
+        showHeader: false,
+        showPresetMeta: false,
+        bonusTiers: [
+          { min_amount: 100, bonus_percent: 20 },
+          { min_amount: 500, bonus_percent: 30 },
+        ],
+        formatAmount: (value: number) => `¥${value.toFixed(2)}`,
+        formatCreditedAmount: (value: number) => `$${value.toFixed(2)}`,
+      },
+    })
+
+    expect(wrapper.get('[data-testid="quick-amount-50"]')
+      .find('[data-testid="recharge-amount-bonus-badge"]')
+      .exists()).toBe(false)
+    expect(wrapper.get('[data-testid="quick-amount-100"]')
+      .get('[data-testid="recharge-amount-bonus-badge"]')
+      .text()).toBe('+20%')
+    expect(wrapper.get('[data-testid="quick-amount-100"]')
+      .get('[data-testid="recharge-amount-secondary"]')
+      .text()).toContain('$120.00')
+    expect(wrapper.get('[data-testid="quick-amount-500"]')
+      .get('[data-testid="recharge-amount-bonus-badge"]')
+      .text()).toBe('+30%')
+  })
+
   it('renders the seven presets once and keeps the custom trigger as the eighth grid item', () => {
     const wrapper = mountSelector()
 

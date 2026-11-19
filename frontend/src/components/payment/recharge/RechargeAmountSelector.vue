@@ -74,15 +74,23 @@
         <span v-if="recommendedAmount === preset" class="recharge-amount-option__badge">
           {{ t('payment.rechargeUi.recommended') }}
         </span>
+        <span
+          v-if="bonusQuoteFor(preset).percent > 0"
+          data-testid="recharge-amount-bonus-badge"
+          class="recharge-amount-option__bonus-badge"
+        >
+          {{ bonusBadgeText(preset) }}
+        </span>
         <span class="recharge-amount-option__amount">
           {{ formatPresetAmount(preset) }}
         </span>
         <span
-          v-if="formatCreditedAmount"
+          v-if="formatCreditedAmount || hasBonusHints"
+          data-testid="recharge-amount-secondary"
           class="recharge-amount-option__credited"
         >
           <span class="recharge-amount-option__approx">≈</span>
-          <span>{{ formatCreditedAmount(preset) }}</span>
+          <span>{{ formatPresetSecondary(preset) }}</span>
         </span>
         <span v-if="showPresetMeta" class="recharge-amount-option__meta">
           {{ t('payment.rechargeUi.noFee') }}
@@ -161,6 +169,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { currencySymbol } from '@/components/payment/currency'
 import Icon from '@/components/icons/Icon.vue'
+import type { RechargeBonusTier } from '@/types/payment'
+import { formatRechargeBonusNumber, quoteRechargeBonus, type RechargeBonusMode } from '@/utils/rechargeBonus'
 
 const props = withDefaults(defineProps<{
   modelValue: number | null
@@ -179,6 +189,9 @@ const props = withDefaults(defineProps<{
   maxFractionDigits?: number
   formatAmount: (value: number) => string
   formatCreditedAmount?: (value: number) => string
+  bonusTiers?: RechargeBonusTier[]
+  bonusMode?: RechargeBonusMode
+  multiplier?: number
 }>(), {
   amounts: () => [10, 20, 50, 100, 200, 500, 1000],
   min: 10,
@@ -193,6 +206,9 @@ const props = withDefaults(defineProps<{
   recommendedAmount: 100,
   disabled: false,
   maxFractionDigits: 2,
+  bonusTiers: () => [],
+  bonusMode: 'bonus',
+  multiplier: 1,
 })
 
 const emit = defineEmits<{
@@ -228,6 +244,31 @@ const selectedPreset = computed(() =>
     ? props.modelValue
     : null
 )
+const hasBonusHints = computed(() => props.bonusTiers.length > 0)
+
+function bonusQuoteFor(amount: number) {
+  return quoteRechargeBonus(props.bonusTiers, amount, {
+    multiplier: props.multiplier,
+    mode: props.bonusMode,
+    currencyDigits: props.maxFractionDigits,
+  })
+}
+
+function bonusBadgeText(amount: number): string {
+  const percent = formatRechargeBonusNumber(bonusQuoteFor(amount).percent)
+  return props.bonusMode === 'discount' ? `${percent}% OFF` : `+${percent}%`
+}
+
+function formatPresetSecondary(amount: number): string {
+  const quote = bonusQuoteFor(amount)
+  if (props.bonusMode === 'discount') {
+    return props.formatAmount(quote.payBase)
+  }
+  if (props.formatCreditedAmount) {
+    return props.formatCreditedAmount(quote.credited)
+  }
+  return props.formatAmount(quote.payBase)
+}
 
 function formatPresetAmount(amount: number): string {
   const safeAmount = Number.isFinite(amount) ? Math.trunc(amount) : 0
@@ -430,8 +471,10 @@ watch(() => props.modelValue, (value) => {
 }
 
 .recharge-amount-option__amount {
+  display: block;
+  max-width: 100%;
   font-family: "Arial Black", Inter, "PingFang SC", ui-sans-serif, system-ui, sans-serif;
-  font-size: clamp(2rem, 2.4vw, 2.75rem);
+  font-size: clamp(1.15rem, 2.4vw, 2.75rem);
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -471,6 +514,24 @@ watch(() => props.modelValue, (value) => {
   font-weight: 750;
   line-height: 1;
   backdrop-filter: blur(8px);
+}
+
+.recharge-amount-option__bonus-badge {
+  position: absolute;
+  z-index: 3;
+  top: 0.35rem;
+  left: 0.45rem;
+  max-width: calc(100% - 0.9rem);
+  overflow: hidden;
+  padding: 0.2rem 0.42rem;
+  border-radius: 999px;
+  background: rgb(220 38 38 / 12%);
+  color: #dc2626;
+  font-size: clamp(0.58rem, 0.72vw, 0.75rem);
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recharge-amount-option.is-selected {
@@ -522,6 +583,16 @@ watch(() => props.modelValue, (value) => {
     0 0 3px rgb(255 255 255 / 65%),
     0 1px 3px rgb(104 55 222 / 35%);
   box-shadow: inset 0 1px 2px rgb(255 255 255 / 25%);
+}
+
+.recharge-amount-option.is-selected .recharge-amount-option__bonus-badge {
+  background: rgb(255 255 255 / 22%);
+  color: #fff;
+}
+
+:global(.dark) .recharge-amount-option__bonus-badge {
+  background: rgb(248 113 113 / 18%);
+  color: #fca5a5;
 }
 
 .recharge-amount-option:focus-visible,
@@ -778,6 +849,7 @@ watch(() => props.modelValue, (value) => {
   }
 
   .recharge-selector__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.65rem;
   }
 
@@ -793,7 +865,7 @@ watch(() => props.modelValue, (value) => {
   }
 
   .recharge-amount-option__amount {
-    font-size: 1.65rem;
+    font-size: clamp(1.15rem, 4vw, 1.65rem);
   }
 
   .recharge-amount-option__credited {
@@ -839,7 +911,7 @@ watch(() => props.modelValue, (value) => {
   }
 
   .recharge-amount-option__amount {
-    font-size: clamp(1.3rem, 1.4vw, 1.6rem);
+    font-size: clamp(1.15rem, 1.4vw, 1.6rem);
     font-weight: 700;
     letter-spacing: 0.01em;
   }
