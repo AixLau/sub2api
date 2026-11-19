@@ -340,6 +340,18 @@ func (s *AffiliateService) AccrueInviteRebate(ctx context.Context, inviteeUserID
 }
 
 func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64, sourceOrderID *int64) (float64, error) {
+	return s.accrueInviteRebateForOrder(ctx, inviteeUserID, baseRechargeAmount, sourceOrderID, nil)
+}
+
+// AccrueInviteRebateForSubscriptionOrder accrues a subscription rebate using
+// the fixed subscription rate, while preserving the normal affiliate guards
+// and quota limits.
+func (s *AffiliateService) AccrueInviteRebateForSubscriptionOrder(ctx context.Context, inviteeUserID int64, baseSubscriptionAmount float64, sourceOrderID *int64) (float64, error) {
+	rate := AffiliateSubscriptionRebateRatePercent
+	return s.accrueInviteRebateForOrder(ctx, inviteeUserID, baseSubscriptionAmount, sourceOrderID, &rate)
+}
+
+func (s *AffiliateService) accrueInviteRebateForOrder(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64, sourceOrderID *int64, rateOverride *float64) (float64, error) {
 	if s == nil || s.repo == nil {
 		return 0, nil
 	}
@@ -374,6 +386,9 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	}
 
 	rebateRatePercent := s.resolveRebateRatePercent(ctx, inviterSummary)
+	if rateOverride != nil {
+		rebateRatePercent = clampAffiliateRebateRate(*rateOverride)
+	}
 	rebate := roundTo(baseRechargeAmount*(rebateRatePercent/100), 8)
 	if rebate <= 0 {
 		return 0, nil
