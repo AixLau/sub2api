@@ -968,12 +968,7 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	}
 
 	sourceOrderID := o.ID
-	var rebateAmount float64
-	if o.OrderType == payment.OrderTypeSubscription {
-		rebateAmount, err = s.affiliateService.AccrueInviteRebateForSubscriptionOrder(txCtx, o.UserID, baseAmount, &sourceOrderID)
-	} else {
-		rebateAmount, err = s.affiliateService.AccrueInviteRebateForOrder(txCtx, o.UserID, baseAmount, &sourceOrderID)
-	}
+	rebateAmount, err := s.affiliateService.AccrueInviteRebateForOrder(txCtx, o.UserID, baseAmount, &sourceOrderID)
 	if err != nil {
 		s.writeAuditLog(ctx, o.ID, "AFFILIATE_REBATE_FAILED", "system", map[string]any{
 			"error": err.Error(),
@@ -1028,7 +1023,7 @@ func affiliateRebateBaseAmount(o *dbent.PaymentOrder) float64 {
 		// 返利只按实充部分计算，赠送额度不参与
 		return paymentOrderAmountWithoutBonus(o)
 	case payment.OrderTypeSubscription:
-		return o.Amount
+		return o.Amount * AffiliateSubscriptionRebateBaseMultiplier
 	default:
 		return 0
 	}

@@ -225,8 +225,8 @@ func TestAffiliateRebateBaseAmountExcludesRechargeBonus(t *testing.T) {
 	require.Equal(t, 130.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
 		OrderType: payment.OrderTypeBalance, Amount: 130,
 	}))
-	// 订阅订单不受 bonus 字段影响
-	require.Equal(t, 50.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
+	// 订阅返佣基数为订单金额的 90%，不受 bonus 字段影响
+	require.Equal(t, 45.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
 		OrderType: payment.OrderTypeSubscription, Amount: 50, BonusAmount: 30,
 	}))
 	// 异常数据：赠送大于总额时钳到 0

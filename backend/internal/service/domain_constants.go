@@ -37,9 +37,8 @@ const (
 	AdminRechargeRebateEnabledDefault   = false // 管理员充值默认不产生返利
 )
 
-// Subscription orders participate in affiliate rebates at a fixed 90% of the
-// order amount. Balance and admin recharges keep the configured rate.
-const AffiliateSubscriptionRebateRatePercent = 90.0
+// Subscription rebates use 90% of the order amount as their rebate base.
+const AffiliateSubscriptionRebateBaseMultiplier = 0.9
 
 // Platform constants
 const (
