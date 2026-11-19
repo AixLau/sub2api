@@ -246,6 +246,7 @@ describe('SubscriptionCheckoutPanel', () => {
 
     expect(wrapper.get('[data-testid="nineplus-subscription-product-np-month"]').attributes('aria-checked')).toBe('true')
     expect(wrapper.get('[data-testid="nineplus-subscription-price"]').text()).toContain('88')
+    expect(wrapper.get('[data-testid="nineplus-subscription-product-np-month"]').text()).toContain('≈$500.00')
     expect(wrapper.get('[data-testid="subscription-summary-fee"]').text()).toContain('2')
     expect(wrapper.get('[data-testid="subscription-summary-total"]').text()).toContain('90')
 

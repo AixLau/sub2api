@@ -93,7 +93,7 @@ describe("SubscriptionPlanCard", () => {
     const text = wrapper.text();
 
     expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
-    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("≈$400.00");
     expect(wrapper.find("[data-testid='subscription-plan-validity-summary']").text()).toBe("30 天有效");
     expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toBe("¥10.00");
     expect(text).not.toContain("包含 400 额度 / 30 天");
@@ -116,7 +116,7 @@ describe("SubscriptionPlanCard", () => {
     const text = wrapper.text();
 
     expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
-    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("≈$400.00");
     expect(text).not.toContain("包含 400 额度");
   });
 
@@ -128,7 +128,7 @@ describe("SubscriptionPlanCard", () => {
     const text = wrapper.text();
 
     expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
-    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("≈$400.00");
     expect(text).not.toContain("包含 500 额度");
   });
 

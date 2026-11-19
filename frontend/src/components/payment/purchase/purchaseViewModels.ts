@@ -200,3 +200,9 @@ export function formatNinePlusQuota(product: NinePlusProduct): string {
   if (normalizedUnit === 'CNY' || unit === '¥') return `¥${quota.toFixed(2)}`
   return unit ? `${quota} ${unit}` : quota.toFixed(2)
 }
+
+/** Subscription-card quota presentation shared with recharge amount cards. */
+export function formatNinePlusSubscriptionQuota(product: NinePlusProduct): string {
+  const quota = finiteAmount(product.quota)
+  return quota > 0 ? `$${quota.toFixed(2)}` : ''
+}

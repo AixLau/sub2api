@@ -76,11 +76,12 @@
       <div class="mt-2 flex items-end justify-between gap-3 border-t border-line-subtle pt-2">
         <div class="min-w-0">
           <p
-            v-if="planDisplay.quotaSummary"
+            v-if="formattedQuota"
             data-testid="subscription-plan-quota-summary"
-            class="truncate text-sm font-black text-content-primary"
+            class="inline-flex max-w-full items-baseline gap-1 truncate text-sm font-medium text-content-secondary"
           >
-            {{ planDisplay.quotaSummary }}
+            <span class="font-extrabold text-green-600 dark:text-green-400" aria-hidden="true">≈</span>
+            <span class="truncate">{{ formattedQuota }}</span>
           </p>
           <p v-else class="text-xs font-semibold text-content-tertiary">{{ t('payment.planFeatures') }}</p>
         </div>
@@ -140,6 +141,10 @@ const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, prop
 const formattedOriginalPrice = computed(() =>
   hasDiscount.value ? formatPaymentAmount(props.plan.original_price ?? 0, props.plan.currency) : ''
 )
+const formattedQuota = computed(() => {
+  const quota = Number(props.plan.monthly_limit_usd)
+  return Number.isFinite(quota) && quota > 0 ? `$${quota.toFixed(2)}` : ''
+})
 
 const discountText = computed(() => {
   if (!hasDiscount.value || !props.plan.original_price) return ''
