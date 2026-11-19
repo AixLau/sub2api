@@ -888,7 +888,11 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 		return nil, nil, err
 	}
 
-	s.enrichOpenAIUsageBatch(gctx, accountsByID, usageByAccount)
+	// errgroup cancels gctx as soon as Wait returns, so the follow-up window
+	// statistics query must run on the caller's context. On gctx every query
+	// failed with context.Canceled and the usage cells silently lost their
+	// request/token/cost statistics.
+	s.enrichOpenAIUsageBatch(ctx, accountsByID, usageByAccount)
 
 	return usageByAccount, errorsByAccount, nil
 }

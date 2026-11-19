@@ -139,8 +139,12 @@ type usageWindowStatsBatchRepoStub struct {
 	calls int
 }
 
-func (r *usageWindowStatsBatchRepoStub) GetAccountWindowStatsByWindowsBatch(_ context.Context, queries []AccountWindowStatsQuery) (map[int64]AccountWindowStatsBatch, error) {
+func (r *usageWindowStatsBatchRepoStub) GetAccountWindowStatsByWindowsBatch(ctx context.Context, queries []AccountWindowStatsQuery) (map[int64]AccountWindowStatsBatch, error) {
 	r.calls++
+	// Like a real database driver, refuse to run on a canceled context.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := make(map[int64]AccountWindowStatsBatch, len(queries))
 	for _, query := range queries {
 		result[query.AccountID] = AccountWindowStatsBatch{
