@@ -62,6 +62,33 @@ def _load_upstream(source_dir: Path):
     return AuthFlow, Config, MailboxUnavailableProvider, generate_token_json, _build_sub2api_account_payload
 
 
+def _password_first_flow(auth_flow_cls, password: str):
+    """Return an AuthFlow subclass that prefers password login.
+
+    For accounts that have a password, OpenAI's login ``authorize/continue``
+    often answers with the email-OTP page by default. Upstream then follows the
+    OTP branch, which cannot work here (no mailbox access). The web UI offers
+    "continue with password" on that page; it simply POSTs ``password/verify``
+    in the same session. Rewrite that response into a ``login_password`` step
+    so the upstream flow takes its existing password(+TOTP) branch.
+    """
+
+    class PasswordFirstFlow(auth_flow_cls):
+        def authorize_continue(self, *args, **kwargs):
+            step = super().authorize_continue(*args, **kwargs)
+            if not password or kwargs.get("screen_hint") != "login":
+                return step
+            if (self._extract_page_type(step) or "").lower() != "email_otp_verification":
+                return step
+            TIMING_LOGGER.info("login_page_email_otp -> switch to password login")
+            return {
+                "continue_url": "https://auth.openai.com/log-in/password",
+                "page": {"type": "login_password", "payload": {}},
+            }
+
+    return PasswordFirstFlow
+
+
 def _filename(email: str, export_format: str) -> str:
     account = re.sub(r"[^A-Za-z0-9._-]+", "_", email)[:96] or "account"
     return f"{account}-{export_format}.json"
@@ -116,7 +143,7 @@ def relogin_payload(
             attempt + 1,
             bool(proxy),
         )
-        flow = AuthFlow(
+        flow = _password_first_flow(AuthFlow, password)(
             Config(proxy=proxy),
             env_overrides={
                 "WEBUI_ALLOW_LOGIN": "1",
