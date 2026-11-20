@@ -71,7 +71,7 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	inlineChains := regexp.MustCompile(`gin.HandlerFunc\(apiKeyAuth\), [^\n]*?compositeTarget`).FindAllString(source, -1)
 	require.NotEmpty(t, inlineChains)
 	for _, chain := range inlineChains {
-		require.Contains(t, chain, "gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget",
+		require.Contains(t, chain, "gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget",
 			"root aliases must check the allowlist before composite rewriting")
 	}
 
@@ -96,7 +96,7 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	}
 
 	// codexDirect 链是一条 Use 调用，直接断言顺序。
-	codexDirect := regexp.MustCompile(regexp.QuoteMeta(`codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)`))
+	codexDirect := regexp.MustCompile(regexp.QuoteMeta(`codexDirect.Use(groupBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic)`))
 	require.Regexp(t, codexDirect, source, "codexDirect chain must mount the allowlist after auth and before compositeTarget")
 
 }

@@ -31,6 +31,7 @@ const (
 	maxTokenRefreshRetryBackoff                 = 30 * time.Second
 	defaultTokenRefreshAttemptTimeout           = 15 * time.Second
 	maxTokenRefreshAttemptTimeout               = 5 * time.Minute
+	maxTokenRefreshLockSafetyMargin             = 5 * time.Second
 	defaultTokenRefreshCycleTimeout             = 4 * time.Minute
 	maxTokenRefreshCycleTimeout                 = time.Hour
 	defaultTokenRefreshCleanupTimeout           = 2 * time.Second
@@ -861,6 +862,7 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 			}
 		} else {
 			// 降级：直接调用 refresher（兼容旧路径）
+			attemptedAccount := snapshotOAuthRefreshAccount(account)
 			releaseRate := func() {}
 			if acquireRate != nil {
 				releaseRate, err = acquireRate(attemptCtx)
@@ -872,7 +874,17 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 				releaseRate()
 			}
 			attemptTimedOut := errors.Is(attemptCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
-			if err == nil && newCredentials != nil && !attemptTimedOut {
+			if err == nil && hasOpenAIRefreshCredentials(attemptedAccount, newCredentials) {
+				var durableAccount *Account
+				durableAccount, credentialsPersisted, err = persistOpenAIRefreshCredentials(attemptCtx, s.accountRepo, attemptedAccount, newCredentials)
+				if err == nil {
+					account = durableAccount
+					if !credentialsPersisted {
+						err = errRefreshSkipped
+						shortCircuit = true
+					}
+				}
+			} else if err == nil && newCredentials != nil && !attemptTimedOut {
 				newCredentials["_token_version"] = time.Now().UnixMilli()
 				if saveErr := persistAccountCredentials(attemptCtx, s.accountRepo, account, newCredentials); saveErr != nil {
 					err = fmt.Errorf("failed to save credentials: %w", saveErr)
@@ -885,7 +897,7 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 		cancelAttempt()
 		releaseAttempt()
 		persistedAfterAttemptDeadline := attemptTimedOut && credentialsPersisted && err == nil
-		if attemptTimedOut && !persistedAfterAttemptDeadline && !isProviderScopedTerminalRefreshError(err) {
+		if attemptTimedOut && !shortCircuit && !persistedAfterAttemptDeadline && !isProviderScopedTerminalRefreshError(err) {
 			cause := err
 			if cause == nil {
 				cause = context.DeadlineExceeded

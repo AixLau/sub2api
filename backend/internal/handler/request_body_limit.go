@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -45,18 +44,6 @@ func extractMaxBytesError(err error) (*http.MaxBytesError, bool) {
 		return maxErr, true
 	}
 	return nil, false
-}
-
-func formatBodyLimit(limit int64) string {
-	const mb = 1024 * 1024
-	if limit >= mb {
-		return fmt.Sprintf("%dMB", limit/mb)
-	}
-	return fmt.Sprintf("%dB", limit)
-}
-
-func buildBodyTooLargeMessage(limit int64) string {
-	return fmt.Sprintf("Request body too large, limit is %s", formatBodyLimit(limit))
 }
 
 type requestBodyImageSummary struct {
@@ -185,7 +172,7 @@ func markOpsRequestBodyTooLarge(c *gin.Context, limit int64, inspectedBody []byt
 	)
 
 	raw, _ := json.Marshal(detail)
-	service.SetOpsDiagnostic(c, clientmsg.Localize(buildBodyTooLargeMessage(limit)), string(raw))
+	service.SetOpsDiagnostic(c, clientmsg.Localize(pkghttputil.BodyTooLargeMessage(limit)), string(raw))
 }
 
 func markOpsRequestBodyReadError(c *gin.Context, err error) {
