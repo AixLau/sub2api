@@ -37,6 +37,9 @@ const (
 	AdminRechargeRebateEnabledDefault   = false // 管理员充值默认不产生返利
 )
 
+// Subscription rebates use 90% of the order amount as their rebate base.
+const AffiliateSubscriptionRebateBaseMultiplier = 0.9
+
 // Platform constants
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic

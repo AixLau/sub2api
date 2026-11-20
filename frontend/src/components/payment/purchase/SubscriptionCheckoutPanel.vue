@@ -90,8 +90,12 @@
 
                 <div class="flex-1" />
                 <div class="mt-3 flex items-end justify-between gap-3 border-t border-line-subtle pt-3">
-                  <span v-if="formatNinePlusQuota(option.product)" class="truncate text-sm font-black text-content-primary">
-                    {{ formatNinePlusQuota(option.product) }}
+                  <span
+                    v-if="formatNinePlusSubscriptionQuota(option.product)"
+                    class="inline-flex min-w-0 max-w-full items-baseline gap-1 truncate text-sm font-medium text-content-secondary"
+                  >
+                    <span class="font-extrabold text-green-600 dark:text-green-400" aria-hidden="true">≈</span>
+                    <span class="truncate">{{ formatNinePlusSubscriptionQuota(option.product) }}</span>
                   </span>
                   <span v-else class="text-xs font-semibold text-content-tertiary">{{ option.product.currency }}</span>
                   <span
@@ -160,7 +164,7 @@ import SubscriptionOrderSummary from './SubscriptionOrderSummary.vue'
 import {
   buildPurchaseSubscriptionOptions,
   findPurchaseSubscriptionOption,
-  formatNinePlusQuota,
+  formatNinePlusSubscriptionQuota,
   purchaseSubscriptionDiscountPercent,
   type CurrentSubscriptionSummary,
   type PurchaseSubscriptionOption,

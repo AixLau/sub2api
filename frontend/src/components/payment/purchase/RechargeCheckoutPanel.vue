@@ -29,6 +29,9 @@
         :error="amountError"
         :format-amount="formatAmount"
         :format-credited-amount="oneToOneConfigured ? formatCreditedAmount : undefined"
+        :bonus-tiers="bonusTiers"
+        :bonus-mode="bonusMode"
+        :multiplier="multiplier"
         :recommended-amount="recommendedAmount"
         :show-header="true"
         :show-preset-meta="false"
@@ -74,6 +77,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
+import type { RechargeBonusTier } from '@/types/payment'
+import type { RechargeBonusMode } from '@/utils/rechargeBonus'
 import {
   isBuiltInAlipayMethod,
   isBuiltInWxpayMethod,
@@ -93,6 +98,9 @@ const props = withDefaults(defineProps<{
   amountError?: string
   formatAmount: (value: number) => string
   formatCreditedAmount?: (value: number) => string
+  bonusTiers?: RechargeBonusTier[]
+  bonusMode?: RechargeBonusMode
+  multiplier?: number
   methods: PaymentMethodOption[]
   selectedMethod: string
   recommendedAmount?: number | null
@@ -118,6 +126,9 @@ const props = withDefaults(defineProps<{
   errorMessage: '',
   errorHintMessage: '',
   configurationWarning: '',
+  bonusTiers: () => [],
+  bonusMode: 'bonus',
+  multiplier: 1,
 })
 
 const emit = defineEmits<{
