@@ -77,6 +77,8 @@ func TestOpenAIOAuthFlowsDoNotModifyPrivacy(t *testing.T) {
 					info, err = svc.RefreshAccountToken(context.Background(), account)
 				case "background_refresh":
 					repo := &tokenRefreshAccountRepo{}
+					// OpenAI rotations persist through the success CAS, which reads the row by ID.
+					repo.accountsByID = map[int64]*Account{account.ID: account}
 					refresh := NewTokenRefreshService(repo, nil, svc, nil, nil, nil, nil, &config.Config{TokenRefresh: config.TokenRefreshConfig{MaxRetries: 1}}, nil)
 					refresher := NewOpenAITokenRefresher(svc, repo)
 					err = refresh.refreshWithRetry(context.Background(), account, refresher, nil, time.Hour)

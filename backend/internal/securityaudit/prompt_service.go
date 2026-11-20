@@ -123,13 +123,34 @@ func (s *PromptService) Enqueue(_ context.Context, req Request) error {
 	if s == nil || s.enqueuer == nil {
 		return nil
 	}
-	var active ActiveConfig
-	activeOK := false
-	if s.config != nil {
-		active, activeOK = s.config.Active()
-	}
-	if s.EffectiveMode() != ModeAsync && (!activeOK || !active.CapturesUser(req)) {
+	if s.config == nil {
 		return nil
+	}
+	// Read the configuration once on the request path; the Enqueuer rechecks it
+	// before persistence.
+	cfg, ok := s.config.Active()
+	if s.EffectiveMode() != ModeAsync && (!ok || !cfg.CapturesUser(req)) {
+		return nil
+	}
+	// Skip before copying the potentially large body only where the Enqueuer
+	// would skip too. Selected-user captures (also outside async mode) and
+	// non-client captures are not limited by group or endpoint scope.
+	if ok && !cfg.IncludesAccount(req) {
+		return nil
+	}
+	if ok && !cfg.CapturesUser(req) && !shouldCaptureNonClient(req.UserAgent) {
+		if cfg.EffectiveMode() != ModeAsync {
+			return nil
+		}
+		if !cfg.IncludesGroup(req.GroupID) {
+			LogInfo(EventEnqueueSkipped, mergeLogFields(requestLogFields(req), map[string]any{"config_version": cfg.ConfigVersion, "status": "skipped", "error_code": "group_out_of_scope"}))
+			return nil
+		}
+		if len(cfg.EnabledEndpoints()) == 0 {
+			s.enqueuer.recordDropped()
+			LogWarn(EventEnqueueDropped, mergeLogFields(requestLogFields(req), map[string]any{"config_version": cfg.ConfigVersion, "status": "dropped", "error_code": "no_enabled_endpoint"}))
+			return nil
+		}
 	}
 	select {
 	case s.enqueueSlots <- struct{}{}:

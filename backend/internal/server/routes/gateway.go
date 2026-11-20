@@ -15,7 +15,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // RegisterGatewayRoutes 注册 API 网关路由（Claude/OpenAI/Gemini 兼容）
@@ -33,6 +32,21 @@ func RegisterGatewayRoutes(
 	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize, bodyMemoryBudget)
 	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize, bodyMemoryBudget)
+	// 分组链上的中间件（白名单、字段歧义检查、合成路由）会在 handler 之前读完
+	// 请求体，路由级的上限来不及生效；纯文本入口的上限必须在分组层按路由选择。
+	textBodyRoutes := map[string]bool{
+		"/v1/systemone":                   true,
+		"/v1/alpha/search":                true,
+		"/v1/embeddings":                  true,
+		"/backend-api/codex/alpha/search": true,
+	}
+	groupBodyLimit := func(c *gin.Context) {
+		if textBodyRoutes[c.FullPath()] {
+			textBodyLimit(c)
+			return
+		}
+		bodyLimit(c)
+	}
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
@@ -46,6 +60,11 @@ func RegisterGatewayRoutes(
 	// 分组级模型白名单准入：在 apiKeyAuth 之后、compositeTarget 之前，
 	// 保证校验发生在合成路由改写与调度之前，且只看客户端书写的模型名。
 	groupModelAllowlist := middleware.GroupModelAllowlist()
+
+	// 请求体字段歧义拒绝：同名字段重复且取值不一致（如两个不同的 model）时，
+	// 计费读到的值和实际转发的值会分叉。对所有分组生效，紧跟在白名单准入之后、
+	// 合成路由改写之前，白名单的拒绝响应保持不变。
+	rejectConflictingFields := middleware.RejectConflictingRequestFields()
 
 	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
 		// openai、grok 与多协议 API Key 供应商经 OpenAI 网关转发（平台清单）。
@@ -187,7 +206,7 @@ func RegisterGatewayRoutes(
 		moderationcoverage.PipelineGatewayGlobal: globalGatewayPipelineEntrypoint,
 	}
 	moderatedGateway := NewGatewayPipelineRegistrar(gateway, openAIHTTPPipelineEntrypoints)
-	gateway.Use(bodyLimit)
+	gateway.Use(groupBodyLimit)
 	gateway.Use(clientRequestID)
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
@@ -198,6 +217,7 @@ func RegisterGatewayRoutes(
 		"API-key billing lookup reads local billing state and does not submit model-visible content upstream.",
 	), h.Gateway.KeyBillingInfo)
 	gateway.Use(groupModelAllowlist)
+	gateway.Use(rejectConflictingFields)
 	gateway.Use(compositeTarget)
 	gateway.Use(requireGroupAnthropic)
 	{
@@ -223,13 +243,13 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// System One carries only JSON text, so it uses the text body limit.
+		// System One carries only JSON text; groupBodyLimit applies the text body limit.
 		moderatedGateway.POST("/systemone", coveredModeratedRoute(
 			"/v1/systemone",
 			"GatewayHandler.SystemOne",
 			service.ContentModerationProtocolTypeSafeSystemOne,
 			"System One requests are moderated before upstream forwarding.",
-		), textBodyLimit, h.Gateway.SystemOne)
+		), h.Gateway.SystemOne)
 		// /v1/messages/count_tokens: OpenAI bridges upstream, Grok estimates
 		// locally, and Anthropic-compatible platforms retain their existing path.
 		moderatedGateway.POST("/messages/count_tokens", coveredModeratedRoute(
@@ -312,7 +332,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.AlphaSearch",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex standalone search input is moderated before account selection and upstream forwarding.",
-		), textBodyLimit, h.OpenAIGateway.AlphaSearch)
+		), h.OpenAIGateway.AlphaSearch)
 		moderatedGateway.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -348,7 +368,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.Embeddings",
 			handler.GatewayProtocolOpenAIEmbeddings,
 			"Embeddings input can be submitted to upstream policy systems, so input is moderated before channel mapping, scheduling, and forwarding.",
-		), textBodyLimit, func(c *gin.Context) {
+		), func(c *gin.Context) {
 			if !isOpenAIOnlyEndpointGatewayPlatform(c) {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -606,6 +626,7 @@ func RegisterGatewayRoutes(
 	gemini.Use(endpointNorm)
 	gemini.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	gemini.Use(groupModelAllowlist)
+	gemini.Use(rejectConflictingFields)
 	gemini.Use(compositeGeminiTarget)
 	gemini.Use(requireGroupGoogle)
 	{
@@ -662,7 +683,7 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, responsesHandler)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, responsesHandler)
 	rootOpenAIResponsesSubpathRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 		"/responses/*subpath",
 		"OpenAIGatewayHandler.Responses",
@@ -681,7 +702,7 @@ func RegisterGatewayRoutes(
 	}
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
 		path := prefix + "/contents/generations/tasks"
-		chain := []gin.HandlerFunc{bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.SeedanceTasks}
+		chain := []gin.HandlerFunc{bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.SeedanceTasks}
 		moderatedRoot.POST(path, coveredOpenAIHTTPRoute(path, "OpenAIGatewayHandler.SeedanceTasks", service.ContentModerationProtocolOpenAIImages,
 			"Seedance text and image inputs use the shared media audit before scheduling and forwarding."), chain...)
 		moderatedRoot.GETNoAudit(path+"/:task_id", intentionalNoAuditRoute(path+"/:task_id", "OpenAIGatewayHandler.SeedanceTasks",
@@ -694,19 +715,19 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses subpath alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
 	moderatedRoot.POST("/alpha/search", coveredOpenAIHTTPRoute(
 		"/alpha/search",
 		"OpenAIGatewayHandler.AlphaSearch",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Codex standalone search input is moderated before account selection and upstream forwarding.",
-	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
+	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
 	moderatedRoot.GET("/responses", coveredOpenAIWebSocketRoute(
 		"/responses",
 		"OpenAIGatewayHandler.ResponsesWebSocket",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 			return
@@ -728,10 +749,10 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.CountTokens",
 		service.ContentModerationProtocolAnthropicMessages,
 		"Root count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, countTokensHandler)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
-	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)
+	codexDirect.Use(groupBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic)
 	{
 		moderatedCodexDirect.POST("/realtime/calls", coveredModeratedRoute(
 			"/backend-api/codex/realtime/calls",
@@ -793,7 +814,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.AlphaSearch",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct standalone search input is moderated before account selection and upstream forwarding.",
-		), textBodyLimit, h.OpenAIGateway.AlphaSearch)
+		), h.OpenAIGateway.AlphaSearch)
 		moderatedCodexDirect.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -820,7 +841,7 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.ChatCompletions",
 		service.ContentModerationProtocolOpenAIChat,
 		"Root chat alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIChatCompletionsRouteMeta).Stop {
 				return
@@ -835,7 +856,7 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.Embeddings",
 		handler.GatewayProtocolOpenAIEmbeddings,
 		"Root embeddings alias reaches the same Embeddings handler and moderation hook.",
-	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if !isOpenAIOnlyEndpointGatewayPlatform(c) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -853,7 +874,7 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,
 		"Root image generation alias reaches the same Images handler and moderation hook before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		imagesHandler(c)
 	})
 	moderatedRoot.POST("/images/generations/async", coveredOpenAIHTTPRoute(
@@ -861,24 +882,24 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,
 		"Root async image generation alias uses the same permission and moderation pipeline before task creation.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
 	moderatedRoot.POST("/images/edits/async", coveredOpenAIHTTPRoute(
 		"/images/edits/async",
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,
 		"Root async image edit alias uses the same permission and moderation pipeline before task creation.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
 	moderatedRoot.GETNoAudit("/images/tasks/:task_id", intentionalNoAuditRoute(
 		"/images/tasks/:task_id",
 		"AsyncImageHandler.Get",
 		"Root async image task lookup reads existing task state and does not submit new model-visible content.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, h.AsyncImage.Get)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, h.AsyncImage.Get)
 	moderatedRoot.POST("/images/edits", coveredOpenAIHTTPRoute(
 		"/images/edits",
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,
 		"Root image edit alias reaches the same Images handler and moderation hook before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		imagesHandler(c)
 	})
 	rootOpenAIVideoGenerationRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
@@ -891,7 +912,7 @@ func RegisterGatewayRoutes(
 		"/videos/generations",
 		"OpenAIGatewayHandler.GrokVideoGeneration",
 		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			videoGenerationHandler(c)
 			return
@@ -911,7 +932,7 @@ func RegisterGatewayRoutes(
 		"/videos",
 		"OpenAIGatewayHandler.GrokVideoGeneration",
 		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			videoGenerationHandler(c)
 			return
@@ -931,7 +952,7 @@ func RegisterGatewayRoutes(
 		"/videos/edits",
 		"OpenAIGatewayHandler.GrokVideoEdit",
 		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			videoEditHandler(c)
 			return
@@ -951,7 +972,7 @@ func RegisterGatewayRoutes(
 		"/videos/extensions",
 		"OpenAIGatewayHandler.GrokVideoExtension",
 		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			videoExtensionHandler(c)
 			return
@@ -965,17 +986,17 @@ func RegisterGatewayRoutes(
 		"/videos/:request_id",
 		"OpenAIGatewayHandler.GrokVideoStatus",
 		"Root Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoStatusHandler)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, videoStatusHandler)
 	moderatedRoot.GETNoAudit("/videos/:request_id/content", intentionalNoAuditRoute(
 		"/videos/:request_id/content",
 		"OpenAIGatewayHandler.GrokVideoContent",
 		"Root Grok video content lookup proxies already-generated output and does not submit new model-visible user content.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoContentHandler)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, videoContentHandler)
 	for _, route := range []string{"/videos/generations/:request_id/content", "/videos/edits/:request_id/content", "/videos/extensions/:request_id/content"} {
-		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoContent", "Root Grok video content lookup proxies already-generated output."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoContentHandler)
+		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoContent", "Root Grok video content lookup proxies already-generated output."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, videoContentHandler)
 	}
 	for _, route := range []string{"/videos/generations/:request_id", "/videos/edits/:request_id", "/videos/extensions/:request_id"} {
-		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoStatus", "Root Grok video status lookup reads existing upstream task state."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoStatusHandler)
+		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoStatus", "Root Grok video status lookup reads existing upstream task state."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, videoStatusHandler)
 	}
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
@@ -988,9 +1009,9 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.GrokVoice(c, endpoint)
 		}
 	}
-	moderatedRoot.POST("/tts", coveredOpenAIHTTPRoute("/tts", "OpenAIGatewayHandler.GrokVoice", service.ContentModerationProtocolOpenAIResponses, "TTS text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootVoiceHandler("tts"))
-	moderatedRoot.POST("/stt", intentionalNoAuditRoute("/stt", "OpenAIGatewayHandler.GrokVoice", "Multipart audio transcription is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootVoiceHandler("stt"))
-	moderatedRoot.POST("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
+	moderatedRoot.POST("/tts", coveredOpenAIHTTPRoute("/tts", "OpenAIGatewayHandler.GrokVoice", service.ContentModerationProtocolOpenAIResponses, "TTS text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootVoiceHandler("tts"))
+	moderatedRoot.POST("/stt", intentionalNoAuditRoute("/stt", "OpenAIGatewayHandler.GrokVoice", "Multipart audio transcription is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootVoiceHandler("stt"))
+	moderatedRoot.POST("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
 	rootCustomVoicePathHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -999,12 +1020,12 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
 	}
-	moderatedRoot.GETNoAudit("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice listing is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
-	moderatedRoot.GETNoAudit("/custom-voices/:voice_id/audio", intentionalNoAuditRoute("/custom-voices/:voice_id/audio", "OpenAIGatewayHandler.GrokVoice", "Custom voice audio lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
-	moderatedRoot.GETNoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice metadata lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
-	moderatedRoot.PATCH("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice mutation media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
-	moderatedRoot.DELETENoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice deletion submits no model-visible content."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
-	moderatedRoot.GETNoAudit("/realtime", intentionalNoAuditRoute("/realtime", "OpenAIGatewayHandler.GrokRealtime", "Realtime WebSocket traffic is handled after the HTTP route handshake."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.GETNoAudit("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice listing is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
+	moderatedRoot.GETNoAudit("/custom-voices/:voice_id/audio", intentionalNoAuditRoute("/custom-voices/:voice_id/audio", "OpenAIGatewayHandler.GrokVoice", "Custom voice audio lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.GETNoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice metadata lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.PATCH("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice mutation media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.DELETENoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice deletion submits no model-visible content."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.GETNoAudit("/realtime", intentionalNoAuditRoute("/realtime", "OpenAIGatewayHandler.GrokRealtime", "Realtime WebSocket traffic is handled after the HTTP route handshake."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
@@ -1012,7 +1033,7 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.GrokRealtime(c)
 	})
-	moderatedRoot.POST("/web_search", coveredOpenAIHTTPRoute("/web_search", "GatewayHandler.WebSearch", service.ContentModerationProtocolOpenAIResponses, "Web search query text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/web_search", coveredOpenAIHTTPRoute("/web_search", "GatewayHandler.WebSearch", service.ContentModerationProtocolOpenAIResponses, "Web search query text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Web Search API is not supported for this platform"}})
@@ -1020,7 +1041,7 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.WebSearch(c)
 	})
-	moderatedRoot.POST("/x_search", coveredOpenAIHTTPRoute("/x_search", "GatewayHandler.XSearch", service.ContentModerationProtocolOpenAIResponses, "X search query text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/x_search", coveredOpenAIHTTPRoute("/x_search", "GatewayHandler.XSearch", service.ContentModerationProtocolOpenAIResponses, "X search query text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, rejectConflictingFields, compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformGrok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "X Search API is not supported for this platform"}})
@@ -1046,6 +1067,7 @@ func RegisterGatewayRoutes(
 	antigravityV1.Use(middleware.ForcePlatform(service.PlatformAntigravity))
 	antigravityV1.Use(gin.HandlerFunc(apiKeyAuth))
 	antigravityV1.Use(groupModelAllowlist)
+	antigravityV1.Use(rejectConflictingFields)
 	antigravityV1.Use(requireGroupAnthropic)
 	{
 		moderatedAntigravityV1.POST("/messages", coveredModeratedRoute(
@@ -1081,6 +1103,7 @@ func RegisterGatewayRoutes(
 	antigravityV1Beta.Use(middleware.ForcePlatform(service.PlatformAntigravity))
 	antigravityV1Beta.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	antigravityV1Beta.Use(groupModelAllowlist)
+	antigravityV1Beta.Use(rejectConflictingFields)
 	antigravityV1Beta.Use(requireGroupGoogle)
 	{
 		moderatedAntigravityV1Beta.GETNoAudit("/models", intentionalNoAuditRoute(
@@ -1172,9 +1195,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
-						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
-							body = rewritten
-						}
+						body = service.RewriteCompositeRequestModel(body, modelPath, upstreamModel)
 					}
 				}
 			}

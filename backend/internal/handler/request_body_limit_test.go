@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -40,7 +41,7 @@ func TestRequestBodyLimitTooLarge(t *testing.T) {
 	router.ServeHTTP(recorder, req)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
-	require.Contains(t, recorder.Body.String(), buildBodyTooLargeMessage(limit))
+	require.Contains(t, recorder.Body.String(), pkghttputil.BodyTooLargeMessage(limit))
 }
 
 func TestMarkOpsRequestBodyReadError_ContextCanceled(t *testing.T) {
