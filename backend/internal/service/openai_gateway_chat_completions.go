@@ -178,6 +178,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)
 
 	startTime := time.Now()
+	http2StreamRetryStart, http2StreamRetryTried := openAIChatHTTP2StreamRetryStart(ctx)
+	if http2StreamRetryTried {
+		startTime = http2StreamRetryStart
+	}
 
 	// 1. Parse Chat Completions request
 	var chatReq apicompat.ChatCompletionsRequest
@@ -379,6 +383,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 6. Build upstream request
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	if http2StreamRetryTried {
+		// The previous attempt's HTTP/2 stream was reset after its headers were
+		// accepted. Replay through the distinct HTTP/1.1 client pool so the failed
+		// HTTP/2 connection cannot be reused.
+		upstreamCtx = WithHTTPUpstreamProtocolOverride(upstreamCtx, HTTPUpstreamProtocolOverrideHTTP1)
+	}
 	cancelUpstream := func() {}
 	if clientStream {
 		upstreamCtx, cancelUpstream = context.WithCancel(upstreamCtx)
@@ -464,6 +474,20 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	var handleErr error
 	if clientStream {
 		result, handleErr = s.handleChatStreamingResponse(resp, c, account, responseModel, billingModel, upstreamModel, startTime, len(body))
+		if handleErr != nil && !http2StreamRetryTried && (c.Request == nil || c.Request.Context().Err() == nil) {
+			if cause, resume, ok := openAIChatPreOutputHTTP2StreamResetCause(handleErr); ok {
+				setOpenAIChatStreamResume(c, resume)
+				cancelUpstream()
+				_ = resp.Body.Close()
+				s.recordOpenAIHTTP2StreamFailure(proxyURL, cause)
+				logger.L().Warn("openai chat_completions: retrying pre-output stream after HTTP/2 reset over a fresh HTTP/1.1 connection",
+					zap.Int64("account_id", account.ID),
+					zap.String("model", originalModel),
+					zap.Error(cause),
+				)
+				return s.forwardAsChatCompletions(markOpenAIChatHTTP2StreamRetry(ctx, startTime), c, account, body, promptCacheKey, defaultMappedModel, compatPromptCacheTenantIsolated)
+			}
+		}
 	} else {
 		result, handleErr = s.handleChatBufferedStreamingResponse(resp, c, account, responseModel, billingModel, upstreamModel, startTime)
 	}
@@ -887,6 +911,27 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
+	// clientSemanticOutputStarted 区分“只发过角色前导块”和“已发出内容/工具调用/结束块”：
+	// 只有后者会让 HTTP/2 断流后的重放变得不安全。
+	clientSemanticOutputStarted := false
+	// 同一客户端流的上一次尝试已发出角色前导块时，沿用其 chunk id/created 且不再重发角色块，
+	// 让重放对客户端无缝。
+	resume := takeOpenAIChatStreamResume(c)
+	if resume != nil {
+		state.SentRole = resume.SentRole
+	}
+	streamChunkID, streamChunkCreated := "", int64(0)
+	stampChunk := func(chunk *apicompat.ChatCompletionsChunk) {
+		if resume != nil {
+			chunk.ID = resume.ID
+			chunk.Created = resume.Created
+		} else if streamChunkID == "" {
+			streamChunkID, streamChunkCreated = chunk.ID, chunk.Created
+		}
+		if chatChunkCarriesSemanticOutput(*chunk) {
+			clientSemanticOutputStarted = true
+		}
+	}
 	pendingSSE := make([]string, 0, 4)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var streamFailoverErr *UpstreamFailoverError
@@ -1057,6 +1102,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		chunks := apicompat.ResponsesEventToChatChunks(&event, state)
 		if !clientDisconnected {
 			for _, chunk := range chunks {
+				stampChunk(&chunk)
 				refusalDetector.ObserveChatChunk(chunk)
 				sse, err := apicompat.ChatChunkToSSE(chunk)
 				if err != nil {
@@ -1114,6 +1160,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if finalChunks := apicompat.FinalizeResponsesChatStream(state); len(finalChunks) > 0 && !clientDisconnected {
 			for _, chunk := range finalChunks {
+				stampChunk(&chunk)
 				refusalDetector.ObserveChatChunk(chunk)
 				sse, err := apicompat.ChatChunkToSSE(chunk)
 				if err != nil {
@@ -1197,6 +1244,23 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
+	// chatStreamReadError classifies an upstream read failure and, while no
+	// semantic chunk has reached the client yet, marks it as safe to replay.
+	chatStreamReadError := func(err error) error {
+		readErr := newOpenAIUpstreamStreamReadError(err)
+		if clientDisconnected || (clientOutputStarted && clientSemanticOutputStarted) {
+			return readErr
+		}
+		preOutput := &openAIChatPreOutputStreamReadError{err: readErr}
+		if clientOutputStarted {
+			if resume != nil {
+				preOutput.resume = resume
+			} else {
+				preOutput.resume = &openAIChatStreamResume{ID: streamChunkID, Created: streamChunkCreated, SentRole: state.SentRole}
+			}
+		}
+		return preOutput
+	}
 	processFrame := func(frame openAICompatSSEFrame) bool {
 		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 		if strings.TrimSpace(payload) == "[DONE]" {
@@ -1232,7 +1296,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			if clientDisconnected || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
 			}
-			return resultWithUsage(), newOpenAIUpstreamStreamReadError(err)
+			return resultWithUsage(), chatStreamReadError(err)
 		}
 		if frame, ok := parser.Finish(); ok {
 			if strings.TrimSpace(frame.Data) == "[DONE]" {
@@ -1315,7 +1379,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				if clientDisconnected || errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
 					return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", ev.err)
 				}
-				return resultWithUsage(), newOpenAIUpstreamStreamReadError(ev.err)
+				return resultWithUsage(), chatStreamReadError(ev.err)
 			}
 			lastDataAt = time.Now()
 			line := ev.line
