@@ -249,7 +249,19 @@ var freeformMembers = []string{
 	"args", "arguments", "variables", "headers", "labels",
 }
 
+// exactFreeformMembers 只按精确拼写匹配的自由键空间。_meta 是 MCP 协议规定的
+// 扩展元数据字段（名字固定为小写 _meta），内容由客户端自定义：WorkBuddy 在
+// messages[].clientMeta...contentBlocks[]._meta 下放了只差大小写的键。网关的
+// 计费/策略字段与结构体绑定都不读这个子树，转发时也会被丢弃。_Meta、_META 等
+// 写法不在此列，仍做大小写折叠比较。
+var exactFreeformMembers = []string{"_meta"}
+
 func isFreeformMember(name []byte, nested bool) bool {
+	for _, candidate := range exactFreeformMembers {
+		if bytes.Equal(name, []byte(candidate)) {
+			return true
+		}
+	}
 	for _, candidate := range freeformMembers {
 		if bytes.EqualFold(name, []byte(candidate)) {
 			return true
