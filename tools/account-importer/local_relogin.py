@@ -18,6 +18,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 DEFAULT_SOURCE_DIR = Path(os.getenv("ACCOUNT_IMPORT_AUTH_SOURCE", "/opt/any-auto-register"))
+# invalid_state is transient (OpenAI invalidates the sign-in session); a fresh flow
+# often succeeds, so retry a few times.
+MAX_ATTEMPTS = 3
 EXPORT_FORMATS = ("sub2api", "cpa", "native")
 TIMING_LOGGER = logging.getLogger("account_import.timing")
 
@@ -144,7 +147,7 @@ def relogin_payload(
     # A transient Cloudflare 403 during OAuth bootstrap leaves the upstream
     # state unusable and otherwise surfaces later as a misleading 409
     # invalid_state. Start a fresh flow once when that exact failure occurs.
-    for attempt in range(2):
+    for attempt in range(MAX_ATTEMPTS):
         started = time.perf_counter()
         TIMING_LOGGER.info(
             "oauth_login_start email=%s attempt=%d proxy_configured=%s",
@@ -203,8 +206,15 @@ def relogin_payload(
                 if capture.account_disabled:
                     raise RuntimeError("OpenAI 在 2FA 阶段返回 403，提示账号已删除或停用") from None
                 last_reason = str(exc).replace(password, "[REDACTED]").replace(secret, "[REDACTED]")
-                if attempt == 0 and "invalid_state" in last_reason:
+                # Upstream swallows the real step error (e.g. a TOTP 409) as a warning
+                # and then fails with a misleading mailbox error, so look at both.
+                session_invalid = "invalid_state" in last_reason or any(
+                    "invalid_state" in item for item in capture.warnings
+                )
+                if session_invalid and attempt + 1 < MAX_ATTEMPTS:
                     continue
+                if session_invalid:
+                    raise RuntimeError("OpenAI 登录会话反复失效（invalid_state），已重试 %d 次" % MAX_ATTEMPTS) from None
                 raise RuntimeError(f"OpenAI 重登失败：{last_reason[:280]}") from None
         finally:
             logger.removeHandler(capture)
