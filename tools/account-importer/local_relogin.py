@@ -95,13 +95,22 @@ def _filename(email: str, export_format: str) -> str:
 
 
 class _FailureCapture(logging.Handler):
-    def __init__(self):
+    def __init__(self, secrets: tuple[str, ...] = ()):
         super().__init__(level=logging.WARNING)
         self.account_disabled = False
+        self.warnings: list[str] = []
+        self._secrets = tuple(item for item in secrets if item)
 
     def emit(self, record):
-        if "deleted or deactivated" in record.getMessage().lower():
+        message = record.getMessage()
+        if "deleted or deactivated" in message.lower():
             self.account_disabled = True
+        # Upstream swallows step errors (e.g. a rejected TOTP code) as warnings and
+        # falls back to a misleading mailbox error; keep them, redacted, for the log.
+        for item in self._secrets:
+            message = message.replace(item, "[REDACTED]")
+        if len(self.warnings) < 6:
+            self.warnings.append(message[:300])
 
 
 def _secure_write(destination: Path, payload: dict) -> None:
@@ -163,7 +172,7 @@ def relogin_payload(
         )
         flow.result.totp_secret = secret
         logger = logging.getLogger("platforms.chatgpt")
-        capture = _FailureCapture()
+        capture = _FailureCapture((password, secret))
         old_propagate = logger.propagate
         logger.addHandler(capture)
         logger.propagate = False
@@ -185,6 +194,12 @@ def relogin_payload(
                     round((time.perf_counter() - started) * 1000),
                     type(exc).__name__,
                 )
+                if capture.warnings:
+                    TIMING_LOGGER.info(
+                        "oauth_login_upstream_warnings email=%s warnings=%s",
+                        _masked_email(email),
+                        " | ".join(capture.warnings),
+                    )
                 if capture.account_disabled:
                     raise RuntimeError("OpenAI 在 2FA 阶段返回 403，提示账号已删除或停用") from None
                 last_reason = str(exc).replace(password, "[REDACTED]").replace(secret, "[REDACTED]")
