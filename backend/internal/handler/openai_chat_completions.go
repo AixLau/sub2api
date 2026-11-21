@@ -88,12 +88,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 			return
 		}
-		if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
-			respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
-			return
-		} else if changed {
-			body = cappedBody
-		}
+	}
+	// Apply the group reasoning policy on both paths: requests that passed the
+	// pre-forward pipeline (moderation / security audit) arrive with the body
+	// already read and would otherwise bypass the mapping and ceiling.
+	// Moderation state stays keyed to the original client payload.
+	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
+		respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
+		return
+	} else if changed {
+		body = cappedBody
 	}
 	if _, err := service.ValidateOpenAIServiceTierField(body); err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())

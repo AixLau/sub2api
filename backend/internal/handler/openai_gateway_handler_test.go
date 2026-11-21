@@ -4035,3 +4035,35 @@ data: {"type":"response.failed","error":{"message":"This content was flagged"}}
 		require.False(t, openAIForwardErrorAlreadyCommunicated(c, c.Writer.Size(), errors.New("openai cyber_policy: blocked")))
 	})
 }
+
+// Chat requests admitted by the pre-forward pipeline arrive with the body
+// already read; the group reasoning policy must still run on them.
+func TestOpenAIChat_PreForwardRequestStillAppliesReasoningEffortPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"gpt-6.2-sol","stream":true,"reasoning_effort":"none","messages":[{"role":"user","content":"hi"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(body)))
+	setGatewayAuthContextForModerationTest(c)
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	require.True(t, ok)
+	apiKey.Group.ReasoningEffortMappings = []service.ReasoningEffortMapping{{From: "none", To: service.ReasoningEffortMappingDeny}}
+	setOpenAIHTTPPreForwardRequest(c, openAIHTTPPreForwardRequest{
+		Protocol: service.ContentModerationProtocolOpenAIChat,
+		Model:    "gpt-6.2-sol",
+		Body:     body,
+		Stream:   true,
+	})
+	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, "test entrypoint")
+
+	h := &OpenAIGatewayHandler{
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: &service.BillingCacheService{},
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+	h.ChatCompletions(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "mapping policy")
+}
