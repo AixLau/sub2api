@@ -660,11 +660,18 @@ func openAIWSRawItemsHasPrefix(items []json.RawMessage, prefix []json.RawMessage
 
 func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	for _, item := range items {
-		if isCodexToolCallOutputItemType(gjson.GetBytes(item, "type").String()) {
+		if openAIWSRawItemIsClientToolCallOutput(item) {
 			return true
 		}
 	}
 	return false
+}
+
+// openAIWSRawItemIsClientToolCallOutput 判断需要客户端配对的工具输出，排除上游托管执行的 tool_search_output。
+func openAIWSRawItemIsClientToolCallOutput(item json.RawMessage) bool {
+	itemType := gjson.GetBytes(item, "type").String()
+	return isCodexToolCallOutputItemType(itemType) &&
+		!isServerExecutedToolSearchItem(itemType, gjson.GetBytes(item, "execution").String())
 }
 
 func openAIWSRawItemsHaveToolCallContextForOutputs(items []json.RawMessage) bool {
@@ -675,6 +682,9 @@ func openAIWSRawItemsHaveToolCallContextForOutputs(items []json.RawMessage) bool
 	outputCallIDs := make(map[string]struct{})
 	for _, item := range items {
 		itemType := gjson.GetBytes(item, "type").String()
+		if isServerExecutedToolSearchItem(itemType, gjson.GetBytes(item, "execution").String()) {
+			continue
+		}
 		callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
 		switch {
 		case isCodexToolCallContextItemType(itemType):
@@ -723,7 +733,9 @@ func sanitizeOpenAIWSHistoricalReplayToolCalls(
 
 	sanitized := make([]json.RawMessage, 0, len(previousItems))
 	for _, item := range previousItems {
-		if isCodexToolCallContextItemType(gjson.GetBytes(item, "type").String()) {
+		itemType := gjson.GetBytes(item, "type").String()
+		if isCodexToolCallContextItemType(itemType) &&
+			!isServerExecutedToolSearchItem(itemType, gjson.GetBytes(item, "execution").String()) {
 			callID := strings.TrimSpace(gjson.GetBytes(item, "call_id").String())
 			if _, paired := outputCallIDs[callID]; !paired {
 				continue
@@ -744,14 +756,14 @@ func openAIWSRawPayloadHasToolCallOutput(payload []byte) bool {
 	}
 	if input.IsArray() {
 		for _, item := range input.Array() {
-			if isCodexToolCallOutputItemType(item.Get("type").String()) {
+			if openAIWSRawItemIsClientToolCallOutput(json.RawMessage(item.Raw)) {
 				return true
 			}
 		}
 		return false
 	}
 	if input.Type == gjson.JSON {
-		return isCodexToolCallOutputItemType(input.Get("type").String())
+		return openAIWSRawItemIsClientToolCallOutput(json.RawMessage(input.Raw))
 	}
 	return false
 }

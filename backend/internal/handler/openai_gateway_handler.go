@@ -1839,6 +1839,10 @@ func normalizeCodexCallOutputBootstrap(body []byte, isCandidate func(map[string]
 			}
 			return body, false
 		}
+		if service.IsServerExecutedToolSearchItem(typ, stringField(item, "execution")) {
+			// 上游托管执行的 tool_search 项 call_id 固定为 null，与客户端注入的调用输出不会产生配对歧义。
+			continue
+		}
 		if strings.HasSuffix(typ, "_call") || isResponsesCallOutputType(typ) {
 			if allowHistoricalContext && strings.TrimSpace(stringField(item, "call_id")) != "" {
 				continue

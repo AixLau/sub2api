@@ -298,3 +298,30 @@ func TestAnalyzeToolCallOutputContextCoverageBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestServerExecutedToolSearchItemsAreNotClientContinuation(t *testing.T) {
+	raw := []byte(`{"input":[{"role":"user","content":"hi"},{"type":"tool_search_call","execution":"server","call_id":null,"arguments":{}},{"type":"tool_search_output","execution":"server","call_id":null,"status":"completed","tools":[]}]}`)
+
+	validation := ValidateFunctionCallOutputContextBytes(raw)
+	require.False(t, validation.HasFunctionCallOutput)
+	require.False(t, validation.HasFunctionCallOutputMissingCallID)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(raw, &body))
+	require.False(t, ValidateFunctionCallOutputContext(body).HasFunctionCallOutputMissingCallID)
+	signals := AnalyzeToolContinuationSignals(body)
+	require.False(t, signals.HasFunctionCallOutput)
+	require.False(t, signals.HasFunctionCallOutputMissingCallID)
+	require.False(t, AnalyzeToolCallOutputContextCoverageBytes(raw).HasFunctionCallOutput)
+
+	// 托管项不是孤立输出，不能被兼容层剥掉。
+	require.False(t, sanitizeOpenAIResponsesOrphanToolOutputs(body, body["input"].([]any), false))
+	require.Len(t, body["input"], 3)
+}
+
+func TestClientToolSearchOutputWithoutCallIDStillFlagged(t *testing.T) {
+	raw := []byte(`{"input":[{"type":"tool_search_output","execution":"client","status":"completed","tools":[]}]}`)
+	validation := ValidateFunctionCallOutputContextBytes(raw)
+	require.True(t, validation.HasFunctionCallOutput)
+	require.True(t, validation.HasFunctionCallOutputMissingCallID)
+}

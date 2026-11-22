@@ -38,6 +38,23 @@ func isCodexToolCallContextItemType(typ string) bool {
 	}
 }
 
+// isServerExecutedToolSearchItem 识别由上游托管执行的工具搜索项（execution=="server"）。
+// 这类 tool_search_call / tool_search_output 在同一个响应内由上游自行配对，call_id 固定为 null，
+// Codex 会把它们原样回放进历史。它们不属于客户端工具续链，不能当作缺 call_id 的工具输出处理。
+func isServerExecutedToolSearchItem(typ, execution string) bool {
+	switch strings.TrimSpace(typ) {
+	case "tool_search_call", "tool_search_output":
+		return strings.TrimSpace(execution) == "server"
+	default:
+		return false
+	}
+}
+
+// IsServerExecutedToolSearchItem 供 handler 层复用托管 tool_search 项的判定。
+func IsServerExecutedToolSearchItem(typ, execution string) bool {
+	return isServerExecutedToolSearchItem(typ, execution)
+}
+
 func isCodexToolCallOutputItemType(typ string) bool {
 	switch strings.TrimSpace(typ) {
 	case "function_call_output",
@@ -105,6 +122,9 @@ func AnalyzeToolContinuationSignals(reqBody map[string]any) ToolContinuationSign
 			continue
 		}
 		itemType, _ := itemMap["type"].(string)
+		if execution, _ := itemMap["execution"].(string); isServerExecutedToolSearchItem(itemType, execution) {
+			continue
+		}
 		switch {
 		case isCodexToolCallContextItemType(itemType):
 			callID, _ := itemMap["call_id"].(string)
@@ -173,6 +193,9 @@ func ValidateFunctionCallOutputContextBytes(body []byte) FunctionCallOutputValid
 			return true
 		}
 		itemType := item.Get("type").String()
+		if isServerExecutedToolSearchItem(itemType, item.Get("execution").String()) {
+			return true
+		}
 		switch {
 		case isCodexToolCallOutputItemType(itemType):
 			result.HasFunctionCallOutput = true
@@ -247,6 +270,9 @@ func AnalyzeToolCallOutputContextCoverageBytes(body []byte) ToolCallOutputContex
 			return
 		}
 		itemType := item.Get("type").String()
+		if isServerExecutedToolSearchItem(itemType, item.Get("execution").String()) {
+			return
+		}
 		switch {
 		case isCodexToolCallOutputItemType(itemType):
 			coverage.HasFunctionCallOutput = true
@@ -321,6 +347,9 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 			continue
 		}
 		itemType, _ := itemMap["type"].(string)
+		if execution, _ := itemMap["execution"].(string); isServerExecutedToolSearchItem(itemType, execution) {
+			continue
+		}
 		switch {
 		case isCodexToolCallOutputItemType(itemType):
 			result.HasFunctionCallOutput = true
@@ -347,6 +376,9 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 			continue
 		}
 		itemType, _ := itemMap["type"].(string)
+		if execution, _ := itemMap["execution"].(string); isServerExecutedToolSearchItem(itemType, execution) {
+			continue
+		}
 		switch {
 		case isCodexToolCallOutputItemType(itemType):
 			callID, _ := itemMap["call_id"].(string)

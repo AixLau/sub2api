@@ -45,6 +45,11 @@ func sanitizeOpenAIResponsesOrphanToolOutputs(reqBody map[string]any, input []an
 			continue
 		}
 
+		// 上游托管执行的 tool_search_output 不需要客户端调用项配对，原样保留。
+		if isServerExecutedToolSearchItem(firstNonEmptyString(item["type"]), firstNonEmptyString(item["execution"])) {
+			normalized = append(normalized, rawItem)
+			continue
+		}
 		callID := strings.TrimSpace(firstNonEmptyString(item["call_id"]))
 		// Codex sends externally supplied inputs (such as task delegation) as
 		// named function outputs without a preceding function call. Preserve
