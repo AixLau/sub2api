@@ -129,6 +129,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
+		// 请求头覆写变量（{{user_id}} 等）的取值来源，与 APIKeyAuth 保持一致。
+		c.Request = c.Request.WithContext(service.WithHeaderOverrideRequestScope(
+			c.Request.Context(), apiKey.User.ID, apiKey.ID, effectiveHeaderOverrideGroupID(apiKey)))
 		if code, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, nil)
@@ -269,6 +272,8 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		})
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)
+		c.Request = c.Request.WithContext(service.WithHeaderOverrideRequestScope(
+			c.Request.Context(), apiKey.User.ID, apiKey.ID, effectiveHeaderOverrideGroupID(apiKey)))
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		c.Next()
 	}

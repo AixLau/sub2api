@@ -267,7 +267,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 	}
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
 
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	return req, nil
 }
@@ -400,7 +400,7 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		req.Header.Set("Originator", "codex-tui")
 	}
 
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	applyOpenAIUpstreamIdentity(ctx, account, s.settingService, req.Header)
 	stripOpenAIAlphaSearchResponsesHeaders(req.Header)
 	return req, nil
