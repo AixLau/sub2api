@@ -318,7 +318,9 @@ func quoteRechargeBonus(cfg *PaymentConfig, paymentAmount float64, currency stri
 	return quote
 }
 
-// paymentOrderAmountWithoutBonus 订单到账金额剔除免费额度后的实付部分（USD），用于推广返利基数。
+// paymentOrderAmountWithoutBonus returns the balance amount eligible for affiliate rebate.
+// The credited amount includes the promotion bonus, so the rebate base removes
+// the bonus from both the credited amount and the original recharge principal.
 func paymentOrderAmountWithoutBonus(o *dbent.PaymentOrder) float64 {
 	if o == nil {
 		return 0
@@ -327,7 +329,7 @@ func paymentOrderAmountWithoutBonus(o *dbent.PaymentOrder) float64 {
 		return o.Amount
 	}
 	base := decimal.NewFromFloat(o.Amount).
-		Sub(decimal.NewFromFloat(o.BonusAmount)).
+		Sub(decimal.NewFromFloat(o.BonusAmount).Mul(decimal.NewFromInt(2))).
 		Round(2).
 		InexactFloat64()
 	if base < 0 {

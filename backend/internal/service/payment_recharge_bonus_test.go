@@ -218,9 +218,10 @@ func TestUpdatePaymentConfigRechargeBonus(t *testing.T) {
 	})
 }
 
-func TestAffiliateRebateBaseAmountExcludesRechargeBonus(t *testing.T) {
-	require.Equal(t, 100.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
-		OrderType: payment.OrderTypeBalance, Amount: 130, BonusAmount: 30,
+func TestAffiliateRebateBaseAmountAppliesRechargePromotion(t *testing.T) {
+	// 充值本金 100，赠送 20，分佣基数为 100 * (1 - 20%) = 80。
+	require.Equal(t, 80.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
+		OrderType: payment.OrderTypeBalance, Amount: 120, BonusAmount: 20,
 	}))
 	require.Equal(t, 130.0, affiliateRebateBaseAmount(&dbent.PaymentOrder{
 		OrderType: payment.OrderTypeBalance, Amount: 130,
