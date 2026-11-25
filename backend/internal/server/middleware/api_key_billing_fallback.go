@@ -114,3 +114,14 @@ func cloneAPIKeyForBillingGroup(apiKey *service.APIKey, group *service.Group) *s
 	}
 	return &cloned
 }
+
+func effectiveHeaderOverrideGroupID(apiKey *service.APIKey) *int64 {
+	if apiKey == nil {
+		return nil
+	}
+	if apiKey.Group != nil && apiKey.Group.ID > 0 {
+		groupID := apiKey.Group.ID
+		return &groupID
+	}
+	return apiKey.GroupID
+}

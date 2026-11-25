@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -388,6 +389,24 @@ func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false})
 			return
 		}
+		// 请求头覆写变量的身份来源：认证后的 context 能解析出 user/key/group
+		account := &service.Account{
+			ID:       1,
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"header_override_enabled": true,
+				"header_overrides": map[string]any{
+					"x-identity": "{{user_id}}/{{api_key_id}}/{{group_id}}",
+				},
+			},
+		}
+		upstreamHeaders := http.Header{}
+		account.ApplyHeaderOverrides(c.Request.Context(), upstreamHeaders)
+		if got := upstreamHeaders["x-identity"]; len(got) != 1 || got[0] != "7/100/101" {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "identity": got})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
@@ -396,7 +415,7 @@ func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 	req.Header.Set("x-api-key", apiKey.Key)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 }
 
 func TestAPIKeyAuthRejectsExclusiveGroupWhenUserNoLongerAllowed(t *testing.T) {
@@ -1875,6 +1894,20 @@ func TestAPIKeyAuthFallsBackFromBalanceToSubscription(t *testing.T) {
 		require.Equal(t, fallbackGroup, resolvedKey.Group)
 		require.Equal(t, fallbackSub.ID, resolvedSub.ID)
 		require.Nil(t, resolvedKey.User.UserGroupRPMOverride)
+		account := &service.Account{
+			ID:       1,
+			Platform: service.PlatformAnthropic,
+			Type:     service.AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"header_override_enabled": true,
+				"header_overrides": map[string]any{
+					"x-identity": "{{user_id}}/{{api_key_id}}/{{group_id}}",
+				},
+			},
+		}
+		upstreamHeaders := http.Header{}
+		account.ApplyHeaderOverrides(c.Request.Context(), upstreamHeaders)
+		require.Equal(t, []string{"301/401/202"}, upstreamHeaders["x-identity"])
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
@@ -1995,6 +2028,20 @@ func TestAPIKeyAuthFallsBackFromSubscriptionToBalance(t *testing.T) {
 				require.Equal(t, tc.wantGroupID, resolvedKey.Group.ID)
 				_, hasSub := GetSubscriptionFromContext(c)
 				require.False(t, hasSub, "balance fallback must not attach the unusable subscription")
+				account := &service.Account{
+					ID:       1,
+					Platform: service.PlatformOpenAI,
+					Type:     service.AccountTypeAPIKey,
+					Credentials: map[string]any{
+						"header_override_enabled": true,
+						"header_overrides": map[string]any{
+							"x-identity": "{{user_id}}/{{api_key_id}}/{{group_id}}",
+						},
+					},
+				}
+				upstreamHeaders := http.Header{}
+				account.ApplyHeaderOverrides(c.Request.Context(), upstreamHeaders)
+				require.Equal(t, []string{fmt.Sprintf("311/411/%d", tc.wantGroupID)}, upstreamHeaders["x-identity"])
 				c.JSON(http.StatusOK, gin.H{"ok": true})
 			})
 

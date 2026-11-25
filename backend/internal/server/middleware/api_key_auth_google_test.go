@@ -970,6 +970,20 @@ func TestAPIKeyAuthGoogleFallsBackToAnotherSubscription(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, fallbackGroup.ID, *resolvedKey.GroupID)
 		require.Equal(t, fallbackSub.ID, resolvedSub.ID)
+		account := &service.Account{
+			ID:       1,
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"header_override_enabled": true,
+				"header_overrides": map[string]any{
+					"x-identity": "{{user_id}}/{{api_key_id}}/{{group_id}}",
+				},
+			},
+		}
+		upstreamHeaders := http.Header{}
+		account.ApplyHeaderOverrides(c.Request.Context(), upstreamHeaders)
+		require.Equal(t, []string{"801/901/702"}, upstreamHeaders["x-identity"])
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
