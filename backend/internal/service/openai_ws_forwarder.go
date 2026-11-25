@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"strings"
 	"time"
 
@@ -55,6 +56,8 @@ var openAIWSLogValueReplacer = strings.NewReplacer(
 )
 
 var openAIWSIngressPreflightPingIdle = 20 * time.Second
+var openAIWSIngressCapacityShedRetryLimit = 10
+var openAIWSIngressCapacityShedRetryDelay = 500 * time.Millisecond
 
 // openAIWSFallbackError 表示可安全回退到 HTTP 的 WS 错误（尚未写下游）。
 type openAIWSFallbackError struct {
@@ -94,6 +97,38 @@ type openAIWSIngressTurnError struct {
 	stage           string
 	cause           error
 	wroteDownstream bool
+}
+
+type openAIWSIngressCapacityShedRetryError struct {
+	payload     []byte
+	headers     http.Header
+	leaseBroken bool
+	errCode     string
+}
+
+func (e *openAIWSIngressCapacityShedRetryError) Error() string {
+	if e == nil || strings.TrimSpace(e.errCode) == "" {
+		return "openai websocket upstream capacity shed"
+	}
+	return fmt.Sprintf("openai websocket upstream capacity shed: %s", e.errCode)
+}
+
+func openAIWSIngressCapacityShedBackoffDelay(headers http.Header, payload []byte, retryAttempt int) time.Duration {
+	if delay := openAIRequestScopedRetryDelay(headers, payload); delay > 0 {
+		return delay
+	}
+	base := openAIWSIngressCapacityShedRetryDelay
+	if base <= 0 {
+		return 0
+	}
+	switch {
+	case retryAttempt <= 4:
+		return base
+	case retryAttempt <= 7:
+		return base * 2
+	default:
+		return base * 4
+	}
 }
 
 type openAIWSCurrentTurnFailoverError struct {
