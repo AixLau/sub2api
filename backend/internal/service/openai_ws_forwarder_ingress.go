@@ -1077,13 +1077,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
-	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string, allowCapacityShedRetry bool) (*OpenAIForwardResult, error) {
+	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string, allowCapacityShedRetry bool, capacityShedDeadline time.Time) (*OpenAIForwardResult, error) {
 		responseModelObserver := &upstreamResponseModelObserver{}
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
 		turnStart := time.Now()
 		wroteDownstream := false
+		capacityShedRetryActive := func() bool {
+			if !allowCapacityShedRetry {
+				return false
+			}
+			return capacityShedDeadline.IsZero() || time.Now().Before(capacityShedDeadline)
+		}
 		pendingClientMessages := make([][]byte, 0, 6)
 		pendingClientMessageBytes := int64(0)
 		var pendingCapacityShedErrorRaw []byte
@@ -1172,7 +1178,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
 				lease.MarkBroken()
-				if allowCapacityShedRetry && !wroteDownstream && !clientDisconnected && len(pendingCapacityShedErrorRaw) > 0 {
+				if capacityShedRetryActive() && !wroteDownstream && !clientDisconnected && len(pendingCapacityShedErrorRaw) > 0 {
 					return nil, &openAIWSIngressCapacityShedRetryError{
 						payload:     append([]byte(nil), pendingCapacityShedErrorRaw...),
 						headers:     lease.HandshakeHeaders(),
@@ -1344,7 +1350,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							lease.MarkBroken()
 							return nil, s.newOpenAIStreamFailoverErrorWithModel(c, account, true, responseID, upstreamMessage, errMsgRaw, mappedModel, lease.HandshakeHeaders())
 						}
-						if allowCapacityShedRetry && !modelCooldownTriggered {
+						if capacityShedRetryActive() && !modelCooldownTriggered {
 							if responseID == "" {
 								lease.MarkBroken()
 								return nil, &openAIWSIngressCapacityShedRetryError{
@@ -1388,7 +1394,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							errMsg := extractOpenAISSEErrorMessage(upstreamMessage)
 							return nil, s.newOpenAIStreamFailoverErrorWithModel(c, account, true, responseID, upstreamMessage, errMsg, mappedModel, lease.HandshakeHeaders())
 						}
-						if allowCapacityShedRetry && !modelCooldownTriggered {
+						if capacityShedRetryActive() && !modelCooldownTriggered {
 							shedPayload := upstreamMessage
 							shedCode := openAIStreamFailedEventErrorCode(upstreamMessage)
 							if shedCode == "" {
@@ -1756,7 +1762,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if !errors.As(relayErr, &shedErr) || shedErr == nil {
 			return false, nil
 		}
-		if capacityShedRetryCount >= openAIWSIngressCapacityShedRetryLimit {
+		if openAIWSIngressCapacityShedRetryWindow <= 0 {
 			return false, nil
 		}
 		if shedErr.leaseBroken && isStrictAffinityTurn(currentPayload) {
@@ -1770,23 +1776,27 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		now := time.Now()
 		if capacityShedRetryDeadline.IsZero() {
-			capacityShedRetryDeadline = now.Add(OpenAIRequestScopedRetryWindow)
+			capacityShedRetryDeadline = now.Add(openAIWSIngressCapacityShedRetryWindow)
 		}
 		if !now.Before(capacityShedRetryDeadline) {
 			return false, nil
 		}
 		capacityShedRetryCount++
-		delay := openAIWSIngressCapacityShedBackoffDelay(shedErr.headers, shedErr.payload, capacityShedRetryCount)
-		if remaining := time.Until(capacityShedRetryDeadline); remaining < delay {
+		delay := openAIWSIngressCapacityShedBackoffDelay(account, shedErr.headers, shedErr.payload, capacityShedRetryCount)
+		remaining := time.Until(capacityShedRetryDeadline)
+		if remaining < 0 {
+			remaining = 0
+		}
+		if remaining < delay {
 			delay = remaining
 		}
 		logOpenAIWSModeInfo(
-			"ingress_ws_capacity_shed_retry account_id=%d turn=%d retry=%d max_retries=%d delay_ms=%d conn_id=%s lease_broken=%v err_code=%s",
+			"ingress_ws_capacity_shed_retry account_id=%d turn=%d retry=%d delay_ms=%d remaining_ms=%d conn_id=%s lease_broken=%v err_code=%s",
 			account.ID,
 			turn,
 			capacityShedRetryCount,
-			openAIWSIngressCapacityShedRetryLimit,
 			delay.Milliseconds(),
+			remaining.Milliseconds(),
 			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
 			shedErr.leaseBroken,
 			normalizeOpenAIWSLogValue(shedErr.errCode),
@@ -2181,9 +2191,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 
 		allowCapacityShedRetry := account.Platform == PlatformOpenAI &&
-			capacityShedRetryCount < openAIWSIngressCapacityShedRetryLimit &&
+			openAIWSIngressCapacityShedRetryWindow > 0 &&
 			(capacityShedRetryDeadline.IsZero() || time.Now().Before(capacityShedRetryDeadline))
-		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize, currentRequestedReasoningEffort, allowCapacityShedRetry)
+		result, relayErr := sendAndRelay(turn, sessionLease, currentPayload, currentPayloadBytes, currentOriginalModel, currentImageBillingModel, currentImageSizeTier, currentImageInputSize, currentRequestedReasoningEffort, allowCapacityShedRetry, capacityShedRetryDeadline)
 		if relayErr != nil {
 			lastTurnClean = false
 			if isOpenAIWSSessionPreempted(ctx) {

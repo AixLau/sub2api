@@ -56,7 +56,7 @@ var openAIWSLogValueReplacer = strings.NewReplacer(
 )
 
 var openAIWSIngressPreflightPingIdle = 20 * time.Second
-var openAIWSIngressCapacityShedRetryLimit = 10
+var openAIWSIngressCapacityShedRetryWindow = OpenAIRequestScopedRetryWindow
 var openAIWSIngressCapacityShedRetryDelay = 500 * time.Millisecond
 
 // openAIWSFallbackError 表示可安全回退到 HTTP 的 WS 错误（尚未写下游）。
@@ -113,22 +113,28 @@ func (e *openAIWSIngressCapacityShedRetryError) Error() string {
 	return fmt.Sprintf("openai websocket upstream capacity shed: %s", e.errCode)
 }
 
-func openAIWSIngressCapacityShedBackoffDelay(headers http.Header, payload []byte, retryAttempt int) time.Duration {
-	if delay := openAIRequestScopedRetryDelay(headers, payload); delay > 0 {
-		return delay
-	}
+func openAIWSIngressCapacityShedBackoffDelay(account *Account, headers http.Header, payload []byte, retryAttempt int) time.Duration {
 	base := openAIWSIngressCapacityShedRetryDelay
 	if base <= 0 {
 		return 0
 	}
-	switch {
-	case retryAttempt <= 4:
+	if account != nil && account.IsOpenAIOAuth() {
 		return base
-	case retryAttempt <= 7:
-		return base * 2
-	default:
-		return base * 4
 	}
+	if delay := openAIRequestScopedRetryDelay(headers, payload); delay > 0 {
+		return delay
+	}
+	if retryAttempt <= 1 {
+		return base
+	}
+	delay := base
+	for i := 1; i < retryAttempt; i++ {
+		if delay >= openAIRequestScopedRetryMaxDelay/2 {
+			return openAIRequestScopedRetryMaxDelay
+		}
+		delay *= 2
+	}
+	return delay
 }
 
 type openAIWSCurrentTurnFailoverError struct {

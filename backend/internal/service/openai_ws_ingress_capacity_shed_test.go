@@ -621,27 +621,24 @@ func TestProxyResponsesWebSocketFromClient_BareCapacityShedErrorWithoutResponseC
 
 func TestProxyResponsesWebSocketFromClient_CapacityShedRetriesExhaustedDeliversRewrittenError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	prevLimit := openAIWSIngressCapacityShedRetryLimit
+	prevWindow := openAIWSIngressCapacityShedRetryWindow
 	prevDelay := openAIWSIngressCapacityShedRetryDelay
-	openAIWSIngressCapacityShedRetryLimit = 2
-	openAIWSIngressCapacityShedRetryDelay = time.Millisecond
+	openAIWSIngressCapacityShedRetryWindow = 25 * time.Millisecond
+	openAIWSIngressCapacityShedRetryDelay = 40 * time.Millisecond
 	t.Cleanup(func() {
-		openAIWSIngressCapacityShedRetryLimit = prevLimit
+		openAIWSIngressCapacityShedRetryWindow = prevWindow
 		openAIWSIngressCapacityShedRetryDelay = prevDelay
 	})
 
 	captureConn := &openAIWSCaptureConn{
 		events: [][]byte{
-			// Attempt 0
+			// Attempt 0: starts 25ms retry window; backoff is clamped to remaining window
 			[]byte(`{"type":"response.created","response":{"id":"resp_ex_0","model":"gpt-5.1"}}`),
 			[]byte(`{"type":"response.failed","response":{"id":"resp_ex_0","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
-			// Attempt 1 (retry 1)
+			// Attempt 1: retry window has elapsed, delivers rewritten server_error to client
 			[]byte(`{"type":"response.created","response":{"id":"resp_ex_1","model":"gpt-5.1"}}`),
-			[]byte(`{"type":"response.failed","response":{"id":"resp_ex_1","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
-			// Attempt 2 (retry 2 — final, retries exhausted)
-			[]byte(`{"type":"response.created","response":{"id":"resp_ex_2","model":"gpt-5.1"}}`),
 			[]byte(`{"type":"error","error":{"type":"service_unavailable_err","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`),
-			[]byte(`{"type":"response.failed","response":{"id":"resp_ex_2","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
+			[]byte(`{"type":"response.failed","response":{"id":"resp_ex_1","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
 		},
 	}
 	dialer := &openAIWSCaptureDialer{conn: captureConn}
@@ -686,12 +683,86 @@ func TestProxyResponsesWebSocketFromClient_CapacityShedRetriesExhaustedDeliversR
 		t.Fatal("timed out waiting for ingress server to finish")
 	}
 
-	require.Len(t, captureConn.writes, 3, "expected 1 initial attempt + 2 retries")
+	require.Len(t, captureConn.writes, 2, "expected 1 initial attempt + 1 final attempt after window expiry")
 	joined := strings.Join(frames, "\n")
-	require.Contains(t, joined, "resp_ex_2")
+	require.Contains(t, joined, "resp_ex_1")
 	require.NotContains(t, joined, "resp_ex_0")
-	require.NotContains(t, joined, "resp_ex_1")
 	require.Contains(t, joined, `"code":"server_error"`)
 	require.Contains(t, joined, "Our servers are currently overloaded. Please try again later.")
 	require.NotContains(t, joined, "server_is_overloaded")
+}
+
+func TestProxyResponsesWebSocketFromClient_CapacityShedRetriesBeyondTenWithinWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	prevWindow := openAIWSIngressCapacityShedRetryWindow
+	prevDelay := openAIWSIngressCapacityShedRetryDelay
+	openAIWSIngressCapacityShedRetryWindow = 5 * time.Second
+	openAIWSIngressCapacityShedRetryDelay = time.Millisecond
+	t.Cleanup(func() {
+		openAIWSIngressCapacityShedRetryWindow = prevWindow
+		openAIWSIngressCapacityShedRetryDelay = prevDelay
+	})
+
+	const shedAttempts = 12
+	events := make([][]byte, 0, shedAttempts*2+3)
+	for idx := 0; idx < shedAttempts; idx++ {
+		events = append(events,
+			[]byte(`{"type":"response.created","response":{"id":"resp_shed_many","model":"gpt-5.1"}}`),
+			[]byte(`{"type":"response.failed","response":{"id":"resp_shed_many","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`),
+		)
+	}
+	events = append(events,
+		[]byte(`{"type":"response.created","response":{"id":"resp_after_12","model":"gpt-5.1"}}`),
+		[]byte(`{"type":"response.output_text.delta","delta":"recovered after 12"}`),
+		[]byte(`{"type":"response.completed","response":{"id":"resp_after_12","model":"gpt-5.1","usage":{"input_tokens":6,"output_tokens":3}}}`),
+	)
+
+	captureConn := &openAIWSCaptureConn{events: events}
+	dialer := &openAIWSCaptureDialer{conn: captureConn}
+	account := Account{
+		ID:          5414,
+		Name:        "openai-ingress-capacity-retry-window",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-test-token"},
+		Extra:       map[string]any{"responses_websockets_v2_enabled": true},
+	}
+
+	wsServer, serverErrCh := newOpenAIWSIngressCapacityShedTestHarness(t, account, dialer, nil)
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","input":"hi"}`)))
+	cancelWrite()
+
+	var frames []string
+	for len(frames) < 3 {
+		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, msg, readErr := clientConn.Read(readCtx)
+		cancel()
+		require.NoError(t, readErr)
+		frames = append(frames, string(msg))
+	}
+	_ = clientConn.Close(coderws.StatusNormalClosure, "done")
+
+	select {
+	case serverErr := <-serverErrCh:
+		require.NoError(t, serverErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ingress server to finish")
+	}
+
+	require.Equal(t, 1, dialer.dialCount)
+	require.Len(t, captureConn.writes, shedAttempts+1)
+	require.Equal(t, "resp_after_12", gjson.Get(frames[0], "response.id").String())
+	require.Equal(t, "recovered after 12", gjson.Get(frames[1], "delta").String())
+	require.NotContains(t, strings.Join(frames, "\n"), "resp_shed_many")
 }
