@@ -890,6 +890,30 @@ describe('EditAccountModal', () => {
     })
   })
 
+  it('preserves the Business promotion while overriding only the switch that changed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-01T00:00:00Z'))
+    const account = buildOpenAIOAuthParentAccount()
+    account.credentials.plan_type = 'self_serve_business_usage_based'
+    account.extra = { openai_business_fast_until: '2027-01-01T08:00:00Z' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    const force = wrapper.get('[aria-label="admin.accounts.openai.forceFast"]')
+    const free = wrapper.get('[aria-label="admin.accounts.openai.freeFast"]')
+    expect(force.attributes('aria-checked')).toBe('true')
+    expect(free.attributes('aria-checked')).toBe('true')
+
+    await force.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    const extra = updateAccountMock.mock.calls[0]?.[1]?.extra
+    expect(extra?.force_openai_fast).toBe(false)
+    expect(extra?.free_openai_fast).toBeUndefined()
+    expect(extra?.openai_business_fast_until).toBe('2027-01-01T08:00:00Z')
+    wrapper.unmount()
+  })
+
   it('loads and submits the per-account OpenAI long-context billing toggle', async () => {
     const account = buildAccount()
     account.extra = {

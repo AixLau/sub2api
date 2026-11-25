@@ -220,6 +220,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		imageInputSize           string
 		payloadBytes             int
 		requestedReasoningEffort *string
+		fastPolicyAt             time.Time
 	}
 	ingressSessionOriginalModel := ""
 
@@ -250,6 +251,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	parseClientPayload := func(turn int, raw []byte) (openAIWSClientPayload, error) {
+		fastPolicyAt := time.Now()
 		trimmed := bytes.TrimSpace(raw)
 		if len(trimmed) == 0 {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "empty websocket request payload", nil)
@@ -508,7 +510,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// follow-up response.create frames may omit it and then reuse
 		// ingressSessionOriginalModel. We always write a concrete upstream model
 		// before evaluating policy, so whitelist / filter behavior remains stable.
-		policyApplied, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, upstreamModel, normalized)
+		policyCtx := context.WithValue(ctx, openAIPricingAtCtxKey{}, fastPolicyAt)
+		policyApplied, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(policyCtx, account, upstreamModel, normalized)
 		if policyErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", policyErr)
 		}
@@ -577,6 +580,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageInputSize:           imageInputSize,
 			payloadBytes:             len(normalized),
 			requestedReasoningEffort: requestedReasoningEffort,
+			fastPolicyAt:             fastPolicyAt,
 		}, nil
 	}
 
@@ -794,6 +798,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if result != nil {
 				// The HTTP payload can contain a policy rewrite or replayed configuration from an earlier turn.
 				result.RequestedReasoningEffort = currentBridgePayload.requestedReasoningEffort
+				result.wsFastPolicyAt = currentBridgePayload.fastPolicyAt
 			}
 			if hooks != nil && hooks.AfterTurn != nil {
 				hooks.AfterTurn(turn, result, bridgeErr)
@@ -1418,6 +1423,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentImageInputSize := firstPayload.imageInputSize
 	currentPayloadBytes := firstPayload.payloadBytes
 	currentRequestedReasoningEffort := firstPayload.requestedReasoningEffort
+	currentFastPolicyAt := firstPayload.fastPolicyAt
 	isStrictAffinityTurn := func(payload []byte) bool {
 		if !storeDisabled {
 			return false
@@ -2014,6 +2020,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		turnPrevRecoveryTried = false
 		lastTurnFinishedAt = time.Now()
 		lastTurnClean = true
+		if result != nil {
+			result.wsFastPolicyAt = currentFastPolicyAt
+		}
 		if hooks != nil && hooks.AfterTurn != nil {
 			hooks.AfterTurn(turn, result, nil)
 		}
@@ -2152,6 +2161,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentImageInputSize = nextPayload.imageInputSize
 		currentPayloadBytes = nextPayload.payloadBytes
 		currentRequestedReasoningEffort = nextPayload.requestedReasoningEffort
+		currentFastPolicyAt = nextPayload.fastPolicyAt
 		rejectedFieldRetryState = newOpenAIResponsesRejectedFieldRetryState(currentPayload)
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(currentPayload, account)
 		if !storeDisabled {

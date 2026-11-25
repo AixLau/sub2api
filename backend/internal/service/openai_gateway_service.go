@@ -329,6 +329,7 @@ type OpenAIForwardResult struct {
 	wsReplayInput                []json.RawMessage
 	wsReplayInputExists          bool
 	wsAccountFailoverReplayInput []json.RawMessage
+	wsFastPolicyAt               time.Time // Same turn timestamp used to evaluate the Business promotion before forwarding.
 }
 
 // HasBillableUsage includes token usage and the non-token units supported by

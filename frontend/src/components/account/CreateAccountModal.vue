@@ -3451,6 +3451,11 @@
         </div>
       </div>
 
+      <OpenAIFastSettings
+        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        v-model="openAIFastOverrides"
+      />
+
       <!-- OpenAI API 长上下文计费开关 -->
       <div
         v-if="form.platform === 'openai' && !hideAccountLongContextBilling && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
@@ -4191,6 +4196,7 @@ import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import OpenAIFastSettings from '@/components/account/OpenAIFastSettings.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import { applyExplicitCacheUpstreamCredentials, isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
@@ -4731,6 +4737,7 @@ const openaiPassthroughModelFilterEnabled = ref(false)
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
 const openAILongContextBillingTouched = ref(false)
+const openAIFastOverrides = ref<Partial<Record<'force_openai_fast' | 'free_openai_fast', boolean>>>({})
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
@@ -5705,6 +5712,7 @@ const resetForm = () => {
   openaiPassthroughModelFilterEnabled.value = false
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
+  openAIFastOverrides.value = {}
   openAILongContextBillingTouched.value = false
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
@@ -5775,7 +5783,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     return base
   }
 
-  const extra: Record<string, unknown> = { ...(base || {}) }
+  const extra: Record<string, unknown> = { ...base, ...openAIFastOverrides.value }
   if (accountCategory.value === 'oauth-based') {
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)

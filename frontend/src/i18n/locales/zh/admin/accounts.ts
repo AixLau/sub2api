@@ -791,6 +791,11 @@ export default {
         flattenNamespacesDesc:
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
+        forceFast: '强制 Fast',
+        forceFastDesc: '此账号的 OpenAI 文本请求使用 priority 档位，仍受全局 Fast / Flex 策略约束。',
+        freeFast: '免费 Fast',
+        freeFastDesc: '此账号的 Fast 请求按标准价向用户计费。Ultra Fast 按对应档位计费。',
+        businessFastPromotion: 'Business 活动默认开启两个开关，至太平洋时间 12 月 31 日结束。手动设置优先。',
         longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:

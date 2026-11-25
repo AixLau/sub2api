@@ -450,6 +450,7 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 			SkipDefaultGroupBind: skipDefaultGroupBind,
 		}
 
+		accountInput.ApplyOpenAIBusinessFastImportDefaults(time.Now())
 		created, err := h.adminService.CreateAccount(ctx, accountInput)
 		if err != nil {
 			result.AccountFailed++

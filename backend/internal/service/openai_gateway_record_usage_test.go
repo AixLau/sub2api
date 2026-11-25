@@ -3441,7 +3441,7 @@ func TestOpenAIGatewayServiceRecordUsage_FreeOpenAIFastChargesStandard(t *testin
 		GroupID: &groupID,
 		Group: &Group{
 			ID: groupID, Platform: PlatformOpenAI, Status: StatusActive,
-			Hydrated: true, RateMultiplier: 0.5, FreeOpenAIFast: true,
+			Hydrated: true, RateMultiplier: 0.5,
 			ModelPricing: []ChannelModelPricing{{
 				Models:         []string{"gpt-5.6-sol"},
 				BillingMode:    BillingModeToken,
@@ -3452,29 +3452,52 @@ func TestOpenAIGatewayServiceRecordUsage_FreeOpenAIFastChargesStandard(t *testin
 		},
 	}
 
-	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
-		Result: &OpenAIForwardResult{
-			RequestID:                   "resp_free_fast",
-			ServiceTier:                 &serviceTier,
-			UpstreamResponseServiceTier: "default",
-			Usage:                       OpenAIUsage{InputTokens: tokens.InputTokens, OutputTokens: tokens.OutputTokens},
-			Model:                       "gpt-5.6-sol",
-			Duration:                    time.Second,
-		},
-		APIKey:  apiKey,
-		User:    &User{ID: 2020},
-		Account: &Account{ID: 3020, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
-	})
+	promo := map[string]any{openaiBusinessFastUntilKey: openaiBusinessFastUntilValue}
+	for _, tc := range []struct {
+		name      string
+		groupFree bool
+		extra     map[string]any
+		at        time.Time
+		wsAt      time.Time
+		wantRatio float64
+	}{
+		{name: "group", groupFree: true, wantRatio: 1},
+		{name: "account", extra: map[string]any{openaiAccountFreeFastKey: true}, wantRatio: 1},
+		{name: "promotion", extra: promo, at: openaiBusinessFastEnd.Add(-time.Second), wantRatio: 1},
+		{name: "expired promotion", extra: promo, at: openaiBusinessFastEnd, wantRatio: fastMultiplier},
+		{name: "WS turn crosses expiry", extra: promo, at: openaiBusinessFastEnd, wsAt: openaiBusinessFastEnd.Add(-time.Second), wantRatio: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			apiKey.Group.FreeOpenAIFast = tc.groupFree
+			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+				Result: &OpenAIForwardResult{
+					RequestID:                   "resp_free_fast_" + tc.name,
+					ServiceTier:                 &serviceTier,
+					UpstreamResponseServiceTier: "default",
+					Usage:                       OpenAIUsage{InputTokens: tokens.InputTokens, OutputTokens: tokens.OutputTokens},
+					Model:                       "gpt-5.6-sol",
+					Duration:                    time.Second,
+					wsFastPolicyAt:              tc.wsAt,
+				},
+				APIKey: apiKey,
+				User:   &User{ID: 2020},
+				Account: &Account{ID: 3020, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+					Credentials: map[string]any{"plan_type": "team"}, Extra: tc.extra,
+				},
+				PricingAt: tc.at,
+			})
 
-	require.NoError(t, err)
-	require.NotNil(t, usageRepo.lastLog)
-	require.NotNil(t, usageRepo.lastLog.ServiceTier)
-	require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier)
-	require.InDelta(t, 0.5, usageRepo.lastLog.RateMultiplier, 1e-12)
+			require.NoError(t, err)
+			require.NotNil(t, usageRepo.lastLog)
+			require.NotNil(t, usageRepo.lastLog.ServiceTier)
+			require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier)
+			require.InDelta(t, 0.5, usageRepo.lastLog.RateMultiplier, 1e-12)
 
-	standardTotal := float64(tokens.InputTokens)*inputPrice + float64(tokens.OutputTokens)*outputPrice
-	require.InDelta(t, standardTotal*fastMultiplier, usageRepo.lastLog.TotalCost, 1e-10)
-	require.InDelta(t, standardTotal*0.5, usageRepo.lastLog.ActualCost, 1e-10)
+			standardTotal := float64(tokens.InputTokens)*inputPrice + float64(tokens.OutputTokens)*outputPrice
+			require.InDelta(t, standardTotal*fastMultiplier, usageRepo.lastLog.TotalCost, 1e-10)
+			require.InDelta(t, standardTotal*0.5*tc.wantRatio, usageRepo.lastLog.ActualCost, 1e-10)
+		})
+	}
 }
 
 func TestOpenAIGatewayServiceRecordUsage_FreeOpenAIFastMissingPricingRecordsZeroCostUsageLog(t *testing.T) {
@@ -3525,15 +3548,15 @@ func TestOpenAIGatewayServiceRecordUsage_FreeOpenAIFastMissingPricingRecordsZero
 func TestGroupBillsOpenAIFastAtStandardRequiresOpenAIAccount(t *testing.T) {
 	apiKey := &APIKey{Group: &Group{Platform: PlatformComposite, FreeOpenAIFast: true}}
 
-	require.True(t, groupBillsOpenAIFastAtStandard(
+	require.True(t, billsOpenAIFastAtStandard(
 		apiKey,
 		&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
-		"priority",
+		"priority", time.Time{},
 	))
-	require.False(t, groupBillsOpenAIFastAtStandard(
+	require.False(t, billsOpenAIFastAtStandard(
 		apiKey,
 		&Account{Platform: PlatformGrok, Type: AccountTypeAPIKey},
-		"priority",
+		"priority", time.Time{},
 	))
 }
 
@@ -3542,10 +3565,10 @@ func TestGroupBillsOpenAIFastAtStandardRequiresOpenAIAccount(t *testing.T) {
 func TestGroupBillsOpenAIFastAtStandardExcludesUltrafast(t *testing.T) {
 	apiKey := &APIKey{Group: &Group{Platform: PlatformOpenAI, FreeOpenAIFast: true, ForceOpenAIUltrafast: true}}
 
-	require.False(t, groupBillsOpenAIFastAtStandard(
+	require.False(t, billsOpenAIFastAtStandard(
 		apiKey,
 		&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
-		OpenAIFastTierUltrafast,
+		OpenAIFastTierUltrafast, time.Time{},
 	))
 }
 

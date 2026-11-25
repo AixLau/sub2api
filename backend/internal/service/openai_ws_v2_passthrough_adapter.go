@@ -771,7 +771,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		firstClientMessage = accountScopedFirst
 	}
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
-	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
+	var firstTurnStartedAt time.Time
+	if hooks != nil {
+		firstTurnStartedAt = hooks.InitialTurnStartedAt
+	}
+	firstFastPolicyAt := firstTurnStartedAt
+	if firstFastPolicyAt.IsZero() {
+		firstFastPolicyAt = time.Now()
+	}
+	firstPolicyCtx := context.WithValue(ctx, openAIPricingAtCtxKey{}, firstFastPolicyAt)
+	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(firstPolicyCtx, account, capturedSessionModel, firstClientMessage)
 	if policyErr != nil {
 		return fmt.Errorf("apply openai fast policy on first ws frame: %w", policyErr)
 	}
@@ -1128,7 +1137,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if isResponseCreate && model != "" && model != strings.TrimSpace(gjson.GetBytes(payload, "model").String()) {
 				payload = s.ReplaceModelInBody(payload, model)
 			}
-			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
+			policyCtx := context.WithValue(ctx, openAIPricingAtCtxKey{}, responseCreateAt)
+			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(policyCtx, account, model, payload)
 			// 多轮 passthrough usage：仅在成功（non-block / non-err）
 			// 的 response.create 帧上更新 usageMeta，使用
 			// filter 处理后的 payload，与首帧 policy-after-extract 语义
@@ -1195,10 +1205,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		}
 	}
 
-	firstTurnStartedAt := time.Time{}
-	if hooks != nil {
-		firstTurnStartedAt = hooks.InitialTurnStartedAt
-	}
 	failureAccountSideEffectsApplied := false
 	relayResult, relayExit := openaiwsv2.RunEntry(openaiwsv2.EntryInput{
 		Ctx:                ctx,
@@ -1233,6 +1239,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			},
 			OnTurnComplete: func(turn openaiwsv2.RelayTurnResult) {
 				turnNo := int(completedTurns.Add(1))
+				fastPolicyAt := turn.StartedAt
+				if turnNo == 1 {
+					fastPolicyAt = firstFastPolicyAt
+				}
 				if hooks != nil && hooks.TurnStarted != nil && !turn.StartedAt.IsZero() {
 					hooks.TurnStarted(turnNo, turn.StartedAt)
 				}
@@ -1253,6 +1263,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					UpstreamResponseModelConflict: turn.ResponseModelConflict,
 					UpstreamResponseServiceTier:   normalizeObservedOpenAIServiceTier(turn.ResponseServiceTier),
 					ServiceTier:                   usageMeta.serviceTier.Load(),
+					wsFastPolicyAt:                fastPolicyAt,
 					ReasoningEffort:               usageMeta.reasoningEffort.Load(),
 					RequestedReasoningEffort:      usageMeta.requestedReasoningEffort.Load(),
 					Stream:                        true,
@@ -1395,6 +1406,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		UpstreamResponseModelConflict: relayResult.ResponseModelConflict,
 		UpstreamResponseServiceTier:   normalizeObservedOpenAIServiceTier(relayResult.ResponseServiceTier),
 		ServiceTier:                   usageMeta.serviceTier.Load(),
+		wsFastPolicyAt:                firstFastPolicyAt,
 		ReasoningEffort:               usageMeta.reasoningEffort.Load(),
 		RequestedReasoningEffort:      usageMeta.requestedReasoningEffort.Load(),
 		Stream:                        true,

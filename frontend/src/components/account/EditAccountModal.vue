@@ -2553,6 +2553,12 @@
         />
       </div>
 
+      <OpenAIFastSettings
+        v-if="account?.platform === 'openai' && (account.type === 'oauth' || account.type === 'setup-token' || account.type === 'apikey')"
+        v-model="openAIFastOverrides"
+        :promotion-active="openAIBusinessFastPromotionActive"
+      />
+
       <!-- OpenAI API 长上下文计费开关 -->
       <div
         v-if="account?.platform === 'openai' && !isSparkShadow && !hideAccountLongContextBilling && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3430,6 +3436,7 @@ import {
   type OpenAIImageSizeTier
 } from '@/components/account/openaiImageSizeTiers'
 import Toggle from '@/components/common/Toggle.vue'
+import OpenAIFastSettings from '@/components/account/OpenAIFastSettings.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
@@ -4172,6 +4179,13 @@ const openAILongContextBillingEnabled = ref(false)
 // OpenAI 订阅档位（Plus / Pro 20x / Pro 5x / Business Standard / Business Premium / Free）手动覆盖值,
 // 存于 credentials.plan_type;'' 表示清空/自动识别
 const editPlanType = ref<string>('')
+const openAIFastOverrides = ref<Partial<Record<'force_openai_fast' | 'free_openai_fast', boolean>>>({})
+const openAIBusinessFastPromotionActive = computed(() => {
+  const until = props.account?.extra?.openai_business_fast_until
+  return props.account?.type === 'oauth' &&
+    ['team', 'self_serve_business_usage_based', 'self_serve_business_prolite'].includes(editPlanType.value.trim().toLowerCase()) &&
+    typeof until === 'string' && Date.now() < Date.parse(until)
+})
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
@@ -4681,6 +4695,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiPassthroughModelFilterEnabled.value = false
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
+  openAIFastOverrides.value = {}
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
@@ -4696,6 +4711,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
+    if (typeof extra?.force_openai_fast === 'boolean') {
+      openAIFastOverrides.value.force_openai_fast = extra.force_openai_fast
+    }
+    if (typeof extra?.free_openai_fast === 'boolean') {
+      openAIFastOverrides.value.free_openai_fast = extra.free_openai_fast
+    }
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiPassthroughModelFilterEnabled.value = extra?.openai_passthrough_model_filter === true
     openaiFlattenNamespacesEnabled.value =
@@ -6228,7 +6249,7 @@ const handleSubmit = async () => {
     // For OpenAI OAuth/SetupToken/API Key accounts, handle passthrough mode in extra
     if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'setup-token' || props.account.type === 'apikey')) {
       const currentExtra = (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
+      const newExtra: Record<string, unknown> = { ...currentExtra, ...openAIFastOverrides.value }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
       if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
         newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value

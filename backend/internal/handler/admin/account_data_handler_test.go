@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -316,4 +317,29 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
+func TestImportDataAppliesBusinessFastDefaults(t *testing.T) {
+	router, adminSvc := setupAccountDataRouter()
+	body := `{"data":{"proxies":[],"accounts":[
+		{"name":"business","platform":"openai","type":"oauth","credentials":{"plan_type":"team","access_token":"fixture"},"extra":{"free_openai_fast":false}},
+		{"name":"plus","platform":"openai","type":"oauth","credentials":{"plan_type":"plus","access_token":"fixture"}}
+	]}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.createdAccounts, 2)
+	business, plus := adminSvc.createdAccounts[0], adminSvc.createdAccounts[1]
+	const key = "openai_business_fast_until"
+	end := time.Date(2027, time.January, 1, 8, 0, 0, 0, time.UTC)
+	if time.Now().Before(end) {
+		require.Equal(t, end.Format(time.RFC3339), business.Extra[key])
+	} else {
+		require.NotContains(t, business.Extra, key)
+	}
+	require.Equal(t, false, business.Extra["free_openai_fast"])
+	require.NotContains(t, plus.Extra, key)
 }

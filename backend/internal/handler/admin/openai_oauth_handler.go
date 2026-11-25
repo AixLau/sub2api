@@ -385,7 +385,7 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
+	if err := service.ValidateOpenAIAccountExtra(service.PlatformOpenAI, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -448,7 +448,7 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		skipDefaultGroupBind = *req.SkipDefaultGroupBind
 	}
 
-	account, err := h.adminService.CreateAccount(c.Request.Context(), &service.CreateAccountInput{
+	createInput := &service.CreateAccountInput{
 		Name:                  buildOpenAICodexPATAccountName(req.Name, tokenInfo),
 		Notes:                 req.Notes,
 		Platform:              service.PlatformOpenAI,
@@ -465,7 +465,9 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		AutoPauseOnExpired:    req.AutoPauseOnExpired,
 		SkipDefaultGroupBind:  skipDefaultGroupBind,
 		SkipMixedChannelCheck: req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk,
-	})
+	}
+	createInput.ApplyOpenAIBusinessFastImportDefaults(time.Now())
+	account, err := h.adminService.CreateAccount(c.Request.Context(), createInput)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

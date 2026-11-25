@@ -121,7 +121,7 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
+	if err := service.ValidateOpenAIAccountExtra(service.PlatformOpenAI, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -328,7 +328,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			continue
 		}
 
-		account, createErr := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
+		createInput := &service.CreateAccountInput{
 			Name:                  accountName,
 			Notes:                 req.Notes,
 			Platform:              service.PlatformOpenAI,
@@ -345,7 +345,9 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			AutoPauseOnExpired:    autoPauseOnExpired,
 			SkipDefaultGroupBind:  skipDefaultGroupBind,
 			SkipMixedChannelCheck: skipMixedChannelCheck,
-		})
+		}
+		createInput.ApplyOpenAIBusinessFastImportDefaults(time.Now())
+		account, createErr := h.adminService.CreateAccount(ctx, createInput)
 		if createErr != nil {
 			result.Failed++
 			result.Items = append(result.Items, CodexSessionImportItem{

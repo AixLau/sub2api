@@ -381,6 +381,16 @@ func ValidateOpenAILongContextBillingExtra(platform string, extra map[string]any
 	return nil
 }
 
+func ValidateOpenAIAccountExtra(platform string, extra map[string]any) error {
+	if platform != PlatformOpenAI {
+		return nil
+	}
+	if err := ValidateOpenAILongContextBillingExtra(platform, extra); err != nil {
+		return err
+	}
+	return validateOpenAIFastExtra(extra)
+}
+
 func normalizeOpenAILongContextBillingExtra(platform string, extra map[string]any) (map[string]any, error) {
 	if platform != PlatformOpenAI {
 		return extra, nil
@@ -400,10 +410,13 @@ func normalizeOpenAILongContextBillingExtra(platform string, extra map[string]an
 	return normalized, nil
 }
 
-func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *UpdateAccountInput) (map[string]any, error) {
+func normalizeOpenAIAccountUpdateExtra(account *Account, input *UpdateAccountInput) (map[string]any, error) {
 	normalized, err := normalizeOpenAILongContextBillingExtra(account.Platform, input.Extra)
 	if err != nil || account.Platform != PlatformOpenAI {
 		return normalized, err
+	}
+	if err := validateOpenAIFastExtra(input.Extra); err != nil {
+		return nil, err
 	}
 
 	_, provided := input.Extra[openAILongContextBillingEnabledKey]
@@ -411,6 +424,13 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 	if !provided {
 		if hasCurrent {
 			normalized[openAILongContextBillingEnabledKey] = current
+		}
+	}
+	for _, key := range []string{openaiAccountForceFastKey, openaiAccountFreeFastKey, openaiBusinessFastUntilKey} {
+		if _, provided := input.Extra[key]; !provided {
+			if value, exists := account.Extra[key]; exists {
+				normalized[key] = value
+			}
 		}
 	}
 	return normalized, nil
@@ -498,6 +518,11 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if input.Platform == PlatformOpenAI {
+		if err := validateOpenAIFastExtra(input.Extra); err != nil {
+			return nil, err
+		}
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -605,7 +630,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
-		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
+		normalizedExtra, err = normalizeOpenAIAccountUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
 		}
@@ -962,6 +987,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if err := validateOpenAIFastExtra(updates); err != nil {
+		return err
+	}
 	updates = sanitizedCodexFingerprintExtraUpdates(updates)
 	updates = stripOpenAIAutoResetCreditManagedExtra(updates, true)
 	stripOpenCodeGoUsageManagedExtra(updates)
@@ -992,6 +1020,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	if err := validateOpenAIFastExtra(input.Extra); err != nil {
+		return nil, err
+	}
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	input.Extra = sanitizedCodexFingerprintExtraUpdates(input.Extra)
 	input.Extra = stripOpenAIAutoResetCreditManagedExtra(input.Extra, true)

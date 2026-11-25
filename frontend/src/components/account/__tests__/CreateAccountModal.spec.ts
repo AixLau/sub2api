@@ -912,6 +912,22 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(importCodexSessionMock).toHaveBeenCalledTimes(1)
     expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.force_openai_fast).toBeUndefined()
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.free_openai_fast).toBeUndefined()
+  })
+
+  it('sends the edited Fast switch with a Codex session import', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[aria-label="admin.accounts.openai.freeFast"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
+    await flushPromises()
+
+    const extra = importCodexSessionMock.mock.calls[0]?.[0]?.extra
+    expect(extra?.free_openai_fast).toBe(true)
+    expect(extra?.force_openai_fast).toBeUndefined()
   })
 
   it('leaves Codex PAT import billing ownership to the backend', async () => {
