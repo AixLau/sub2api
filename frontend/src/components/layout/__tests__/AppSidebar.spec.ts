@@ -113,7 +113,8 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar subscription feature flag', () => {
   it('gates the My Subscriptions entry behind the subscription public-settings flag', () => {
     expect(componentSource).toContain('const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)')
-    expect(componentSource).toMatch(/path: '\/subscriptions'[^\n]*featureFlag: flagSubscription/)
+    expect(componentSource).toContain('const flagMySubscriptions = () => flagSubscription() && subscriptionStore.hasActiveSubscriptions')
+    expect(componentSource).toMatch(/path: '\/subscriptions'[^\n]*featureFlag: flagMySubscriptions/)
   })
 
   it('also hides the admin Subscription Management entry on recharge-only sites', () => {
