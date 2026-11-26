@@ -210,7 +210,8 @@ export default {
         codexCliWs: 'Codex CLI (WebSocket)',
         grokCli: 'Grok CLI',
         systemOne: 'System One',
-        opencode: 'OpenCode'
+        opencode: 'OpenCode',
+        workbuddy: 'WorkBuddy'
       },
       typesafe: {
         description: '通过 TypeSafe 原生 System One 端点调用 Jev。',
@@ -286,6 +287,16 @@ export default {
         download: '下载目录',
         modelsCount: '已获取 {count} 个模型',
         errorDescription: '无法使用当前 API Key 获取模型目录。'
+      },
+      workbuddy: {
+        description: '阅读配置指南后，将当前分组的 GPT 模型加入 WorkBuddy。',
+        note: 'WorkBuddy 会根据配置指南自动写入 ~/.workbuddy/models.json。完成后请在模型列表查看带“星链AI”后缀的 GPT 模型；如未显示，再重启 WorkBuddy。',
+        noteWindows: 'WorkBuddy 会根据配置指南自动写入 %USERPROFILE%\\.workbuddy\\models.json。完成后请在模型列表查看带“星链AI”后缀的 GPT 模型；如未显示，再重启 WorkBuddy。',
+        quickTitle: '一句话配置（推荐）',
+        quickDescription: '复制下方内容，直接粘贴到 WorkBuddy 对话框发送。WorkBuddy 会阅读配置指南并自动完成设置。',
+        quickCopy: '复制这句话',
+        quickManual: '完成后请检查 WorkBuddy 模型列表中是否已可选到新增的 GPT 模型；如未显示，再完全退出并重新打开 WorkBuddy。',
+        quickPrompt: '请阅读 {guideUrl}，严格按照其中的要求操作并输出。使用我的 API Key「{apiKey}」和 API 地址「{apiBase}」，帮我把 GPT 模型配置到本地 WorkBuddy。完成后简要告诉我结果，并提醒我确认模型列表中是否已可选择新增模型；只有在未显示时才建议重启 WorkBuddy。'
       },
       opencode: {
         title: 'OpenCode 配置示例',

@@ -9,7 +9,12 @@ const { copyToClipboardMock, saveAsMock } = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key
+    t: (key: string, params?: Record<string, string>) => {
+      const template = key === 'keys.useKeyModal.workbuddy.quickPrompt'
+        ? '请阅读 {guideUrl}，严格按照其中的要求操作并输出。使用我的 API Key「{apiKey}」和 API 地址「{apiBase}」'
+        : key
+      return Object.entries(params ?? {}).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), template)
+    }
   })
 }))
 
@@ -1157,4 +1162,42 @@ describe('UseKeyModal', () => {
       }
     }
   )
+
+  it('generates a guide-based WorkBuddy setup prompt without fetching the model catalog', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-workbuddy-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+
+    const tab = wrapper.findAll('nav[aria-label="Client"] button')
+      .find((button) => button.text().includes('keys.useKeyModal.cliTabs.workbuddy'))
+    expect(tab).toBeDefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="codex-model-catalog"]').exists()).toBe(false)
+    const quickPrompt = wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()
+    expect(quickPrompt).toBe('请阅读 https://aixlau.me/workbuddy/guide.md，严格按照其中的要求操作并输出。使用我的 API Key「sk-workbuddy-test」和 API 地址「https://example.com/v1」')
+    expect(quickPrompt).toContain('/workbuddy/guide.md')
+    expect(quickPrompt).toContain('sk-workbuddy-test')
+    expect(quickPrompt).not.toContain('setup.sh')
+    expect(quickPrompt).not.toContain('setup.ps1')
+    await wrapper.find('[data-testid="workbuddy-quick-copy"]').trigger('click')
+    expect(copyToClipboardMock).toHaveBeenLastCalledWith(quickPrompt, 'keys.copied')
+    expect(wrapper.find('[data-testid="workbuddy-model-status"]').exists()).toBe(false)
+    expect(wrapper.find('nav[aria-label="Tabs"]').exists()).toBe(false)
+  })
 })

@@ -210,6 +210,7 @@ export default {
         grokCli: 'Grok CLI',
         systemOne: 'System One',
         opencode: 'OpenCode',
+        workbuddy: 'WorkBuddy',
       },
       typesafe: {
         description: 'Call Jev through the native TypeSafe System One endpoint.',
@@ -282,6 +283,16 @@ export default {
         download: 'Download catalog',
         modelsCount: '{count} models ready to download',
         errorDescription: 'The catalog could not be fetched with this API key.',
+      },
+      workbuddy: {
+        description: 'Read the configuration guide and add this group\'s GPT models to WorkBuddy.',
+        note: 'WorkBuddy writes ~/.workbuddy/models.json according to the configuration guide. Check the model list for GPT models with the 星链AI suffix, and restart WorkBuddy if they do not appear.',
+        noteWindows: 'WorkBuddy writes %USERPROFILE%\\.workbuddy\\models.json according to the configuration guide. Check the model list for GPT models with the 星链AI suffix, and restart WorkBuddy if they do not appear.',
+        quickTitle: 'One-sentence setup (recommended)',
+        quickDescription: 'Copy the message below and send it in WorkBuddy. WorkBuddy reads the configuration guide and completes the setup automatically.',
+        quickCopy: 'Copy message',
+        quickManual: 'After it finishes, check whether the new GPT models appear in WorkBuddy\'s model selector. Restart WorkBuddy only if they do not appear.',
+        quickPrompt: 'Please read {guideUrl}, strictly follow its instructions, and use my API key "{apiKey}" with API base "{apiBase}" to configure the GPT models in local WorkBuddy. When finished, briefly report the result and remind me to check whether the new models are selectable. Suggest restarting WorkBuddy only if they do not appear.'
       },
       opencode: {
         title: 'OpenCode Example',
