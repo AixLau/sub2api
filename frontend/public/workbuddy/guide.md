@@ -60,7 +60,20 @@ gpt-{版本}-{astra|sol|terra|luna}
 - `defaultEffort` 优先使用有效的 `default_reasoning_level`，其次使用 `medium`，再其次使用第一个有效 effort。
 - `supportedEfforts` 使用原始 levels 中去重并排除 `none` 后的 effort 列表。
 
-保留 API 返回的 reasoning level 名称和描述。每个最终选中的模型都要在回复中列出可用档位、默认档位和档位描述。
+配置中的 `defaultEffort` 和 `supportedEfforts` 必须保留 API 返回的原始枚举值，以确保 WorkBuddy 正确识别；不要把配置字段里的枚举值改成中文。
+
+面向用户的最终回复不得直接显示 `none`、`low`、`medium`、`high`、`xhigh`、`max` 等英文档位名称，统一使用以下中文名称：
+
+| API 档位 | 回复中的中文名称 | 含义 |
+| --- | --- | --- |
+| `none` | 关闭推理 | 不启用额外推理 |
+| `low` | 低 | 快速完成简单任务 |
+| `medium` | 中 | 平衡速度与推理质量 |
+| `high` | 高 | 适合复杂任务 |
+| `xhigh` | 极高 | 适合高难度分析和调试 |
+| `max` | 最高 | 使用可用的最高推理强度 |
+
+每个最终选中的模型都要在回复中列出中文可用档位、中文默认档位和档位描述；只有在说明配置字段或接口原始值时，才可在括号中附带英文枚举值。
 
 ## 模型说明与积分
 
