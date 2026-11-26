@@ -1,6 +1,6 @@
 # WorkBuddy GPT 模型配置指南
 
-你正在帮助用户把当前 API 分组中的 GPT 模型加入本地 WorkBuddy。请把本文档作为本次任务的操作规范，严格执行其中的步骤和输出要求。
+请把本文档作为 WorkBuddy 本地自定义模型配置的操作规范，严格执行其中的步骤和输出要求。
 
 ## 输入
 
@@ -25,16 +25,17 @@ Accept: application/json
 
 如果请求失败，说明失败原因并停止，不要写入不完整配置。如果返回内容不是包含 `models` 数组的 JSON，也停止并说明原因。
 
-## 筛选模型
+## 选择模型
 
-只保留同时满足以下条件的模型：
+从返回的 `models` 数组中，只考虑以下四个模型族：`astra`、`sol`、`terra`、`luna`。候选模型的 `slug` 应匹配以下结构，忽略大小写：
 
-- `slug` 匹配 `^gpt-6(?:\.[12])?(?:-|$)`，忽略大小写
-- `visibility` 不是 `hide`
-- `supported_in_api` 不是 `false`
-- `slug` 不重复
+```text
+gpt-{版本}-{astra|sol|terra|luna}
+```
 
-这会包含 GPT-6、GPT-6.1 和 GPT-6.2 系列，不要加入其他厂商或旧系列模型。
+版本是由数字和点组成的版本号，后续出现新版本时也必须支持，不要把版本号写死在规则中。比较版本时按数字段逐段比较，例如 `6.10` 高于 `6.2`。过滤掉 `visibility` 为 `hide`、`supported_in_api` 为 `false`、重复 slug 和明显的 preview、experimental、deprecated 变体。
+
+每个模型族只选择一个模型，选择该族版本号最高的可用模型。例如同一目录同时有 `gpt-6.1-sol` 和 `gpt-6.2-sol` 时只选 `gpt-6.2-sol`。如果某个模型族暂时没有更高版本，就选择该族当前最高版本。最终最多写入四个模型。
 
 ## 生成 WorkBuddy 条目
 
@@ -58,6 +59,25 @@ Accept: application/json
 - `canDisableThinking` 在原始 levels 包含 `none` 时为 `true`。
 - `defaultEffort` 优先使用有效的 `default_reasoning_level`，其次使用 `medium`，再其次使用第一个有效 effort。
 - `supportedEfforts` 使用原始 levels 中去重并排除 `none` 后的 effort 列表。
+
+保留 API 返回的 reasoning level 名称和描述。每个最终选中的模型都要在回复中列出可用档位、默认档位和档位描述。
+
+## 模型说明与积分
+
+在成功回复中为四个模型族提供简短用途说明：
+
+- `Astra` 适合复杂架构设计、困难问题分析、深度调试和需要更高推理质量的任务。
+- `Sol` 适合日常开发、主力编程、持续对话和大多数通用任务，作为默认主力模型。
+- `Terra` 适合大型代码库、长文档、长上下文分析和需要同时处理大量资料的任务。
+- `Luna` 适合快速问答、简单修改、草稿、批量小任务和频繁试错，优先考虑响应速度和较低消耗。
+
+积分说明必须优先使用模型目录或接口返回的实际价格、倍率、credits 或 usage 字段。如果接口没有提供精确积分价格，不要编造数字，使用以下方式说明：
+
+- 给出相对消耗档位。通常可按 `Luna` 最低、`Terra` 较低、`Sol` 中高、`Astra` 较高来理解。
+- 说明实际消耗还会随输入 token、输出 token、缓存命中、上下文长度、服务档位和 reasoning effort 变化。
+- 说明精确扣分以当前 API 分组和账户控制台显示为准。
+
+每个模型的输出至少包含模型名称、版本、reasoning 档位、适用场景和积分消耗说明。
 
 ## 写入本地配置
 
@@ -85,6 +105,7 @@ Accept: application/json
 已完成 WorkBuddy 配置。
 已添加模型：模型名称列表
 配置文件：实际路径
+模型说明：逐个列出版本、档位、适用场景和积分消耗档位
 请检查 WorkBuddy 模型列表中是否已出现这些 GPT 模型。若未出现，再完全退出并重新打开 WorkBuddy。
 ```
 
