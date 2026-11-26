@@ -9,8 +9,12 @@ const { copyToClipboardMock, saveAsMock } = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    // 带 command 参数的文案把命令拼在后面，方便断言 WorkBuddy 一句话里的命令。
-    t: (key: string, params?: { command?: string }) => (params?.command ? `${key} ${params.command}` : key)
+    t: (key: string, params?: Record<string, string>) => {
+      const template = key === 'keys.useKeyModal.workbuddy.quickPrompt'
+        ? '请阅读 {guideUrl}，严格按照其中的要求操作并输出。使用我的 API Key「{apiKey}」和 API 地址「{apiBase}」'
+        : key
+      return Object.entries(params ?? {}).reduce((value, [name, replacement]) => value.replace(`{${name}}`, replacement), template)
+    }
   })
 }))
 
@@ -736,17 +740,12 @@ describe('UseKeyModal', () => {
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
     const models = parsed.provider.openai.models
-    for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna']) {
+    for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna']) {
       expect(models[model]).toBeDefined()
       expect(models[model].variants).toHaveProperty('max')
       expect(models[model].variants).toHaveProperty('xhigh')
     }
     expect(models['gpt-5.6'].name).toBe('GPT-5.6 (Sol)')
-    for (const model of ['gpt-6.2-sol', 'gpt-6.2-astra']) {
-      expect(models[model].variants).not.toHaveProperty('none')
-      expect(models[model].variants).not.toHaveProperty('minimal')
-      expect(models[model].limit).toEqual({ context: 1050000, output: 128000 })
-    }
     expect(models['gpt-6.1-sol'].variants).not.toHaveProperty('none')
     expect(models['gpt-6.1-terra']).toEqual({
       name: 'GPT-6.1 Terra',
@@ -1164,26 +1163,9 @@ describe('UseKeyModal', () => {
     }
   )
 
-  it('generates WorkBuddy models.json from the group model catalog', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        models: [
-          {
-            slug: 'gpt-6.1-terra',
-            display_name: 'GPT-6.1 Terra',
-            context_window: 500000,
-            max_context_window: 872000,
-            input_modalities: ['text', 'image'],
-            default_reasoning_level: 'medium',
-            supported_reasoning_levels: [{ effort: 'none' }, { effort: 'medium' }, { effort: 'high' }]
-          }
-        ]
-      })
-    })
+  it('generates a guide-based WorkBuddy setup prompt without fetching the model catalog', async () => {
+    const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
-
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -1206,66 +1188,16 @@ describe('UseKeyModal', () => {
     await tab!.trigger('click')
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="codex-model-catalog"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="workbuddy-model-status"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('~/.workbuddy/models.json')
-
-    // 一句话配置是推荐方式，必须排在手动配置的代码块前面。
-    const html = wrapper.html()
-    expect(html.indexOf('data-testid="workbuddy-quick-setup"')).toBeLessThan(html.indexOf('<pre'))
-
-    const unixPrompt = wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()
-    expect(unixPrompt).toBe(
-      `keys.useKeyModal.workbuddy.quickPrompt curl -fsSL '${window.location.origin}/workbuddy/setup.sh' | bash -s -- --key 'sk-workbuddy-test' --base 'https://example.com/v1'`
-    )
+    const quickPrompt = wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()
+    expect(quickPrompt).toBe('请阅读 https://aixlau.me/workbuddy/guide.md，严格按照其中的要求操作并输出。使用我的 API Key「sk-workbuddy-test」和 API 地址「https://example.com/v1」')
+    expect(quickPrompt).toContain('/workbuddy/guide.md')
+    expect(quickPrompt).toContain('sk-workbuddy-test')
+    expect(quickPrompt).not.toContain('setup.sh')
+    expect(quickPrompt).not.toContain('setup.ps1')
     await wrapper.find('[data-testid="workbuddy-quick-copy"]').trigger('click')
-    expect(copyToClipboardMock).toHaveBeenLastCalledWith(unixPrompt, 'keys.copied')
-
-    const models = JSON.parse(wrapper.find('pre code').text())
-    expect(models).toHaveLength(1)
-    expect(models[0]).toMatchObject({
-      id: 'gpt-6.1-terra',
-      apiKey: 'sk-workbuddy-test',
-      url: 'https://example.com/v1/chat/completions',
-      contextWindow: { defaultLength: 872000, supportedLengths: [500000, 872000] },
-      reasoning: { canDisableThinking: true, defaultEffort: 'medium', supportedEfforts: ['medium', 'high'] }
-    })
-
-    const windowsTab = wrapper.findAll('nav[aria-label="Tabs"] button')
-      .find((button) => button.text().includes('Windows'))
-    await windowsTab!.trigger('click')
-    expect(wrapper.text()).toContain('%USERPROFILE%\\.workbuddy\\models.json')
-    expect(wrapper.find('[data-testid="workbuddy-quick-prompt"]').text()).toBe(
-      `keys.useKeyModal.workbuddy.quickPrompt powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '${window.location.origin}/workbuddy/setup.ps1'))) -Key 'sk-workbuddy-test' -Base 'https://example.com/v1'"`
-    )
-  })
-
-  it('shows a retry action when the WorkBuddy catalog cannot be loaded', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => '' }))
-
-    const wrapper = mount(UseKeyModal, {
-      props: {
-        show: true,
-        apiKey: 'sk-workbuddy-test',
-        baseUrl: 'https://example.com/v1',
-        platform: 'composite'
-      },
-      global: {
-        stubs: {
-          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
-          Icon: { template: '<span />' }
-        }
-      }
-    })
-
-    const tab = wrapper.findAll('nav[aria-label="Client"] button')
-      .find((button) => button.text().includes('keys.useKeyModal.cliTabs.workbuddy'))
-    await tab!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="workbuddy-model-status"]').text()).toContain('keys.useKeyModal.workbuddy.error')
-    expect(wrapper.find('[data-testid="workbuddy-model-retry"]').exists()).toBe(true)
-    expect(wrapper.find('pre').exists()).toBe(false)
+    expect(copyToClipboardMock).toHaveBeenLastCalledWith(quickPrompt, 'keys.copied')
+    expect(wrapper.find('[data-testid="workbuddy-model-status"]').exists()).toBe(false)
+    expect(wrapper.find('nav[aria-label="Tabs"]').exists()).toBe(false)
   })
 })

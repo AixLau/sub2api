@@ -289,19 +289,14 @@ export default {
         errorDescription: '无法使用当前 API Key 获取模型目录。'
       },
       workbuddy: {
-        description: '把当前分组的模型加入 WorkBuddy 自定义模型，请求走 OpenAI Chat Completions 接口。',
-        hint: '整个文件是一个 JSON 数组。已有其他模型时，把下面的条目合并进原数组，不要整体覆盖；保存为 UTF-8（无 BOM）后重启 WorkBuddy。',
-        note: '配置文件路径：~/.workbuddy/models.json，不存在请先运行 mkdir -p ~/.workbuddy。重启 WorkBuddy 后在模型列表里选择带“星链AI”后缀的模型。文件含 API Key，请勿外传。',
-        noteWindows: '配置文件路径：%USERPROFILE%\\.workbuddy\\models.json（按 Win+R 输入 %USERPROFILE%\\.workbuddy 打开）。重启 WorkBuddy 后在模型列表里选择带“星链AI”后缀的模型。文件含 API Key，请勿外传。',
-        loading: '正在获取当前分组的模型列表…',
-        error: '无法使用当前 API Key 获取模型列表，请稍后重试。',
-        empty: '当前分组没有可用于 WorkBuddy 的模型。',
+        description: '阅读配置指南后，将当前分组的 GPT 模型加入 WorkBuddy。',
+        note: 'WorkBuddy 会根据配置指南自动写入 ~/.workbuddy/models.json。完成后请在模型列表查看带“星链AI”后缀的 GPT 模型；如未显示，再重启 WorkBuddy。',
+        noteWindows: 'WorkBuddy 会根据配置指南自动写入 %USERPROFILE%\\.workbuddy\\models.json。完成后请在模型列表查看带“星链AI”后缀的 GPT 模型；如未显示，再重启 WorkBuddy。',
         quickTitle: '一句话配置（推荐）',
-        quickDescription: '复制下面这句话，粘贴到 WorkBuddy 对话框发送。它会运行系统自带的 PowerShell（Windows）或终端（macOS），写入 GPT-6 / 6.1 / 6.2 系列模型，无需安装 Python 等环境，原有配置会先备份。请先在上方选对电脑系统。',
+        quickDescription: '复制下方内容，直接粘贴到 WorkBuddy 对话框发送。WorkBuddy 会阅读配置指南并自动完成设置。',
         quickCopy: '复制这句话',
-        quickManual: '完成后完全退出并重新打开 WorkBuddy。也可以按下方说明手动编辑 models.json。',
-        quickPrompt: '请帮我把星链API供应商的GPT模型配置到WorkBuddy：运行下面这条命令，运行完把输出结果告诉我。{command}',
-        noKey: '缺少 API Key，无法生成 WorkBuddy 配置。'
+        quickManual: '完成后请检查 WorkBuddy 模型列表中是否已可选到新增的 GPT 模型；如未显示，再完全退出并重新打开 WorkBuddy。',
+        quickPrompt: '请阅读 {guideUrl}，严格按照其中的要求操作并输出。使用我的 API Key「{apiKey}」和 API 地址「{apiBase}」，帮我把 GPT 模型配置到本地 WorkBuddy。完成后简要告诉我结果，并提醒我确认模型列表中是否已可选择新增模型；只有在未显示时才建议重启 WorkBuddy。'
       },
       opencode: {
         title: 'OpenCode 配置示例',
@@ -751,7 +746,6 @@ export default {
     },
     table: {
       model: '模型',
-      copyModelId: '复制模型 ID {model}',
       input: '输入',
       output: '输出',
       cache: '缓存',

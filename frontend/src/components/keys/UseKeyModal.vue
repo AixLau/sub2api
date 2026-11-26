@@ -110,30 +110,6 @@
           </div>
         </div>
 
-        <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
-            <button
-              v-for="tab in currentTabs"
-              :key="tab.id"
-              type="button"
-              @click="activeTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
-            >
-              <span class="flex items-center gap-2">
-                <component :is="tab.icon" class="w-4 h-4" />
-                {{ tab.label }}
-              </span>
-            </button>
-          </nav>
-        </div>
-
-        <!-- WorkBuddy 一句话配置：放在配置代码之前，命令随上方的系统标签切换 -->
         <section
           v-if="showWorkBuddy && apiKey"
           data-testid="workbuddy-quick-setup"
@@ -167,6 +143,29 @@
             {{ t('keys.useKeyModal.workbuddy.quickManual') }}
           </p>
         </section>
+
+        <!-- OS/Shell Tabs -->
+        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
+          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
+            <button
+              v-for="tab in currentTabs"
+              :key="tab.id"
+              type="button"
+              @click="activeTab = tab.id"
+              :class="[
+                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeTab === tab.id
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              ]"
+            >
+              <span class="flex items-center gap-2">
+                <component :is="tab.icon" class="w-4 h-4" />
+                {{ tab.label }}
+              </span>
+            </button>
+          </nav>
+        </div>
 
         <!-- Code Blocks (Stacked for multi-file platforms) -->
         <div class="space-y-4">
@@ -205,36 +204,6 @@
               <pre class="p-4 text-sm font-mono text-gray-100 overflow-x-auto"><code v-if="file.highlighted" v-html="file.highlighted"></code><code v-else v-text="file.content"></code></pre>
             </div>
           </div>
-        </div>
-
-        <div
-          v-if="showWorkBuddy && codexModelManifestState !== 'ready' || showWorkBuddy && workBuddyModelCount === 0"
-          data-testid="workbuddy-model-status"
-          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-700 dark:bg-dark-800/50 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p
-            :class="codexModelManifestState === 'error'
-              ? 'text-red-700 dark:text-red-300'
-              : 'text-gray-600 dark:text-gray-300'"
-          >
-            {{ !apiKey
-              ? t('keys.useKeyModal.workbuddy.noKey')
-              : codexModelManifestState === 'error'
-                ? t('keys.useKeyModal.workbuddy.error')
-                : codexModelManifestState === 'ready'
-                  ? t('keys.useKeyModal.workbuddy.empty')
-                  : t('keys.useKeyModal.workbuddy.loading') }}
-          </p>
-          <button
-            v-if="apiKey && (codexModelManifestState === 'error' || codexModelManifestState === 'ready' || codexModelManifestState === 'idle')"
-            type="button"
-            data-testid="workbuddy-model-retry"
-            class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
-            @click="loadCodexModelManifest"
-          >
-            <Icon name="refresh" size="sm" class="mr-1.5" />
-            {{ t('keys.useKeyModal.codexModelCatalog.retry') }}
-          </button>
         </div>
 
         <section
@@ -342,7 +311,6 @@ import { buildCodexModelCatalogUrl, fetchCodexModelsManifest } from '@/api/codex
 import type { GroupPlatform } from '@/types'
 import { buildClaudeCodeEnv, codexLongContextTomlLines } from '@/utils/claudeCodeConfig'
 import { buildCodexApiKeyAuthConfig } from '@/utils/codexAuthConfig'
-import { buildWorkBuddyModels } from '@/utils/workbuddyConfig'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
@@ -419,7 +387,7 @@ const CODEX_MODEL_CATALOG_CONFIG_PATH = '~/.codex/codex-models.json'
 
 // WorkBuddy 的 models.json 由同一份模型目录生成，但不展示 Codex 目录面板。
 const showWorkBuddy = computed(() => props.show && activeClientTab.value === 'workbuddy')
-const needsCodexModelManifest = computed(() => showCodexModelCatalog.value || showWorkBuddy.value)
+const needsCodexModelManifest = computed(() => showCodexModelCatalog.value)
 
 const codexManifestContext = computed(() => {
   if (!needsCodexModelManifest.value) return ''
@@ -464,13 +432,6 @@ watch(codexManifestContext, (context, previousContext) => {
     resetCodexModelManifest()
   }
 })
-
-// WorkBuddy 没有可用的默认模型列表，切到该标签时直接拉取当前分组目录。
-watch(showWorkBuddy, (visible) => {
-  if (visible && props.apiKey && codexModelManifestState.value === 'idle') {
-    void loadCodexModelManifest()
-  }
-}, { immediate: true })
 
 // Reset shell tab when client changes. WorkBuddy 用户多为 Windows，按浏览器系统预选。
 watch(activeClientTab, (tab) => {
@@ -620,7 +581,7 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
+const showShellTabs = computed(() => activeClientTab.value !== 'opencode' && activeClientTab.value !== 'workbuddy')
 
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
@@ -632,8 +593,7 @@ const currentTabs = computed(() => {
   if (
     activeClientTab.value === 'codex' ||
     activeClientTab.value === 'codex-ws' ||
-    activeClientTab.value === 'grok' ||
-    activeClientTab.value === 'workbuddy'
+    activeClientTab.value === 'grok'
   ) {
     return openaiTabs
   }
@@ -855,10 +815,6 @@ const currentFiles = computed((): FileConfig[] => {
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
 
-  if (activeClientTab.value === 'workbuddy') {
-    return generateWorkBuddyFiles(apiBase, apiKey)
-  }
-
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
@@ -936,45 +892,18 @@ const currentFiles = computed((): FileConfig[] => {
   }
 })
 
-const workBuddyModelCount = computed(() => {
-  if (codexModelManifestState.value !== 'ready') return 0
-  return buildWorkBuddyModels(codexModelManifestContent.value, { apiBase: '', apiKey: '' }).length
-})
-
 const WORKBUDDY_PROMPT_COPY_INDEX = -1
+const WORKBUDDY_GUIDE_URL = 'https://aixlau.me/workbuddy/guide.md'
 
-// 交给 WorkBuddy 智能体执行的一句话。脚本只依赖系统自带工具：
-// Windows 用自带 PowerShell（setup.ps1），macOS 用 curl + osascript（setup.sh）。
-// 命令在代码里拼好再作为参数传入：文案里直接写 | 会被 vue-i18n 当作复数分隔符。
-const workBuddySetupCommand = computed(() => {
+const workBuddyPrompt = computed(() => {
   const origin = window.location.origin
   const baseRoot = (props.baseUrl || origin).replace(/\/v1\/?$/, '').replace(/\/+$/, '')
-  const base = `${baseRoot}/v1`
-  const quoteSh = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
-  const quotePs = (value: string) => `'${value.replace(/'/g, "''")}'`
-  if (activeTab.value === 'windows') {
-    // 外层双引号让命令在 cmd.exe 和 PowerShell 里都能直接运行。
-    return `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${quotePs(`${origin}/workbuddy/setup.ps1`)}))) -Key ${quotePs(props.apiKey)} -Base ${quotePs(base)}"`
-  }
-  return `curl -fsSL ${quoteSh(`${origin}/workbuddy/setup.sh`)} | bash -s -- --key ${quoteSh(props.apiKey)} --base ${quoteSh(base)}`
+  return t('keys.useKeyModal.workbuddy.quickPrompt', {
+    guideUrl: WORKBUDDY_GUIDE_URL,
+    apiKey: props.apiKey,
+    apiBase: `${baseRoot}/v1`
+  })
 })
-
-const workBuddyPrompt = computed(() =>
-  t('keys.useKeyModal.workbuddy.quickPrompt', { command: workBuddySetupCommand.value })
-)
-
-function generateWorkBuddyFiles(apiBase: string, apiKey: string): FileConfig[] {
-  // 模型列表必须来自当前分组的目录，目录未就绪时不给出可能失效的示例。
-  if (codexModelManifestState.value !== 'ready') return []
-  const models = buildWorkBuddyModels(codexModelManifestContent.value, { apiBase, apiKey })
-  if (models.length === 0) return []
-  const isWindows = activeTab.value === 'windows'
-  return [{
-    path: isWindows ? '%USERPROFILE%\\.workbuddy\\models.json' : '~/.workbuddy/models.json',
-    content: JSON.stringify(models, null, 2),
-    hint: t('keys.useKeyModal.workbuddy.hint')
-  }]
-}
 
 function generateSystemOneCurl(baseUrl: string, apiKey: string): FileConfig {
   const endpoint = `${baseUrl}/v1/systemone`
@@ -1537,11 +1466,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
-  const solAstraOptions = {
-    limit: { context: 1050000, output: 128000 },
-    options: { store: false },
-    variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
-  }
   const openaiModels = {
     'gpt-6': {
       name: 'GPT-6 (Astra)',
@@ -1616,9 +1540,23 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       options: { store: false },
       variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
     },
-    'gpt-6.2-sol': { name: 'GPT-6.2 Sol', ...solAstraOptions },
-    'gpt-6.2-astra': { name: 'GPT-6.2 Astra', ...solAstraOptions },
-    'gpt-6.1-sol': { name: 'GPT-6.1 Sol', ...solAstraOptions },
+    'gpt-6.1-sol': {
+      name: 'GPT-6.1 Sol',
+      limit: {
+        context: 1050000,
+        output: 128000
+      },
+      options: {
+        store: false
+      },
+      variants: {
+        low: {},
+        medium: {},
+        high: {},
+        xhigh: {},
+        max: {}
+      }
+    },
     'gpt-6-sol': {
       name: 'GPT-6 Sol',
       limit: {
