@@ -56,15 +56,26 @@ func TestOpenAIStreamTerminalOverloadRecordsUpstreamAfterOutput(t *testing.T) {
 				} else {
 					_, err = svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "gpt-5.5", "gpt-5.5")
 				}
-				require.ErrorContains(t, err, message)
 				var failover *UpstreamFailoverError
-				require.False(t, errors.As(err, &failover), "partial output must never be replayed")
+				if terminal.responseFailed {
+					require.ErrorAs(t, err, &failover)
+					require.True(t, failover.RequestScopedTransient)
+					require.True(t, failover.RetryableOnSameAccount)
+					require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failover.SameAccountRetryDeadline, time.Second)
+				} else {
+					require.ErrorContains(t, err, message)
+					require.False(t, errors.As(err, &failover), "a bare overload error waits for an authoritative response.failed frame")
+				}
 				require.Equal(t, http.StatusOK, recorder.Code)
 				require.Contains(t, recorder.Body.String(), "partial")
-				// The provider overload text reaches the client unchanged; only the
-				// gateway's own retry policy acts on the raw frame.
-				require.Contains(t, recorder.Body.String(), message)
-				require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed"))
+				if terminal.responseFailed {
+					require.NotContains(t, recorder.Body.String(), message)
+				} else {
+					// A bare overload error is preserved until the upstream either
+					// supplies response.failed or the stream ends.
+					require.Contains(t, recorder.Body.String(), message)
+					require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed"))
+				}
 				value, exists := c.Get(OpsUpstreamErrorsKey)
 				require.True(t, exists, "the provider failure must be available to ops attribution")
 				events, ok := value.([]*OpsUpstreamErrorEvent)

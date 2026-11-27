@@ -476,56 +476,67 @@ func TestOpenAIStreamCapacityShedErrorFramePrecedingFailedStillFailsOver(t *test
 	require.Empty(t, rec.Body.String())
 }
 
-// 流中途（已有真实输出）降载时无法再 failover，此时必须把上游降载事件原样
-// 转发给客户端：错误码与错误文案都不改写，gateway 只负责记录与账号状态判定。
-func TestOpenAIStreamCapacityShedAfterOutputForwardsProviderError(t *testing.T) {
+// 流中途收到容量降载时仍进入请求级窗口重试。此前这里把已有 SSE 数据
+// 一律视为不可重放，导致 server_is_overloaded 直接终止当前请求。
+func TestOpenAIStreamCapacityShedAfterOutputUsesRequestScopedRetry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)
 	defer restore()
-	cfg := &config.Config{
-		Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+	for _, passthrough := range []bool{false, true} {
+		name := "native"
+		if passthrough {
+			name = "passthrough"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg := &config.Config{
+				Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+			}
+			svc := &OpenAIGatewayService{cfg: cfg}
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					"event: response.created",
+					`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+					"",
+					"event: response.output_text.delta",
+					`data: {"type":"response.output_text.delta","delta":"partial"}`,
+					"",
+					"event: error",
+					`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."},"sequence_number":2}`,
+					"",
+					"event: response.failed",
+					`data: {"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}},"sequence_number":3}`,
+					"",
+				}, "\n"))),
+				Header: http.Header{"X-Request-Id": []string{"rid-shed-after-output"}},
+			}
+
+			var err error
+			account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "acc"}
+			if passthrough {
+				_, err = svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, account, time.Now(), "model", "model")
+			} else {
+				_, err = svc.handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "model", "model")
+			}
+			require.Error(t, err)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.RetryableOnSameAccount)
+			require.True(t, failoverErr.RequestScopedTransient)
+			require.WithinDuration(t, time.Now().Add(OpenAIRequestScopedRetryWindow), failoverErr.SameAccountRetryDeadline, time.Second)
+
+			body := rec.Body.String()
+			require.Contains(t, body, "partial")
+			require.NotContains(t, body, "event: error")
+			require.NotContains(t, body, "event: response.failed")
+			require.False(t, logSink.ContainsMessage("gateway.failover_suppressed_after_semantic_output"))
+		})
 	}
-	svc := &OpenAIGatewayService{cfg: cfg}
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
-			"event: response.created",
-			`data: {"type":"response.created","response":{"id":"resp_1"}}`,
-			"",
-			"event: response.output_text.delta",
-			`data: {"type":"response.output_text.delta","delta":"partial"}`,
-			"",
-			"event: error",
-			`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."},"sequence_number":2}`,
-			"",
-			"event: response.failed",
-			`data: {"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}},"sequence_number":3}`,
-			"",
-		}, "\n"))),
-		Header: http.Header{"X-Request-Id": []string{"rid-shed-after-output"}},
-	}
-
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Name: "acc"}, time.Now(), "model", "model")
-	require.Error(t, err)
-	var failoverErr *UpstreamFailoverError
-	require.False(t, errors.As(err, &failoverErr))
-
-	body := rec.Body.String()
-	require.Contains(t, body, "partial")
-	require.NotContains(t, body, "event: error")
-	require.Equal(t, 1, strings.Count(body, "event: response.failed"))
-	// 只改写 code：客户端据此退避重试；文案保留上游原文。
-	require.Contains(t, body, `"code":"server_error"`)
-	require.NotContains(t, body, `"code":"server_is_overloaded"`)
-	require.Contains(t, body, "Our servers are currently overloaded")
-	require.True(t, logSink.ContainsMessage("gateway.failover_suppressed_after_semantic_output"))
-	require.True(t, logSink.ContainsFieldValue("path", "native_sse"))
-	require.True(t, logSink.ContainsFieldValue("upstream_request_id", "rid-shed-after-output"))
 }
 
 func TestOpenAIStreamProcessingFailureAfterOutputIsRecorded(t *testing.T) {

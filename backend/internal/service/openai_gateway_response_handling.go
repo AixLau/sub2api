@@ -256,7 +256,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	terminalEventType := ""
 	responsesSemanticOutputSeen := false
 	upstreamFirstEventSeen := false
-	capacityFailoverSuppressedLogged := false
+	capacityDecisionLogged := false
 	failedMessage := ""
 	clientOutputStarted := false
 	clientSemanticOutputStarted := func() bool {
@@ -643,7 +643,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			// 降载事件留一条判定依据：客户端是否已经收到语义输出、已写出多少字节。
 			// 据此区分「同账号重试」与「原样透传」是否合理 —— 透传只应发生在已有输出、
 			// 重放会重复内容时。Ops 可按 msg=openai.capacity_shed_decision 聚合观察。
-			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
+			if !capacityDecisionLogged && account != nil && account.Platform == PlatformOpenAI &&
 				(eventType == "error" || eventType == "response.failed") &&
 				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
 				logger.FromContext(ctx).Info("openai.capacity_shed_decision",
@@ -655,12 +655,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					zap.Int64("pending_bytes", pendingBytes()),
 					zap.Bool("semantic_seen", responsesSemanticOutputSeen),
 				)
-			}
-			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
-				(eventType == "error" || eventType == "response.failed") && clientSemanticOutputStarted() &&
-				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
-				logOpenAICapacityFailoverSuppressed(ctx, account, "native_sse", upstreamRequestID, eventType)
-				capacityFailoverSuppressedLogged = true
+				capacityDecisionLogged = true
 			}
 			cyberHit := false
 			if eventType == "response.failed" || eventType == "error" {
@@ -700,6 +695,21 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 				if outputStarted && !cyberHit {
+					// Capacity-shed failures are scoped to the provider request rather
+					// than the selected credential. They can also arrive after a
+					// structural or otherwise misleading SSE event has been written.
+					// Keep them on the request-scoped same-account retry window instead
+					// of making the handler treat the in-band failure as terminal.
+					// Codex OAuth streams commonly emit a bare error before the
+					// response.failed frame, so wait for the latter before constructing
+					// the retry signal.
+					if isOpenAIUpstreamCapacityShedEvent(dataBytes) &&
+						!(codexFailureTerminal && eventType == "error") {
+						streamEarlyErr = s.newOpenAIStreamFailoverErrorWithModel(
+							c, account, false, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header,
+						)
+						return
+					}
 					// A terminal failure still belongs to the provider when output prevents failover.
 					if !(codexFailureTerminal && eventType == "error") &&
 						(!sawFailedEvent || (codexFailureTerminal && eventType == "response.failed" && bareErrorAccountSideEffectsPending)) {

@@ -2269,7 +2269,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	terminalEventType := ""
 	semanticOutputSeen := false
 	upstreamFirstEventSeen := false
-	capacityFailoverSuppressedLogged := false
 	failedMessage := ""
 	clientOutputStarted := false
 	codexFailureTerminal := account != nil && account.Platform == PlatformOpenAI
@@ -2285,6 +2284,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	pluginSemanticModelSeen := ""
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
 	pendingLines := make([]string, 0, 8)
+	// Error event envelopes are held until their data line is classified. A
+	// request-scoped capacity retry may return from the data line after output
+	// has already started, and forwarding the envelope first would leave an
+	// orphaned event header in the client stream.
+	pendingErrorEventLine := ""
 
 	// ── 首个可见输出之前的下游 keepalive ──────────────────────────────────
 	//
@@ -2393,9 +2397,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 
 	for documentScanner.Scan() {
 		line := documentScanner.Text()
+		deferErrorEventLine := false
 		if eventType, ok := extractOpenAISSEEventLine(line); ok {
 			pendingSSEEventType = eventType
 			eventType = strings.TrimSpace(eventType)
+			if eventType == "error" || eventType == "response.failed" {
+				pendingErrorEventLine = line
+				deferErrorEventLine = true
+			}
 			suppressCurrentEvent = codexFailureTerminal && (eventType == "error" || (sawBareError && !sawResponseFailed && eventType != "response.failed"))
 		}
 		lineStartsClientOutput := false
@@ -2461,13 +2470,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if codexFailureTerminal && sawBareError && !sawResponseFailed && eventType != "response.failed" {
 				suppressCurrentEvent = true
 			}
-			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
-				(eventType == "error" || eventType == "response.failed") &&
-				openAIStreamClientOutputStarted(c, clientOutputStarted) &&
-				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
-				logOpenAICapacityFailoverSuppressed(ctx, account, "passthrough_sse", upstreamRequestID, eventType)
-				capacityFailoverSuppressedLogged = true
-			}
 			cyberHit := false
 			if eventType == "response.failed" || eventType == "error" {
 				if codexFailureTerminal && eventType == "error" {
@@ -2505,6 +2507,18 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					}
 				}
 				if outputStarted && !cyberHit {
+					// Capacity-shed failures are request-scoped even when a prior SSE
+					// event has already been written. Codex OAuth streams may emit a
+					// bare error before response.failed, so defer the retry signal until
+					// the authoritative failed frame arrives.
+					if isOpenAIUpstreamCapacityShedEvent(dataBytes) &&
+						!(codexFailureTerminal && eventType == "error") {
+						failoverErr := s.newOpenAIStreamFailoverErrorWithModel(
+							c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header,
+						)
+						failoverErr.SafeToFailoverAfterWrite = true
+						return resultWithUsage(), failoverErr
+					}
 					// Count a bare error followed by response.failed as one provider failure.
 					if !(codexFailureTerminal && eventType == "error") &&
 						(!sawFailedEvent || (codexFailureTerminal && eventType == "response.failed" && bareErrorAccountSideEffectsPending)) {
@@ -2613,11 +2627,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if suppressCurrentEvent {
 				suppressCurrentEvent = false
 				responseFailedPending = false
+				pendingErrorEventLine = ""
 				continue
 			}
 		}
 
-		if !clientDisconnected && !failureDelivered && !suppressCurrentEvent {
+		if !clientDisconnected && !failureDelivered && !suppressCurrentEvent && !deferErrorEventLine {
 			if !clientOutputStarted && !lineStartsClientOutput {
 				pendingLines = append(pendingLines, line)
 				continue
@@ -2631,6 +2646,16 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				if !writePendingLines() {
 					continue
 				}
+			}
+			if pendingErrorEventLine != "" {
+				if _, err := fmt.Fprintln(w, pendingErrorEventLine); err != nil {
+					clientDisconnected = true
+					logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected while writing SSE error event: account=%d", account.ID)
+				}
+				pendingErrorEventLine = ""
+			}
+			if clientDisconnected {
+				continue
 			}
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				clientDisconnected = true
