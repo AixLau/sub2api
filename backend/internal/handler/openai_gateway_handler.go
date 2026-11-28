@@ -645,7 +645,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var sameAccountRetryAccount *service.Account
-	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	firstOutputTimeoutSwitchCount := 0
@@ -718,24 +717,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			RetryAccount:               retryAccount,
 			Retry:                      &routingRetry,
 		}); routingStage.Stop {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			return
 		}
 		if routingRetry {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			continue
-		}
-		// Release the scheduling lease once the fast path has completed routing;
-		// no account slot is held while the retry delay is queued.
-		if overloadRetryLease != nil {
-			overloadRetryLease.Release()
-			overloadRetryLease = nil
 		}
 		if accountBound && account.ID != stateBinding.AccountID {
 			if accountReleaseFunc != nil {
@@ -921,9 +906,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 								zap.Duration("retry_delay", retryDelay),
 							)
 							if failoverErr.IsOpenAICapacityShed() {
-								var waitErr error
-								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, forwardModel), retryDelay)
-								if waitErr != nil {
+								if waitErr := h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, forwardModel), retryDelay); waitErr != nil {
 									return
 								}
 							} else {
@@ -1349,7 +1332,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var sameAccountRetryAccount *service.Account
-	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
@@ -1398,17 +1380,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			RetryAccount:         retryAccount,
 			Retry:                &routingRetry,
 		}); routingStage.Stop {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			return
 		}
 		if routingRetry {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			continue
 		}
 
@@ -1524,9 +1498,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 								zap.Duration("retry_delay", retryDelay),
 							)
 							if failoverErr.IsOpenAICapacityShed() {
-								var waitErr error
-								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, currentRoutingModel), retryDelay)
-								if waitErr != nil {
+								if waitErr := h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, currentRoutingModel), retryDelay); waitErr != nil {
 									return
 								}
 							} else {

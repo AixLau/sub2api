@@ -5,7 +5,11 @@
 ## 官方入口
 
 - 首页: https://aixlau.me/
-- 客户端配置教程: https://aixlau.me/docs/install/
+- 客户端配置教程（Codex / Codex CLI / Claude Code 一键脚本与 CC Switch）: https://aixlau.me/docs/install/
+- 模型广场（当前可用模型、API 标识与公开价格）: https://aixlau.me/model-market
+- 服务能力: https://aixlau.me/services
+- 服务状态与用量说明: https://aixlau.me/service-status
+- 常见问题: https://aixlau.me/faq
 - 注册: https://aixlau.me/register
 - 登录: https://aixlau.me/login
 
@@ -23,6 +27,14 @@
 1. 注册星链 AI 账号。
 2. 创建 API Key。
 3. 按照客户端配置教程完成接入并开始调用。
+
+## 常见问题
+
+- 可以用于哪些场景？可作为 GPT API 中转站，用于 Codex、Claude Code 等 AI 开发工具，也可以通过 OpenAI、Anthropic 或 Gemini 兼容接口接入程序、脚本与内部应用。
+- Codex 如何接入？注册并登录后，按客户端配置教程运行一键脚本，脚本会完成授权、创建 API Key 并写入本机配置。
+- 费用如何计算？支持按量计费和订阅套餐，实际费用与模型、Token 用量和所选服务有关，以控制台为准。
+- 可以查看调用明细吗？可以，控制台提供调用记录、Token 用量、费用、模型、耗时和错误信息，可按 API Key 与时间范围筛选。
+- 可用模型会变吗？可用模型可能随服务情况调整，以模型广场和控制台的最新信息为准。
 
 ## 内容边界
 

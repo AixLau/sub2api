@@ -44,9 +44,8 @@ const (
 	maxSameAccountRetries = 3
 	// sameAccountRetryDelay 同账号重试间隔
 	sameAccountRetryDelay = 500 * time.Millisecond
-	// maxRequestScopedRetryDelay 限制请求级瞬时错误的指数退避上限，避免高重试配置
-	// 将单次请求拖入分钟级等待。
-	maxRequestScopedRetryDelay = 8 * time.Second
+	// maxRequestScopedRetryDelay 限制请求级瞬时错误的指数退避上限。
+	maxRequestScopedRetryDelay = 3 * time.Second
 	// singleAccountBackoffDelay 单账号分组 503 退避重试固定延时。
 	// Service 层在 SingleAccountRetry 模式下已做充分原地重试（最多 3 次、总等待 30s），
 	// Handler 层只需短暂间隔后重新进入 Service 层即可。
@@ -57,13 +56,6 @@ const (
 	// 取值与 maxAccountSwitches 默认值一致：混合定价的大分组仍有充分重选机会，
 	// 同时把整池越线时的无谓选号开销限制在常数级。
 	maxProfitVetoAttempts = 10
-	// openAIOAuthCapacityShedRetryLimit is the number of additional attempts
-	// for the OpenAI OAuth capacity-shed response. OAuth accounts are not pool
-	// mode accounts, so this request-scoped policy must be explicit here.
-	openAIOAuthCapacityShedRetryLimit = 10
-	// openAIOAuthCapacityShedRetryDelay keeps capacity-shed retries on a fixed
-	// short interval instead of applying the generic exponential backoff.
-	openAIOAuthCapacityShedRetryDelay = 500 * time.Millisecond
 )
 
 // profitVetoExhaustedMessage 是利润否决次数耗尽时返回给客户端的文案。
@@ -136,9 +128,6 @@ func isOpenAIOAuthCapacityShedRetry(failoverErr *service.UpstreamFailoverError, 
 // effectiveSameAccountRetryLimit gives explicit request-scoped provider failures
 // their own budget. Other failures retain the account setting, including zero.
 func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
-	if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
-		return openAIOAuthCapacityShedRetryLimit
-	}
 	if failoverErr != nil {
 		switch failoverErr.Reason {
 		case service.OpenAIResponseProtectionUnavailableReason, service.OpenAIProcessingFailureReason:
@@ -157,10 +146,7 @@ func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, 
 	return limit
 }
 
-func sameAccountRetryDelayForAccount(failoverErr *service.UpstreamFailoverError, account *service.Account, retryCount int) time.Duration {
-	if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
-		return openAIOAuthCapacityShedRetryDelay
-	}
+func sameAccountRetryDelayForAccount(failoverErr *service.UpstreamFailoverError, _ *service.Account, retryCount int) time.Duration {
 	return sameAccountRetryDelayFor(failoverErr, retryCount)
 }
 

@@ -484,10 +484,10 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		server, err := NewFrontendServer(provider)
 		require.NoError(t, err)
 
-		// First request populates the internal HTML cache.
+		// First request populates the generic SPA HTML cache (routes without an SEO template).
 		w1 := httptest.NewRecorder()
 		c1, _ := gin.CreateTestContext(w1)
-		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 		c1.Set(middleware.CSPNonceKey, "nonce1")
 		server.serveIndexHTML(c1)
 		cached := server.cache.Get()
@@ -497,7 +497,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		// A stale validator must still receive a fresh body with the current nonce.
 		w2 := httptest.NewRecorder()
 		c2, _ := gin.CreateTestContext(w2)
-		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 		c2.Request.Header.Set("If-None-Match", cached.ETag)
 		c2.Set(middleware.CSPNonceKey, "nonce2")
 		server.serveIndexHTML(c2)

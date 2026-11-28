@@ -2,13 +2,14 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+const openAIOverloadRetryQueueFullJitter = 250 * time.Millisecond
 
 func openAIOverloadRetryKey(account *service.Account, model string) string {
 	platform := "openai"
@@ -23,10 +24,10 @@ func openAIOverloadRetryKey(account *service.Account, model string) string {
 }
 
 // waitForOpenAIOverloadRetry applies the shared provider/model retry lane only
-// to recognized request-scoped overloads. A saturated queue falls back to the
-// existing fixed delay so a transient local scheduler limit never turns into a
-// client-visible 429 or 503.
-func (h *OpenAIGatewayHandler) waitForOpenAIOverloadRetry(c *gin.Context, key string, delay time.Duration) (*service.OpenAIOverloadRetryLease, error) {
+// to recognized request-scoped overloads. A saturated queue uses the original
+// retry delay plus a small jitter and continues the request retry chain. This
+// keeps local queue pressure from becoming a client-visible 503.
+func (h *OpenAIGatewayHandler) waitForOpenAIOverloadRetry(c *gin.Context, key string, delay time.Duration) error {
 	ctx := context.Background()
 	if c != nil && c.Request != nil {
 		ctx = c.Request.Context()
@@ -35,17 +36,22 @@ func (h *OpenAIGatewayHandler) waitForOpenAIOverloadRetry(c *gin.Context, key st
 		h.overloadRetryScheduler = service.NewDefaultOpenAIOverloadRetryScheduler()
 	}
 	service.MarkOpsRetryWaitStarted(c)
-	lease, err := h.overloadRetryScheduler.Acquire(ctx, key, delay)
-	service.MarkOpsRetryWaitFinished(c)
-	if errors.Is(err, service.ErrOpenAIOverloadRetryQueueFull) {
-		timer := time.NewTimer(delay)
+	err := h.overloadRetryScheduler.Acquire(ctx, key, delay)
+	if err == service.ErrOpenAIOverloadRetryQueueFull {
+		fallbackDelay := delay
+		if fallbackDelay <= 0 {
+			fallbackDelay = 500 * time.Millisecond
+		}
+		fallbackDelay += time.Duration(time.Now().UnixNano() % int64(openAIOverloadRetryQueueFullJitter))
+		timer := time.NewTimer(fallbackDelay)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			return nil, nil
+			err = nil
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			err = ctx.Err()
 		}
 	}
-	return lease, err
+	service.MarkOpsRetryWaitFinished(c)
+	return err
 }

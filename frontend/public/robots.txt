@@ -1,17 +1,34 @@
 User-agent: *
 Allow: /
 Allow: /docs/install/
-Disallow: /login
-Disallow: /register
-Disallow: /forgot-password
-Disallow: /reset-password
+
+# 登录类页面不在这里屏蔽：页面自带 noindex，需要让爬虫能抓到才会生效
+# （被 robots 屏蔽时 Google 看不到 noindex，反而会出现“已编入索引，尽管遭到 robots.txt 屏蔽”）
+
+# 站点页面（需登录）
 Disallow: /change-password
 Disallow: /dashboard
 Disallow: /admin/
-Disallow: /api/
-Disallow: /v1/
 Disallow: /auth/
 Disallow: /payment/
 Disallow: /legal/
+
+# API 端点（无 Key 时返回 401，不应被爬取）
+Disallow: /api/
+Disallow: /v1/
+Disallow: /models
+Disallow: /responses
+Disallow: /v1beta/
+Disallow: /antigravity/
+Disallow: /completions
+Disallow: /chat/
+Disallow: /embeddings
+Disallow: /images/
+Disallow: /audio/
+Disallow: /files
+Disallow: /batches
+Disallow: /gemini/
+Disallow: /anthropic/
+Disallow: /claude/
 
 Sitemap: https://aixlau.me/sitemap.xml

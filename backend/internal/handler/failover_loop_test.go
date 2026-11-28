@@ -65,9 +65,8 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 		{name: "first retry", retryCount: 1, want: 500 * time.Millisecond},
 		{name: "second retry", retryCount: 2, want: time.Second},
 		{name: "third retry", retryCount: 3, want: 2 * time.Second},
-		{name: "fourth retry", retryCount: 4, want: 4 * time.Second},
-		{name: "fifth retry", retryCount: 5, want: 8 * time.Second},
-		{name: "capped retry", retryCount: 10, want: 8 * time.Second},
+		{name: "fourth retry", retryCount: 4, want: 3 * time.Second},
+		{name: "capped retry", retryCount: 10, want: 3 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, sameAccountRetryDelayFor(capacityErr, tc.retryCount))
@@ -97,13 +96,12 @@ func TestOpenAIOAuthCapacityShedRetryPolicy(t *testing.T) {
 	oauth := &service.Account{Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
 
 	require.True(t, err.IsOpenAICapacityShed())
-	require.Equal(t, 10, effectiveSameAccountRetryLimit(err, oauth))
-	for retryCount := 1; retryCount <= 10; retryCount++ {
-		require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayForAccount(err, oauth, retryCount))
-	}
+	require.Equal(t, oauth.GetPoolModeRetryCount(), effectiveSameAccountRetryLimit(err, oauth))
+	require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayForAccount(err, oauth, 1))
+	require.Equal(t, time.Second, sameAccountRetryDelayForAccount(err, oauth, 2))
+	require.Equal(t, 2*time.Second, sameAccountRetryDelayForAccount(err, oauth, 3))
 
-	// The OAuth-specific policy must not change the generic request-scoped
-	// backoff used by other account types.
+	// OAuth and API-key accounts use the same request-scoped backoff.
 	apiKey := &service.Account{Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey}
 	require.Equal(t, apiKey.GetPoolModeRetryCount(), effectiveSameAccountRetryLimit(err, apiKey))
 	require.Equal(t, time.Second, sameAccountRetryDelayForAccount(err, apiKey, 2))

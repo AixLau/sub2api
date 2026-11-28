@@ -139,7 +139,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var sameAccountRetryAccount *service.Account
-	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -175,10 +174,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			AccountReleaseFunc:   &accountRelease,
 			RetryAccount:         retryAccount,
 		}); routingStage.Stop {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			return
 		}
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -194,10 +189,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			WriterSizeBeforeForward: &writerSizeBeforeForward,
 			Result:                  &result,
 		})
-		if overloadRetryLease != nil {
-			overloadRetryLease.Release()
-			overloadRetryLease = nil
-		}
 		err := forwardStage.Err
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
 
@@ -277,9 +268,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		}
 		if failoverErr.RetryableOnSameAccount {
 			retryLimit := account.GetPoolModeRetryCount()
-			if isOpenAIOAuthCapacityShedRetry(failoverErr, account) {
-				retryLimit = openAIOAuthCapacityShedRetryLimit
-			}
 			if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 				sameAccountRetryCount[account.ID]++
 				retryDelay := sameAccountRetryDelayForAccount(failoverErr, account, sameAccountRetryCount[account.ID])
@@ -291,9 +279,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 					zap.Duration("retry_delay", retryDelay),
 				)
 				if failoverErr.IsOpenAICapacityShed() {
-					var waitErr error
-					overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, requestedModel), retryDelay)
-					if waitErr != nil {
+					if waitErr := h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, requestedModel), retryDelay); waitErr != nil {
 						return
 					}
 				} else {

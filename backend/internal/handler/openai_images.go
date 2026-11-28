@@ -179,7 +179,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var sameAccountRetryAccount *service.Account
-	var overloadRetryLease *service.OpenAIOverloadRetryLease
 	var lastFailoverErr *service.UpstreamFailoverError
 	stopJSONKeepalive := func() {}
 	jsonKeepaliveStarted := false
@@ -217,17 +216,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			RetryAccount:               retryAccount,
 			Retry:                      &routingRetry,
 		}); routingStage.Stop {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			return
 		}
 		if routingRetry {
-			if overloadRetryLease != nil {
-				overloadRetryLease.Release()
-				overloadRetryLease = nil
-			}
 			continue
 		}
 
@@ -252,10 +243,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			WriterSizeBeforeForward: &writerSizeBeforeForward,
 			Result:                  &result,
 		})
-		if overloadRetryLease != nil {
-			overloadRetryLease.Release()
-			overloadRetryLease = nil
-		}
 		err = stageResult.Err
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
@@ -350,9 +337,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 								zap.Duration("retry_delay", retryDelay),
 							)
 							if failoverErr.IsOpenAICapacityShed() {
-								var waitErr error
-								overloadRetryLease, waitErr = h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, requestModel), retryDelay)
-								if waitErr != nil {
+								if waitErr := h.waitForOpenAIOverloadRetry(c, openAIOverloadRetryKey(account, requestModel), retryDelay); waitErr != nil {
 									return
 								}
 							} else {
