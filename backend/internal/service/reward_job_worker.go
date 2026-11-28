@@ -147,7 +147,8 @@ func (w *RewardJobWorker) processJob(ctx context.Context, job RewardCampaignJob)
 		for _, userID := range userIDs {
 			scanned++
 			profile, ok := profiles[userID]
-			if !ok || IsEmailPlusAlias(profile.Email) || !RewardAudienceMatches(ResolveRewardAudienceRelativeTimes(campaign.Config.Audience, now), profile) {
+			if !ok || IsEmailPlusAlias(profile.Email) || welcomeRewardRestricted(campaign.CampaignKey, profile.Email) ||
+				!RewardAudienceMatches(ResolveRewardAudienceRelativeTimes(campaign.Config.Audience, now), profile) {
 				skipped++
 				continue
 			}

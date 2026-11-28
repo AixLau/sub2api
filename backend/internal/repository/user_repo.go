@@ -908,12 +908,15 @@ func (r *userRepository) ClaimWelcomeReward(ctx context.Context, id int64) (floa
 	err = r.withRewardClaimTransaction(ctx, func(txCtx context.Context, client *dbent.Client) error {
 		current, err := client.User.Query().
 			Where(dbuser.IDEQ(id)).
-			Select(dbuser.FieldWelcomeRewardAmount).
+			Select(dbuser.FieldEmail, dbuser.FieldWelcomeRewardAmount).
 			Only(txCtx)
 		if err != nil {
 			return translatePersistenceError(err, service.ErrUserNotFound, nil)
 		}
 
+		if service.IsWelcomeRewardEmailRestricted(current.Email) {
+			return service.ErrRewardNotEligible
+		}
 		amount = current.WelcomeRewardAmount
 		if amount < 1 || amount > 5 {
 			return service.ErrWelcomeRewardUnavailable
@@ -922,6 +925,7 @@ func (r *userRepository) ClaimWelcomeReward(ctx context.Context, id int64) (floa
 		updated, err := client.User.Update().
 			Where(
 				dbuser.IDEQ(id),
+				dbuser.EmailEQ(current.Email),
 				dbuser.WelcomeRewardAmountEQ(amount),
 			).
 			AddBalance(amount).

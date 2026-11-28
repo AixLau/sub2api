@@ -125,6 +125,9 @@ func (s *RewardService) Pending(ctx context.Context, userID int64) ([]RewardGran
 				(profile.Status != "" && profile.Status != "active") {
 				break
 			}
+			if welcomeRewardRestricted(campaign.CampaignKey, profile.Email) {
+				continue
+			}
 			if !RewardAudienceMatches(ResolveRewardAudienceRelativeTimes(campaign.Config.Audience, now), *profile) {
 				continue
 			}
@@ -140,6 +143,15 @@ func (s *RewardService) Pending(ctx context.Context, userID int64) ([]RewardGran
 	grants, err := s.repo.ListPending(ctx, userID, now)
 	if err != nil {
 		return nil, fmt.Errorf("list pending rewards: %w", err)
+	}
+	if profile != nil && IsWelcomeRewardEmailRestricted(profile.Email) {
+		eligible := grants[:0]
+		for _, grant := range grants {
+			if grant.CampaignKey != RewardSystemCampaignWelcome {
+				eligible = append(eligible, grant)
+			}
+		}
+		grants = eligible
 	}
 	return grants, nil
 }
@@ -183,6 +195,9 @@ func (s *RewardService) LegacyPending(ctx context.Context, userID int64, systemK
 	if profile != nil && IsEmailPlusAlias(profile.Email) {
 		return false, ErrRewardNotEligible
 	}
+	if profile != nil && welcomeRewardRestricted(systemKey, profile.Email) {
+		return false, nil
+	}
 	if err := s.repo.ImportLegacyPending(ctx, userID, now); err != nil {
 		return false, err
 	}
@@ -217,6 +232,7 @@ func (s *RewardService) LegacyPending(ctx context.Context, userID int64, systemK
 	}
 	if (profile.Role != "" && profile.Role != "user") ||
 		(profile.Status != "" && profile.Status != "active") ||
+		welcomeRewardRestricted(systemKey, profile.Email) ||
 		!RewardAudienceMatches(ResolveRewardAudienceRelativeTimes(campaign.Config.Audience, now), *profile) {
 		return false, nil
 	}

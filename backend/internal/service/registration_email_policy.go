@@ -30,6 +30,16 @@ func IsEmailPlusAlias(email string) bool {
 	return ok && strings.IndexByte(local, '+') > 0
 }
 
+// IsWelcomeRewardEmailRestricted checks for dots in the mailbox name, not the domain.
+func IsWelcomeRewardEmailRestricted(email string) bool {
+	local, _, ok := splitEmailForPolicy(email)
+	return ok && strings.Contains(local, ".")
+}
+
+func welcomeRewardRestricted(campaignKey, email string) bool {
+	return campaignKey == RewardSystemCampaignWelcome && IsWelcomeRewardEmailRestricted(email)
+}
+
 // RegistrationEmailDomain 返回邮箱对应的可注册主域名，用于域名注册额度归一化。
 // 例如 abc.com 和 abcd.abc.com 都返回 abc.com；无法从公共后缀表归一化时保留原域名。
 func RegistrationEmailDomain(email string) string {

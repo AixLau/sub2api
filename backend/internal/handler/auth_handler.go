@@ -135,7 +135,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 			AccessToken:          token,
 			TokenType:            "Bearer",
 			User:                 dto.UserFromService(user),
-			WelcomeRewardPending: user.WelcomeReward >= 1,
+			WelcomeRewardPending: user.WelcomeReward >= 1 && !service.IsWelcomeRewardEmailRestricted(user.Email),
 		})
 		return
 	}
@@ -145,7 +145,7 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 		ExpiresIn:            tokenPair.ExpiresIn,
 		TokenType:            "Bearer",
 		User:                 dto.UserFromService(user),
-		WelcomeRewardPending: user.WelcomeReward >= 1,
+		WelcomeRewardPending: user.WelcomeReward >= 1 && !service.IsWelcomeRewardEmailRestricted(user.Email),
 	})
 }
 

@@ -23,18 +23,19 @@ func (r *rewardRepository) ImportLegacyPending(ctx context.Context, userID int64
 	}
 	defer tx.Rollback()
 	var welcomeAmount, surpriseAmount float64
+	var email string
 	if err := tx.QueryRowContext(ctx, `
-SELECT welcome_reward_amount, surprise_reward_amount
+SELECT email, welcome_reward_amount, surprise_reward_amount
 FROM users
 WHERE id = $1 AND deleted_at IS NULL
 FOR UPDATE
-`, userID).Scan(&welcomeAmount, &surpriseAmount); err != nil {
+`, userID).Scan(&email, &welcomeAmount, &surpriseAmount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return infraerrors.NotFound("USER_NOT_FOUND", "user not found")
 		}
 		return err
 	}
-	if welcomeAmount > 0 {
+	if welcomeAmount > 0 && !service.IsWelcomeRewardEmailRestricted(email) {
 		if err := importLegacyReward(ctx, tx, userID, service.RewardSystemCampaignWelcome, service.RewardGrantSourceLegacyWelcome, "legacy:welcome", welcomeAmount, now); err != nil {
 			return err
 		}
@@ -154,7 +155,8 @@ func (r *rewardRepository) Claim(ctx context.Context, userID, grantID int64, now
 		}
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM reward_campaigns WHERE id = $1 FOR UPDATE`, campaignID); err != nil {
+	var campaignKey string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(system_key, '') FROM reward_campaigns WHERE id = $1 FOR UPDATE`, campaignID).Scan(&campaignKey); err != nil {
 		return nil, err
 	}
 	var status string
@@ -183,6 +185,18 @@ FOR UPDATE
 	}
 	if status != service.RewardGrantStatusPending {
 		return nil, infraerrors.Conflict("REWARD_UNAVAILABLE", "reward is unavailable")
+	}
+	if campaignKey == service.RewardSystemCampaignWelcome {
+		var email string
+		if err := tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, userID).Scan(&email); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, infraerrors.NotFound("USER_NOT_FOUND", "user not found")
+			}
+			return nil, err
+		}
+		if service.IsWelcomeRewardEmailRestricted(email) {
+			return nil, service.ErrRewardNotEligible
+		}
 	}
 	if expiresAt.Valid && !now.Before(expiresAt.Time) {
 		if _, err := tx.ExecContext(ctx, `
