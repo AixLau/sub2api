@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -1859,7 +1860,13 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 		account = latest
 		selection.Account = latest
 	}
-	ctx = admissionCtx
+	ctx = context.WithValue(admissionCtx, ctxkey.AccountID, account.ID)
+	ctx = context.WithValue(ctx, ctxkey.Platform, account.Platform)
+	// Keep the selected account in the request context used by Ops logging.
+	// WebSocket routing keeps the account in the stage state, while the
+	// stream-error logger reads the request-scoped account snapshot.
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+	c.Request = c.Request.WithContext(ctx)
 	if s.AdmittedContext != nil {
 		*s.AdmittedContext = ctx
 	}

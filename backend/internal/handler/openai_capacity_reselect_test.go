@@ -5,10 +5,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSetOpsSelectedAccountRecordsRequestContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/v1/responses", nil)
+
+	setOpsSelectedAccount(c, 527, service.PlatformOpenAI)
+
+	value, ok := c.Get(opsAccountIDKey)
+	require.True(t, ok)
+	require.Equal(t, int64(527), value)
+	requestAccountID, ok := c.Request.Context().Value(ctxkey.AccountID).(int64)
+	require.True(t, ok)
+	require.Equal(t, int64(527), requestAccountID)
+}
 
 func TestOpenAICapacityWaitSlice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
