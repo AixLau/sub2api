@@ -1406,6 +1406,41 @@ describe("admin SettingsView payment visible method controls", () => {
     wrapper.unmount();
   });
 
+  it("saves UA-only matching for WorkBuddy without changing the other whitelist rules", async () => {
+    const workBuddy = {
+      originator: "WorkBuddy",
+      ua_contains: ["WorkBuddy/"],
+      skip_engine_fingerprint: true,
+    };
+    const openCode = { originator: "opencode", ua_contains: ["opencode/"] };
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      codex_cli_only_whitelist: JSON.stringify([workBuddy, openCode]),
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const toggles = wrapper.findAll<HTMLInputElement>('[data-testid="codex-whitelist-match-ua-only"]');
+    expect(toggles.map((toggle) => toggle.element.checked)).toEqual([false, false]);
+    await toggles[0]!.setValue(true);
+    const originators = wrapper.findAll<HTMLInputElement>(
+      'input[placeholder="admin.settings.gatewayForwarding.codexOriginatorPlaceholder"]',
+    );
+    const workBuddyOriginator = originators.find((input) => input.element.value === "WorkBuddy");
+    expect(workBuddyOriginator?.element.disabled).toBe(true);
+    expect(toggles[1]!.element.checked).toBe(false);
+
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(updateSettings.mock.calls[0]![0].codex_cli_only_whitelist)).toEqual([
+      { ...workBuddy, match_ua_only: true },
+      openCode,
+    ]);
+    wrapper.unmount();
+  });
+
   it("submits Anthropic cache TTL injection gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

@@ -50,6 +50,24 @@ func TestUpdateSettings_CodexWhitelistAcceptsMatchable(t *testing.T) {
 	require.Equal(t, http.StatusOK, code, "可命中白名单条目应通过")
 }
 
+func TestUpdateSettings_CodexWhitelistUAOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, rule string
+		want       int
+	}{
+		{"explicit WorkBuddy prefix", `{"ua_contains":["WorkBuddy/"],"match_ua_only":true,"skip_engine_fingerprint":true}`, http.StatusOK},
+		{"default still requires originator", `{"ua_contains":["WorkBuddy/"]}`, http.StatusBadRequest},
+		{"empty prefix", `{"ua_contains":[" "],"match_ua_only":true}`, http.StatusBadRequest},
+		{"multiple prefixes", `{"ua_contains":["WorkBuddy/","curl/"],"match_ua_only":true}`, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, updateSettingsCodexStatus(t, map[string]any{
+				"codex_cli_only_whitelist": "[" + tc.rule + "]",
+			}))
+		})
+	}
+}
+
 // 黑名单是 OR 宽 deny：允许 originator-only。非对称——不受白名单收紧影响。
 func TestUpdateSettings_CodexBlacklistAllowsOriginatorOnly(t *testing.T) {
 	code := updateSettingsCodexStatus(t, map[string]any{

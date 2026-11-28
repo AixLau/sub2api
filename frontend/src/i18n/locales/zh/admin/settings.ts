@@ -628,12 +628,15 @@ export default {
           '命中的用户即使使用 Codex 官方客户端或 UA 白名单，也不能分配、调用或使用开启「仅允许 Codex 官方客户端」的账号。按邮箱模糊搜索并选择用户。',
         codexWhitelist: 'User-Agent/Originator 白名单',
         codexWhitelistDesc:
-          '放行官方集之外的客户端：需 originator 精确，且每个 User-Agent 标记都命中。默认仍需过引擎指纹门，勾「跳过引擎指纹」可免。',
+          '默认要求 originator 精确匹配，且每个 User-Agent 标记都命中。勾选「仅匹配 UA」的条目只检查一个 User-Agent 前缀。是否检查引擎指纹由该条目的「跳过引擎指纹」单独控制。',
+        codexWhitelistMatchUaOnly: '仅匹配 UA',
+        codexWhitelistMatchUaOnlyTooltip: '只检查 User-Agent 是否以指定前缀开头，不检查 originator。User-Agent 可伪造，此选项不是身份认证。',
         codexWhitelistSkipFingerprint: '跳过引擎指纹',
         codexWhitelistSkipFingerprintTooltip:
-          '风险：勾选后该条仅凭 originator + User-Agent（均可伪造）放行，不再要求引擎指纹兜底。仅用于确属可信、但本身不发 codex 引擎指纹的第三方客户端。',
+          '风险：勾选后不再校验该条目的引擎指纹，只检查所配置的客户端标记（可以伪造）。仅用于可信且不发送 Codex 引擎指纹的客户端。',
         codexOriginatorPlaceholder: 'originator（精确，如 opencode）',
         codexUaContainsPlaceholder: 'User-Agent 包含标记，逗号分隔（如 opencode/）',
+        codexUaPrefixPlaceholder: '单个 User-Agent 前缀（如 WorkBuddy/）',
         codexAddRow: '添加一条',
         codexRemoveRow: '删除',
       },

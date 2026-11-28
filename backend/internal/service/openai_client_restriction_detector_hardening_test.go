@@ -47,6 +47,30 @@ func TestDetectCodexClientRestriction_NilSettingServiceFailsClosed(t *testing.T)
 	require.Equal(t, CodexClientRestrictionReasonMissingEngineFingerprint, r.Reason)
 }
 
+func TestDetect_WorkBuddyUAOnlyPreservesOtherChecks(t *testing.T) {
+	det := NewOpenAICodexClientRestrictionDetector(nil)
+	acc := codexOnlyAccount()
+	c := hdrCtx(map[string]string{"User-Agent": "WorkBuddy/5.11.3"})
+	pol := CodexRestrictionPolicy{
+		Whitelist:                []openai.AllowedClientEntry{{UAContains: []string{"WorkBuddy/"}, MatchUAOnly: true}},
+		EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals,
+	}
+
+	result := det.Detect(c, acc, pol, nil)
+	require.False(t, result.Matched)
+	require.Equal(t, CodexClientRestrictionReasonMissingEngineFingerprint, result.Reason)
+
+	pol.Whitelist[0].SkipEngineFingerprint = true
+	result = det.Detect(c, acc, pol, nil)
+	require.True(t, result.Matched)
+	require.Equal(t, CodexClientRestrictionReasonMatchedWhitelistClient, result.Reason)
+
+	pol.Blacklist = []openai.AllowedClientEntry{{UAContains: []string{"WorkBuddy/"}}}
+	result = det.Detect(c, acc, pol, nil)
+	require.False(t, result.Matched)
+	require.Equal(t, CodexClientRestrictionReasonBlacklisted, result.Reason)
+}
+
 func TestDetect_Hardening(t *testing.T) {
 	det := NewOpenAICodexClientRestrictionDetector(nil)
 	acc := codexOnlyAccount()

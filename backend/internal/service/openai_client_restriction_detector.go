@@ -206,7 +206,7 @@ const (
 	// CodexClientRestrictionReasonUserBlacklisted 表示当前系统用户被禁止使用 codex_cli_only 账号。
 	CodexClientRestrictionReasonUserBlacklisted   = "user_blacklisted"
 	CodexClientRestrictionReasonPolicyUnavailable = "user_blacklist_unavailable"
-	// CodexClientRestrictionReasonMatchedWhitelistClient 表示请求命中全局自由白名单条目（双因子 AND）。
+	// CodexClientRestrictionReasonMatchedWhitelistClient 表示请求命中全局白名单条目。
 	CodexClientRestrictionReasonMatchedWhitelistClient = "whitelist_client_matched"
 	// CodexClientRestrictionReasonVersionTooLow 表示 UA 解析出的 Codex 引擎版本低于最低要求。
 	CodexClientRestrictionReasonVersionTooLow = "codex_version_too_low"
@@ -225,7 +225,7 @@ const (
 type CodexRestrictionPolicy struct {
 	DeniedUserIDs            map[int64]struct{} // 全局用户黑名单，优先于所有客户端身份规则
 	UserBlacklistUnavailable bool
-	Whitelist                []openai.AllowedClientEntry      // 全局自由白名单（双因子 AND，放行官方集未覆盖的 app-server client）
+	Whitelist                []openai.AllowedClientEntry      // 全局白名单（默认校验 Originator 与 UA，可逐条启用仅匹配 UA）
 	Blacklist                []openai.AllowedClientEntry      // 全局自由黑名单（OR，宽 deny）
 	MinCodexVersion          string                           // 最低 Codex 引擎版本 semver；""=不校验
 	MaxCodexVersion          string                           // 最高 Codex 引擎版本 semver；""=不校验

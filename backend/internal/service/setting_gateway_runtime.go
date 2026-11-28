@@ -675,7 +675,7 @@ func codexClientEntriesContain(entries []openai.AllowedClientEntry, want openai.
 		return false
 	}
 	for _, entry := range entries {
-		if !strings.EqualFold(strings.TrimSpace(entry.Originator), wantOriginator) {
+		if entry.MatchUAOnly != want.MatchUAOnly || !strings.EqualFold(strings.TrimSpace(entry.Originator), wantOriginator) {
 			continue
 		}
 		gotMarkers := normalizedCodexClientMarkers(entry.UAContains)
@@ -939,10 +939,8 @@ func ValidateCodexClientEntriesJSON(raw string) error {
 	return nil
 }
 
-// ValidateCodexWhitelistEntriesJSON 在 ValidateCodexClientEntriesJSON 的数组结构校验之上，额外要求
-// 每条白名单条目「有可能命中」（openai.AllowedClientEntry.IsWhitelistable）。白名单是双因子 AND：
-// originator-only、空或含空白 ua_contains 的条目会在运行时静默失效——这里让管理员在写入时即收到反馈，
-// 而非存入永不命中的死规则。黑名单（OR 宽 deny）仍用 ValidateCodexClientEntriesJSON。
+// ValidateCodexWhitelistEntriesJSON 按条目匹配模式校验白名单，拒绝运行时永不命中的规则。
+// 黑名单仍使用 ValidateCodexClientEntriesJSON。
 func ValidateCodexWhitelistEntriesJSON(raw string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -954,7 +952,10 @@ func ValidateCodexWhitelistEntriesJSON(raw string) error {
 	}
 	for i, e := range entries {
 		if !e.IsWhitelistable() {
-			return fmt.Errorf("entry %d: whitelist requires a non-empty originator and at least one non-empty ua_contains (double-factor AND; otherwise the rule never matches)", i)
+			if e.MatchUAOnly {
+				return fmt.Errorf("entry %d: match_ua_only requires exactly one non-empty User-Agent prefix in ua_contains", i)
+			}
+			return fmt.Errorf("entry %d: whitelist requires a non-empty originator and at least one non-empty ua_contains unless match_ua_only is enabled", i)
 		}
 	}
 	return nil

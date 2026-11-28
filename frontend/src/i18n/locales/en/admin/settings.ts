@@ -635,12 +635,15 @@ export default {
           "Blocked users cannot be assigned or use accounts with 'Codex official clients only', even with an official Codex client or a matching UA whitelist. Search by email and select users.",
         codexWhitelist: "User-Agent/Originator Whitelist",
         codexWhitelistDesc:
-          "Allow clients outside the official set: requires exact originator and every User-Agent marker present. Still subject to the fingerprint gate unless 'Skip engine fingerprint' is checked.",
+          "Entries require an exact originator and all User-Agent markers by default. 'Match UA only' checks a single User-Agent prefix instead. 'Skip engine fingerprint' is a separate option.",
+        codexWhitelistMatchUaOnly: "Match UA only",
+        codexWhitelistMatchUaOnlyTooltip: "Checks only the User-Agent prefix and ignores originator. User-Agent is spoofable and does not authenticate clients.",
         codexWhitelistSkipFingerprint: "Skip engine fingerprint",
         codexWhitelistSkipFingerprintTooltip:
-          "Risk: when checked this entry is allowed on originator + User-Agent alone (both forgeable), with no engine-fingerprint backstop. Use only for trusted third-party clients that genuinely do not send a codex engine fingerprint.",
+          "When checked, this entry relies on the configured client markers, which can be spoofed, without an engine fingerprint. Use only for trusted clients that do not send a Codex engine fingerprint.",
         codexOriginatorPlaceholder: "originator (exact, e.g. opencode)",
         codexUaContainsPlaceholder: "User-Agent contains markers, comma-separated (e.g. opencode/)",
+        codexUaPrefixPlaceholder: "Single User-Agent prefix (e.g. WorkBuddy/)",
         codexAddRow: "Add entry",
         codexRemoveRow: "Remove",
       },

@@ -4662,12 +4662,13 @@
                   <div
                     v-for="(row, i) in codexWhitelistRows"
                     :key="`codex-wl-${i}`"
-                    class="mb-2 flex gap-2"
+                    class="mb-2 flex flex-wrap gap-2"
                   >
                     <input
                       v-model="row.originator"
                       type="text"
                       class="input w-1/3 font-mono text-sm"
+                      :disabled="row.matchUAOnly"
                       :placeholder="
                         t(
                           'admin.settings.gatewayForwarding.codexOriginatorPlaceholder',
@@ -4680,10 +4681,23 @@
                       class="input flex-1 font-mono text-sm"
                       :placeholder="
                         t(
-                          'admin.settings.gatewayForwarding.codexUaContainsPlaceholder',
+                          row.matchUAOnly
+                            ? 'admin.settings.gatewayForwarding.codexUaPrefixPlaceholder'
+                            : 'admin.settings.gatewayForwarding.codexUaContainsPlaceholder',
                         )
                       "
                     />
+                    <label
+                      class="flex shrink-0 items-center gap-1 text-xs text-gray-600 dark:text-gray-400"
+                      :title="t('admin.settings.gatewayForwarding.codexWhitelistMatchUaOnlyTooltip')"
+                    >
+                      <input
+                        v-model="row.matchUAOnly"
+                        type="checkbox"
+                        data-testid="codex-whitelist-match-ua-only"
+                      />
+                      {{ t('admin.settings.gatewayForwarding.codexWhitelistMatchUaOnly') }}
+                    </label>
                     <label
                       class="flex shrink-0 items-center gap-1 text-xs text-gray-600 dark:text-gray-400"
                       :title="
@@ -11164,6 +11178,7 @@ function parseTablePageSizeOptionsInput(raw: string): number[] | null {
 interface CodexClientRow {
   originator: string;
   uaContains: string; // 逗号分隔，序列化时拆成 ua_contains 数组
+  matchUAOnly?: boolean; // 仅白名单：将单个 UA 标记作为前缀，忽略 originator
   skipEngineFingerprint?: boolean; // 仅白名单：命中即跳过引擎指纹门
 }
 const codexBlacklistRows = ref<CodexClientRow[]>([]);
@@ -11179,7 +11194,7 @@ function removeCodexFingerprintRow(i: number): void {
   codexFingerprintRows.value.splice(i, 1);
 }
 
-function parseCodexEntriesToRows(raw: string): CodexClientRow[] {
+function parseCodexEntriesToRows(raw: string, whitelist = false): CodexClientRow[] {
   if (!raw || !raw.trim()) return [];
   try {
     const arr = JSON.parse(raw);
@@ -11191,6 +11206,7 @@ function parseCodexEntriesToRows(raw: string): CodexClientRow[] {
             .filter((x: unknown) => typeof x === "string")
             .join(", ")
         : "",
+      matchUAOnly: whitelist && e?.match_ua_only === true,
       skipEngineFingerprint: e?.skip_engine_fingerprint === true,
     }));
   } catch {
@@ -11198,12 +11214,13 @@ function parseCodexEntriesToRows(raw: string): CodexClientRow[] {
   }
 }
 
-function serializeCodexRowsToJSON(rows: CodexClientRow[]): string {
+function serializeCodexRowsToJSON(rows: CodexClientRow[], whitelist = false): string {
   const entries = rows
     .map((r) => {
       const entry: {
         originator: string;
         ua_contains: string[];
+        match_ua_only?: boolean;
         skip_engine_fingerprint?: boolean;
       } = {
         originator: r.originator.trim(),
@@ -11212,10 +11229,11 @@ function serializeCodexRowsToJSON(rows: CodexClientRow[]): string {
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
       };
+      if (whitelist && r.matchUAOnly) entry.match_ua_only = true;
       if (r.skipEngineFingerprint) entry.skip_engine_fingerprint = true;
       return entry;
     })
-    .filter((e) => e.originator !== "" || e.ua_contains.length > 0);
+    .filter((e) => e.originator !== "" || e.ua_contains.length > 0 || e.match_ua_only);
   return entries.length > 0 ? JSON.stringify(entries) : "";
 }
 
@@ -11229,6 +11247,7 @@ function addCodexWhitelistRow(): void {
   codexWhitelistRows.value.push({
     originator: "",
     uaContains: "",
+    matchUAOnly: false,
     skipEngineFingerprint: false,
   });
 }
@@ -11284,6 +11303,7 @@ async function loadSettings() {
     );
     codexWhitelistRows.value = parseCodexEntriesToRows(
       form.codex_cli_only_whitelist,
+      true,
     );
     codexFingerprintRows.value = form.codex_cli_only_engine_fingerprint_signals
       ? parseFingerprintSignalsToRows(form.codex_cli_only_engine_fingerprint_signals)
@@ -11914,6 +11934,7 @@ async function saveSettings() {
       codex_cli_only_user_blacklist: form.codex_cli_only_user_blacklist,
       codex_cli_only_whitelist: serializeCodexRowsToJSON(
         codexWhitelistRows.value,
+        true,
       ),
       // Payment configuration
       payment_enabled: form.payment_enabled,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -349,6 +350,53 @@ func TestCodexClientRouting_WhitelistedClientCanSelectRestrictedAccount(t *testi
 	require.NoError(t, err)
 	require.NotNil(t, selected)
 	require.Equal(t, int64(1), selected.ID)
+}
+
+func TestCodexClientRouting_WorkBuddyUAOnly(t *testing.T) {
+	groupID := int64(7)
+	accounts := []Account{newCodexRoutingAccount(1, 1, true), newCodexRoutingAccount(2, 2, false)}
+	cache := newCodexRoutingCacheFake()
+	cache.states[1] = CodexClientAccountState{Enabled: true}
+	cache.states[2] = CodexClientAccountState{}
+	settings := newCodexRoutingSettings(map[string]string{
+		SettingKeyCodexCLIOnlyWhitelist:     `[{"originator":"WorkBuddy","ua_contains":["WorkBuddy/"],"match_ua_only":true,"skip_engine_fingerprint":true},{"originator":"opencode","ua_contains":["opencode/"]}]`,
+		SettingKeyCodexCLIOnlyUserBlacklist: "42",
+	})
+	settings.SetCodexClientConfigCache(cache)
+	svc := &OpenAIGatewayService{
+		accountRepo:      &codexRoutingAccountRepo{accounts: accounts},
+		settingService:   settings,
+		codexClientCache: cache,
+		codexDetector:    NewOpenAICodexClientRestrictionDetector(nil),
+	}
+	for _, tc := range []struct {
+		name, ua   string
+		userID     int64
+		wantID     int64
+		wantReason string
+	}{
+		{"WorkBuddy without Originator", "WorkBuddy/5.11.3 WorkBuddy/5.11.3 CLI/2.176.0", 11, 1, CodexClientRestrictionReasonMatchedWhitelistClient},
+		{"blocked WorkBuddy user", "WorkBuddy/5.11.3", 42, 2, CodexClientRestrictionReasonUserBlacklisted},
+		{"ordinary SDK", "API-Comparison/1.0", 11, 2, CodexClientRestrictionReasonNotMatchedUA},
+		{"UA marker not at start", "curl/8.7.1 WorkBuddy/5.11.3", 11, 2, CodexClientRestrictionReasonNotMatchedUA},
+		{"other allowlist rule still requires Originator", "opencode/1.2.3", 11, 2, CodexClientRestrictionReasonNotMatchedUA},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.WithValue(newCodexRoutingRequestContext(t, tc.ua, "", nil), ctxkey.UserID, tc.userID)
+			req, ok := codexRestrictionRequestFromContext(ctx)
+			require.True(t, ok)
+			req.Context.Request = req.Context.Request.WithContext(ctx)
+
+			selected, err := svc.selectAccountForModelWithExclusions(ctx, &groupID, PlatformOpenAI, "", "gpt-5.6-sol", nil, false, 0, "", false)
+			require.NoError(t, err)
+			require.NotNil(t, selected)
+			require.Equal(t, tc.wantID, selected.ID)
+
+			result := svc.detectCodexClientRestriction(req.Context, &accounts[0], req.Body)
+			require.Equal(t, tc.wantID == 1, result.Matched)
+			require.Equal(t, tc.wantReason, result.Reason)
+		})
+	}
 }
 
 func TestCodexClientRouting_CacheUpdatesChangeRoutingImmediately(t *testing.T) {
